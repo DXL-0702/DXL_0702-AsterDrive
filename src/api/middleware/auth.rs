@@ -73,8 +73,18 @@ where
                 None => Err(actix_web::error::ErrorUnauthorized("missing token")),
                 Some(t) => match auth_service::verify_token(&t, &state.config.auth.jwt_secret) {
                     Ok(claims) => {
-                        req.extensions_mut().insert(claims);
-                        svc.call(req).await
+                        // 查数据库确认用户状态
+                        let user =
+                            crate::db::repository::user_repo::find_by_id(&state.db, claims.user_id)
+                                .await;
+                        match user {
+                            Ok(u) if u.status.is_active() => {
+                                req.extensions_mut().insert(claims);
+                                svc.call(req).await
+                            }
+                            Ok(_) => Err(actix_web::error::ErrorForbidden("account is disabled")),
+                            Err(_) => Err(actix_web::error::ErrorUnauthorized("user not found")),
+                        }
                     }
                     Err(_) => Err(actix_web::error::ErrorUnauthorized("invalid token")),
                 },

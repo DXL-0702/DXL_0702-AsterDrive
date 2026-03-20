@@ -4,7 +4,7 @@ use sea_orm::{DatabaseConnection, Set};
 use serde::{Deserialize, Serialize};
 
 use crate::config::AuthConfig;
-use crate::db::repository::user_repo;
+use crate::db::repository::{config_repo, user_repo};
 use crate::entities::user;
 use crate::errors::{AsterError, Result};
 use crate::types::{TokenType, UserRole, UserStatus};
@@ -49,6 +49,12 @@ pub async fn register(
         tracing::info!("first user registered — granting admin role to '{username}'");
     }
 
+    // 从 system_config 读取默认配额
+    let default_quota = match config_repo::find_by_key(db, "default_storage_quota").await? {
+        Some(cfg) => cfg.value.parse::<i64>().unwrap_or(0),
+        None => 0,
+    };
+
     let model = user::ActiveModel {
         username: Set(username.to_string()),
         email: Set(email.to_string()),
@@ -56,6 +62,7 @@ pub async fn register(
         role: Set(role),
         status: Set(UserStatus::Active),
         storage_used: Set(0),
+        storage_quota: Set(default_quota),
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()

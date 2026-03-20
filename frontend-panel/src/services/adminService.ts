@@ -15,8 +15,10 @@ export const adminUserService = {
 
 	get: (id: number) => api.get<UserInfo>(`/admin/users/${id}`),
 
-	update: (id: number, data: { role?: UserRole; status?: UserStatus }) =>
-		api.patch<UserInfo>(`/admin/users/${id}`, data),
+	update: (
+		id: number,
+		data: { role?: UserRole; status?: UserStatus; storage_quota?: number },
+	) => api.patch<UserInfo>(`/admin/users/${id}`, data),
 };
 
 // --- Policies ---

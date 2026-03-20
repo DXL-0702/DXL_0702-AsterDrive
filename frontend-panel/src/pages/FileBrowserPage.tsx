@@ -19,7 +19,36 @@ import { useAuthStore } from "@/stores/authStore";
 import { handleApiError } from "@/hooks/useApiError";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Progress } from "@/components/ui/progress";
 import { Link } from "react-router-dom";
+
+function formatBytes(bytes: number): string {
+	if (bytes === 0) return "0 B";
+	const k = 1024;
+	const sizes = ["B", "KB", "MB", "GB", "TB"];
+	const i = Math.floor(Math.log(bytes) / Math.log(k));
+	return `${(bytes / k ** i).toFixed(1)} ${sizes[i]}`;
+}
+
+function StorageIndicator({
+	user,
+}: {
+	user: { storage_used: number; storage_quota: number };
+}) {
+	const used = user.storage_used ?? 0;
+	const quota = user.storage_quota ?? 0;
+	const pct = quota > 0 ? Math.min((used / quota) * 100, 100) : 0;
+
+	return (
+		<div className="flex items-center gap-2 text-xs text-muted-foreground">
+			<span>
+				{formatBytes(used)}
+				{quota > 0 ? ` / ${formatBytes(quota)}` : ""}
+			</span>
+			{quota > 0 && <Progress value={pct} className="h-1.5 w-16" />}
+		</div>
+	);
+}
 
 export default function FileBrowserPage() {
 	const navigateTo = useFileStore((s) => s.navigateTo);
@@ -51,6 +80,7 @@ export default function FileBrowserPage() {
 			<PageHeader
 				actions={
 					<>
+						{user && <StorageIndicator user={user} />}
 						<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
 							<DialogTrigger render={<Button variant="outline" size="sm" />}>
 								<FolderPlus className="h-4 w-4 mr-1" />

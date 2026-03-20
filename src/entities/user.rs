@@ -19,6 +19,7 @@ pub struct Model {
     pub role: UserRole,
     pub status: UserStatus,
     pub storage_used: i64,
+    pub storage_quota: i64, // 0 = unlimited
     #[schema(value_type = String)]
     pub created_at: DateTimeUtc,
     #[schema(value_type = String)]

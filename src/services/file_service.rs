@@ -18,20 +18,22 @@ pub async fn upload(
     payload: &mut Multipart,
     folder_id: Option<i64>,
 ) -> Result<file::Model> {
-    // 读取 multipart field
+    // 读取 multipart field — 只取 file field 的数据
     let mut filename = String::from("unnamed");
     let mut data = Vec::new();
 
     while let Some(field) = payload.next().await {
         let mut field = field.map_err(|e| AsterError::file_upload_failed(e.to_string()))?;
-        if let Some(cd) = field.content_disposition()
-            && let Some(name) = cd.get_filename()
-        {
-            filename = name.to_string();
-        }
-        while let Some(chunk) = field.next().await {
-            let chunk = chunk.map_err(|e| AsterError::file_upload_failed(e.to_string()))?;
-            data.extend_from_slice(&chunk);
+        let is_file = field
+            .content_disposition()
+            .and_then(|cd| cd.get_filename().map(|n| n.to_string()));
+
+        if let Some(name) = is_file {
+            filename = name;
+            while let Some(chunk) = field.next().await {
+                let chunk = chunk.map_err(|e| AsterError::file_upload_failed(e.to_string()))?;
+                data.extend_from_slice(&chunk);
+            }
         }
     }
 
@@ -53,6 +55,16 @@ pub async fn upload(
 
     let file_hash = hash::sha256_hex(&data);
     let size = data.len() as i64;
+
+    // 检查用户配额
+    let user = user_repo::find_by_id(db, user_id).await?;
+    if user.storage_quota > 0 && user.storage_used + size > user.storage_quota {
+        return Err(AsterError::storage_quota_exceeded(format!(
+            "quota {}, used {}, need {}",
+            user.storage_quota, user.storage_used, size
+        )));
+    }
+
     let now = Utc::now();
 
     // 查找是否已有相同 blob
@@ -172,6 +184,9 @@ pub async fn delete(
 
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
     file_repo::delete(db, id).await?;
+
+    // 回减用户已用空间
+    user_repo::update_storage_used(db, user_id, -blob.size).await?;
 
     // 减少引用计数，如果为 0 则删除物理文件
     if blob.ref_count <= 1 {

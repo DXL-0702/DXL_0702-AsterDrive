@@ -19,6 +19,7 @@ pub async fn update(
     id: i64,
     role: Option<UserRole>,
     status: Option<UserStatus>,
+    storage_quota: Option<i64>,
 ) -> Result<user::Model> {
     let existing = user_repo::find_by_id(db, id).await?;
     let mut active: user::ActiveModel = existing.into();
@@ -27,6 +28,9 @@ pub async fn update(
     }
     if let Some(s) = status {
         active.status = Set(s);
+    }
+    if let Some(q) = storage_quota {
+        active.storage_quota = Set(q);
     }
     active.updated_at = Set(Utc::now());
     active.update(db).await.map_err(AsterError::from)

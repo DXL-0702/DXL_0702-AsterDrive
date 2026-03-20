@@ -249,6 +249,7 @@ pub async fn get_user(
 pub struct PatchUserReq {
     pub role: Option<UserRole>,
     pub status: Option<UserStatus>,
+    pub storage_quota: Option<i64>,
 }
 
 #[utoipa::path(
@@ -273,8 +274,35 @@ pub async fn update_user(
     body: web::Json<PatchUserReq>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
+    let target_id = *path;
     let body = body.into_inner();
-    let user = user_service::update(&state.db, *path, body.role, body.status).await?;
+
+    // 禁止降级或禁用初始管理员 (id=1)
+    if target_id == 1 {
+        if let Some(ref status) = body.status
+            && !status.is_active()
+        {
+            return Err(crate::errors::AsterError::validation_error(
+                "cannot disable the initial admin account",
+            ));
+        }
+        if let Some(ref role) = body.role
+            && !role.is_admin()
+        {
+            return Err(crate::errors::AsterError::validation_error(
+                "cannot demote the initial admin account",
+            ));
+        }
+    }
+
+    let user = user_service::update(
+        &state.db,
+        target_id,
+        body.role,
+        body.status,
+        body.storage_quota,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }
 

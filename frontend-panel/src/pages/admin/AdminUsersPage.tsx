@@ -20,7 +20,78 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
+
+function formatBytes(bytes: number): string {
+	if (bytes === 0) return "0 B";
+	const k = 1024;
+	const sizes = ["B", "KB", "MB", "GB", "TB"];
+	const i = Math.floor(Math.log(bytes) / Math.log(k));
+	return `${(bytes / k ** i).toFixed(1)} ${sizes[i]}`;
+}
+
+function QuotaCell({
+	user,
+	onUpdate,
+}: {
+	user: UserInfo;
+	onUpdate: (id: number, quota: number) => void;
+}) {
+	const [editing, setEditing] = useState(false);
+	const [value, setValue] = useState("");
+
+	const quota = user.storage_quota ?? 0;
+	const used = user.storage_used ?? 0;
+	const pct = quota > 0 ? Math.min((used / quota) * 100, 100) : 0;
+
+	const startEdit = () => {
+		setValue(quota > 0 ? String(Math.round(quota / 1024 / 1024)) : "0");
+		setEditing(true);
+	};
+
+	const confirm = () => {
+		const mb = Number.parseInt(value, 10);
+		const newQuota = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
+		onUpdate(user.id, newQuota);
+		setEditing(false);
+	};
+
+	if (editing) {
+		return (
+			<div className="flex items-center gap-1">
+				<Input
+					className="h-7 w-20 text-xs"
+					value={value}
+					onChange={(e) => setValue(e.target.value)}
+					onKeyDown={(e) => {
+						if (e.key === "Enter") confirm();
+						if (e.key === "Escape") setEditing(false);
+					}}
+					onBlur={confirm}
+					autoFocus
+					placeholder="MB"
+				/>
+				<span className="text-xs text-muted-foreground">MB</span>
+			</div>
+		);
+	}
+
+	return (
+		<button
+			type="button"
+			className="text-left w-full group cursor-pointer"
+			onClick={startEdit}
+		>
+			<div className="text-xs">
+				{formatBytes(used)}
+				{quota > 0 ? ` / ${formatBytes(quota)}` : " / Unlimited"}
+			</div>
+			{quota > 0 && <Progress value={pct} className="h-1.5 mt-1" />}
+		</button>
+	);
+}
 
 export default function AdminUsersPage() {
 	const [users, setUsers] = useState<UserInfo[]>([]);
@@ -62,6 +133,16 @@ export default function AdminUsersPage() {
 		}
 	};
 
+	const updateQuota = async (id: number, storage_quota: number) => {
+		try {
+			const updated = await adminUserService.update(id, { storage_quota });
+			setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
+			toast.success("Quota updated");
+		} catch (e) {
+			handleApiError(e);
+		}
+	};
+
 	return (
 		<AdminLayout>
 			<div className="p-6 space-y-4">
@@ -75,6 +156,7 @@ export default function AdminUsersPage() {
 								<TableHead>Email</TableHead>
 								<TableHead className="w-32">Role</TableHead>
 								<TableHead className="w-32">Status</TableHead>
+								<TableHead className="w-40">Storage</TableHead>
 								<TableHead>Created</TableHead>
 							</TableRow>
 						</TableHeader>
@@ -82,7 +164,7 @@ export default function AdminUsersPage() {
 							{loading ? (
 								<TableRow>
 									<TableCell
-										colSpan={6}
+										colSpan={7}
 										className="text-center text-muted-foreground"
 									>
 										Loading...
@@ -91,7 +173,7 @@ export default function AdminUsersPage() {
 							) : users.length === 0 ? (
 								<TableRow>
 									<TableCell
-										colSpan={6}
+										colSpan={7}
 										className="text-center text-muted-foreground"
 									>
 										No users
@@ -154,6 +236,9 @@ export default function AdminUsersPage() {
 													</SelectItem>
 												</SelectContent>
 											</Select>
+										</TableCell>
+										<TableCell>
+											<QuotaCell user={user} onUpdate={updateQuota} />
 										</TableCell>
 										<TableCell className="text-muted-foreground text-xs">
 											{new Date(user.created_at).toLocaleDateString()}
