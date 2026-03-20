@@ -1,7 +1,7 @@
 use super::driver::StorageDriver;
 use super::local::LocalDriver;
 use crate::entities::storage_policy;
-use crate::errors::{AsterError, Result};
+use crate::errors::Result;
 use dashmap::DashMap;
 use std::sync::Arc;
 
@@ -33,12 +33,11 @@ impl DriverRegistry {
     }
 
     fn create_driver(&self, policy: &storage_policy::Model) -> Result<Arc<dyn StorageDriver>> {
+        use super::s3::S3Driver;
         use crate::types::DriverType;
         match policy.driver_type {
             DriverType::Local => Ok(Arc::new(LocalDriver::new(policy)?)),
-            DriverType::S3 => Err(AsterError::unsupported_driver(
-                "S3 driver is not implemented yet",
-            )),
+            DriverType::S3 => Ok(Arc::new(S3Driver::new(policy)?)),
         }
     }
 }

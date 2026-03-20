@@ -5,7 +5,7 @@ description = "A self-hosted cloud storage solution."
 authors = ["AptS-1547 <apts-1547@esaps.net>"]
 repository = "https://github.com/AptS-1547/AsterDrive"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.91.1"
 
 # 优化配置
 [profile.dev]
@@ -47,6 +47,9 @@ actix-multipart = "0.7"
 actix-web = { version = "4.13.0", features = ["compress-brotli", "compress-gzip"] }
 argon2 = "0.5.3"
 async-trait = "0.1"
+aws-config = "1.8.13"
+aws-credential-types = { version = "1.2.11", features = ["hardcoded-credentials"] }
+aws-sdk-s3 = "1.122.0"
 chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4", features = ["derive"], optional = true }
 config = { version = "0.15", default-features = false, features = ["toml"] }
