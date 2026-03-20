@@ -24,6 +24,9 @@ pub async fn prepare() -> Result<AppState> {
     // 4. 驱动注册中心
     let driver_registry = Arc::new(DriverRegistry::new());
 
+    // 5. 初始化缓存
+    let cache = crate::cache::create_cache(&cfg.cache).await;
+
     tracing::info!(
         "startup complete — listening on {}:{}",
         cfg.server.host,
@@ -34,6 +37,7 @@ pub async fn prepare() -> Result<AppState> {
         db: database,
         driver_registry,
         config: cfg,
+        cache,
     })
 }
 

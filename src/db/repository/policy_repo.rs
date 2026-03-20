@@ -3,9 +3,7 @@ use crate::entities::{
     user_storage_policy::{self, Entity as UserStoragePolicy},
 };
 use crate::errors::{AsterError, Result};
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
 pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<storage_policy::Model> {
     StoragePolicy::find_by_id(id)

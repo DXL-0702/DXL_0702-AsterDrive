@@ -47,6 +47,13 @@ async fn setup() -> AppState {
     let _ = std::fs::remove_dir_all("/tmp/asterdrive-test");
     std::fs::create_dir_all("/tmp/asterdrive-test").unwrap();
 
+    // 测试用 NoopCache
+    let cache_config = aster_drive::config::CacheConfig {
+        enabled: false,
+        ..Default::default()
+    };
+    let cache = aster_drive::cache::create_cache(&cache_config).await;
+
     AppState {
         db,
         driver_registry: std::sync::Arc::new(aster_drive::storage::DriverRegistry::new()),
@@ -58,6 +65,7 @@ async fn setup() -> AppState {
             },
             ..Default::default()
         }),
+        cache,
     }
 }
 
