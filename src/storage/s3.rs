@@ -23,7 +23,7 @@ impl S3Driver {
             &policy.secret_key,
             None,
             None,
-            "asterdrive",
+            "aster-s3-driver",
         );
 
         let mut config_builder = aws_sdk_s3::Config::builder()

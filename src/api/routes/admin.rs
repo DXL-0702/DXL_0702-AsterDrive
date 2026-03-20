@@ -2,8 +2,8 @@ use crate::api::middleware::auth::JwtAuth;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{auth_service::Claims, policy_service};
-use crate::types::DriverType;
+use crate::services::{auth_service::Claims, config_service, policy_service, user_service};
+use crate::types::{DriverType, UserRole, UserStatus};
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 use utoipa::ToSchema;
@@ -11,11 +11,24 @@ use utoipa::ToSchema;
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
     web::scope("/admin")
         .wrap(JwtAuth)
+        // policies
         .route("/policies", web::get().to(list_policies))
         .route("/policies", web::post().to(create_policy))
         .route("/policies/{id}", web::get().to(get_policy))
+        .route("/policies/{id}", web::patch().to(update_policy))
         .route("/policies/{id}", web::delete().to(delete_policy))
+        // users
+        .route("/users", web::get().to(list_users))
+        .route("/users/{id}", web::get().to(get_user))
+        .route("/users/{id}", web::patch().to(update_user))
+        // config
+        .route("/config", web::get().to(list_config))
+        .route("/config/{key}", web::get().to(get_config))
+        .route("/config/{key}", web::put().to(set_config))
+        .route("/config/{key}", web::delete().to(delete_config))
 }
+
+// ── Policies ─────────────────────────────────────────────────────────
 
 #[utoipa::path(
     get,
@@ -110,6 +123,57 @@ pub async fn get_policy(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct PatchPolicyReq {
+    pub name: Option<String>,
+    pub endpoint: Option<String>,
+    pub bucket: Option<String>,
+    pub access_key: Option<String>,
+    pub secret_key: Option<String>,
+    pub base_path: Option<String>,
+    pub max_file_size: Option<i64>,
+    pub is_default: Option<bool>,
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v1/admin/policies/{id}",
+    tag = "admin",
+    operation_id = "update_policy",
+    params(("id" = i64, Path, description = "Policy ID")),
+    request_body = PatchPolicyReq,
+    responses(
+        (status = 200, description = "Policy updated", body = inline(ApiResponse<crate::entities::storage_policy::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Policy not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn update_policy(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    body: web::Json<PatchPolicyReq>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let body = body.into_inner();
+    let policy = policy_service::update(
+        &state.db,
+        *path,
+        body.name,
+        body.endpoint,
+        body.bucket,
+        body.access_key,
+        body.secret_key,
+        body.base_path,
+        body.max_file_size,
+        body.is_default,
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
+}
+
 #[utoipa::path(
     delete,
     path = "/api/v1/admin/policies/{id}",
@@ -133,6 +197,189 @@ pub async fn delete_policy(
     policy_service::delete(&state.db, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
+
+// ── Users ────────────────────────────────────────────────────────────
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/users",
+    tag = "admin",
+    operation_id = "list_users",
+    responses(
+        (status = 200, description = "List all users", body = inline(ApiResponse<Vec<crate::entities::user::Model>>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_users(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let users = user_service::list_all(&state.db).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(users)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/users/{id}",
+    tag = "admin",
+    operation_id = "get_user",
+    params(("id" = i64, Path, description = "User ID")),
+    responses(
+        (status = 200, description = "User details", body = inline(ApiResponse<crate::entities::user::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "User not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_user(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let user = user_service::get(&state.db, *path).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct PatchUserReq {
+    pub role: Option<UserRole>,
+    pub status: Option<UserStatus>,
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v1/admin/users/{id}",
+    tag = "admin",
+    operation_id = "update_user",
+    params(("id" = i64, Path, description = "User ID")),
+    request_body = PatchUserReq,
+    responses(
+        (status = 200, description = "User updated", body = inline(ApiResponse<crate::entities::user::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "User not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn update_user(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    body: web::Json<PatchUserReq>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let body = body.into_inner();
+    let user = user_service::update(&state.db, *path, body.role, body.status).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
+}
+
+// ── System Config ────────────────────────────────────────────────────
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/config",
+    tag = "admin",
+    operation_id = "list_config",
+    responses(
+        (status = 200, description = "List all config entries", body = inline(ApiResponse<Vec<crate::entities::system_config::Model>>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_config(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let configs = config_service::list_all(&state.db).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(configs)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/config/{key}",
+    tag = "admin",
+    operation_id = "get_config",
+    params(("key" = String, Path, description = "Config key")),
+    responses(
+        (status = 200, description = "Config entry", body = inline(ApiResponse<crate::entities::system_config::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Config key not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_config(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<String>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let config = config_service::get_by_key(&state.db, &path).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(config)))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct SetConfigReq {
+    pub value: String,
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1/admin/config/{key}",
+    tag = "admin",
+    operation_id = "set_config",
+    params(("key" = String, Path, description = "Config key")),
+    request_body = SetConfigReq,
+    responses(
+        (status = 200, description = "Config value set", body = inline(ApiResponse<crate::entities::system_config::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn set_config(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<String>,
+    body: web::Json<SetConfigReq>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let config = config_service::set(&state.db, &path, &body.value, claims.user_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(config)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/config/{key}",
+    tag = "admin",
+    operation_id = "delete_config",
+    params(("key" = String, Path, description = "Config key")),
+    responses(
+        (status = 200, description = "Config entry deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Config key not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_config(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<String>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    config_service::delete(&state.db, &path).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
 
 fn require_admin(claims: &Claims) -> Result<()> {
     use crate::errors::AsterError;

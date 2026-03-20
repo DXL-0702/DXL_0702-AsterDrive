@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::{DatabaseConnection, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 
 use crate::db::repository::policy_repo;
 use crate::entities::storage_policy;
@@ -53,4 +53,46 @@ pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
         .await
         .map_err(AsterError::from)?;
     Ok(())
+}
+
+pub async fn update(
+    db: &DatabaseConnection,
+    id: i64,
+    name: Option<String>,
+    endpoint: Option<String>,
+    bucket: Option<String>,
+    access_key: Option<String>,
+    secret_key: Option<String>,
+    base_path: Option<String>,
+    max_file_size: Option<i64>,
+    is_default: Option<bool>,
+) -> Result<storage_policy::Model> {
+    let existing = policy_repo::find_by_id(db, id).await?;
+    let mut active: storage_policy::ActiveModel = existing.into();
+    if let Some(v) = name {
+        active.name = Set(v);
+    }
+    if let Some(v) = endpoint {
+        active.endpoint = Set(v);
+    }
+    if let Some(v) = bucket {
+        active.bucket = Set(v);
+    }
+    if let Some(v) = access_key {
+        active.access_key = Set(v);
+    }
+    if let Some(v) = secret_key {
+        active.secret_key = Set(v);
+    }
+    if let Some(v) = base_path {
+        active.base_path = Set(v);
+    }
+    if let Some(v) = max_file_size {
+        active.max_file_size = Set(v);
+    }
+    if let Some(v) = is_default {
+        active.is_default = Set(v);
+    }
+    active.updated_at = Set(Utc::now());
+    active.update(db).await.map_err(AsterError::from)
 }

@@ -1,0 +1,69 @@
+import { api } from "./http";
+import type {
+	UserInfo,
+	StoragePolicy,
+	SystemConfig,
+	UserRole,
+	UserStatus,
+	DriverType,
+} from "@/types/api";
+
+// --- Users ---
+
+export const adminUserService = {
+	list: () => api.get<UserInfo[]>("/admin/users"),
+
+	get: (id: number) => api.get<UserInfo>(`/admin/users/${id}`),
+
+	update: (id: number, data: { role?: UserRole; status?: UserStatus }) =>
+		api.patch<UserInfo>(`/admin/users/${id}`, data),
+};
+
+// --- Policies ---
+
+export const adminPolicyService = {
+	list: () => api.get<StoragePolicy[]>("/admin/policies"),
+
+	get: (id: number) => api.get<StoragePolicy>(`/admin/policies/${id}`),
+
+	create: (data: {
+		name: string;
+		driver_type: DriverType;
+		endpoint?: string;
+		bucket?: string;
+		access_key?: string;
+		secret_key?: string;
+		base_path?: string;
+		max_file_size?: number;
+		is_default?: boolean;
+	}) => api.post<StoragePolicy>("/admin/policies", data),
+
+	update: (
+		id: number,
+		data: {
+			name?: string;
+			endpoint?: string;
+			bucket?: string;
+			access_key?: string;
+			secret_key?: string;
+			base_path?: string;
+			max_file_size?: number;
+			is_default?: boolean;
+		},
+	) => api.patch<StoragePolicy>(`/admin/policies/${id}`, data),
+
+	delete: (id: number) => api.delete<void>(`/admin/policies/${id}`),
+};
+
+// --- System Config ---
+
+export const adminConfigService = {
+	list: () => api.get<SystemConfig[]>("/admin/config"),
+
+	get: (key: string) => api.get<SystemConfig>(`/admin/config/${key}`),
+
+	set: (key: string, value: string) =>
+		api.put<SystemConfig>(`/admin/config/${key}`, { value }),
+
+	delete: (key: string) => api.delete<void>(`/admin/config/${key}`),
+};

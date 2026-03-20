@@ -32,6 +32,10 @@ pub async fn find_by_email(db: &DatabaseConnection, email: &str) -> Result<Optio
         .map_err(AsterError::from)
 }
 
+pub async fn find_all(db: &DatabaseConnection) -> Result<Vec<user::Model>> {
+    User::find().all(db).await.map_err(AsterError::from)
+}
+
 pub async fn count_all(db: &DatabaseConnection) -> Result<u64> {
     User::find().count(db).await.map_err(AsterError::from)
 }

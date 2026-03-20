@@ -1,41 +1,45 @@
 // Re-export generated types for convenience
-import type { components } from '@/services/api.generated'
+import type { components } from "@/services/api.generated";
 
 // Schema types
-export type UserInfo = components['schemas']['UserInfo']
-export type FileInfo = components['schemas']['FileInfo']
-export type FolderInfo = components['schemas']['FolderInfo']
-export type StoragePolicy = components['schemas']['StoragePolicy']
-export type FolderContents = components['schemas']['FolderContentsResponse']
-export type ErrorCode = components['schemas']['ErrorCode']
+export type UserInfo = components["schemas"]["UserInfo"];
+export type FileInfo = components["schemas"]["FileInfo"];
+export type FolderInfo = components["schemas"]["FolderInfo"];
+export type StoragePolicy = components["schemas"]["StoragePolicy"];
+export type SystemConfig = components["schemas"]["SystemConfig"];
+export type FolderContents = components["schemas"]["FolderContentsResponse"];
+export type ErrorCode = components["schemas"]["ErrorCode"];
+export type UserRole = components["schemas"]["UserRole"];
+export type UserStatus = components["schemas"]["UserStatus"];
+export type DriverType = components["schemas"]["DriverType"];
 
 // ErrorCode constants (generated type is a union of literal numbers, we need named constants)
 export const ErrorCode = {
-  Success: 0,
-  BadRequest: 1000,
-  NotFound: 1001,
-  InternalServerError: 1002,
-  DatabaseError: 1003,
-  ConfigError: 1004,
-  EndpointNotFound: 1005,
-  AuthFailed: 2000,
-  TokenExpired: 2001,
-  TokenInvalid: 2002,
-  Forbidden: 2003,
-  FileNotFound: 3000,
-  FileTooLarge: 3001,
-  FileTypeNotAllowed: 3002,
-  FileUploadFailed: 3003,
-  StoragePolicyNotFound: 4000,
-  StorageDriverError: 4001,
-  StorageQuotaExceeded: 4002,
-  UnsupportedDriver: 4003,
-  FolderNotFound: 5000,
-} as const satisfies Record<string, ErrorCode>
+	Success: 0,
+	BadRequest: 1000,
+	NotFound: 1001,
+	InternalServerError: 1002,
+	DatabaseError: 1003,
+	ConfigError: 1004,
+	EndpointNotFound: 1005,
+	AuthFailed: 2000,
+	TokenExpired: 2001,
+	TokenInvalid: 2002,
+	Forbidden: 2003,
+	FileNotFound: 3000,
+	FileTooLarge: 3001,
+	FileTypeNotAllowed: 3002,
+	FileUploadFailed: 3003,
+	StoragePolicyNotFound: 4000,
+	StorageDriverError: 4001,
+	StorageQuotaExceeded: 4002,
+	UnsupportedDriver: 4003,
+	FolderNotFound: 5000,
+} as const satisfies Record<string, ErrorCode>;
 
 // API response wrapper
 export interface ApiResponse<T> {
-  code: ErrorCode
-  msg: string
-  data: T | null
+	code: ErrorCode;
+	msg: string;
+	data: T | null;
 }

@@ -29,7 +29,15 @@ use utoipa::OpenApi;
         crate::api::routes::admin::list_policies,
         crate::api::routes::admin::create_policy,
         crate::api::routes::admin::get_policy,
+        crate::api::routes::admin::update_policy,
         crate::api::routes::admin::delete_policy,
+        crate::api::routes::admin::list_users,
+        crate::api::routes::admin::get_user,
+        crate::api::routes::admin::update_user,
+        crate::api::routes::admin::list_config,
+        crate::api::routes::admin::get_config,
+        crate::api::routes::admin::set_config,
+        crate::api::routes::admin::delete_config,
     ),
     components(
         schemas(
@@ -52,6 +60,10 @@ use utoipa::OpenApi;
             crate::api::routes::folders::CreateFolderReq,
             crate::api::routes::folders::PatchFolderReq,
             crate::api::routes::admin::CreatePolicyReq,
+            crate::api::routes::admin::PatchPolicyReq,
+            crate::api::routes::admin::PatchUserReq,
+            crate::api::routes::admin::SetConfigReq,
+            crate::entities::system_config::Model,
         ),
     ),
     tags(
