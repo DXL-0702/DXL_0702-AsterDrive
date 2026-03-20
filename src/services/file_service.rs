@@ -251,7 +251,7 @@ pub async fn update(
 }
 
 /// 根据优先级链解析存储策略：文件夹 → 用户默认 → 系统默认
-async fn resolve_policy(
+pub async fn resolve_policy(
     db: &DatabaseConnection,
     user_id: i64,
     folder_id: Option<i64>,

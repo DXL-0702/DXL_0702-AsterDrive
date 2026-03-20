@@ -31,12 +31,16 @@ async fn main() -> std::io::Result<()> {
     };
 
     let state = web::Data::new(state);
+    let cleanup_state = state.clone();
 
     let server = HttpServer::new(move || {
         App::new()
             .wrap(actix_web::middleware::Compress::default())
             .wrap(aster_drive::api::middleware::request_id::RequestIdMiddleware)
             .wrap(aster_drive::api::middleware::cors::configure_cors())
+            // payload 限制：chunk 上传最大 10MB，JSON 1MB
+            .app_data(actix_web::web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(actix_web::web::JsonConfig::default().limit(1024 * 1024))
             .app_data(state.clone())
             .configure(aster_drive::api::configure)
     })
@@ -48,6 +52,19 @@ async fn main() -> std::io::Result<()> {
     .run();
 
     let server_handle = server.handle();
+
+    // 后台清理：过期上传 session（每小时）
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            if let Err(e) =
+                aster_drive::services::upload_service::cleanup_expired(&cleanup_state.db).await
+            {
+                tracing::warn!("upload cleanup failed: {e}");
+            }
+        }
+    });
 
     // 优雅关闭监听
     tokio::spawn(async move {

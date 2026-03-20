@@ -35,6 +35,7 @@ async fn setup() -> AppState {
             allowed_types: Set("[]".to_string()),
             options: Set("{}".to_string()),
             is_default: Set(true),
+            chunk_size: Set(5_242_880),
             created_at: Set(now),
             updated_at: Set(now),
             ..Default::default()

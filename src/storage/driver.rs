@@ -29,6 +29,15 @@ pub trait StorageDriver: Send + Sync {
     /// 获取文件元信息
     async fn metadata(&self, path: &str) -> Result<BlobMetadata>;
 
+    /// 从本地文件路径写入存储（分片上传组装后用，避免全量读入内存）
+    /// 默认实现：读取文件 → put，子类可覆盖为 rename/stream
+    async fn put_file(&self, storage_path: &str, local_path: &str) -> Result<String> {
+        let data = tokio::fs::read(local_path).await.map_err(|e| {
+            crate::errors::AsterError::storage_driver_error(format!("read file: {e}"))
+        })?;
+        self.put(storage_path, &data).await
+    }
+
     /// 生成临时访问 URL（本地存储返回 None）
     async fn presigned_url(&self, path: &str, expires: Duration) -> Result<Option<String>>;
 }

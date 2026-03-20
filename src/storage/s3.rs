@@ -171,6 +171,22 @@ impl StorageDriver for S3Driver {
         })
     }
 
+    async fn put_file(&self, storage_path: &str, local_path: &str) -> Result<String> {
+        let key = self.full_key(storage_path);
+        let body = ByteStream::from_path(local_path)
+            .await
+            .map_err(|e| AsterError::storage_driver_error(format!("S3 read file: {e}")))?;
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(&key)
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| AsterError::storage_driver_error(format!("S3 put_file failed: {e}")))?;
+        Ok(storage_path.to_string())
+    }
+
     async fn presigned_url(&self, path: &str, expires: Duration) -> Result<Option<String>> {
         let key = self.full_key(path);
         let presign_config = PresigningConfig::builder()

@@ -4,4 +4,5 @@ pub mod file_service;
 pub mod folder_service;
 pub mod policy_service;
 pub mod share_service;
+pub mod upload_service;
 pub mod user_service;

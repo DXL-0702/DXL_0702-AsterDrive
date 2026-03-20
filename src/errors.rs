@@ -89,6 +89,12 @@ define_errors! {
     ShareExpired(          "E051", "Share Expired"),
     SharePasswordRequired( "E052", "Share Password Required"),
     ShareDownloadLimit(    "E053", "Share Download Limit Reached"),
+
+    // ========== E054-E057: 分片上传错误 ==========
+    UploadSessionNotFound( "E054", "Upload Session Not Found"),
+    UploadSessionExpired(  "E055", "Upload Session Expired"),
+    ChunkUploadFailed(     "E056", "Chunk Upload Failed"),
+    UploadAssemblyFailed(  "E057", "Upload Assembly Failed"),
 }
 
 impl AsterError {
@@ -110,9 +116,10 @@ impl AsterError {
             | Self::FileNotFound(_)
             | Self::StoragePolicyNotFound(_)
             | Self::FolderNotFound(_)
-            | Self::ShareNotFound(_) => StatusCode::NOT_FOUND,
+            | Self::ShareNotFound(_)
+            | Self::UploadSessionNotFound(_) => StatusCode::NOT_FOUND,
 
-            Self::ShareExpired(_) => StatusCode::GONE,
+            Self::ShareExpired(_) | Self::UploadSessionExpired(_) => StatusCode::GONE,
 
             Self::SharePasswordRequired(_) | Self::ShareDownloadLimit(_) => StatusCode::FORBIDDEN,
 

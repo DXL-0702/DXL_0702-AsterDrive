@@ -1,0 +1,388 @@
+use chrono::Utc;
+use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
+use serde::Serialize;
+use utoipa::ToSchema;
+
+use crate::db::repository::{file_repo, policy_repo, upload_session_repo, user_repo};
+use crate::entities::{file, file_blob, upload_session};
+use crate::errors::{AsterError, Result};
+use crate::services::file_service;
+use crate::storage::DriverRegistry;
+use crate::utils::id;
+
+#[derive(Serialize, ToSchema)]
+pub struct InitUploadResponse {
+    pub upload_id: String,
+    pub chunk_size: i64,
+    pub total_chunks: i32,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct ChunkUploadResponse {
+    pub received_count: i32,
+    pub total_chunks: i32,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct UploadProgressResponse {
+    pub upload_id: String,
+    pub status: String,
+    pub received_count: i32,
+    pub chunks_on_disk: Vec<i32>,
+    pub total_chunks: i32,
+    pub filename: String,
+}
+
+/// 初始化分片上传
+pub async fn init_upload(
+    db: &DatabaseConnection,
+    user_id: i64,
+    filename: &str,
+    total_size: i64,
+    folder_id: Option<i64>,
+) -> Result<InitUploadResponse> {
+    // 确定存储策略
+    let policy = file_service::resolve_policy(db, user_id, folder_id).await?;
+
+    let chunk_size = if policy.chunk_size > 0 {
+        policy.chunk_size
+    } else {
+        5_242_880 // 默认 5MB
+    };
+
+    // 文件小于一个 chunk 不需要分片
+    if total_size <= chunk_size {
+        return Err(AsterError::validation_error(
+            "file is small enough for single upload, use /files/upload instead",
+        ));
+    }
+
+    // 检查文件大小限制
+    if policy.max_file_size > 0 && total_size > policy.max_file_size {
+        return Err(AsterError::file_too_large(format!(
+            "file size {} exceeds limit {}",
+            total_size, policy.max_file_size
+        )));
+    }
+
+    // 检查用户配额
+    let user = user_repo::find_by_id(db, user_id).await?;
+    if user.storage_quota > 0 && user.storage_used + total_size > user.storage_quota {
+        return Err(AsterError::storage_quota_exceeded(format!(
+            "quota {}, used {}, need {}",
+            user.storage_quota, user.storage_used, total_size
+        )));
+    }
+
+    let total_chunks = ((total_size + chunk_size - 1) / chunk_size) as i32;
+    let upload_id = id::new_uuid();
+    let now = Utc::now();
+    let expires_at = now + chrono::Duration::hours(24);
+
+    // 创建临时目录
+    let temp_dir = format!("data/.uploads/{upload_id}");
+    tokio::fs::create_dir_all(&temp_dir)
+        .await
+        .map_err(|e| AsterError::chunk_upload_failed(format!("create temp dir: {e}")))?;
+
+    let session = upload_session::ActiveModel {
+        id: Set(upload_id.clone()),
+        user_id: Set(user_id),
+        filename: Set(filename.to_string()),
+        total_size: Set(total_size),
+        chunk_size: Set(chunk_size),
+        total_chunks: Set(total_chunks),
+        received_count: Set(0),
+        folder_id: Set(folder_id),
+        policy_id: Set(policy.id),
+        status: Set("uploading".to_string()),
+        created_at: Set(now),
+        expires_at: Set(expires_at),
+        updated_at: Set(now),
+    };
+    upload_session_repo::create(db, session).await?;
+
+    Ok(InitUploadResponse {
+        upload_id,
+        chunk_size,
+        total_chunks,
+    })
+}
+
+/// 上传单个分片
+pub async fn upload_chunk(
+    db: &DatabaseConnection,
+    upload_id: &str,
+    chunk_number: i32,
+    user_id: i64,
+    data: &[u8],
+) -> Result<ChunkUploadResponse> {
+    let session = upload_session_repo::find_by_id(db, upload_id).await?;
+
+    if session.user_id != user_id {
+        return Err(AsterError::auth_forbidden("not your upload"));
+    }
+    if session.status != "uploading" {
+        return Err(AsterError::chunk_upload_failed(format!(
+            "session status is '{}', expected 'uploading'",
+            session.status
+        )));
+    }
+    if session.expires_at < Utc::now() {
+        return Err(AsterError::upload_session_expired("session expired"));
+    }
+    if chunk_number < 0 || chunk_number >= session.total_chunks {
+        return Err(AsterError::validation_error(format!(
+            "chunk_number {} out of range [0, {})",
+            chunk_number, session.total_chunks
+        )));
+    }
+
+    let chunk_path = format!("data/.uploads/{upload_id}/chunk_{chunk_number}");
+
+    // 幂等：如果文件已存在，不重复写也不重复计数
+    if tokio::fs::try_exists(&chunk_path).await.unwrap_or(false) {
+        let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+        return Ok(ChunkUploadResponse {
+            received_count: updated.received_count,
+            total_chunks: updated.total_chunks,
+        });
+    }
+
+    // 写分片到临时文件
+    tokio::fs::write(&chunk_path, data)
+        .await
+        .map_err(|e| AsterError::chunk_upload_failed(format!("write chunk: {e}")))?;
+
+    // 原子 +1（raw SQL 避免 read-modify-write race condition）
+    use sea_orm::ConnectionTrait;
+    let now_str = Utc::now().to_rfc3339();
+    let sql = format!(
+        "UPDATE upload_sessions SET received_count = received_count + 1, updated_at = '{}' WHERE id = '{}'",
+        now_str, upload_id
+    );
+    db.execute_unprepared(&sql)
+        .await
+        .map_err(AsterError::from)?;
+
+    let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+    Ok(ChunkUploadResponse {
+        received_count: updated.received_count,
+        total_chunks: updated.total_chunks,
+    })
+}
+
+/// 完成分片上传：组装 → hash → 去重 → 写入最终存储
+pub async fn complete_upload(
+    db: &DatabaseConnection,
+    registry: &DriverRegistry,
+    upload_id: &str,
+    user_id: i64,
+) -> Result<file::Model> {
+    let session = upload_session_repo::find_by_id(db, upload_id).await?;
+
+    if session.user_id != user_id {
+        return Err(AsterError::auth_forbidden("not your upload"));
+    }
+    if session.status != "uploading" {
+        return Err(AsterError::upload_assembly_failed(format!(
+            "session status is '{}', expected 'uploading'",
+            session.status
+        )));
+    }
+
+    if session.received_count != session.total_chunks {
+        return Err(AsterError::upload_assembly_failed(format!(
+            "expected {} chunks, got {}",
+            session.total_chunks, session.received_count
+        )));
+    }
+
+    // 标记为 assembling
+    let mut active: upload_session::ActiveModel = session.clone().into();
+    active.status = Set("assembling".to_string());
+    active.updated_at = Set(Utc::now());
+    upload_session_repo::update(db, active).await?;
+
+    // 流式拼接分片到临时文件 + 计算 sha256（不在内存中组装完整文件）
+    use sha2::{Digest, Sha256};
+    use tokio::io::AsyncWriteExt;
+
+    let assembled_path = format!("data/.uploads/{upload_id}/_assembled");
+    let mut out_file = tokio::fs::File::create(&assembled_path)
+        .await
+        .map_err(|e| AsterError::upload_assembly_failed(format!("create assembled file: {e}")))?;
+    let mut hasher = Sha256::new();
+    let mut size: i64 = 0;
+
+    for i in 0..session.total_chunks {
+        let chunk_path = format!("data/.uploads/{upload_id}/chunk_{i}");
+        let chunk_data = tokio::fs::read(&chunk_path)
+            .await
+            .map_err(|e| AsterError::upload_assembly_failed(format!("read chunk {i}: {e}")))?;
+        hasher.update(&chunk_data);
+        size += chunk_data.len() as i64;
+        out_file
+            .write_all(&chunk_data)
+            .await
+            .map_err(|e| AsterError::upload_assembly_failed(format!("write assembled: {e}")))?;
+    }
+    out_file
+        .flush()
+        .await
+        .map_err(|e| AsterError::upload_assembly_failed(format!("flush assembled: {e}")))?;
+    drop(out_file);
+
+    let file_hash = format!("{:x}", hasher.finalize());
+    let now = Utc::now();
+
+    // 获取策略 + driver
+    let policy = policy_repo::find_by_id(db, session.policy_id).await?;
+    let driver = registry.get_driver(&policy)?;
+
+    // 去重: 检查是否已有相同 blob
+    let blob = match file_repo::find_blob_by_hash(db, &file_hash, policy.id).await? {
+        Some(existing) => {
+            // 已有相同内容，不需要再存，删除临时文件
+            let _ = tokio::fs::remove_file(&assembled_path).await;
+            let mut blob_active: file_blob::ActiveModel = existing.clone().into();
+            blob_active.ref_count = Set(existing.ref_count + 1);
+            blob_active.update(db).await.map_err(AsterError::from)?
+        }
+        None => {
+            let storage_path = format!(
+                "{}/{}",
+                file_hash.chars().take(2).collect::<String>(),
+                file_hash
+            );
+            // 零拷贝：LocalDriver rename，S3 流式上传，不读进内存
+            driver.put_file(&storage_path, &assembled_path).await?;
+
+            let blob_model = file_blob::ActiveModel {
+                hash: Set(file_hash),
+                size: Set(size),
+                ref_count: Set(1),
+                policy_id: Set(policy.id),
+                storage_path: Set(storage_path),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            };
+            file_repo::create_blob(db, blob_model).await?
+        }
+    };
+
+    // 检查同名文件
+    if file_repo::find_by_name_in_folder(db, session.user_id, session.folder_id, &session.filename)
+        .await?
+        .is_some()
+    {
+        return Err(AsterError::validation_error(format!(
+            "file '{}' already exists in this folder",
+            session.filename
+        )));
+    }
+
+    let mime = mime_guess::from_path(&session.filename)
+        .first_or_octet_stream()
+        .to_string();
+
+    let file_model = file::ActiveModel {
+        name: Set(session.filename.clone()),
+        folder_id: Set(session.folder_id),
+        blob_id: Set(blob.id),
+        user_id: Set(session.user_id),
+        mime_type: Set(mime),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    let created = file_repo::create(db, file_model).await?;
+
+    // 更新用户已用空间
+    user_repo::update_storage_used(db, session.user_id, size).await?;
+
+    // 标记完成
+    let session_fresh = upload_session_repo::find_by_id(db, upload_id).await?;
+    let mut active: upload_session::ActiveModel = session_fresh.into();
+    active.status = Set("completed".to_string());
+    active.updated_at = Set(Utc::now());
+    upload_session_repo::update(db, active).await?;
+
+    // 清理临时文件
+    let temp_dir = format!("data/.uploads/{upload_id}");
+    let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+
+    Ok(created)
+}
+
+/// 取消上传
+pub async fn cancel_upload(db: &DatabaseConnection, upload_id: &str, user_id: i64) -> Result<()> {
+    let session = upload_session_repo::find_by_id(db, upload_id).await?;
+    if session.user_id != user_id {
+        return Err(AsterError::auth_forbidden("not your upload"));
+    }
+
+    let temp_dir = format!("data/.uploads/{upload_id}");
+    let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+    upload_session_repo::delete(db, upload_id).await
+}
+
+/// 查询上传进度
+pub async fn get_progress(
+    db: &DatabaseConnection,
+    upload_id: &str,
+    user_id: i64,
+) -> Result<UploadProgressResponse> {
+    let session = upload_session_repo::find_by_id(db, upload_id).await?;
+    if session.user_id != user_id {
+        return Err(AsterError::auth_forbidden("not your upload"));
+    }
+
+    // 扫磁盘获取具体哪些 chunk 存在（用于断点续传判断缺哪些）
+    let chunks_on_disk = scan_received_chunks(&session.id).await;
+
+    Ok(UploadProgressResponse {
+        upload_id: session.id,
+        status: session.status,
+        received_count: session.received_count,
+        chunks_on_disk,
+        total_chunks: session.total_chunks,
+        filename: session.filename,
+    })
+}
+
+/// 扫描临时目录中实际存在的 chunk 文件，返回排序后的 chunk 编号列表
+async fn scan_received_chunks(upload_id: &str) -> Vec<i32> {
+    let dir = format!("data/.uploads/{upload_id}");
+    let mut received = Vec::new();
+    let Ok(mut entries) = tokio::fs::read_dir(&dir).await else {
+        return received;
+    };
+    while let Ok(Some(entry)) = entries.next_entry().await {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if let Some(num_str) = name.strip_prefix("chunk_") {
+            if let Ok(n) = num_str.parse::<i32>() {
+                received.push(n);
+            }
+        }
+    }
+    received.sort();
+    received
+}
+
+/// 清理过期的上传 session（后台任务调用）
+pub async fn cleanup_expired(db: &DatabaseConnection) -> Result<u32> {
+    let expired = upload_session_repo::find_expired(db).await?;
+    let count = expired.len() as u32;
+    for session in expired {
+        let temp_dir = format!("data/.uploads/{}", session.id);
+        let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+        let _ = upload_session_repo::delete(db, &session.id).await;
+    }
+    if count > 0 {
+        tracing::info!("cleaned up {count} expired upload sessions");
+    }
+    Ok(count)
+}

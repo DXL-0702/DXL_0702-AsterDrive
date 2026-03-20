@@ -1,21 +1,23 @@
-import { useEffect, useRef, useState } from "react";
-import type { DragEvent, ReactNode } from "react";
 import { Uppy } from "@uppy/core";
 import XHRUpload from "@uppy/xhr-upload";
-import { Upload } from "lucide-react";
-import { config } from "@/config/app";
-import { useFileStore } from "@/stores/fileStore";
+import { RefreshCw, Upload, X } from "lucide-react";
+import type { DragEvent, ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { config } from "@/config/app";
+import { useChunkedUpload } from "@/hooks/useChunkedUpload";
 import { cn } from "@/lib/utils";
+import { useFileStore } from "@/stores/fileStore";
+
+/** 5MB — files larger than this use chunked upload */
+const CHUNKED_THRESHOLD = 5 * 1024 * 1024;
 
 interface UploadAreaProps {
 	children: ReactNode;
 }
 
-/**
- * 包裹子组件的拖拽上传区域。
- * 文件拖入时显示半透明 overlay，松手自动上传到当前文件夹。
- */
 export function UploadArea({ children }: UploadAreaProps) {
 	const refresh = useFileStore((s) => s.refresh);
 	const currentFolderId = useFileStore((s) => s.currentFolderId);
@@ -23,7 +25,27 @@ export function UploadArea({ children }: UploadAreaProps) {
 	const [isDragging, setIsDragging] = useState(false);
 	const dragCounter = useRef(0);
 
-	// 保持 ref 同步，Uppy 闭包里用 ref 取最新值
+	// Uppy progress for small files
+	const [uppyProgress, setUppyProgress] = useState<{
+		filename: string;
+		percent: number;
+	} | null>(null);
+
+	// Chunked upload for large files
+	const {
+		state: chunkedState,
+		startUpload,
+		resumeUpload,
+		cancelUpload,
+		reset,
+	} = useChunkedUpload(() => {
+		toast.success("Upload complete (chunked)");
+		refresh();
+	});
+
+	// Resume file ref — user must re-select file to resume
+	const resumeInputRef = useRef<HTMLInputElement | null>(null);
+
 	useEffect(() => {
 		currentFolderIdRef.current = currentFolderId;
 	}, [currentFolderId]);
@@ -38,22 +60,39 @@ export function UploadArea({ children }: UploadAreaProps) {
 			fieldName: "file",
 			withCredentials: true,
 		});
+		instance.on("progress", (progress) => {
+			// progress is 0-100 for all files combined
+			if (progress > 0 && progress < 100) {
+				setUppyProgress((p) => ({
+					filename: p?.filename ?? "Uploading...",
+					percent: progress,
+				}));
+			}
+		});
+		instance.on("upload", () => {
+			const files = instance.getFiles();
+			setUppyProgress({
+				filename: files[0]?.name ?? "Uploading...",
+				percent: 0,
+			});
+		});
 		instance.on("complete", (result) => {
+			setUppyProgress(null);
 			const count = result.successful?.length ?? 0;
 			if (count > 0) {
 				toast.success(`Uploaded ${count} file(s)`);
 				refresh();
 			}
-			// 清除已完成的文件，允许再次上传同名文件
 			instance.cancelAll();
 		});
 		instance.on("error", (error) => {
+			setUppyProgress(null);
 			toast.error(`Upload failed: ${error.message}`);
 		});
 		return instance;
 	});
 
-	// 动态更新 endpoint 以包含当前 folder_id
+	// biome-ignore lint/correctness/useExhaustiveDependencies: currentFolderId triggers re-sync intentionally
 	useEffect(() => {
 		const folderId = currentFolderIdRef.current;
 		const base = `${config.apiBaseUrl}/files/upload`;
@@ -71,43 +110,47 @@ export function UploadArea({ children }: UploadAreaProps) {
 	const addFiles = (files: FileList | null) => {
 		if (!files || files.length === 0) return;
 		for (const file of files) {
-			try {
-				uppy.addFile({
-					name: file.name,
-					type: file.type,
-					data: file,
-				});
-			} catch (err) {
-				if (
-					err instanceof Error &&
-					!err.message.includes("already been added")
-				) {
-					toast.error(err.message);
+			if (file.size > CHUNKED_THRESHOLD) {
+				startUpload(file, currentFolderIdRef.current);
+			} else {
+				try {
+					uppy.addFile({ name: file.name, type: file.type, data: file });
+				} catch (err) {
+					if (
+						err instanceof Error &&
+						!err.message.includes("already been added")
+					) {
+						toast.error(err.message);
+					}
 				}
 			}
 		}
 	};
 
+	const handleResume = useCallback(() => {
+		resumeInputRef.current?.click();
+	}, []);
+
+	const handleResumeFileSelected = useCallback(
+		(e: React.ChangeEvent<HTMLInputElement>) => {
+			const file = e.target.files?.[0];
+			if (file) resumeUpload(file);
+			e.target.value = "";
+		},
+		[resumeUpload],
+	);
+
 	const handleDragEnter = (e: DragEvent<HTMLDivElement>) => {
 		e.preventDefault();
 		dragCounter.current += 1;
-		if (e.dataTransfer.types.includes("Files")) {
-			setIsDragging(true);
-		}
+		if (e.dataTransfer.types.includes("Files")) setIsDragging(true);
 	};
-
 	const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
 		e.preventDefault();
 		dragCounter.current -= 1;
-		if (dragCounter.current === 0) {
-			setIsDragging(false);
-		}
+		if (dragCounter.current === 0) setIsDragging(false);
 	};
-
-	const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-		e.preventDefault();
-	};
-
+	const handleDragOver = (e: DragEvent<HTMLDivElement>) => e.preventDefault();
 	const handleDrop = (e: DragEvent<HTMLDivElement>) => {
 		e.preventDefault();
 		dragCounter.current = 0;
@@ -115,7 +158,13 @@ export function UploadArea({ children }: UploadAreaProps) {
 		addFiles(e.dataTransfer.files);
 	};
 
+	const showChunkedProgress =
+		chunkedState.status !== "idle" && chunkedState.status !== "completed";
+	const showResumePrompt =
+		chunkedState.canResume && chunkedState.status === "idle";
+
 	return (
+		// biome-ignore lint/a11y/noStaticElementInteractions: drop zone
 		<div
 			className="relative flex-1 flex flex-col overflow-hidden"
 			onDragEnter={handleDragEnter}
@@ -125,7 +174,97 @@ export function UploadArea({ children }: UploadAreaProps) {
 		>
 			{children}
 
-			{/* 拖拽 overlay */}
+			{/* Hidden input for resume file selection */}
+			<input
+				ref={resumeInputRef}
+				type="file"
+				className="hidden"
+				onChange={handleResumeFileSelected}
+			/>
+
+			{/* Resume prompt — shown on page load if there's a saved session */}
+			{showResumePrompt && (
+				<div className="absolute bottom-4 right-4 z-40 w-80 bg-card border rounded-lg shadow-lg p-4 space-y-2">
+					<p className="text-sm font-medium">
+						Incomplete upload: {chunkedState.filename}
+					</p>
+					<p className="text-xs text-muted-foreground">
+						Select the same file to resume
+					</p>
+					<div className="flex gap-2">
+						<Button size="sm" className="flex-1" onClick={handleResume}>
+							<RefreshCw className="h-3.5 w-3.5 mr-1" />
+							Resume
+						</Button>
+						<Button size="sm" variant="outline" onClick={reset}>
+							Dismiss
+						</Button>
+					</div>
+				</div>
+			)}
+
+			{/* Chunked upload progress */}
+			{showChunkedProgress && (
+				<div className="absolute bottom-4 right-4 z-40 w-80 bg-card border rounded-lg shadow-lg p-4 space-y-2">
+					<div className="flex items-center justify-between">
+						<div className="text-sm font-medium truncate flex-1 mr-2">
+							{chunkedState.filename}
+						</div>
+						<Button
+							variant="ghost"
+							size="icon"
+							className="h-6 w-6 shrink-0"
+							onClick={cancelUpload}
+						>
+							<X className="h-3.5 w-3.5" />
+						</Button>
+					</div>
+					<Progress value={chunkedState.progress} className="h-2" />
+					<div className="flex justify-between text-xs text-muted-foreground">
+						<span>
+							{chunkedState.status === "assembling"
+								? "Assembling..."
+								: chunkedState.status === "failed"
+									? (chunkedState.error ?? "Failed")
+									: `Chunk ${chunkedState.completedChunks}/${chunkedState.totalChunks}`}
+						</span>
+						<span className="text-muted-foreground/60">
+							{chunkedState.progress}% chunked
+						</span>
+					</div>
+					{chunkedState.status === "failed" && (
+						<div className="flex gap-2">
+							<Button
+								size="sm"
+								variant="outline"
+								className="flex-1"
+								onClick={handleResume}
+							>
+								<RefreshCw className="h-3.5 w-3.5 mr-1" />
+								Retry
+							</Button>
+							<Button size="sm" variant="outline" onClick={reset}>
+								Dismiss
+							</Button>
+						</div>
+					)}
+				</div>
+			)}
+
+			{/* Uppy small-file upload progress */}
+			{uppyProgress && (
+				<div className="absolute bottom-4 right-4 z-40 w-72 bg-card border rounded-lg shadow-lg p-3 space-y-1.5">
+					<div className="text-sm font-medium truncate">
+						{uppyProgress.filename}
+					</div>
+					<Progress value={uppyProgress.percent} className="h-1.5" />
+					<div className="text-xs text-muted-foreground text-right">
+						{uppyProgress.percent}% direct
+					</div>
+				</div>
+			)}
+
+			{/* Drag overlay */}
 			{isDragging && (
 				<div
 					className={cn(

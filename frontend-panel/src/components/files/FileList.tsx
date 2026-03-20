@@ -1,4 +1,11 @@
-import { Download, FileIcon, Folder, Link, Trash2 } from "lucide-react";
+import {
+	Download,
+	FileIcon,
+	Folder,
+	Link,
+	Loader2,
+	Trash2,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { ShareDialog } from "@/components/files/ShareDialog";
@@ -41,20 +48,26 @@ export function FileList() {
 		folderId?: number;
 		name: string;
 	} | null>(null);
+	const [downloadingId, setDownloadingId] = useState<number | null>(null);
 
-	const handleDownload = (fileId: number, fileName: string) => {
-		const url = fileService.downloadUrl(fileId);
-		fetch(url, { credentials: "include" })
-			.then((res) => res.blob())
-			.then((blob) => {
-				const objectUrl = URL.createObjectURL(blob);
-				const a = document.createElement("a");
-				a.href = objectUrl;
-				a.download = fileName;
-				a.click();
-				URL.revokeObjectURL(objectUrl);
-			})
-			.catch((err) => handleApiError(err));
+	const handleDownload = async (fileId: number, fileName: string) => {
+		setDownloadingId(fileId);
+		try {
+			const url = fileService.downloadUrl(fileId);
+			const res = await fetch(url, { credentials: "include" });
+			if (!res.ok) throw new Error(`download failed: ${res.status}`);
+			const blob = await res.blob();
+			const objectUrl = URL.createObjectURL(blob);
+			const a = document.createElement("a");
+			a.href = objectUrl;
+			a.download = fileName;
+			a.click();
+			URL.revokeObjectURL(objectUrl);
+		} catch (err) {
+			handleApiError(err);
+		} finally {
+			setDownloadingId(null);
+		}
 	};
 
 	const handleDeleteFile = async (id: number) => {
@@ -174,9 +187,14 @@ export function FileList() {
 										variant="ghost"
 										size="icon"
 										className="h-8 w-8"
+										disabled={downloadingId === file.id}
 										onClick={() => handleDownload(file.id, file.name)}
 									>
-										<Download className="h-4 w-4" />
+										{downloadingId === file.id ? (
+											<Loader2 className="h-4 w-4 animate-spin" />
+										) : (
+											<Download className="h-4 w-4" />
+										)}
 									</Button>
 									<Button
 										variant="ghost"

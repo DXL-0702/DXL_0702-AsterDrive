@@ -83,6 +83,7 @@ pub struct CreatePolicyReq {
     pub secret_key: Option<String>,
     pub base_path: Option<String>,
     pub max_file_size: Option<i64>,
+    pub chunk_size: Option<i64>,
     pub is_default: Option<bool>,
 }
 
@@ -154,6 +155,7 @@ pub struct PatchPolicyReq {
     pub secret_key: Option<String>,
     pub base_path: Option<String>,
     pub max_file_size: Option<i64>,
+    pub chunk_size: Option<i64>,
     pub is_default: Option<bool>,
 }
 
@@ -190,6 +192,7 @@ pub async fn update_policy(
         body.secret_key,
         body.base_path,
         body.max_file_size,
+        body.chunk_size,
         body.is_default,
     )
     .await?;

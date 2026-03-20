@@ -54,6 +54,7 @@ interface PolicyFormData {
 	secret_key: string;
 	base_path: string;
 	max_file_size: string;
+	chunk_size: string;
 	is_default: boolean;
 }
 
@@ -66,6 +67,7 @@ const emptyForm: PolicyFormData = {
 	secret_key: "",
 	base_path: "",
 	max_file_size: "",
+	chunk_size: "5",
 	is_default: false,
 };
 
@@ -109,6 +111,9 @@ export default function AdminPoliciesPage() {
 			secret_key: "",
 			base_path: p.base_path,
 			max_file_size: p.max_file_size ? String(p.max_file_size) : "",
+			chunk_size: p.chunk_size
+				? String(Math.round(p.chunk_size / 1024 / 1024))
+				: "5",
 			is_default: p.is_default,
 		});
 		setDialogOpen(true);
@@ -126,6 +131,9 @@ export default function AdminPoliciesPage() {
 					max_file_size: form.max_file_size
 						? Number(form.max_file_size)
 						: undefined,
+					chunk_size: form.chunk_size
+						? Number(form.chunk_size) * 1024 * 1024
+						: 0,
 					is_default: form.is_default,
 				};
 				// Only send credentials if user typed new values
@@ -142,6 +150,9 @@ export default function AdminPoliciesPage() {
 					max_file_size: form.max_file_size
 						? Number(form.max_file_size)
 						: undefined,
+					chunk_size: form.chunk_size
+						? Number(form.chunk_size) * 1024 * 1024
+						: 0,
 				};
 				const created = await adminPolicyService.create(payload);
 				setPolicies((prev) => [...prev, created]);
@@ -388,6 +399,20 @@ export default function AdminPoliciesPage() {
 									onChange={(e) => setField("max_file_size", e.target.value)}
 									placeholder="0 = unlimited"
 								/>
+							</div>
+
+							<div className="space-y-2">
+								<Label htmlFor="chunk_size">Chunk Size (MB)</Label>
+								<Input
+									id="chunk_size"
+									type="number"
+									value={form.chunk_size}
+									onChange={(e) => setField("chunk_size", e.target.value)}
+									placeholder="5 = 5MB, 0 = single upload only"
+								/>
+								<p className="text-xs text-muted-foreground">
+									Files larger than this use chunked upload. 0 disables it.
+								</p>
 							</div>
 
 							<div className="flex items-center gap-2">

@@ -73,6 +73,23 @@ impl StorageDriver for LocalDriver {
         })
     }
 
+    async fn put_file(&self, storage_path: &str, local_path: &str) -> Result<String> {
+        let full = self.full_path(storage_path);
+        if let Some(parent) = full.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_err(|e| AsterError::storage_driver_error(e.to_string()))?;
+        }
+        // rename 是零拷贝（同一文件系统），跨文件系统 fallback 到 copy + delete
+        if tokio::fs::rename(local_path, &full).await.is_err() {
+            tokio::fs::copy(local_path, &full)
+                .await
+                .map_err(|e| AsterError::storage_driver_error(format!("copy file: {e}")))?;
+            let _ = tokio::fs::remove_file(local_path).await;
+        }
+        Ok(storage_path.to_string())
+    }
+
     async fn presigned_url(&self, _path: &str, _expires: Duration) -> Result<Option<String>> {
         Ok(None)
     }

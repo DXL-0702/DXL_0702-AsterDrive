@@ -79,6 +79,7 @@ async fn ensure_default_policy(db: &sea_orm::DatabaseConnection) -> Result<()> {
         allowed_types: Set("[]".to_string()),
         options: Set("{}".to_string()),
         is_default: Set(true),
+        chunk_size: Set(5_242_880), // 5MB default
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()

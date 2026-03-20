@@ -41,6 +41,10 @@ pub enum ErrorCode {
     FileTooLarge = 3001,
     FileTypeNotAllowed = 3002,
     FileUploadFailed = 3003,
+    UploadSessionNotFound = 3004,
+    UploadSessionExpired = 3005,
+    ChunkUploadFailed = 3006,
+    UploadAssemblyFailed = 3007,
 
     // 存储策略错误 4000-4099
     StoragePolicyNotFound = 4000,
@@ -90,6 +94,12 @@ impl From<&AsterError> for ErrorCode {
 
             // 文件夹
             AsterError::FolderNotFound(_) => ErrorCode::FolderNotFound,
+
+            // 分片上传
+            AsterError::UploadSessionNotFound(_) => ErrorCode::UploadSessionNotFound,
+            AsterError::UploadSessionExpired(_) => ErrorCode::UploadSessionExpired,
+            AsterError::ChunkUploadFailed(_) => ErrorCode::ChunkUploadFailed,
+            AsterError::UploadAssemblyFailed(_) => ErrorCode::UploadAssemblyFailed,
 
             // 分享
             AsterError::ShareNotFound(_) => ErrorCode::ShareNotFound,

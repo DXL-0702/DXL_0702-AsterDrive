@@ -3,6 +3,7 @@ pub use sea_orm_migration::prelude::*;
 mod m20250320_000001_create_table;
 mod m20250321_000001_add_storage_quota;
 mod m20250321_000002_create_shares;
+mod m20250321_000003_chunked_upload;
 
 pub struct Migrator;
 
@@ -13,6 +14,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250320_000001_create_table::Migration),
             Box::new(m20250321_000001_add_storage_quota::Migration),
             Box::new(m20250321_000002_create_shares::Migration),
+            Box::new(m20250321_000003_chunked_upload::Migration),
         ]
     }
 }

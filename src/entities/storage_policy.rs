@@ -22,6 +22,7 @@ pub struct Model {
     pub allowed_types: String, // JSON array
     pub options: String,       // JSON object
     pub is_default: bool,
+    pub chunk_size: i64, // 0 = single upload, >0 = chunk size in bytes
     #[schema(value_type = String)]
     pub created_at: DateTimeUtc,
     #[schema(value_type = String)]

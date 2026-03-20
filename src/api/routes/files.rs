@@ -2,7 +2,7 @@ use crate::api::middleware::auth::JwtAuth;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{auth_service::Claims, file_service};
+use crate::services::{auth_service::Claims, file_service, upload_service};
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
@@ -11,6 +11,19 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
     web::scope("/files")
         .wrap(JwtAuth)
         .route("/upload", web::post().to(upload))
+        // chunked upload routes (before /{id} to avoid conflicts)
+        .route("/upload/init", web::post().to(init_chunked_upload))
+        .route(
+            "/upload/{upload_id}/{chunk_number}",
+            web::put().to(upload_chunk),
+        )
+        .route(
+            "/upload/{upload_id}/complete",
+            web::post().to(complete_upload),
+        )
+        .route("/upload/{upload_id}", web::get().to(get_upload_progress))
+        .route("/upload/{upload_id}", web::delete().to(cancel_upload))
+        // standard file routes
         .route("/{id}", web::get().to(get_file))
         .route("/{id}/download", web::get().to(download))
         .route("/{id}", web::delete().to(delete_file))
@@ -154,4 +167,158 @@ pub async fn patch_file(
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+}
+
+// ── Chunked Upload ──────────────────────────────────────────────────
+
+#[derive(Deserialize, ToSchema)]
+pub struct InitUploadReq {
+    pub filename: String,
+    pub total_size: i64,
+    pub folder_id: Option<i64>,
+}
+
+#[derive(Deserialize)]
+pub struct ChunkPath {
+    pub upload_id: String,
+    pub chunk_number: i32,
+}
+
+#[derive(Deserialize)]
+pub struct UploadIdPath {
+    pub upload_id: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/files/upload/init",
+    tag = "files",
+    operation_id = "init_chunked_upload",
+    request_body = InitUploadReq,
+    responses(
+        (status = 201, description = "Upload session created", body = inline(ApiResponse<upload_service::InitUploadResponse>)),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn init_chunked_upload(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    body: web::Json<InitUploadReq>,
+) -> Result<HttpResponse> {
+    let resp = upload_service::init_upload(
+        &state.db,
+        claims.user_id,
+        &body.filename,
+        body.total_size,
+        body.folder_id,
+    )
+    .await?;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(resp)))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1/files/upload/{upload_id}/{chunk_number}",
+    tag = "files",
+    operation_id = "upload_chunk",
+    params(
+        ("upload_id" = String, Path, description = "Upload session ID"),
+        ("chunk_number" = i32, Path, description = "Chunk number (0-indexed)"),
+    ),
+    request_body(content = Vec<u8>, content_type = "application/octet-stream"),
+    responses(
+        (status = 200, description = "Chunk uploaded", body = inline(ApiResponse<upload_service::ChunkUploadResponse>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Session not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn upload_chunk(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<ChunkPath>,
+    body: actix_web::web::Bytes,
+) -> Result<HttpResponse> {
+    let resp = upload_service::upload_chunk(
+        &state.db,
+        &path.upload_id,
+        path.chunk_number,
+        claims.user_id,
+        &body,
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/files/upload/{upload_id}/complete",
+    tag = "files",
+    operation_id = "complete_chunked_upload",
+    params(("upload_id" = String, Path, description = "Upload session ID")),
+    responses(
+        (status = 201, description = "File created", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Session not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn complete_upload(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<UploadIdPath>,
+) -> Result<HttpResponse> {
+    let file = upload_service::complete_upload(
+        &state.db,
+        &state.driver_registry,
+        &path.upload_id,
+        claims.user_id,
+    )
+    .await?;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/files/upload/{upload_id}",
+    tag = "files",
+    operation_id = "get_upload_progress",
+    params(("upload_id" = String, Path, description = "Upload session ID")),
+    responses(
+        (status = 200, description = "Upload progress", body = inline(ApiResponse<upload_service::UploadProgressResponse>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Session not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_upload_progress(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<UploadIdPath>,
+) -> Result<HttpResponse> {
+    let resp = upload_service::get_progress(&state.db, &path.upload_id, claims.user_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/files/upload/{upload_id}",
+    tag = "files",
+    operation_id = "cancel_upload",
+    params(("upload_id" = String, Path, description = "Upload session ID")),
+    responses(
+        (status = 200, description = "Upload cancelled"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Session not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn cancel_upload(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<UploadIdPath>,
+) -> Result<HttpResponse> {
+    upload_service::cancel_upload(&state.db, &path.upload_id, claims.user_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

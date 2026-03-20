@@ -39,6 +39,7 @@ pub async fn create(
         allowed_types: Set("[]".to_string()),
         options: Set("{}".to_string()),
         is_default: Set(is_default),
+        chunk_size: Set(5_242_880), // 5MB default
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()
@@ -65,6 +66,7 @@ pub async fn update(
     secret_key: Option<String>,
     base_path: Option<String>,
     max_file_size: Option<i64>,
+    chunk_size: Option<i64>,
     is_default: Option<bool>,
 ) -> Result<storage_policy::Model> {
     let existing = policy_repo::find_by_id(db, id).await?;
@@ -89,6 +91,9 @@ pub async fn update(
     }
     if let Some(v) = max_file_size {
         active.max_file_size = Set(v);
+    }
+    if let Some(v) = chunk_size {
+        active.chunk_size = Set(v);
     }
     if let Some(v) = is_default {
         active.is_default = Set(v);

@@ -4,5 +4,6 @@ pub mod folder;
 pub mod share;
 pub mod storage_policy;
 pub mod system_config;
+pub mod upload_session;
 pub mod user;
 pub mod user_storage_policy;
