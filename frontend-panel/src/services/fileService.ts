@@ -1,30 +1,26 @@
 import { api } from './http'
-import { endpoints } from './endpoints'
 import type { FileInfo, FolderInfo, FolderContents } from '@/types/api'
+import { config } from '@/config/app'
 
 export const fileService = {
-  listRoot: () => api.get<FolderContents>(endpoints.folders.root),
+  listRoot: () => api.get<FolderContents>('/folders'),
 
-  listFolder: (id: number) => api.get<FolderContents>(endpoints.folders.get(id)),
+  listFolder: (id: number) => api.get<FolderContents>(`/folders/${id}`),
 
   createFolder: (name: string, parentId?: number | null) =>
-    api.post<FolderInfo>(endpoints.folders.create, {
-      name,
-      parent_id: parentId ?? null,
-    }),
+    api.post<FolderInfo>('/folders', { name, parent_id: parentId ?? null }),
 
-  deleteFolder: (id: number) => api.delete<void>(endpoints.folders.delete(id)),
+  deleteFolder: (id: number) => api.delete<void>(`/folders/${id}`),
 
   renameFolder: (id: number, name: string) =>
-    api.patch<FolderInfo>(endpoints.folders.update(id), { name }),
+    api.patch<FolderInfo>(`/folders/${id}`, { name }),
 
-  getFile: (id: number) => api.get<FileInfo>(endpoints.files.get(id)),
+  getFile: (id: number) => api.get<FileInfo>(`/files/${id}`),
 
-  deleteFile: (id: number) => api.delete<void>(endpoints.files.delete(id)),
+  deleteFile: (id: number) => api.delete<void>(`/files/${id}`),
 
   renameFile: (id: number, name: string) =>
-    api.patch<FileInfo>(endpoints.files.update(id), { name }),
+    api.patch<FileInfo>(`/files/${id}`, { name }),
 
-  downloadUrl: (id: number) =>
-    `${api.client.defaults.baseURL}${endpoints.files.download(id)}`,
+  downloadUrl: (id: number) => `${config.apiBaseUrl}/files/${id}/download`,
 }

@@ -1,5 +1,15 @@
-// Mirror backend ErrorCode (serde_repr numbers)
-// Using const object + type pattern instead of enum for erasableSyntaxOnly compatibility
+// Re-export generated types for convenience
+import type { components } from '@/services/api.generated'
+
+// Schema types
+export type UserInfo = components['schemas']['UserInfo']
+export type FileInfo = components['schemas']['FileInfo']
+export type FolderInfo = components['schemas']['FolderInfo']
+export type StoragePolicy = components['schemas']['StoragePolicy']
+export type FolderContents = components['schemas']['FolderContentsResponse']
+export type ErrorCode = components['schemas']['ErrorCode']
+
+// ErrorCode constants (generated type is a union of literal numbers, we need named constants)
 export const ErrorCode = {
   Success: 0,
   BadRequest: 1000,
@@ -21,49 +31,11 @@ export const ErrorCode = {
   StorageQuotaExceeded: 4002,
   UnsupportedDriver: 4003,
   FolderNotFound: 5000,
-} as const
+} as const satisfies Record<string, ErrorCode>
 
-export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode]
-
+// API response wrapper
 export interface ApiResponse<T> {
   code: ErrorCode
   msg: string
   data: T | null
-}
-
-export interface UserInfo {
-  id: number
-  username: string
-  email: string
-  role: string
-  status: string
-  storage_used: number
-  created_at: string
-  updated_at: string
-}
-
-export interface FileInfo {
-  id: number
-  name: string
-  folder_id: number | null
-  blob_id: number
-  user_id: number
-  mime_type: string
-  created_at: string
-  updated_at: string
-}
-
-export interface FolderInfo {
-  id: number
-  name: string
-  parent_id: number | null
-  user_id: number
-  policy_id: number | null
-  created_at: string
-  updated_at: string
-}
-
-export interface FolderContents {
-  folders: FolderInfo[]
-  files: FileInfo[]
 }

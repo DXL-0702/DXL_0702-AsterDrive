@@ -34,6 +34,7 @@ async fn main() -> std::io::Result<()> {
 
     let server = HttpServer::new(move || {
         App::new()
+            .wrap(actix_web::middleware::Compress::default())
             .wrap(aster_drive::api::middleware::request_id::RequestIdMiddleware)
             .wrap(aster_drive::api::middleware::cors::configure_cors())
             .app_data(state.clone())
