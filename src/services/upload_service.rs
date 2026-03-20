@@ -12,9 +12,10 @@ use crate::utils::id;
 
 #[derive(Serialize, ToSchema)]
 pub struct InitUploadResponse {
-    pub upload_id: String,
-    pub chunk_size: i64,
-    pub total_chunks: i32,
+    pub mode: String, // "direct" | "chunked"
+    pub upload_id: Option<String>,
+    pub chunk_size: Option<i64>,
+    pub total_chunks: Option<i32>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -33,7 +34,7 @@ pub struct UploadProgressResponse {
     pub filename: String,
 }
 
-/// 初始化分片上传
+/// 上传协商：服务端根据存储策略决定上传模式
 pub async fn init_upload(
     db: &DatabaseConnection,
     user_id: i64,
@@ -43,19 +44,6 @@ pub async fn init_upload(
 ) -> Result<InitUploadResponse> {
     // 确定存储策略
     let policy = file_service::resolve_policy(db, user_id, folder_id).await?;
-
-    let chunk_size = if policy.chunk_size > 0 {
-        policy.chunk_size
-    } else {
-        5_242_880 // 默认 5MB
-    };
-
-    // 文件小于一个 chunk 不需要分片
-    if total_size <= chunk_size {
-        return Err(AsterError::validation_error(
-            "file is small enough for single upload, use /files/upload instead",
-        ));
-    }
 
     // 检查文件大小限制
     if policy.max_file_size > 0 && total_size > policy.max_file_size {
@@ -74,6 +62,17 @@ pub async fn init_upload(
         )));
     }
 
+    // 策略决策：chunk_size == 0 → 禁用分片；文件 <= chunk_size → 直传
+    if policy.chunk_size == 0 || total_size <= policy.chunk_size {
+        return Ok(InitUploadResponse {
+            mode: "direct".to_string(),
+            upload_id: None,
+            chunk_size: None,
+            total_chunks: None,
+        });
+    }
+
+    let chunk_size = policy.chunk_size;
     let total_chunks = ((total_size + chunk_size - 1) / chunk_size) as i32;
     let upload_id = id::new_uuid();
     let now = Utc::now();
@@ -103,9 +102,10 @@ pub async fn init_upload(
     upload_session_repo::create(db, session).await?;
 
     Ok(InitUploadResponse {
-        upload_id,
-        chunk_size,
-        total_chunks,
+        mode: "chunked".to_string(),
+        upload_id: Some(upload_id),
+        chunk_size: Some(chunk_size),
+        total_chunks: Some(total_chunks),
     })
 }
 

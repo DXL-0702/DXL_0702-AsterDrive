@@ -542,6 +542,8 @@ export interface components {
             access_key?: string | null;
             base_path?: string | null;
             bucket?: string | null;
+            /** Format: int64 */
+            chunk_size?: number | null;
             driver_type: components["schemas"]["DriverType"];
             endpoint?: string | null;
             is_default?: boolean | null;
@@ -620,10 +622,11 @@ export interface components {
         };
         InitUploadResponse: {
             /** Format: int64 */
-            chunk_size: number;
+            chunk_size?: number | null;
+            mode: string;
             /** Format: int32 */
-            total_chunks: number;
-            upload_id: string;
+            total_chunks?: number | null;
+            upload_id?: string | null;
         };
         LoginReq: {
             password: string;
@@ -645,6 +648,8 @@ export interface components {
             access_key?: string | null;
             base_path?: string | null;
             bucket?: string | null;
+            /** Format: int64 */
+            chunk_size?: number | null;
             endpoint?: string | null;
             is_default?: boolean | null;
             /** Format: int64 */
@@ -2045,10 +2050,11 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             /** Format: int64 */
-                            chunk_size: number;
+                            chunk_size?: number | null;
+                            mode: string;
                             /** Format: int32 */
-                            total_chunks: number;
-                            upload_id: string;
+                            total_chunks?: number | null;
+                            upload_id?: string | null;
                         };
                         msg: string;
                     };

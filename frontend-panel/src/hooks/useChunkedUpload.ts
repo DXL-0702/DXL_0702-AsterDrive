@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { InitUploadResponse } from "@/services/uploadService";
 import { uploadService } from "@/services/uploadService";
 
 const STORAGE_KEY = "aster_chunked_upload";
@@ -150,7 +151,11 @@ export function useChunkedUpload(onComplete?: () => void) {
 	);
 
 	const startUpload = useCallback(
-		async (file: File, folderId?: number | null) => {
+		async (
+			file: File,
+			folderId?: number | null,
+			preNegotiated?: InitUploadResponse,
+		) => {
 			abortRef.current = false;
 			fileRef.current = file;
 
@@ -164,40 +169,40 @@ export function useChunkedUpload(onComplete?: () => void) {
 			}));
 
 			try {
-				const init = await uploadService.initUpload({
-					filename: file.name,
-					total_size: file.size,
-					folder_id: folderId,
-				});
+				// Use pre-negotiated response from UploadArea, or call init ourselves
+				const init =
+					preNegotiated ??
+					(await uploadService.initUpload({
+						filename: file.name,
+						total_size: file.size,
+						folder_id: folderId,
+					}));
+
+				const uploadId = init.upload_id as string;
+				const chunkSize = init.chunk_size as number;
+				const totalChunks = init.total_chunks as number;
 
 				setState((s) => ({
 					...s,
-					uploadId: init.upload_id,
-					totalChunks: init.total_chunks,
+					uploadId,
+					totalChunks,
 				}));
 
-				// persist for resume
 				saveSession({
-					uploadId: init.upload_id,
+					uploadId,
 					filename: file.name,
 					totalSize: file.size,
-					chunkSize: init.chunk_size,
-					totalChunks: init.total_chunks,
+					chunkSize,
+					totalChunks,
 					folderId,
 				});
 
-				await uploadChunks(
-					file,
-					init.upload_id,
-					init.chunk_size,
-					init.total_chunks,
-					[],
-				);
+				await uploadChunks(file, uploadId, chunkSize, totalChunks, []);
 
 				if (abortRef.current) return;
 
 				setState((s) => ({ ...s, status: "assembling", progress: 95 }));
-				await uploadService.completeUpload(init.upload_id);
+				await uploadService.completeUpload(uploadId);
 
 				clearSession();
 				setState((s) => ({

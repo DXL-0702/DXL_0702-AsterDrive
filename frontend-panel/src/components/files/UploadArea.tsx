@@ -9,10 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import { config } from "@/config/app";
 import { useChunkedUpload } from "@/hooks/useChunkedUpload";
 import { cn } from "@/lib/utils";
+import { uploadService } from "@/services/uploadService";
 import { useFileStore } from "@/stores/fileStore";
-
-/** 5MB — files larger than this use chunked upload */
-const CHUNKED_THRESHOLD = 5 * 1024 * 1024;
 
 interface UploadAreaProps {
 	children: ReactNode;
@@ -107,22 +105,34 @@ export function UploadArea({ children }: UploadAreaProps) {
 		return () => uppy.destroy();
 	}, [uppy]);
 
-	const addFiles = (files: FileList | null) => {
+	const addFileViaUppy = (file: File) => {
+		try {
+			uppy.addFile({ name: file.name, type: file.type, data: file });
+		} catch (err) {
+			if (err instanceof Error && !err.message.includes("already been added")) {
+				toast.error(err.message);
+			}
+		}
+	};
+
+	const addFiles = async (files: FileList | null) => {
 		if (!files || files.length === 0) return;
 		for (const file of files) {
-			if (file.size > CHUNKED_THRESHOLD) {
-				startUpload(file, currentFolderIdRef.current);
-			} else {
-				try {
-					uppy.addFile({ name: file.name, type: file.type, data: file });
-				} catch (err) {
-					if (
-						err instanceof Error &&
-						!err.message.includes("already been added")
-					) {
-						toast.error(err.message);
-					}
+			try {
+				// 向服务端协商上传模式
+				const resp = await uploadService.initUpload({
+					filename: file.name,
+					total_size: file.size,
+					folder_id: currentFolderIdRef.current,
+				});
+				if (resp.mode === "chunked") {
+					startUpload(file, currentFolderIdRef.current, resp);
+				} else {
+					addFileViaUppy(file);
 				}
+			} catch {
+				// init 失败（配额/大小限制等），fallback 到直传让后端再报具体错误
+				addFileViaUppy(file);
 			}
 		}
 	};

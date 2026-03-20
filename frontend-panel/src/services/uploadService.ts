@@ -3,9 +3,10 @@ import type { FileInfo } from "@/types/api";
 import { api } from "./http";
 
 export interface InitUploadResponse {
-	upload_id: string;
-	chunk_size: number;
-	total_chunks: number;
+	mode: "direct" | "chunked";
+	upload_id?: string;
+	chunk_size?: number;
+	total_chunks?: number;
 }
 
 export interface ChunkUploadResponse {
