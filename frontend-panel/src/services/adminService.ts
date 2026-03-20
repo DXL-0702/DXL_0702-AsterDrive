@@ -5,6 +5,7 @@ import type {
 	UserInfo,
 	UserRole,
 	UserStatus,
+	UserStoragePolicy,
 } from "@/types/api";
 import { api } from "./http";
 
@@ -58,15 +59,6 @@ export const adminPolicyService = {
 };
 
 // --- User Storage Policies ---
-
-export interface UserStoragePolicy {
-	id: number;
-	user_id: number;
-	policy_id: number;
-	is_default: boolean;
-	quota_bytes: number;
-	created_at: string;
-}
 
 export const adminUserPolicyService = {
 	list: (userId: number) =>

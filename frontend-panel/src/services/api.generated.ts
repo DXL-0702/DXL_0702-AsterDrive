@@ -292,6 +292,102 @@ export interface paths {
         patch: operations["patch_folder"];
         trace?: never;
     };
+    "/api/v1/s/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_share_info"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/s/{token}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_shared_content"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/s/{token}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["download_shared_file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/s/{token}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["verify_share_password"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shares": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_my_shares"];
+        put?: never;
+        post: operations["create_share"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/shares/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_share"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -352,6 +448,16 @@ export interface components {
             name: string;
             secret_key?: string | null;
         };
+        CreateShareReq: {
+            expires_at?: string | null;
+            /** Format: int64 */
+            file_id?: number | null;
+            /** Format: int64 */
+            folder_id?: number | null;
+            /** Format: int64 */
+            max_downloads?: number;
+            password?: string | null;
+        };
         /**
          * @description 存储驱动类型
          * @enum {string}
@@ -362,7 +468,7 @@ export interface components {
          * @example 0
          * @enum {integer}
          */
-        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 2000 | 2001 | 2002 | 2003 | 3000 | 3001 | 3002 | 3003 | 4000 | 4001 | 4002 | 4003 | 5000;
+        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 2000 | 2001 | 2002 | 2003 | 3000 | 3001 | 3002 | 3003 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
         FileInfo: {
             /** Format: int64 */
             blob_id: number;
@@ -452,6 +558,41 @@ export interface components {
         SetConfigReq: {
             value: string;
         };
+        ShareInfo: {
+            created_at: string;
+            /** Format: int64 */
+            download_count: number;
+            expires_at?: string | null;
+            /** Format: int64 */
+            file_id?: number | null;
+            /** Format: int64 */
+            folder_id?: number | null;
+            /** Format: int64 */
+            id: number;
+            /** Format: int64 */
+            max_downloads: number;
+            token: string;
+            updated_at: string;
+            /** Format: int64 */
+            user_id: number;
+            /** Format: int64 */
+            view_count: number;
+        };
+        /** @description 公开返回给前端的分享信息（不含密码哈希和内部 ID） */
+        SharePublicInfo: {
+            /** Format: int64 */
+            download_count: number;
+            expires_at?: string | null;
+            has_password: boolean;
+            is_expired: boolean;
+            /** Format: int64 */
+            max_downloads: number;
+            name: string;
+            share_type: string;
+            token: string;
+            /** Format: int64 */
+            view_count: number;
+        };
         StoragePolicy: {
             allowed_types: string;
             base_path: string;
@@ -516,6 +657,9 @@ export interface components {
             quota_bytes: number;
             /** Format: int64 */
             user_id: number;
+        };
+        VerifyPasswordReq: {
+            password: string;
         };
     };
     responses: never;
@@ -2012,6 +2156,318 @@ export interface operations {
                 content?: never;
             };
             /** @description Folder not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_share_info: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share token */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Share info */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        /** @description 公开返回给前端的分享信息（不含密码哈希和内部 ID） */
+                        data?: {
+                            /** Format: int64 */
+                            download_count: number;
+                            expires_at?: string | null;
+                            has_password: boolean;
+                            is_expired: boolean;
+                            /** Format: int64 */
+                            max_downloads: number;
+                            name: string;
+                            share_type: string;
+                            token: string;
+                            /** Format: int64 */
+                            view_count: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Share not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Share expired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_shared_content: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share token */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Folder contents */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            files: components["schemas"]["FileInfo"][];
+                            folders: components["schemas"]["FolderInfo"][];
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Password required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Share not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    download_shared_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share token */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File content */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Password required or download limit */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Share not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    verify_share_password: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share token */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyPasswordReq"];
+            };
+        };
+        responses: {
+            /** @description Password verified */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Wrong password */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Share not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_my_shares: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description My shares */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            /** Format: int64 */
+                            download_count: number;
+                            expires_at?: string | null;
+                            /** Format: int64 */
+                            file_id?: number | null;
+                            /** Format: int64 */
+                            folder_id?: number | null;
+                            /** Format: int64 */
+                            id: number;
+                            /** Format: int64 */
+                            max_downloads: number;
+                            token: string;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                            /** Format: int64 */
+                            view_count: number;
+                        }[];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_share: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateShareReq"];
+            };
+        };
+        responses: {
+            /** @description Share created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            /** Format: int64 */
+                            download_count: number;
+                            expires_at?: string | null;
+                            /** Format: int64 */
+                            file_id?: number | null;
+                            /** Format: int64 */
+                            folder_id?: number | null;
+                            /** Format: int64 */
+                            id: number;
+                            /** Format: int64 */
+                            max_downloads: number;
+                            token: string;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                            /** Format: int64 */
+                            view_count: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_share: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Share deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Share not found */
             404: {
                 headers: {
                     [name: string]: unknown;

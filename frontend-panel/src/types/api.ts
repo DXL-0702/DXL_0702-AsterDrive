@@ -12,6 +12,9 @@ export type ErrorCode = components["schemas"]["ErrorCode"];
 export type UserRole = components["schemas"]["UserRole"];
 export type UserStatus = components["schemas"]["UserStatus"];
 export type DriverType = components["schemas"]["DriverType"];
+export type ShareInfo = components["schemas"]["ShareInfo"];
+export type SharePublicInfo = components["schemas"]["SharePublicInfo"];
+export type UserStoragePolicy = components["schemas"]["UserStoragePolicy"];
 
 // ErrorCode constants (generated type is a union of literal numbers, we need named constants)
 export const ErrorCode = {
@@ -35,6 +38,10 @@ export const ErrorCode = {
 	StorageQuotaExceeded: 4002,
 	UnsupportedDriver: 4003,
 	FolderNotFound: 5000,
+	ShareNotFound: 6000,
+	ShareExpired: 6001,
+	SharePasswordRequired: 6002,
+	ShareDownloadLimitReached: 6003,
 } as const satisfies Record<string, ErrorCode>;
 
 // API response wrapper

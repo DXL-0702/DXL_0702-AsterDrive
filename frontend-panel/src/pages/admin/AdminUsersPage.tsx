@@ -31,7 +31,6 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
-import type { UserStoragePolicy } from "@/services/adminService";
 import {
 	adminPolicyService,
 	adminUserPolicyService,
@@ -42,6 +41,7 @@ import type {
 	UserInfo,
 	UserRole,
 	UserStatus,
+	UserStoragePolicy,
 } from "@/types/api";
 
 function formatBytes(bytes: number): string {
