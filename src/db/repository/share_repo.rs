@@ -30,6 +30,23 @@ pub async fn find_all(db: &DatabaseConnection) -> Result<Vec<share::Model>> {
     Share::find().all(db).await.map_err(AsterError::from)
 }
 
+/// 查找用户对同一资源是否已有活跃分享
+pub async fn find_active_by_resource(
+    db: &DatabaseConnection,
+    user_id: i64,
+    file_id: Option<i64>,
+    folder_id: Option<i64>,
+) -> Result<Option<share::Model>> {
+    let mut q = Share::find().filter(share::Column::UserId.eq(user_id));
+    if let Some(fid) = file_id {
+        q = q.filter(share::Column::FileId.eq(fid));
+    }
+    if let Some(fid) = folder_id {
+        q = q.filter(share::Column::FolderId.eq(fid));
+    }
+    q.one(db).await.map_err(AsterError::from)
+}
+
 pub async fn create(db: &DatabaseConnection, model: share::ActiveModel) -> Result<share::Model> {
     model.insert(db).await.map_err(AsterError::from)
 }

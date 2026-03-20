@@ -40,6 +40,21 @@ pub async fn create_share(
         ));
     }
 
+    // 检查是否已有活跃分享
+    if let Some(existing) =
+        share_repo::find_active_by_resource(db, user_id, file_id, folder_id).await?
+    {
+        // 如果已有分享且未过期，返回错误
+        let is_expired = existing.expires_at.is_some_and(|exp| exp < Utc::now());
+        if !is_expired {
+            return Err(AsterError::validation_error(
+                "an active share already exists for this resource",
+            ));
+        }
+        // 过期的分享自动删除，然后继续创建新的
+        share_repo::delete(db, existing.id).await?;
+    }
+
     // 校验文件/文件夹属于该用户
     if let Some(fid) = file_id {
         let f = file_repo::find_by_id(db, fid).await?;
@@ -171,6 +186,15 @@ pub async fn delete_share(db: &DatabaseConnection, share_id: i64, user_id: i64) 
     if share.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your share"));
     }
+    share_repo::delete(db, share_id).await
+}
+
+pub async fn list_all(db: &DatabaseConnection) -> Result<Vec<share::Model>> {
+    share_repo::find_all(db).await
+}
+
+pub async fn admin_delete_share(db: &DatabaseConnection, share_id: i64) -> Result<()> {
+    share_repo::find_by_id(db, share_id).await?; // 校验存在
     share_repo::delete(db, share_id).await
 }
 

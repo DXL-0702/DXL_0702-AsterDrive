@@ -2,7 +2,9 @@ use crate::api::middleware::auth::JwtAuth;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{auth_service::Claims, config_service, policy_service, user_service};
+use crate::services::{
+    auth_service::Claims, config_service, policy_service, share_service, user_service,
+};
 use crate::types::{DriverType, UserRole, UserStatus};
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
@@ -38,6 +40,9 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
             "/users/{user_id}/policies/{id}",
             web::delete().to(remove_user_policy),
         )
+        // shares
+        .route("/shares", web::get().to(list_all_shares))
+        .route("/shares/{id}", web::delete().to(admin_delete_share))
         // config
         .route("/config", web::get().to(list_config))
         .route("/config/{key}", web::get().to(get_config))
@@ -462,6 +467,53 @@ pub async fn remove_user_policy(
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
     policy_service::remove_user_policy(&state.db, path.id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+// ── Shares ──────────────────────────────────────────────────────────
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/shares",
+    tag = "admin",
+    operation_id = "list_all_shares",
+    responses(
+        (status = 200, description = "All shares", body = inline(ApiResponse<Vec<crate::entities::share::Model>>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_all_shares(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let shares = share_service::list_all(&state.db).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(shares)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/shares/{id}",
+    tag = "admin",
+    operation_id = "admin_delete_share",
+    params(("id" = i64, Path, description = "Share ID")),
+    responses(
+        (status = 200, description = "Share deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Share not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn admin_delete_share(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    share_service::admin_delete_share(&state.db, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 

@@ -42,6 +42,8 @@ use utoipa::OpenApi;
         crate::api::routes::admin::get_config,
         crate::api::routes::admin::set_config,
         crate::api::routes::admin::delete_config,
+        crate::api::routes::admin::list_all_shares,
+        crate::api::routes::admin::admin_delete_share,
         // shares (authenticated)
         crate::api::routes::shares::create_share,
         crate::api::routes::shares::list_shares,

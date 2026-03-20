@@ -7,6 +7,7 @@ const FileBrowserPage = lazy(() => import("@/pages/FileBrowserPage"));
 const AdminUsersPage = lazy(() => import("@/pages/admin/AdminUsersPage"));
 const AdminPoliciesPage = lazy(() => import("@/pages/admin/AdminPoliciesPage"));
 const AdminSettingsPage = lazy(() => import("@/pages/admin/AdminSettingsPage"));
+const AdminSharesPage = lazy(() => import("@/pages/admin/AdminSharesPage"));
 const ShareViewPage = lazy(() => import("@/pages/ShareViewPage"));
 
 function Loading() {
@@ -79,6 +80,7 @@ export const router = createBrowserRouter([
 			{ path: "/admin", element: <Navigate to="/admin/users" replace /> },
 			{ path: "/admin/users", element: <AdminUsersPage /> },
 			{ path: "/admin/policies", element: <AdminPoliciesPage /> },
+			{ path: "/admin/shares", element: <AdminSharesPage /> },
 			{ path: "/admin/settings", element: <AdminSettingsPage /> },
 		],
 	},

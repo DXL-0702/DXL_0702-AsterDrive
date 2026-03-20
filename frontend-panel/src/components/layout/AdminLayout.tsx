@@ -1,12 +1,13 @@
+import { ArrowLeft, HardDrive, Link, Settings, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { Users, HardDrive, Settings, ArrowLeft } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 
 const navItems = [
 	{ to: "/admin/users", label: "Users", icon: Users },
 	{ to: "/admin/policies", label: "Storage Policies", icon: HardDrive },
+	{ to: "/admin/shares", label: "Shares", icon: Link },
 	{ to: "/admin/settings", label: "Settings", icon: Settings },
 ];
 
