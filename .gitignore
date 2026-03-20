@@ -1,3 +1,10 @@
 /target
 
 .DS_store
+
+# 运行时生成
+config.toml
+*.db
+*.db-shm
+*.db-wal
+data/

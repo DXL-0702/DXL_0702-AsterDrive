@@ -1,0 +1,144 @@
+use chrono::Utc;
+use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use sea_orm::{DatabaseConnection, Set};
+use serde::{Deserialize, Serialize};
+
+use crate::config::AuthConfig;
+use crate::db::repository::user_repo;
+use crate::entities::user;
+use crate::errors::{AsterError, Result};
+use crate::utils::hash;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Claims {
+    pub sub: String, // user_id 字符串
+    pub user_id: i64,
+    pub role: String,
+    pub token_type: String, // "access" | "refresh"
+    pub exp: usize,
+}
+
+/// 注册用户，返回用户信息（不含密码）
+pub async fn register(
+    db: &DatabaseConnection,
+    username: &str,
+    email: &str,
+    password: &str,
+    _jwt_secret: &str,
+) -> Result<user::Model> {
+    // 检查重复
+    if user_repo::find_by_username(db, username).await?.is_some() {
+        return Err(AsterError::validation_error("username already exists"));
+    }
+    if user_repo::find_by_email(db, email).await?.is_some() {
+        return Err(AsterError::validation_error("email already exists"));
+    }
+
+    let password_hash = hash::hash_password(password)?;
+    let now = Utc::now();
+
+    let model = user::ActiveModel {
+        username: Set(username.to_string()),
+        email: Set(email.to_string()),
+        password_hash: Set(password_hash),
+        role: Set("user".to_string()),
+        status: Set("active".to_string()),
+        storage_used: Set(0),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    user_repo::create(db, model).await
+}
+
+/// 登录，返回 (access_token, refresh_token)
+pub async fn login(
+    db: &DatabaseConnection,
+    username: &str,
+    password: &str,
+    auth_config: &AuthConfig,
+) -> Result<(String, String)> {
+    let user = user_repo::find_by_username(db, username)
+        .await?
+        .ok_or_else(|| AsterError::auth_invalid_credentials("user not found"))?;
+
+    if user.status != "active" {
+        return Err(AsterError::auth_forbidden("account is disabled"));
+    }
+
+    if !hash::verify_password(password, &user.password_hash)? {
+        return Err(AsterError::auth_invalid_credentials("wrong password"));
+    }
+
+    let access = create_token(
+        user.id,
+        &user.role,
+        "access",
+        auth_config.access_token_ttl_secs,
+        &auth_config.jwt_secret,
+    )?;
+    let refresh = create_token(
+        user.id,
+        &user.role,
+        "refresh",
+        auth_config.refresh_token_ttl_secs,
+        &auth_config.jwt_secret,
+    )?;
+
+    Ok((access, refresh))
+}
+
+/// 用 refresh token 换 access token
+pub fn refresh_token(refresh: &str, auth_config: &AuthConfig) -> Result<String> {
+    let claims = verify_token(refresh, &auth_config.jwt_secret)?;
+    if claims.token_type != "refresh" {
+        return Err(AsterError::auth_token_invalid("not a refresh token"));
+    }
+    create_token(
+        claims.user_id,
+        &claims.role,
+        "access",
+        auth_config.access_token_ttl_secs,
+        &auth_config.jwt_secret,
+    )
+}
+
+/// 创建 JWT token
+fn create_token(
+    user_id: i64,
+    role: &str,
+    token_type: &str,
+    ttl_secs: u64,
+    secret: &str,
+) -> Result<String> {
+    let exp = (Utc::now().timestamp() as u64 + ttl_secs) as usize;
+    let claims = Claims {
+        sub: user_id.to_string(),
+        user_id,
+        role: role.to_string(),
+        token_type: token_type.to_string(),
+        exp,
+    };
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret.as_bytes()),
+    )
+    .map_err(|e| AsterError::internal_error(e.to_string()))
+}
+
+/// 验证 JWT token
+pub fn verify_token(token: &str, secret: &str) -> Result<Claims> {
+    let data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &Validation::default(),
+    )
+    .map_err(|e| match e.kind() {
+        jsonwebtoken::errors::ErrorKind::ExpiredSignature => {
+            AsterError::auth_token_expired("token expired")
+        }
+        _ => AsterError::auth_token_invalid(e.to_string()),
+    })?;
+    Ok(data.claims)
+}

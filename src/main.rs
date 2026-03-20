@@ -1,3 +1,62 @@
-fn main() {
-    println!("Hello, world!");
+use actix_web::{App, HttpServer, web};
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    // 0. 安装自定义 panic hook（最先执行）
+    aster_drive::runtime::panic::install_panic_hook();
+
+    dotenvy::dotenv().ok();
+
+    // 1. 加载配置（会自动创建 config.toml）
+    aster_drive::config::init_config().expect("failed to load config");
+    let cfg = aster_drive::config::get_config();
+
+    // 2. 初始化日志（基于配置）
+    let log_result = aster_drive::runtime::logging::init_logging(&cfg.logging);
+    let _log_guard = log_result.guard;
+    if let Some(warning) = log_result.warning {
+        tracing::warn!("{}", warning);
+    }
+
+    // 3. 启动剩余服务（DB、迁移、驱动注册）
+    let state = aster_drive::runtime::startup::prepare()
+        .await
+        .expect("startup failed");
+
+    let host = state.config.server.host.clone();
+    let port = state.config.server.port;
+    let workers = match state.config.server.workers {
+        0 => num_cpus::get(),
+        n => n,
+    };
+
+    let state = web::Data::new(state);
+
+    let server = HttpServer::new(move || {
+        App::new()
+            .wrap(aster_drive::api::middleware::request_id::RequestIdMiddleware)
+            .wrap(aster_drive::api::middleware::cors::configure_cors())
+            .app_data(state.clone())
+            .configure(aster_drive::api::configure)
+    })
+    .keep_alive(std::time::Duration::from_secs(30))
+    .client_request_timeout(std::time::Duration::from_millis(5000))
+    .client_disconnect_timeout(std::time::Duration::from_millis(1000))
+    .bind((host.as_str(), port))?
+    .workers(workers)
+    .run();
+
+    let server_handle = server.handle();
+
+    // 优雅关闭监听
+    tokio::spawn(async move {
+        tokio::signal::ctrl_c().await.ok();
+        tracing::info!("received shutdown signal");
+        server_handle.stop(true).await;
+    });
+
+    server.await?;
+    tracing::info!("server stopped");
+
+    Ok(())
 }
