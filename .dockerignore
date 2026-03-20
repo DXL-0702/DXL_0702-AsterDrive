@@ -1,0 +1,12 @@
+target/
+frontend-panel/node_modules/
+frontend-panel/dist/
+.git/
+.github/
+.claude/
+docs/
+*.db
+*.db-shm
+*.db-wal
+config.toml
+.env

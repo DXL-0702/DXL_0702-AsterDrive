@@ -1,0 +1,16 @@
+services:
+  asterdrive:
+    # build: .
+    image: ghcr.io/apts-1547/asterdrive:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - asterdrive-data:/app/data
+      - /etc/localtime:/etc/localtime:ro
+      - ./config.toml:/app/config.toml:ro
+    environment:
+      - ASTER__SERVER__HOST=0.0.0.0
+    restart: unless-stopped
+
+volumes:
+  asterdrive-data:
