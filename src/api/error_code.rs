@@ -7,6 +7,7 @@
 //! - 3000-3099: 文件错误
 //! - 4000-4099: 存储策略错误
 //! - 5000-5099: 文件夹错误
+//! - 6000-6099: 分享错误
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use utoipa::ToSchema;
@@ -49,6 +50,12 @@ pub enum ErrorCode {
 
     // 文件夹错误 5000-5099
     FolderNotFound = 5000,
+
+    // 分享错误 6000-6099
+    ShareNotFound = 6000,
+    ShareExpired = 6001,
+    SharePasswordRequired = 6002,
+    ShareDownloadLimitReached = 6003,
 }
 
 impl From<&AsterError> for ErrorCode {
@@ -83,6 +90,12 @@ impl From<&AsterError> for ErrorCode {
 
             // 文件夹
             AsterError::FolderNotFound(_) => ErrorCode::FolderNotFound,
+
+            // 分享
+            AsterError::ShareNotFound(_) => ErrorCode::ShareNotFound,
+            AsterError::ShareExpired(_) => ErrorCode::ShareExpired,
+            AsterError::SharePasswordRequired(_) => ErrorCode::SharePasswordRequired,
+            AsterError::ShareDownloadLimit(_) => ErrorCode::ShareDownloadLimitReached,
         }
     }
 }

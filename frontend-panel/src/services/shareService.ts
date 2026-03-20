@@ -1,0 +1,27 @@
+import { config } from "@/config/app";
+import type { FolderContents, ShareInfo, SharePublicInfo } from "@/types/api";
+import { api } from "./http";
+
+export const shareService = {
+	create: (data: {
+		file_id?: number;
+		folder_id?: number;
+		password?: string;
+		expires_at?: string;
+		max_downloads?: number;
+	}) => api.post<ShareInfo>("/shares", data),
+
+	listMine: () => api.get<ShareInfo[]>("/shares"),
+
+	delete: (id: number) => api.delete<void>(`/shares/${id}`),
+
+	getInfo: (token: string) => api.get<SharePublicInfo>(`/s/${token}`),
+
+	verifyPassword: (token: string, password: string) =>
+		api.post<null>(`/s/${token}/verify`, { password }),
+
+	downloadUrl: (token: string) => `${config.apiBaseUrl}/s/${token}/download`,
+
+	listContent: (token: string) =>
+		api.get<FolderContents>(`/s/${token}/content`),
+};

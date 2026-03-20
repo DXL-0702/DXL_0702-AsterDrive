@@ -86,3 +86,11 @@ pub async fn update(
     use sea_orm::ActiveModelTrait;
     active.update(db).await.map_err(AsterError::from)
 }
+
+/// 列出文件夹内容（无用户校验，用于分享链接）
+pub async fn list_shared(db: &DatabaseConnection, folder_id: i64) -> Result<FolderContents> {
+    let folder = folder_repo::find_by_id(db, folder_id).await?;
+    let folders = folder_repo::find_children(db, folder.user_id, Some(folder_id)).await?;
+    let files = file_repo::find_by_folder(db, folder.user_id, Some(folder_id)).await?;
+    Ok(FolderContents { folders, files })
+}

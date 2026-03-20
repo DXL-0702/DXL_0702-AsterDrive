@@ -170,6 +170,27 @@ pub async fn download(
         .body(data))
 }
 
+/// 下载文件（无用户校验，用于分享链接）
+pub async fn download_raw(
+    db: &DatabaseConnection,
+    registry: &DriverRegistry,
+    id: i64,
+) -> Result<HttpResponse> {
+    let f = file_repo::find_by_id(db, id).await?;
+    let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
+    let policy = policy_repo::find_by_id(db, blob.policy_id).await?;
+    let driver = registry.get_driver(&policy)?;
+    let data = driver.get(&blob.storage_path).await?;
+
+    Ok(HttpResponse::Ok()
+        .content_type(f.mime_type)
+        .insert_header((
+            "Content-Disposition",
+            format!("attachment; filename=\"{}\"", f.name),
+        ))
+        .body(data))
+}
+
 /// 删除文件
 pub async fn delete(
     db: &DatabaseConnection,

@@ -1,5 +1,5 @@
-import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import { lazy, Suspense } from "react";
+import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
@@ -7,6 +7,7 @@ const FileBrowserPage = lazy(() => import("@/pages/FileBrowserPage"));
 const AdminUsersPage = lazy(() => import("@/pages/admin/AdminUsersPage"));
 const AdminPoliciesPage = lazy(() => import("@/pages/admin/AdminPoliciesPage"));
 const AdminSettingsPage = lazy(() => import("@/pages/admin/AdminSettingsPage"));
+const ShareViewPage = lazy(() => import("@/pages/ShareViewPage"));
 
 function Loading() {
 	return (
@@ -62,6 +63,15 @@ export const router = createBrowserRouter([
 	{
 		element: <ProtectedRoute />,
 		children: [{ path: "/", element: <FileBrowserPage /> }],
+	},
+	{
+		// Public share page — no auth required
+		path: "/s/:token",
+		element: (
+			<Suspense fallback={<Loading />}>
+				<ShareViewPage />
+			</Suspense>
+		),
 	},
 	{
 		element: <AdminRoute />,

@@ -1,0 +1,206 @@
+use chrono::Utc;
+use sea_orm::{DatabaseConnection, Set};
+use serde::Serialize;
+use utoipa::ToSchema;
+
+use crate::db::repository::{file_repo, folder_repo, share_repo};
+use crate::entities::share;
+use crate::errors::{AsterError, Result};
+use crate::runtime::AppState;
+use crate::services::file_service;
+use crate::utils::{hash, id};
+
+/// 公开返回给前端的分享信息（不含密码哈希和内部 ID）
+#[derive(Serialize, ToSchema)]
+pub struct SharePublicInfo {
+    pub token: String,
+    pub name: String,
+    pub share_type: String, // "file" or "folder"
+    pub has_password: bool,
+    pub expires_at: Option<String>,
+    pub is_expired: bool,
+    pub download_count: i64,
+    pub view_count: i64,
+    pub max_downloads: i64,
+}
+
+pub async fn create_share(
+    db: &DatabaseConnection,
+    user_id: i64,
+    file_id: Option<i64>,
+    folder_id: Option<i64>,
+    password: Option<String>,
+    expires_at: Option<chrono::DateTime<Utc>>,
+    max_downloads: i64,
+) -> Result<share::Model> {
+    // 至少一个不为空
+    if file_id.is_none() && folder_id.is_none() {
+        return Err(AsterError::validation_error(
+            "file_id or folder_id is required",
+        ));
+    }
+
+    // 校验文件/文件夹属于该用户
+    if let Some(fid) = file_id {
+        let f = file_repo::find_by_id(db, fid).await?;
+        if f.user_id != user_id {
+            return Err(AsterError::auth_forbidden("not your file"));
+        }
+    }
+    if let Some(fid) = folder_id {
+        let f = folder_repo::find_by_id(db, fid).await?;
+        if f.user_id != user_id {
+            return Err(AsterError::auth_forbidden("not your folder"));
+        }
+    }
+
+    let password_hash = match password {
+        Some(ref p) if !p.is_empty() => Some(hash::hash_password(p)?),
+        _ => None,
+    };
+
+    let now = Utc::now();
+    let model = share::ActiveModel {
+        token: Set(id::new_share_token()),
+        user_id: Set(user_id),
+        file_id: Set(file_id),
+        folder_id: Set(folder_id),
+        password: Set(password_hash),
+        expires_at: Set(expires_at),
+        max_downloads: Set(max_downloads),
+        download_count: Set(0),
+        view_count: Set(0),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    share_repo::create(db, model).await
+}
+
+pub async fn get_share_info(db: &DatabaseConnection, token: &str) -> Result<SharePublicInfo> {
+    let share = share_repo::find_by_token(db, token)
+        .await?
+        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+
+    validate_share(&share)?;
+
+    // increment view count (fire and forget)
+    let _ = share_repo::increment_view_count(db, share.id).await;
+
+    let (name, share_type) = resolve_share_name(db, &share).await?;
+
+    let is_expired = share.expires_at.is_some_and(|exp| exp < Utc::now());
+
+    Ok(SharePublicInfo {
+        token: share.token,
+        name,
+        share_type,
+        has_password: share.password.is_some(),
+        expires_at: share.expires_at.map(|e| e.to_rfc3339()),
+        is_expired,
+        download_count: share.download_count,
+        view_count: share.view_count,
+        max_downloads: share.max_downloads,
+    })
+}
+
+pub async fn verify_password(db: &DatabaseConnection, token: &str, password: &str) -> Result<()> {
+    let share = share_repo::find_by_token(db, token)
+        .await?
+        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+
+    validate_share(&share)?;
+
+    let pw_hash = share
+        .password
+        .as_deref()
+        .ok_or_else(|| AsterError::validation_error("share has no password"))?;
+
+    if !hash::verify_password(password, pw_hash)? {
+        return Err(AsterError::auth_invalid_credentials("wrong share password"));
+    }
+
+    Ok(())
+}
+
+pub async fn download_shared_file(
+    state: &AppState,
+    token: &str,
+) -> Result<actix_web::HttpResponse> {
+    let share = share_repo::find_by_token(&state.db, token)
+        .await?
+        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+
+    validate_share(&share)?;
+
+    let file_id = share
+        .file_id
+        .ok_or_else(|| AsterError::validation_error("this share is for a folder, not a file"))?;
+
+    // increment download count
+    let _ = share_repo::increment_download_count(&state.db, share.id).await;
+
+    // reuse existing download logic (bypass user ownership check)
+    file_service::download_raw(&state.db, &state.driver_registry, file_id).await
+}
+
+pub async fn list_shared_folder(
+    db: &DatabaseConnection,
+    token: &str,
+) -> Result<crate::services::folder_service::FolderContents> {
+    let share = share_repo::find_by_token(db, token)
+        .await?
+        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+
+    validate_share(&share)?;
+
+    let folder_id = share
+        .folder_id
+        .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
+
+    // list folder contents (bypass user ownership — shared access)
+    crate::services::folder_service::list_shared(db, folder_id).await
+}
+
+pub async fn list_my_shares(db: &DatabaseConnection, user_id: i64) -> Result<Vec<share::Model>> {
+    share_repo::find_by_user(db, user_id).await
+}
+
+pub async fn delete_share(db: &DatabaseConnection, share_id: i64, user_id: i64) -> Result<()> {
+    let share = share_repo::find_by_id(db, share_id).await?;
+    if share.user_id != user_id {
+        return Err(AsterError::auth_forbidden("not your share"));
+    }
+    share_repo::delete(db, share_id).await
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
+
+fn validate_share(share: &share::Model) -> Result<()> {
+    // 检查过期
+    if let Some(exp) = share.expires_at
+        && exp < Utc::now()
+    {
+        return Err(AsterError::share_expired("share has expired"));
+    }
+    // 检查下载次数限制
+    if share.max_downloads > 0 && share.download_count >= share.max_downloads {
+        return Err(AsterError::share_download_limit("download limit reached"));
+    }
+    Ok(())
+}
+
+async fn resolve_share_name(
+    db: &DatabaseConnection,
+    share: &share::Model,
+) -> Result<(String, String)> {
+    if let Some(file_id) = share.file_id {
+        let f = file_repo::find_by_id(db, file_id).await?;
+        Ok((f.name, "file".to_string()))
+    } else if let Some(folder_id) = share.folder_id {
+        let f = folder_repo::find_by_id(db, folder_id).await?;
+        Ok((f.name, "folder".to_string()))
+    } else {
+        Ok(("Unknown".to_string(), "unknown".to_string()))
+    }
+}

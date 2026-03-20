@@ -15,6 +15,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(routes::files::routes())
             .service(routes::folders::routes())
             .service(routes::admin::routes())
+            .service(routes::shares::routes())
+            .service(routes::share_public::routes())
             .default_service(web::to(api_not_found)),
     )
     .service(routes::health::routes());

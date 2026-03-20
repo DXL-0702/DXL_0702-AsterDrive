@@ -83,6 +83,12 @@ define_errors! {
 
     // ========== E040-E049: 文件夹错误 ==========
     FolderNotFound(       "E040", "Folder Not Found"),
+
+    // ========== E050-E059: 分享错误 ==========
+    ShareNotFound(         "E050", "Share Not Found"),
+    ShareExpired(          "E051", "Share Expired"),
+    SharePasswordRequired( "E052", "Share Password Required"),
+    ShareDownloadLimit(    "E053", "Share Download Limit Reached"),
 }
 
 impl AsterError {
@@ -103,7 +109,12 @@ impl AsterError {
             Self::RecordNotFound(_)
             | Self::FileNotFound(_)
             | Self::StoragePolicyNotFound(_)
-            | Self::FolderNotFound(_) => StatusCode::NOT_FOUND,
+            | Self::FolderNotFound(_)
+            | Self::ShareNotFound(_) => StatusCode::NOT_FOUND,
+
+            Self::ShareExpired(_) => StatusCode::GONE,
+
+            Self::SharePasswordRequired(_) | Self::ShareDownloadLimit(_) => StatusCode::FORBIDDEN,
 
             Self::StorageQuotaExceeded(_) => StatusCode::INSUFFICIENT_STORAGE,
 

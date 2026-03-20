@@ -1,4 +1,8 @@
-import { FileIcon, Folder, Download, Trash2 } from "lucide-react";
+import { Download, FileIcon, Folder, Link, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { ShareDialog } from "@/components/files/ShareDialog";
+import { Button } from "@/components/ui/button";
 import {
 	Table,
 	TableBody,
@@ -7,11 +11,9 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-import { useFileStore } from "@/stores/fileStore";
-import { fileService } from "@/services/fileService";
 import { handleApiError } from "@/hooks/useApiError";
-import { toast } from "sonner";
+import { fileService } from "@/services/fileService";
+import { useFileStore } from "@/stores/fileStore";
 
 function formatDate(dateStr: string): string {
 	const date = new Date(dateStr);
@@ -34,6 +36,11 @@ export function FileList() {
 	const deleteFile = useFileStore((s) => s.deleteFile);
 	const deleteFolder = useFileStore((s) => s.deleteFolder);
 	const loading = useFileStore((s) => s.loading);
+	const [shareTarget, setShareTarget] = useState<{
+		fileId?: number;
+		folderId?: number;
+		name: string;
+	} | null>(null);
 
 	const handleDownload = (fileId: number, fileName: string) => {
 		const url = fileService.downloadUrl(fileId);
@@ -85,75 +92,117 @@ export function FileList() {
 	}
 
 	return (
-		<Table>
-			<TableHeader>
-				<TableRow>
-					<TableHead className="w-[50%]">Name</TableHead>
-					<TableHead>Modified</TableHead>
-					<TableHead className="w-[100px]">Actions</TableHead>
-				</TableRow>
-			</TableHeader>
-			<TableBody>
-				{folders.map((folder) => (
-					<TableRow
-						key={`folder-${folder.id}`}
-						className="cursor-pointer"
-						onClick={() => navigateTo(folder.id, folder.name)}
-					>
-						<TableCell className="flex items-center gap-2">
-							<Folder className="h-4 w-4 text-blue-500" />
-							{folder.name}
-						</TableCell>
-						<TableCell className="text-muted-foreground">
-							{formatDate(folder.updated_at)}
-						</TableCell>
-						<TableCell>
-							<Button
-								variant="ghost"
-								size="icon"
-								className="h-8 w-8"
-								onClick={(e) => {
-									e.stopPropagation();
-									handleDeleteFolder(folder.id);
-								}}
-							>
-								<Trash2 className="h-4 w-4" />
-							</Button>
-						</TableCell>
+		<>
+			<Table>
+				<TableHeader>
+					<TableRow>
+						<TableHead className="w-[50%]">Name</TableHead>
+						<TableHead>Modified</TableHead>
+						<TableHead className="w-[120px]">Actions</TableHead>
 					</TableRow>
-				))}
-				{files.map((file) => (
-					<TableRow key={`file-${file.id}`}>
-						<TableCell className="flex items-center gap-2">
-							<FileIcon className="h-4 w-4 text-muted-foreground" />
-							{file.name}
-						</TableCell>
-						<TableCell className="text-muted-foreground">
-							{formatDate(file.updated_at)}
-						</TableCell>
-						<TableCell>
-							<div className="flex gap-1">
-								<Button
-									variant="ghost"
-									size="icon"
-									className="h-8 w-8"
-									onClick={() => handleDownload(file.id, file.name)}
-								>
-									<Download className="h-4 w-4" />
-								</Button>
-								<Button
-									variant="ghost"
-									size="icon"
-									className="h-8 w-8"
-									onClick={() => handleDeleteFile(file.id)}
-								>
-									<Trash2 className="h-4 w-4" />
-								</Button>
-							</div>
-						</TableCell>
-					</TableRow>
-				))}
-			</TableBody>
-		</Table>
+				</TableHeader>
+				<TableBody>
+					{folders.map((folder) => (
+						<TableRow
+							key={`folder-${folder.id}`}
+							className="cursor-pointer"
+							onClick={() => navigateTo(folder.id, folder.name)}
+						>
+							<TableCell className="flex items-center gap-2">
+								<Folder className="h-4 w-4 text-blue-500" />
+								{folder.name}
+							</TableCell>
+							<TableCell className="text-muted-foreground">
+								{formatDate(folder.updated_at)}
+							</TableCell>
+							<TableCell>
+								<div className="flex gap-1">
+									<Button
+										variant="ghost"
+										size="icon"
+										className="h-8 w-8"
+										onClick={(e) => {
+											e.stopPropagation();
+											setShareTarget({
+												folderId: folder.id,
+												name: folder.name,
+											});
+										}}
+									>
+										<Link className="h-4 w-4" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										className="h-8 w-8"
+										onClick={(e) => {
+											e.stopPropagation();
+											handleDeleteFolder(folder.id);
+										}}
+									>
+										<Trash2 className="h-4 w-4" />
+									</Button>
+								</div>
+							</TableCell>
+						</TableRow>
+					))}
+					{files.map((file) => (
+						<TableRow key={`file-${file.id}`}>
+							<TableCell className="flex items-center gap-2">
+								<FileIcon className="h-4 w-4 text-muted-foreground" />
+								{file.name}
+							</TableCell>
+							<TableCell className="text-muted-foreground">
+								{formatDate(file.updated_at)}
+							</TableCell>
+							<TableCell>
+								<div className="flex gap-1">
+									<Button
+										variant="ghost"
+										size="icon"
+										className="h-8 w-8"
+										onClick={() =>
+											setShareTarget({
+												fileId: file.id,
+												name: file.name,
+											})
+										}
+									>
+										<Link className="h-4 w-4" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										className="h-8 w-8"
+										onClick={() => handleDownload(file.id, file.name)}
+									>
+										<Download className="h-4 w-4" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										className="h-8 w-8"
+										onClick={() => handleDeleteFile(file.id)}
+									>
+										<Trash2 className="h-4 w-4" />
+									</Button>
+								</div>
+							</TableCell>
+						</TableRow>
+					))}
+				</TableBody>
+			</Table>
+			{shareTarget && (
+				<ShareDialog
+					open={true}
+					onOpenChange={(open) => {
+						if (!open) setShareTarget(null);
+					}}
+					fileId={shareTarget.fileId}
+					folderId={shareTarget.folderId}
+					name={shareTarget.name}
+				/>
+			)}
+		</>
 	);
 }

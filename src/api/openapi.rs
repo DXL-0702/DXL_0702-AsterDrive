@@ -42,6 +42,15 @@ use utoipa::OpenApi;
         crate::api::routes::admin::get_config,
         crate::api::routes::admin::set_config,
         crate::api::routes::admin::delete_config,
+        // shares (authenticated)
+        crate::api::routes::shares::create_share,
+        crate::api::routes::shares::list_shares,
+        crate::api::routes::shares::delete_share,
+        // shares (public)
+        crate::api::routes::share_public::get_share_info,
+        crate::api::routes::share_public::verify_password,
+        crate::api::routes::share_public::download_shared,
+        crate::api::routes::share_public::list_shared_content,
     ),
     components(
         schemas(
@@ -71,6 +80,10 @@ use utoipa::OpenApi;
             crate::api::routes::admin::SetConfigReq,
             crate::entities::system_config::Model,
             crate::entities::user_storage_policy::Model,
+            crate::entities::share::Model,
+            crate::services::share_service::SharePublicInfo,
+            crate::api::routes::shares::CreateShareReq,
+            crate::api::routes::share_public::VerifyPasswordReq,
         ),
     ),
     tags(
@@ -78,6 +91,7 @@ use utoipa::OpenApi;
         (name = "files", description = "File operations"),
         (name = "folders", description = "Folder operations"),
         (name = "admin", description = "Admin operations"),
+        (name = "shares", description = "File/folder sharing"),
         (name = "health", description = "Health checks"),
     ),
 )]
