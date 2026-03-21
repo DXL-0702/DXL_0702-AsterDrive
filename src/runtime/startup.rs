@@ -21,10 +21,13 @@ pub async fn prepare() -> Result<AppState> {
     // 3. 确保默认存储策略存在
     ensure_default_policy(&database).await?;
 
-    // 4. 驱动注册中心
+    // 4. 确保默认运行时配置存在
+    crate::db::repository::config_repo::ensure_defaults(&database).await?;
+
+    // 5. 驱动注册中心
     let driver_registry = Arc::new(DriverRegistry::new());
 
-    // 5. 初始化缓存
+    // 6. 初始化缓存
     let cache = crate::cache::create_cache(&cfg.cache).await;
 
     tracing::info!(

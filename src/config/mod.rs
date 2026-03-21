@@ -1,3 +1,4 @@
+pub mod definitions;
 mod loader;
 mod schema;
 
