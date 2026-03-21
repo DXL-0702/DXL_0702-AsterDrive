@@ -1,4 +1,5 @@
 import {
+	Copy,
 	Download,
 	FileIcon,
 	Folder,
@@ -13,6 +14,7 @@ import type { FileInfo } from "@/types/api";
 import { toast } from "sonner";
 import { FilePreview } from "@/components/files/FilePreview";
 import { ShareDialog } from "@/components/files/ShareDialog";
+import { VersionHistoryDialog } from "@/components/files/VersionHistoryDialog";
 import { Button } from "@/components/ui/button";
 import {
 	Table,
@@ -81,6 +83,26 @@ export function FileList() {
 				await fileService.setFolderLock(id, !currentLocked);
 			}
 			toast.success(currentLocked ? "Unlocked" : "Locked");
+			refresh();
+		} catch (error) {
+			handleApiError(error);
+		}
+	};
+
+	const handleCopyFile = async (id: number) => {
+		try {
+			await fileService.copyFile(id);
+			toast.success("File copied");
+			refresh();
+		} catch (error) {
+			handleApiError(error);
+		}
+	};
+
+	const handleCopyFolder = async (id: number) => {
+		try {
+			await fileService.copyFolder(id);
+			toast.success("Folder copied");
 			refresh();
 		} catch (error) {
 			handleApiError(error);
@@ -195,6 +217,17 @@ export function FileList() {
 										className="h-8 w-8"
 										onClick={(e) => {
 											e.stopPropagation();
+											handleCopyFolder(folder.id);
+										}}
+									>
+										<Copy className="h-4 w-4" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										className="h-8 w-8"
+										onClick={(e) => {
+											e.stopPropagation();
 											handleToggleLock("folder", folder.id, folder.is_locked ?? false);
 										}}
 									>
@@ -260,6 +293,19 @@ export function FileList() {
 											<Download className="h-4 w-4" />
 										)}
 									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										className="h-8 w-8"
+										onClick={() => handleCopyFile(file.id)}
+									>
+										<Copy className="h-4 w-4" />
+									</Button>
+									<VersionHistoryDialog
+										fileId={file.id}
+										fileName={file.name}
+										onRestored={() => refresh()}
+									/>
 									<Button
 										variant="ghost"
 										size="icon"

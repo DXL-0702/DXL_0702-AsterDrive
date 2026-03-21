@@ -5,7 +5,7 @@ use chrono::Utc;
 use sea_orm::Set;
 
 use crate::db::repository::{file_repo, folder_repo};
-use crate::entities::{file, file_blob, folder};
+use crate::entities::folder;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::file_service;
@@ -105,49 +105,10 @@ pub fn recursive_copy_folder<'a>(
         )
         .await?;
 
-        // 复制文件：批量查 blob，增 ref_count，创建新文件记录
+        // 复制文件：用 duplicate_file_record 统一处理
         let files = file_repo::find_by_folder(db, user_id, Some(src_folder_id)).await?;
-        let blob_ids: Vec<i64> = files.iter().map(|f| f.blob_id).collect();
-        let blobs = file_repo::find_blobs_by_ids(db, &blob_ids).await?;
-        let mut total_size: i64 = 0;
-
-        for f in files {
-            let blob = blobs.get(&f.blob_id).ok_or_else(|| {
-                crate::errors::AsterError::record_not_found(format!("blob #{}", f.blob_id))
-            })?;
-
-            // 增加引用计数
-            let mut blob_active: file_blob::ActiveModel = blob.clone().into();
-            blob_active.ref_count = Set(blob.ref_count + 1);
-            blob_active.updated_at = Set(now);
-            use sea_orm::ActiveModelTrait;
-            blob_active
-                .update(db)
-                .await
-                .map_err(crate::errors::AsterError::from)?;
-
-            total_size += blob.size;
-
-            // 创建新文件记录
-            file_repo::create(
-                db,
-                file::ActiveModel {
-                    name: Set(f.name),
-                    folder_id: Set(Some(new_folder.id)),
-                    blob_id: Set(f.blob_id),
-                    user_id: Set(user_id),
-                    mime_type: Set(f.mime_type),
-                    created_at: Set(now),
-                    updated_at: Set(now),
-                    ..Default::default()
-                },
-            )
-            .await?;
-        }
-
-        // 批量更新用户已用空间
-        if total_size > 0 {
-            crate::db::repository::user_repo::update_storage_used(db, user_id, total_size).await?;
+        for f in &files {
+            file_service::duplicate_file_record(state, f, Some(new_folder.id), &f.name).await?;
         }
 
         // 递归复制子文件夹

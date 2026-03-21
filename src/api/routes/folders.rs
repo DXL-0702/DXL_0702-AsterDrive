@@ -14,6 +14,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         .route("", web::post().to(create_folder))
         .route("/{id}", web::get().to(list_folder))
         .route("/{id}/lock", web::post().to(set_lock))
+        .route("/{id}/copy", web::post().to(copy_folder))
         .route("/{id}", web::delete().to(delete_folder))
         .route("/{id}", web::patch().to(patch_folder))
 }
@@ -176,4 +177,36 @@ pub async fn set_lock(
 ) -> Result<HttpResponse> {
     let folder = folder_service::set_locked(&state, *path, claims.user_id, body.locked).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
+}
+
+// ── Copy ───────────────────────────────────────────────────────────
+
+#[derive(Deserialize, ToSchema)]
+pub struct CopyFolderReq {
+    pub parent_id: Option<i64>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/folders/{id}/copy",
+    tag = "folders",
+    operation_id = "copy_folder",
+    params(("id" = i64, Path, description = "Source folder ID")),
+    request_body = CopyFolderReq,
+    responses(
+        (status = 201, description = "Folder copied", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn copy_folder(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    body: web::Json<CopyFolderReq>,
+) -> Result<HttpResponse> {
+    let folder =
+        folder_service::copy_folder(&state, *path, claims.user_id, body.parent_id).await?;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(folder)))
 }

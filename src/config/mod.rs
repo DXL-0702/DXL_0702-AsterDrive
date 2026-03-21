@@ -27,3 +27,8 @@ pub fn get_config() -> Arc<Config> {
 pub fn try_get_config() -> Option<Arc<Config>> {
     CONFIG.get().cloned()
 }
+
+/// 测试环境用：手动设置全局配置（OnceLock 只接受第一次调用）
+pub fn set_config_for_test(config: Arc<Config>) -> Result<(), Arc<Config>> {
+    CONFIG.set(config)
+}

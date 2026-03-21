@@ -30,6 +30,16 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         .route("/{id}/download", web::get().to(download))
         .route("/{id}/thumbnail", web::get().to(get_thumbnail))
         .route("/{id}/lock", web::post().to(set_lock))
+        .route("/{id}/copy", web::post().to(copy_file))
+        .route("/{id}/versions", web::get().to(list_versions))
+        .route(
+            "/{id}/versions/{version_id}/restore",
+            web::post().to(restore_version),
+        )
+        .route(
+            "/{id}/versions/{version_id}",
+            web::delete().to(delete_version),
+        )
         .route("/{id}", web::delete().to(delete_file))
         .route("/{id}", web::patch().to(patch_file))
 }
@@ -374,4 +384,117 @@ pub async fn set_lock(
 ) -> Result<HttpResponse> {
     let file = file_service::set_locked(&state, *path, claims.user_id, body.locked).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+}
+
+// ── Copy ───────────────────────────────────────────────────────────
+
+#[derive(Deserialize, ToSchema)]
+pub struct CopyFileReq {
+    pub folder_id: Option<i64>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/files/{id}/copy",
+    tag = "files",
+    operation_id = "copy_file",
+    params(("id" = i64, Path, description = "Source file ID")),
+    request_body = CopyFileReq,
+    responses(
+        (status = 201, description = "File copied", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn copy_file(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    body: web::Json<CopyFileReq>,
+) -> Result<HttpResponse> {
+    let file = file_service::copy_file(&state, *path, claims.user_id, body.folder_id).await?;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
+}
+
+// ── Versions ───────────────────────────────────────────────────────
+
+use crate::services::version_service;
+
+#[derive(Deserialize)]
+pub struct VersionPath {
+    pub id: i64,
+    pub version_id: i64,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/files/{id}/versions",
+    tag = "files",
+    operation_id = "list_versions",
+    params(("id" = i64, Path, description = "File ID")),
+    responses(
+        (status = 200, description = "File versions", body = inline(ApiResponse<Vec<crate::entities::file_version::Model>>)),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_versions(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    let versions = version_service::list_versions(&state, *path, claims.user_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(versions)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/files/{id}/versions/{version_id}/restore",
+    tag = "files",
+    operation_id = "restore_version",
+    params(
+        ("id" = i64, Path, description = "File ID"),
+        ("version_id" = i64, Path, description = "Version ID"),
+    ),
+    responses(
+        (status = 200, description = "Version restored", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Version not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn restore_version(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<VersionPath>,
+) -> Result<HttpResponse> {
+    let file =
+        version_service::restore_version(&state, path.id, path.version_id, claims.user_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/files/{id}/versions/{version_id}",
+    tag = "files",
+    operation_id = "delete_version",
+    params(
+        ("id" = i64, Path, description = "File ID"),
+        ("version_id" = i64, Path, description = "Version ID"),
+    ),
+    responses(
+        (status = 200, description = "Version deleted"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Version not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_version(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<VersionPath>,
+) -> Result<HttpResponse> {
+    version_service::delete_version(&state, path.id, path.version_id, claims.user_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

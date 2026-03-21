@@ -109,6 +109,7 @@ impl DavFileSystem for AsterDavFs {
                 let dav_file = AsterDavFile::for_write(
                     self.db.clone(),
                     self.driver_registry.clone(),
+                    self.config.clone(),
                     self.cache.clone(),
                     self.user_id,
                     parent_id,
@@ -388,25 +389,7 @@ impl DavFileSystem for AsterDavFs {
 
             match node {
                 ResolvedNode::File(f) => {
-                    // 复制文件：增加 blob ref_count，创建新文件记录
-                    let blob = file_repo::find_blob_by_id(&self.db, f.blob_id)
-                        .await
-                        .map_err(|_| FsError::GeneralFailure)?;
-
-                    let now = chrono::Utc::now();
-
-                    // 增加引用计数
-                    let mut blob_active: crate::entities::file_blob::ActiveModel =
-                        blob.clone().into();
-                    blob_active.ref_count = sea_orm::Set(blob.ref_count + 1);
-                    blob_active.updated_at = sea_orm::Set(now);
-                    use sea_orm::ActiveModelTrait;
-                    blob_active
-                        .update(&self.db)
-                        .await
-                        .map_err(|_| FsError::GeneralFailure)?;
-
-                    // 如果目标已存在，先删除
+                    // WebDAV COPY 覆盖语义：目标已存在先删除
                     if let Some(existing) = file_repo::find_by_name_in_folder(
                         &self.db,
                         self.user_id,
@@ -421,27 +404,14 @@ impl DavFileSystem for AsterDavFs {
                             .map_err(to_fs_error)?;
                     }
 
-                    // 创建新文件记录
-                    file_repo::create(
-                        &self.db,
-                        crate::entities::file::ActiveModel {
-                            name: sea_orm::Set(dest_name),
-                            folder_id: sea_orm::Set(dest_parent_id),
-                            blob_id: sea_orm::Set(f.blob_id),
-                            user_id: sea_orm::Set(self.user_id),
-                            mime_type: sea_orm::Set(f.mime_type),
-                            created_at: sea_orm::Set(now),
-                            updated_at: sea_orm::Set(now),
-                            ..Default::default()
-                        },
+                    file_service::duplicate_file_record(
+                        &state,
+                        &f,
+                        dest_parent_id,
+                        &dest_name,
                     )
                     .await
-                    .map_err(|_| FsError::GeneralFailure)?;
-
-                    // 更新用户空间
-                    user_repo::update_storage_used(&self.db, self.user_id, blob.size)
-                        .await
-                        .map_err(|_| FsError::GeneralFailure)?;
+                    .map_err(to_fs_error)?;
                 }
                 ResolvedNode::Folder(f) => {
                     webdav_service::recursive_copy_folder(

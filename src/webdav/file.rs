@@ -7,6 +7,7 @@ use sea_orm::DatabaseConnection;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use crate::cache::CacheBackend;
+use crate::config::Config;
 use crate::storage::DriverRegistry;
 use crate::webdav::metadata::AsterDavMeta;
 
@@ -48,6 +49,7 @@ enum FileMode {
     Write {
         db: DatabaseConnection,
         driver_registry: Arc<DriverRegistry>,
+        config: Arc<Config>,
         cache: Arc<dyn CacheBackend>,
         user_id: i64,
         folder_id: Option<i64>,
@@ -82,6 +84,7 @@ impl AsterDavFile {
     pub async fn for_write(
         db: DatabaseConnection,
         driver_registry: Arc<DriverRegistry>,
+        config: Arc<Config>,
         cache: Arc<dyn CacheBackend>,
         user_id: i64,
         folder_id: Option<i64>,
@@ -100,6 +103,7 @@ impl AsterDavFile {
             mode: FileMode::Write {
                 db,
                 driver_registry,
+                config,
                 cache,
                 user_id,
                 folder_id,
@@ -214,6 +218,7 @@ impl DavFile for AsterDavFile {
             let FileMode::Write {
                 db,
                 driver_registry,
+                config,
                 cache,
                 user_id,
                 folder_id,
@@ -237,7 +242,7 @@ impl DavFile for AsterDavFile {
             let state = crate::runtime::AppState {
                 db: db.clone(),
                 driver_registry: driver_registry.clone(),
-                config: crate::config::get_config(),
+                config: config.clone(),
                 cache: cache.clone(),
             };
 

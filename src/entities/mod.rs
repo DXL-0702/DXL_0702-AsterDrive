@@ -1,6 +1,7 @@
 pub mod entity_property;
 pub mod file;
 pub mod file_blob;
+pub mod file_version;
 pub mod folder;
 pub mod share;
 pub mod storage_policy;

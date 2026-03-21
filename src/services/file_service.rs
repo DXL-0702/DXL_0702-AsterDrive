@@ -123,6 +123,13 @@ pub async fn store_from_temp(
         }
         let old_blob = file_repo::find_blob_by_id(db, old_file.blob_id).await?;
 
+        // 覆盖时删除旧缩略图（新 blob 的缩略图会按需生成）
+        if let Err(e) =
+            crate::services::thumbnail_service::delete_thumbnail(state, &old_blob).await
+        {
+            tracing::warn!("failed to delete thumbnail for blob {}: {e}", old_blob.id);
+        }
+
         let mut active: file::ActiveModel = old_file.into();
         active.blob_id = Set(blob.id);
         active.mime_type = Set(mime);
@@ -130,27 +137,27 @@ pub async fn store_from_temp(
         use sea_orm::ActiveModelTrait;
         let updated = active.update(db).await.map_err(AsterError::from)?;
 
-        // 旧 blob 引用计数 -1
-        if old_blob.ref_count <= 1 {
-            if let Err(e) =
-                crate::services::thumbnail_service::delete_thumbnail(state, &old_blob).await
-            {
-                tracing::warn!("failed to delete thumbnail for blob {}: {e}", old_blob.id);
-            }
-            let old_policy = policy_repo::find_by_id(db, old_blob.policy_id).await?;
-            let old_driver = state.driver_registry.get_driver(&old_policy)?;
-            let _ = old_driver.delete(&old_blob.storage_path).await;
-            let _ = file_repo::delete_blob(db, old_blob.id).await;
-        } else {
-            let mut blob_active: file_blob::ActiveModel = old_blob.clone().into();
-            blob_active.ref_count = Set(old_blob.ref_count - 1);
-            blob_active.updated_at = Set(now);
-            use sea_orm::ActiveModelTrait;
-            let _ = blob_active.update(db).await;
-        }
+        // 版本溯源：保留旧 blob 作为历史版本（不减 ref_count）
+        let next_ver =
+            crate::db::repository::version_repo::next_version(db, existing_id).await?;
+        crate::db::repository::version_repo::create(
+            db,
+            crate::entities::file_version::ActiveModel {
+                file_id: Set(existing_id),
+                blob_id: Set(old_blob.id),
+                version: Set(next_ver),
+                size: Set(old_blob.size),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await?;
 
-        let delta = size - old_blob.size;
-        user_repo::update_storage_used(db, user_id, delta).await?;
+        // 清理超出上限的旧版本
+        crate::services::version_service::cleanup_excess(state, existing_id).await?;
+
+        // 配额：只增加新文件大小（旧版本 blob 已计入配额）
+        user_repo::update_storage_used(db, user_id, size).await?;
 
         Ok(updated)
     } else {
@@ -331,6 +338,9 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     // 清理属性
     crate::db::repository::property_repo::delete_all_for_entity(db, "file", id).await?;
 
+    // 清理所有版本（级联删除版本 blob）
+    crate::services::version_service::purge_all_versions(state, id).await?;
+
     // 回减用户已用空间
     user_repo::update_storage_used(db, user_id, -blob.size).await?;
 
@@ -370,6 +380,29 @@ pub async fn update(
     if f.is_locked {
         return Err(AsterError::resource_locked("file is locked"));
     }
+
+    // 目标文件夹校验
+    let target_folder = folder_id.or(f.folder_id);
+    if let Some(fid) = folder_id {
+        let target = crate::db::repository::folder_repo::find_by_id(db, fid).await?;
+        if target.user_id != user_id {
+            return Err(AsterError::auth_forbidden("not your folder"));
+        }
+    }
+
+    // 同名冲突检查
+    let final_name = name.as_deref().unwrap_or(&f.name);
+    if let Some(existing) =
+        file_repo::find_by_name_in_folder(db, user_id, target_folder, final_name).await?
+    {
+        if existing.id != id {
+            return Err(AsterError::validation_error(format!(
+                "file '{}' already exists in this folder",
+                final_name
+            )));
+        }
+    }
+
     let mut active: file::ActiveModel = f.into();
     if let Some(n) = name {
         active.name = Set(n);
@@ -399,6 +432,79 @@ pub async fn set_locked(
     active.updated_at = Set(Utc::now());
     use sea_orm::ActiveModelTrait;
     active.update(db).await.map_err(AsterError::from)
+}
+
+/// 复制文件（REST API 入口，带权限检查 + 副本命名）
+pub async fn copy_file(
+    state: &AppState,
+    src_id: i64,
+    user_id: i64,
+    dest_folder_id: Option<i64>,
+) -> Result<file::Model> {
+    let db = &state.db;
+    let src = file_repo::find_by_id(db, src_id).await?;
+    if src.user_id != user_id {
+        return Err(AsterError::auth_forbidden("not your file"));
+    }
+
+    // 配额检查
+    let blob = file_repo::find_blob_by_id(db, src.blob_id).await?;
+    let user = user_repo::find_by_id(db, user_id).await?;
+    if user.storage_quota > 0 && user.storage_used + blob.size > user.storage_quota {
+        return Err(AsterError::storage_quota_exceeded("quota exceeded"));
+    }
+
+    // 副本命名：目标无冲突保留原名，有冲突则递增
+    let dest = dest_folder_id.or(src.folder_id);
+    let mut copy_name = src.name.clone();
+    while file_repo::find_by_name_in_folder(db, user_id, dest, &copy_name)
+        .await?
+        .is_some()
+    {
+        copy_name = crate::utils::next_copy_name(&copy_name);
+    }
+
+    duplicate_file_record(state, &src, dest, &copy_name).await
+}
+
+/// 复制文件记录的核心逻辑（blob ref_count++ + 新文件记录 + 配额更新）
+///
+/// 无权限检查，供 REST copy、WebDAV COPY、recursive_copy_folder 共用。
+pub async fn duplicate_file_record(
+    state: &AppState,
+    src: &file::Model,
+    dest_folder_id: Option<i64>,
+    dest_name: &str,
+) -> Result<file::Model> {
+    let db = &state.db;
+    let blob = file_repo::find_blob_by_id(db, src.blob_id).await?;
+    let now = Utc::now();
+
+    // blob ref_count++
+    let mut blob_active: file_blob::ActiveModel = blob.clone().into();
+    blob_active.ref_count = Set(blob.ref_count + 1);
+    blob_active.updated_at = Set(now);
+    use sea_orm::ActiveModelTrait;
+    blob_active.update(db).await.map_err(AsterError::from)?;
+
+    let new_file = file_repo::create(
+        db,
+        file::ActiveModel {
+            name: Set(dest_name.to_string()),
+            folder_id: Set(dest_folder_id),
+            blob_id: Set(src.blob_id),
+            user_id: Set(src.user_id),
+            mime_type: Set(src.mime_type.clone()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await?;
+
+    user_repo::update_storage_used(db, src.user_id, blob.size).await?;
+
+    Ok(new_file)
 }
 
 /// 根据优先级链解析存储策略：文件夹 → 用户默认 → 系统默认

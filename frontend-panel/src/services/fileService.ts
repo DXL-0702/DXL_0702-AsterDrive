@@ -31,4 +31,32 @@ export const fileService = {
 
 	setFolderLock: (id: number, locked: boolean) =>
 		api.post<FolderInfo>(`/folders/${id}/lock`, { locked }),
+
+	copyFile: (id: number, folderId?: number | null) =>
+		api.post<FileInfo>(`/files/${id}/copy`, {
+			folder_id: folderId ?? null,
+		}),
+
+	copyFolder: (id: number, parentId?: number | null) =>
+		api.post<FolderInfo>(`/folders/${id}/copy`, {
+			parent_id: parentId ?? null,
+		}),
+
+	listVersions: (id: number) =>
+		api.get<FileVersion[]>(`/files/${id}/versions`),
+
+	restoreVersion: (fileId: number, versionId: number) =>
+		api.post<FileInfo>(`/files/${fileId}/versions/${versionId}/restore`),
+
+	deleteVersion: (fileId: number, versionId: number) =>
+		api.delete<void>(`/files/${fileId}/versions/${versionId}`),
 };
+
+export interface FileVersion {
+	id: number;
+	file_id: number;
+	blob_id: number;
+	version: number;
+	size: number;
+	created_at: string;
+}

@@ -81,13 +81,54 @@ pub async fn update(
     parent_id: Option<i64>,
     policy_id: Option<i64>,
 ) -> Result<folder::Model> {
-    let f = folder_repo::find_by_id(&state.db, id).await?;
+    let db = &state.db;
+    let f = folder_repo::find_by_id(db, id).await?;
     if f.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your folder"));
     }
     if f.is_locked {
         return Err(AsterError::resource_locked("folder is locked"));
     }
+
+    // 目标父文件夹校验
+    if let Some(pid) = parent_id {
+        // 不能移到自己
+        if pid == id {
+            return Err(AsterError::validation_error(
+                "cannot move folder into itself",
+            ));
+        }
+        let target = folder_repo::find_by_id(db, pid).await?;
+        if target.user_id != user_id {
+            return Err(AsterError::auth_forbidden("not your folder"));
+        }
+        // 循环检测：从目标往上遍历，如果遇到 id 说明是子文件夹
+        let mut cursor = Some(pid);
+        while let Some(cur_id) = cursor {
+            if cur_id == id {
+                return Err(AsterError::validation_error(
+                    "cannot move folder into its own subfolder",
+                ));
+            }
+            let cur = folder_repo::find_by_id(db, cur_id).await?;
+            cursor = cur.parent_id;
+        }
+    }
+
+    // 同名冲突检查
+    let target_parent = parent_id.or(f.parent_id);
+    let final_name = name.as_deref().unwrap_or(&f.name);
+    if let Some(existing) =
+        folder_repo::find_by_name_in_parent(db, user_id, target_parent, final_name).await?
+    {
+        if existing.id != id {
+            return Err(AsterError::validation_error(format!(
+                "folder '{}' already exists in this location",
+                final_name
+            )));
+        }
+    }
+
     let mut active: folder::ActiveModel = f.into();
     if let Some(n) = name {
         active.name = Set(n);
@@ -100,7 +141,7 @@ pub async fn update(
     }
     active.updated_at = Set(Utc::now());
     use sea_orm::ActiveModelTrait;
-    active.update(&state.db).await.map_err(AsterError::from)
+    active.update(db).await.map_err(AsterError::from)
 }
 
 /// 锁定/解锁文件夹
@@ -119,6 +160,33 @@ pub async fn set_locked(
     active.updated_at = sea_orm::Set(Utc::now());
     use sea_orm::ActiveModelTrait;
     active.update(&state.db).await.map_err(AsterError::from)
+}
+
+/// 复制文件夹（递归复制所有文件和子文件夹）
+pub async fn copy_folder(
+    state: &AppState,
+    src_id: i64,
+    user_id: i64,
+    dest_parent_id: Option<i64>,
+) -> Result<folder::Model> {
+    let db = &state.db;
+    let f = folder_repo::find_by_id(db, src_id).await?;
+    if f.user_id != user_id {
+        return Err(AsterError::auth_forbidden("not your folder"));
+    }
+
+    // 副本命名：目标无冲突保留原名，有冲突则递增
+    let dest = dest_parent_id.or(f.parent_id);
+    let mut dest_name = f.name.clone();
+    while folder_repo::find_by_name_in_parent(db, user_id, dest, &dest_name)
+        .await?
+        .is_some()
+    {
+        dest_name = crate::utils::next_copy_name(&dest_name);
+    }
+
+    crate::services::webdav_service::recursive_copy_folder(state, user_id, src_id, dest, &dest_name)
+        .await
 }
 
 /// 列出文件夹内容（无用户校验，用于分享链接）
