@@ -220,14 +220,17 @@ pub async fn upload_chunk(
         .await
         .map_err(|e| AsterError::chunk_upload_failed(format!("write chunk: {e}")))?;
 
-    // 原子 +1（raw SQL 避免 read-modify-write race condition）
-    use sea_orm::ConnectionTrait;
-    let now_str = Utc::now().to_rfc3339();
-    let sql = format!(
-        "UPDATE upload_sessions SET received_count = received_count + 1, updated_at = '{}' WHERE id = '{}'",
-        now_str, upload_id
-    );
-    db.execute_unprepared(&sql)
+    // 原子 +1（sea-query Expr 避免 read-modify-write race condition）
+    use crate::entities::upload_session::{Column, Entity as UploadSession};
+    use sea_orm::{ColumnTrait, EntityTrait, ExprTrait, QueryFilter, sea_query::Expr};
+    UploadSession::update_many()
+        .col_expr(
+            Column::ReceivedCount,
+            Expr::col(Column::ReceivedCount).add(1),
+        )
+        .col_expr(Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(Column::Id.eq(upload_id))
+        .exec(db)
         .await
         .map_err(AsterError::from)?;
 
