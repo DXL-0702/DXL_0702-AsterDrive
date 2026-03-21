@@ -436,3 +436,54 @@ async fn test_property_service_dav_readonly() {
     .await;
     assert!(err.is_err());
 }
+
+// ─── Driver Registry Invalidation ────────────────────────────────
+
+#[actix_web::test]
+async fn test_driver_registry_invalidate_on_policy_update() {
+    let state = common::setup().await;
+
+    // 获取默认策略
+    let policies = aster_drive::db::repository::policy_repo::find_all(&state.db)
+        .await
+        .unwrap();
+    let policy = &policies[0];
+
+    // 首次 get_driver → 缓存创建
+    let driver1 = state.driver_registry.get_driver(policy).unwrap();
+
+    // 再次获取 → 应返回同一个缓存实例（Arc 指针相同）
+    let driver2 = state.driver_registry.get_driver(policy).unwrap();
+    assert!(
+        std::sync::Arc::ptr_eq(&driver1, &driver2),
+        "cached driver should be the same Arc instance"
+    );
+
+    // 通过 service 更新策略（会触发 invalidate）
+    aster_drive::services::policy_service::update(
+        &state,
+        policy.id,
+        Some("Updated Name".to_string()),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    // 更新后获取 → 应是新的实例（缓存已失效，重新创建）
+    let updated_policy = aster_drive::db::repository::policy_repo::find_by_id(&state.db, policy.id)
+        .await
+        .unwrap();
+    let driver3 = state.driver_registry.get_driver(&updated_policy).unwrap();
+    assert!(
+        !std::sync::Arc::ptr_eq(&driver1, &driver3),
+        "driver should be recreated after policy update"
+    );
+}

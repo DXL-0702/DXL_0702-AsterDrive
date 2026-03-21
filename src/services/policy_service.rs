@@ -92,6 +92,7 @@ pub async fn delete(state: &AppState, id: i64) -> Result<()> {
         .map_err(AsterError::from)?;
 
     invalidate_policy_cache(state, id).await;
+    state.driver_registry.invalidate(id);
     Ok(())
 }
 
@@ -165,7 +166,10 @@ pub async fn update(
     active.updated_at = Set(Utc::now());
     let result = active.update(&state.db).await.map_err(AsterError::from)?;
 
+    // 缓存失效：策略数据 + driver 实例
     invalidate_policy_cache(state, id).await;
+    state.driver_registry.invalidate(id);
+
     Ok(result)
 }
 
