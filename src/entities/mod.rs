@@ -7,3 +7,4 @@ pub mod system_config;
 pub mod upload_session;
 pub mod user;
 pub mod user_storage_policy;
+pub mod webdav_account;

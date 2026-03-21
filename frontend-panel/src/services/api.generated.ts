@@ -356,6 +356,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/files/{id}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_thumbnail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/folders": {
         parameters: {
             query?: never;
@@ -484,6 +500,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/webdav-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_webdav_accounts"];
+        put?: never;
+        post: operations["create_webdav_account"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/webdav-accounts/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_webdav_account"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/webdav-accounts/{id}/toggle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["toggle_webdav_account"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -562,6 +626,12 @@ export interface components {
             max_downloads?: number;
             password?: string | null;
         };
+        CreateWebdavAccountReq: {
+            password?: string | null;
+            /** Format: int64 */
+            root_folder_id?: number | null;
+            username: string;
+        };
         /**
          * @description 存储驱动类型
          * @enum {string}
@@ -572,7 +642,7 @@ export interface components {
          * @example 0
          * @enum {integer}
          */
-        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 2000 | 2001 | 2002 | 2003 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
+        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 2000 | 2001 | 2002 | 2003 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
         FileInfo: {
             /** Format: int64 */
             blob_id: number;
@@ -815,6 +885,40 @@ export interface components {
         };
         VerifyPasswordReq: {
             password: string;
+        };
+        WebdavAccount: {
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            is_active: boolean;
+            /** Format: int64 */
+            root_folder_id?: number | null;
+            updated_at: string;
+            /** Format: int64 */
+            user_id: number;
+            username: string;
+        };
+        /** @description 创建账号后返回的响应（包含一次性明文密码） */
+        WebdavAccountCreated: {
+            /** Format: int64 */
+            id: number;
+            /** @description 明文密码，只返回一次 */
+            password: string;
+            root_folder_path?: string | null;
+            username: string;
+        };
+        /** @description 列表返回用的带路径的账号信息 */
+        WebdavAccountInfo: {
+            created_at: string;
+            /** Format: int64 */
+            id: number;
+            is_active: boolean;
+            /** Format: int64 */
+            root_folder_id?: number | null;
+            /** @description 文件夹路径，如 "/Documents/Photos"，None 表示全部访问 */
+            root_folder_path?: string | null;
+            updated_at: string;
+            username: string;
         };
     };
     responses: never;
@@ -2442,6 +2546,41 @@ export interface operations {
             };
         };
     };
+    get_thumbnail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description File ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Thumbnail image (WebP) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found or not an image */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     list_root: {
         parameters: {
             query?: never;
@@ -2963,6 +3102,178 @@ export interface operations {
                 content?: never;
             };
             /** @description Share not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_webdav_accounts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description WebDAV accounts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_active: boolean;
+                            /** Format: int64 */
+                            root_folder_id?: number | null;
+                            /** @description 文件夹路径，如 "/Documents/Photos"，None 表示全部访问 */
+                            root_folder_path?: string | null;
+                            updated_at: string;
+                            username: string;
+                        }[];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_webdav_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateWebdavAccountReq"];
+            };
+        };
+        responses: {
+            /** @description Account created (password shown once) */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        /** @description 创建账号后返回的响应（包含一次性明文密码） */
+                        data?: {
+                            /** Format: int64 */
+                            id: number;
+                            /** @description 明文密码，只返回一次 */
+                            password: string;
+                            root_folder_path?: string | null;
+                            username: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_webdav_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Account ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Account deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    toggle_webdav_account: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Account ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Account toggled */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            /** Format: int64 */
+                            id: number;
+                            is_active: boolean;
+                            /** Format: int64 */
+                            root_folder_id?: number | null;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                            username: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found */
             404: {
                 headers: {
                     [name: string]: unknown;

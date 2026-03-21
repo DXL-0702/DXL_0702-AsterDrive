@@ -1,5 +1,9 @@
 use actix_web::{App, HttpServer, web};
 
+// TODO: 上 Prometheus 后换 jemalloc + metrics
+// #[global_allocator]
+// static ALLOC: aster_drive::alloc::TrackingAlloc = aster_drive::alloc::TrackingAlloc;
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // 0. 安装自定义 panic hook（最先执行）
@@ -22,6 +26,9 @@ async fn main() -> std::io::Result<()> {
     let state = aster_drive::runtime::startup::prepare()
         .await
         .expect("startup failed");
+
+    // 清理 WebDAV 临时文件（上次启动的孤儿文件）
+    let _ = tokio::fs::remove_dir_all("data/.tmp").await;
 
     let host = state.config.server.host.clone();
     let port = state.config.server.port;
@@ -65,6 +72,16 @@ async fn main() -> std::io::Result<()> {
             }
         }
     });
+
+    // // 内存统计日志（每 30 秒，需要启用 global_allocator）
+    // tokio::spawn(async {
+    //     let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+    //     loop {
+    //         interval.tick().await;
+    //         let (allocated, peak) = aster_drive::alloc::stats();
+    //         tracing::debug!("heap: {allocated:.2} MB (peak: {peak:.2} MB)");
+    //     }
+    // });
 
     // 优雅关闭监听
     tokio::spawn(async move {

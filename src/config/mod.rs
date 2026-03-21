@@ -1,7 +1,9 @@
 mod loader;
 mod schema;
 
-pub use schema::{AuthConfig, CacheConfig, Config, DatabaseConfig, LoggingConfig, ServerConfig};
+pub use schema::{
+    AuthConfig, CacheConfig, Config, DatabaseConfig, LoggingConfig, ServerConfig, WebDavConfig,
+};
 
 use std::sync::Arc;
 use std::sync::OnceLock;
@@ -19,4 +21,9 @@ pub fn get_config() -> Arc<Config> {
         .get()
         .expect("Config not initialized. Call init_config() first.")
         .clone()
+}
+
+/// 尝试获取配置，未初始化时返回 None（用于可选功能如 WebDAV 在测试环境下跳过）
+pub fn try_get_config() -> Option<Arc<Config>> {
+    CONFIG.get().cloned()
 }

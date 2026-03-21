@@ -114,6 +114,72 @@ pub async fn update(
     Ok(result)
 }
 
+/// 测试存储策略连接是否正常
+///
+/// - Local: 检查 base_path 目录是否可写
+/// - S3: 尝试 HEAD bucket
+pub async fn test_connection(state: &AppState, id: i64) -> Result<()> {
+    let policy = policy_repo::find_by_id(&state.db, id).await?;
+    let driver = state.driver_registry.get_driver(&policy)?;
+
+    // 写一个测试文件然后删除
+    let test_path = "_aster_connection_test";
+    driver
+        .put(test_path, b"ok")
+        .await
+        .map_err(|e| AsterError::storage_driver_error(format!("write test failed: {e}")))?;
+    let _ = driver.delete(test_path).await;
+
+    Ok(())
+}
+
+/// 测试存储策略连接（不保存，用临时构造的 policy）
+pub async fn test_connection_params(
+    driver_type: DriverType,
+    endpoint: &str,
+    bucket: &str,
+    access_key: &str,
+    secret_key: &str,
+    base_path: &str,
+) -> Result<()> {
+    use crate::entities::storage_policy;
+    use crate::storage::local::LocalDriver;
+    use crate::storage::s3::S3Driver;
+
+    // 构造一个临时 policy model 用于创建 driver
+    let fake_policy = storage_policy::Model {
+        id: 0,
+        name: String::new(),
+        driver_type,
+        endpoint: endpoint.to_string(),
+        bucket: bucket.to_string(),
+        access_key: access_key.to_string(),
+        secret_key: secret_key.to_string(),
+        base_path: base_path.to_string(),
+        max_file_size: 0,
+        allowed_types: String::new(),
+        options: String::new(),
+        is_default: false,
+        chunk_size: 0,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    };
+
+    let driver: Box<dyn crate::storage::driver::StorageDriver> = match driver_type {
+        DriverType::Local => Box::new(LocalDriver::new(&fake_policy)?),
+        DriverType::S3 => Box::new(S3Driver::new(&fake_policy)?),
+    };
+
+    let test_path = "_aster_connection_test";
+    driver
+        .put(test_path, b"ok")
+        .await
+        .map_err(|e| AsterError::storage_driver_error(format!("connection test failed: {e}")))?;
+    let _ = driver.delete(test_path).await;
+
+    Ok(())
+}
+
 // ── User Storage Policy ──────────────────────────────────────────────
 
 pub async fn list_user_policies(

@@ -1,0 +1,125 @@
+use std::future::Future;
+use std::pin::Pin;
+
+use chrono::Utc;
+use sea_orm::Set;
+
+use crate::db::repository::{file_repo, folder_repo};
+use crate::entities::{file, file_blob, folder};
+use crate::errors::Result;
+use crate::runtime::AppState;
+use crate::services::file_service;
+
+/// 递归删除文件夹及其所有内容
+///
+/// 深度优先：删文件 → 递归子文件夹 → 删空文件夹
+pub fn recursive_delete_folder<'a>(
+    state: &'a AppState,
+    user_id: i64,
+    folder_id: i64,
+) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
+    Box::pin(async move {
+        let db = &state.db;
+
+        // 删除该文件夹下所有文件
+        let files = file_repo::find_by_folder(db, user_id, Some(folder_id)).await?;
+        for f in files {
+            file_service::delete(state, f.id, user_id).await?;
+        }
+
+        // 递归删除子文件夹
+        let children = folder_repo::find_children(db, user_id, Some(folder_id)).await?;
+        for child in children {
+            recursive_delete_folder(state, user_id, child.id).await?;
+        }
+
+        // 删除当前文件夹
+        folder_repo::delete(db, folder_id).await?;
+        Ok(())
+    })
+}
+
+/// 递归复制文件夹及其所有内容到新位置
+///
+/// 利用 blob 去重：只增加 ref_count，不复制物理数据
+pub fn recursive_copy_folder<'a>(
+    state: &'a AppState,
+    user_id: i64,
+    src_folder_id: i64,
+    dest_parent_id: Option<i64>,
+    dest_name: &'a str,
+) -> Pin<Box<dyn Future<Output = Result<folder::Model>> + Send + 'a>> {
+    Box::pin(async move {
+        let db = &state.db;
+        let now = Utc::now();
+
+        // 创建目标文件夹
+        let new_folder = folder_repo::create(
+            db,
+            folder::ActiveModel {
+                name: Set(dest_name.to_string()),
+                parent_id: Set(dest_parent_id),
+                user_id: Set(user_id),
+                policy_id: Set(None),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await?;
+
+        // 复制文件：批量查 blob，增 ref_count，创建新文件记录
+        let files = file_repo::find_by_folder(db, user_id, Some(src_folder_id)).await?;
+        let blob_ids: Vec<i64> = files.iter().map(|f| f.blob_id).collect();
+        let blobs = file_repo::find_blobs_by_ids(db, &blob_ids).await?;
+        let mut total_size: i64 = 0;
+
+        for f in files {
+            let blob = blobs.get(&f.blob_id).ok_or_else(|| {
+                crate::errors::AsterError::record_not_found(format!("blob #{}", f.blob_id))
+            })?;
+
+            // 增加引用计数
+            let mut blob_active: file_blob::ActiveModel = blob.clone().into();
+            blob_active.ref_count = Set(blob.ref_count + 1);
+            blob_active.updated_at = Set(now);
+            use sea_orm::ActiveModelTrait;
+            blob_active
+                .update(db)
+                .await
+                .map_err(crate::errors::AsterError::from)?;
+
+            total_size += blob.size;
+
+            // 创建新文件记录
+            file_repo::create(
+                db,
+                file::ActiveModel {
+                    name: Set(f.name),
+                    folder_id: Set(Some(new_folder.id)),
+                    blob_id: Set(f.blob_id),
+                    user_id: Set(user_id),
+                    mime_type: Set(f.mime_type),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        }
+
+        // 批量更新用户已用空间
+        if total_size > 0 {
+            crate::db::repository::user_repo::update_storage_used(db, user_id, total_size).await?;
+        }
+
+        // 递归复制子文件夹
+        let children = folder_repo::find_children(db, user_id, Some(src_folder_id)).await?;
+        for child in children {
+            recursive_copy_folder(state, user_id, child.id, Some(new_folder.id), &child.name)
+                .await?;
+        }
+
+        Ok(new_folder)
+    })
+}

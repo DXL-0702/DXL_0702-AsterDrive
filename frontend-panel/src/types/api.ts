@@ -15,6 +15,10 @@ export type DriverType = components["schemas"]["DriverType"];
 export type ShareInfo = components["schemas"]["ShareInfo"];
 export type SharePublicInfo = components["schemas"]["SharePublicInfo"];
 export type UserStoragePolicy = components["schemas"]["UserStoragePolicy"];
+export type WebdavAccount = components["schemas"]["WebdavAccount"];
+export type WebdavAccountCreated =
+	components["schemas"]["WebdavAccountCreated"];
+export type WebdavAccountInfo = components["schemas"]["WebdavAccountInfo"];
 
 // ErrorCode constants (generated type is a union of literal numbers, we need named constants)
 export const ErrorCode = {
@@ -42,6 +46,7 @@ export const ErrorCode = {
 	ShareExpired: 6001,
 	SharePasswordRequired: 6002,
 	ShareDownloadLimitReached: 6003,
+	ThumbnailFailed: 3008,
 } as const satisfies Record<string, ErrorCode>;
 
 // API response wrapper

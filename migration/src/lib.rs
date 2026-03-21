@@ -4,6 +4,8 @@ mod m20250320_000001_create_table;
 mod m20250321_000001_add_storage_quota;
 mod m20250321_000002_create_shares;
 mod m20250321_000003_chunked_upload;
+mod m20250321_000004_webdav_accounts;
+mod m20250321_000005_webdav_root_folder;
 
 pub struct Migrator;
 
@@ -15,6 +17,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20250321_000001_add_storage_quota::Migration),
             Box::new(m20250321_000002_create_shares::Migration),
             Box::new(m20250321_000003_chunked_upload::Migration),
+            Box::new(m20250321_000004_webdav_accounts::Migration),
+            Box::new(m20250321_000005_webdav_root_folder::Migration),
         ]
     }
 }

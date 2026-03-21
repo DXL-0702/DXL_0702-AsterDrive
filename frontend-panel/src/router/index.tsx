@@ -9,6 +9,7 @@ const AdminPoliciesPage = lazy(() => import("@/pages/admin/AdminPoliciesPage"));
 const AdminSettingsPage = lazy(() => import("@/pages/admin/AdminSettingsPage"));
 const AdminSharesPage = lazy(() => import("@/pages/admin/AdminSharesPage"));
 const ShareViewPage = lazy(() => import("@/pages/ShareViewPage"));
+const WebdavAccountsPage = lazy(() => import("@/pages/WebdavAccountsPage"));
 
 function Loading() {
 	return (
@@ -63,7 +64,10 @@ export const router = createBrowserRouter([
 	},
 	{
 		element: <ProtectedRoute />,
-		children: [{ path: "/", element: <FileBrowserPage /> }],
+		children: [
+			{ path: "/", element: <FileBrowserPage /> },
+			{ path: "/settings/webdav", element: <WebdavAccountsPage /> },
+		],
 	},
 	{
 		// Public share page — no auth required

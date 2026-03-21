@@ -78,6 +78,22 @@ pub async fn find_blob_by_id(db: &DatabaseConnection, id: i64) -> Result<file_bl
         .ok_or_else(|| AsterError::record_not_found(format!("file_blob #{id}")))
 }
 
+/// 批量查询 blob，返回 id → Model 的映射
+pub async fn find_blobs_by_ids(
+    db: &DatabaseConnection,
+    ids: &[i64],
+) -> Result<std::collections::HashMap<i64, file_blob::Model>> {
+    if ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let blobs = FileBlob::find()
+        .filter(file_blob::Column::Id.is_in(ids.to_vec()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(blobs.into_iter().map(|b| (b.id, b)).collect())
+}
+
 pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
     File::delete_by_id(id)
         .exec(db)

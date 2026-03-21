@@ -19,6 +19,11 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         .route("/policies/{id}", web::get().to(get_policy))
         .route("/policies/{id}", web::patch().to(update_policy))
         .route("/policies/{id}", web::delete().to(delete_policy))
+        .route(
+            "/policies/{id}/test",
+            web::post().to(test_policy_connection),
+        )
+        .route("/policies/test", web::post().to(test_policy_params))
         // users
         .route("/users", web::get().to(list_users))
         .route("/users/{id}", web::get().to(get_user))
@@ -220,6 +225,69 @@ pub async fn delete_policy(
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
     policy_service::delete(&state, *path).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct TestPolicyParamsReq {
+    pub driver_type: DriverType,
+    pub endpoint: Option<String>,
+    pub bucket: Option<String>,
+    pub access_key: Option<String>,
+    pub secret_key: Option<String>,
+    pub base_path: Option<String>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/policies/{id}/test",
+    tag = "admin",
+    operation_id = "test_policy_connection",
+    params(("id" = i64, Path, description = "Policy ID")),
+    responses(
+        (status = 200, description = "Connection successful"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Connection failed"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn test_policy_connection(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    policy_service::test_connection(&state, *path).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/policies/test",
+    tag = "admin",
+    operation_id = "test_policy_params",
+    request_body = TestPolicyParamsReq,
+    responses(
+        (status = 200, description = "Connection successful"),
+        (status = 401, description = "Unauthorized"),
+        (status = 500, description = "Connection failed"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn test_policy_params(
+    claims: web::ReqData<Claims>,
+    body: web::Json<TestPolicyParamsReq>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    policy_service::test_connection_params(
+        body.driver_type,
+        body.endpoint.as_deref().unwrap_or_default(),
+        body.bucket.as_deref().unwrap_or_default(),
+        body.access_key.as_deref().unwrap_or_default(),
+        body.secret_key.as_deref().unwrap_or_default(),
+        body.base_path.as_deref().unwrap_or_default(),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 

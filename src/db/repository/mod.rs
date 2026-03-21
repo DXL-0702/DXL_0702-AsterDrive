@@ -5,3 +5,4 @@ pub mod policy_repo;
 pub mod share_repo;
 pub mod upload_session_repo;
 pub mod user_repo;
+pub mod webdav_account_repo;

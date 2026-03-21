@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { HardDrive } from "lucide-react";
 import { FolderTree } from "@/components/folders/FolderTree";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -8,10 +10,12 @@ interface AppLayoutProps {
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
+	const location = useLocation();
+
 	return (
 		<div className="h-screen flex flex-col">
 			<div className="flex flex-1 overflow-hidden">
-				{/* Left sidebar - Folder tree */}
+				{/* Left sidebar */}
 				<aside className="w-60 border-r flex flex-col">
 					<div className="p-3 font-semibold text-sm text-muted-foreground uppercase tracking-wider">
 						Folders
@@ -20,6 +24,20 @@ export function AppLayout({ children }: AppLayoutProps) {
 					<ScrollArea className="flex-1">
 						<FolderTree />
 					</ScrollArea>
+					<Separator />
+					<div className="p-2">
+						<Link
+							to="/settings/webdav"
+							className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
+								location.pathname === "/settings/webdav"
+									? "bg-accent text-accent-foreground"
+									: "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+							}`}
+						>
+							<HardDrive className="h-4 w-4" />
+							WebDAV
+						</Link>
+					</div>
 				</aside>
 
 				{/* Right content */}

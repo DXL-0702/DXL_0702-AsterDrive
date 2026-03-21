@@ -12,6 +12,8 @@ pub struct Config {
     pub cache: CacheConfig,
     #[serde(default)]
     pub logging: LoggingConfig,
+    #[serde(default)]
+    pub webdav: WebDavConfig,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -172,5 +174,38 @@ impl LoggingConfig {
     }
     fn default_format() -> String {
         "text".to_string()
+    }
+}
+
+/// WebDAV 静态配置（config.toml）
+///
+/// 运行时配置通过 system_config 表管理：
+/// - `webdav_enabled`: 是否启用 (默认 "true")
+/// - `webdav_max_upload_size`: 软上传限制字节数 (默认 "1073741824" = 1GB)
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct WebDavConfig {
+    /// 路由前缀，改了要重启
+    #[serde(default = "WebDavConfig::default_prefix")]
+    pub prefix: String,
+    /// actix payload 硬上限，改了要重启。运行时软限制从 DB 读。
+    #[serde(default = "WebDavConfig::default_payload_limit")]
+    pub payload_limit: usize,
+}
+
+impl Default for WebDavConfig {
+    fn default() -> Self {
+        Self {
+            prefix: Self::default_prefix(),
+            payload_limit: Self::default_payload_limit(),
+        }
+    }
+}
+
+impl WebDavConfig {
+    fn default_prefix() -> String {
+        "/webdav".to_string()
+    }
+    fn default_payload_limit() -> usize {
+        10_737_418_240 // 10 GB 硬上限
     }
 }

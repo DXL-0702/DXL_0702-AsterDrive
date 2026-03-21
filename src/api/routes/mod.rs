@@ -6,3 +6,4 @@ pub mod frontend;
 pub mod health;
 pub mod share_public;
 pub mod shares;
+pub mod webdav_accounts;

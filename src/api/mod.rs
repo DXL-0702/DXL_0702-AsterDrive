@@ -17,6 +17,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(routes::admin::routes())
             .service(routes::shares::routes())
             .service(routes::share_public::routes())
+            .service(routes::webdav_accounts::routes())
             .default_service(web::to(api_not_found)),
     )
     .service(routes::health::routes());
@@ -36,6 +37,11 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             }),
         ));
         cfg.service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-docs/openapi.json", spec));
+    }
+
+    // WebDAV — 在 frontend fallback 之前注册
+    if let Some(config) = crate::config::try_get_config() {
+        crate::webdav::configure(cfg, &config.webdav);
     }
 
     // frontend 最后注册，兜底所有未匹配路由

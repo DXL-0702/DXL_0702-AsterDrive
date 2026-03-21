@@ -56,6 +56,17 @@ export const adminPolicyService = {
 	) => api.patch<StoragePolicy>(`/admin/policies/${id}`, data),
 
 	delete: (id: number) => api.delete<void>(`/admin/policies/${id}`),
+
+	testConnection: (id: number) => api.post<void>(`/admin/policies/${id}/test`),
+
+	testParams: (data: {
+		driver_type: DriverType;
+		endpoint?: string;
+		bucket?: string;
+		access_key?: string;
+		secret_key?: string;
+		base_path?: string;
+	}) => api.post<void>("/admin/policies/test", data),
 };
 
 // --- User Storage Policies ---

@@ -48,8 +48,16 @@ pub async fn list(
     user_id: i64,
     parent_id: Option<i64>,
 ) -> Result<FolderContents> {
-    let folders = folder_repo::find_children(&state.db, user_id, parent_id).await?;
-    let files = file_repo::find_by_folder(&state.db, user_id, parent_id).await?;
+    let folders = folder_repo::find_children(&state.db, user_id, parent_id)
+        .await?
+        .into_iter()
+        .filter(|f| !crate::utils::is_hidden_name(&f.name))
+        .collect();
+    let files = file_repo::find_by_folder(&state.db, user_id, parent_id)
+        .await?
+        .into_iter()
+        .filter(|f| !crate::utils::is_hidden_name(&f.name))
+        .collect();
     Ok(FolderContents { folders, files })
 }
 

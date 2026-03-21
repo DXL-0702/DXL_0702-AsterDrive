@@ -8,6 +8,7 @@ pub fn routes() -> actix_web::Scope {
         .route("", web::head().to(health))
         .route("/ready", web::get().to(ready))
         .route("/ready", web::head().to(ready))
+    // .route("/memory", web::get().to(memory)) // TODO: 上 Prometheus 后用 metrics 替代
 }
 
 #[utoipa::path(
@@ -49,6 +50,14 @@ pub async fn ready(state: web::Data<AppState>) -> HttpResponse {
             &e.to_string(),
         )),
     }
+}
+
+pub async fn memory() -> HttpResponse {
+    let (allocated, peak) = crate::alloc::stats();
+    HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({
+        "heap_allocated_mb": format!("{allocated:.2}"),
+        "heap_peak_mb": format!("{peak:.2}"),
+    })))
 }
 
 fn compile_time() -> &'static str {

@@ -1,4 +1,4 @@
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Check, Loader2, Pencil, Plus, Trash2, Wifi } from "lucide-react";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -70,6 +70,61 @@ const emptyForm: PolicyFormData = {
 	chunk_size: "5",
 	is_default: false,
 };
+
+function TestConnectionButton({
+	form,
+	editingId,
+}: {
+	form: PolicyFormData;
+	editingId: number | null;
+}) {
+	const [testing, setTesting] = useState(false);
+	const [result, setResult] = useState<boolean | null>(null);
+
+	const handleTest = async () => {
+		setTesting(true);
+		setResult(null);
+		try {
+			if (editingId) {
+				await adminPolicyService.testConnection(editingId);
+			} else {
+				await adminPolicyService.testParams({
+					driver_type: form.driver_type,
+					endpoint: form.endpoint || undefined,
+					bucket: form.bucket || undefined,
+					access_key: form.access_key || undefined,
+					secret_key: form.secret_key || undefined,
+					base_path: form.base_path || undefined,
+				});
+			}
+			setResult(true);
+			toast.success("Connection test passed");
+		} catch (e) {
+			setResult(false);
+			handleApiError(e);
+		} finally {
+			setTesting(false);
+		}
+	};
+
+	return (
+		<Button
+			type="button"
+			variant="outline"
+			disabled={testing}
+			onClick={handleTest}
+		>
+			{testing ? (
+				<Loader2 className="h-4 w-4 mr-1 animate-spin" />
+			) : result === true ? (
+				<Check className="h-4 w-4 mr-1 text-green-600" />
+			) : (
+				<Wifi className="h-4 w-4 mr-1" />
+			)}
+			Test
+		</Button>
+	);
+}
 
 export default function AdminPoliciesPage() {
 	const [policies, setPolicies] = useState<StoragePolicy[]>([]);
@@ -424,9 +479,12 @@ export default function AdminPoliciesPage() {
 								<Label htmlFor="is_default">Set as default policy</Label>
 							</div>
 
-							<Button type="submit" className="w-full">
-								{editingId ? "Save Changes" : "Create"}
-							</Button>
+							<div className="flex gap-2">
+								<TestConnectionButton form={form} editingId={editingId} />
+								<Button type="submit" className="flex-1">
+									{editingId ? "Save Changes" : "Create"}
+								</Button>
+							</div>
 						</form>
 					</DialogContent>
 				</Dialog>

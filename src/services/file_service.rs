@@ -3,62 +3,72 @@ use actix_web::HttpResponse;
 use chrono::Utc;
 use futures::StreamExt;
 use sea_orm::Set;
+use tokio::io::AsyncWriteExt;
 
 use crate::cache::CacheExt;
 use crate::db::repository::{file_repo, policy_repo, user_repo};
 use crate::entities::{file, file_blob, user_storage_policy};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::utils::hash;
 
-/// 上传文件
-pub async fn upload(
+const HASH_BUF_SIZE: usize = 65536; // 64KB
+
+/// 从临时文件存储 blob 并创建文件记录
+///
+/// 公共函数，REST upload 和 WebDAV flush 都调用。
+/// - 流式 sha256（不加载全文件到内存）
+/// - 策略检查 + 配额检查 + blob 去重
+/// - `put_file` 零拷贝（LocalDriver rename）
+/// - 创建/覆盖文件记录
+///
+/// `existing_file_id`: Some 时覆盖现有文件，None 时新建
+///
+/// 返回创建/更新的文件记录。临时文件可能被 put_file rename 走，调用方不要依赖它存在。
+pub async fn store_from_temp(
     state: &AppState,
     user_id: i64,
-    payload: &mut Multipart,
     folder_id: Option<i64>,
+    filename: &str,
+    temp_path: &str,
+    size: i64,
+    existing_file_id: Option<i64>,
 ) -> Result<file::Model> {
     let db = &state.db;
 
-    // 读取 multipart field — 只取 file field 的数据
-    let mut filename = String::from("unnamed");
-    let mut data = Vec::new();
-
-    while let Some(field) = payload.next().await {
-        let mut field = field.map_err(|e| AsterError::file_upload_failed(e.to_string()))?;
-        let is_file = field
-            .content_disposition()
-            .and_then(|cd| cd.get_filename().map(|n| n.to_string()));
-
-        if let Some(name) = is_file {
-            filename = name;
-            while let Some(chunk) = field.next().await {
-                let chunk = chunk.map_err(|e| AsterError::file_upload_failed(e.to_string()))?;
-                data.extend_from_slice(&chunk);
+    // 流式 sha256
+    let file_hash = {
+        use sha2::{Digest, Sha256};
+        use tokio::io::AsyncReadExt;
+        let mut hasher = Sha256::new();
+        let mut reader = tokio::fs::File::open(temp_path)
+            .await
+            .map_err(|e| AsterError::file_upload_failed(format!("open temp: {e}")))?;
+        let mut buf = vec![0u8; HASH_BUF_SIZE];
+        loop {
+            let n = reader
+                .read(&mut buf)
+                .await
+                .map_err(|e| AsterError::file_upload_failed(format!("read temp: {e}")))?;
+            if n == 0 {
+                break;
             }
+            hasher.update(&buf[..n]);
         }
-    }
+        format!("{:x}", hasher.finalize())
+    };
 
-    if data.is_empty() {
-        return Err(AsterError::validation_error("empty file"));
-    }
-
-    // 确定存储策略
+    // 策略解析
     let policy = resolve_policy(state, user_id, folder_id).await?;
 
-    // 检查文件大小限制
-    if policy.max_file_size > 0 && (data.len() as i64) > policy.max_file_size {
+    // 文件大小限制
+    if policy.max_file_size > 0 && size > policy.max_file_size {
         return Err(AsterError::file_too_large(format!(
             "file size {} exceeds limit {}",
-            data.len(),
-            policy.max_file_size
+            size, policy.max_file_size
         )));
     }
 
-    let file_hash = hash::sha256_hex(&data);
-    let size = data.len() as i64;
-
-    // 检查用户配额
+    // 配额检查
     let user = user_repo::find_by_id(db, user_id).await?;
     if user.storage_quota > 0 && user.storage_used + size > user.storage_quota {
         return Err(AsterError::storage_quota_exceeded(format!(
@@ -68,11 +78,11 @@ pub async fn upload(
     }
 
     let now = Utc::now();
+    let driver = state.driver_registry.get_driver(&policy)?;
 
-    // 查找是否已有相同 blob
+    // Blob 去重
     let blob = match file_repo::find_blob_by_hash(db, &file_hash, policy.id).await? {
         Some(existing) => {
-            // 增加引用计数
             let mut active: file_blob::ActiveModel = existing.clone().into();
             active.ref_count = Set(existing.ref_count + 1);
             active.updated_at = Set(now);
@@ -80,10 +90,9 @@ pub async fn upload(
             active.update(db).await.map_err(AsterError::from)?
         }
         None => {
-            // 写入物理文件
             let storage_path = format!("{}/{}/{}", &file_hash[..2], &file_hash[2..4], &file_hash);
-            let driver = state.driver_registry.get_driver(&policy)?;
-            driver.put(&storage_path, &data).await?;
+            // 零拷贝：put_file 用 rename（LocalDriver）或流式上传（S3）
+            driver.put_file(&storage_path, temp_path).await?;
 
             file_repo::create_blob(
                 db,
@@ -102,39 +111,131 @@ pub async fn upload(
         }
     };
 
-    // 推测 MIME 类型
-    let mime = mime_guess::from_path(&filename)
+    let mime = mime_guess::from_path(filename)
         .first_or_octet_stream()
         .to_string();
 
-    // 检查同名文件
-    if file_repo::find_by_name_in_folder(db, user_id, folder_id, &filename)
-        .await?
-        .is_some()
-    {
-        return Err(AsterError::validation_error(format!(
-            "file '{}' already exists in this folder",
-            filename
-        )));
+    if let Some(existing_id) = existing_file_id {
+        // 覆盖现有文件
+        let old_file = file_repo::find_by_id(db, existing_id).await?;
+        let old_blob = file_repo::find_blob_by_id(db, old_file.blob_id).await?;
+
+        let mut active: file::ActiveModel = old_file.into();
+        active.blob_id = Set(blob.id);
+        active.mime_type = Set(mime);
+        active.updated_at = Set(now);
+        use sea_orm::ActiveModelTrait;
+        let updated = active.update(db).await.map_err(AsterError::from)?;
+
+        // 旧 blob 引用计数 -1
+        if old_blob.ref_count <= 1 {
+            if let Err(e) =
+                crate::services::thumbnail_service::delete_thumbnail(state, &old_blob).await
+            {
+                tracing::warn!("failed to delete thumbnail for blob {}: {e}", old_blob.id);
+            }
+            let old_policy = policy_repo::find_by_id(db, old_blob.policy_id).await?;
+            let old_driver = state.driver_registry.get_driver(&old_policy)?;
+            let _ = old_driver.delete(&old_blob.storage_path).await;
+            let _ = file_repo::delete_blob(db, old_blob.id).await;
+        } else {
+            let mut blob_active: file_blob::ActiveModel = old_blob.clone().into();
+            blob_active.ref_count = Set(old_blob.ref_count - 1);
+            blob_active.updated_at = Set(now);
+            use sea_orm::ActiveModelTrait;
+            let _ = blob_active.update(db).await;
+        }
+
+        let delta = size - old_blob.size;
+        user_repo::update_storage_used(db, user_id, delta).await?;
+
+        Ok(updated)
+    } else {
+        // 新建文件
+        // 检查同名文件
+        if file_repo::find_by_name_in_folder(db, user_id, folder_id, filename)
+            .await?
+            .is_some()
+        {
+            return Err(AsterError::validation_error(format!(
+                "file '{}' already exists in this folder",
+                filename
+            )));
+        }
+
+        let file_model = file::ActiveModel {
+            name: Set(filename.to_string()),
+            folder_id: Set(folder_id),
+            blob_id: Set(blob.id),
+            user_id: Set(user_id),
+            mime_type: Set(mime),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        };
+        let created = file_repo::create(db, file_model).await?;
+        user_repo::update_storage_used(db, user_id, size).await?;
+
+        Ok(created)
+    }
+}
+
+/// 上传文件（REST API，multipart）
+pub async fn upload(
+    state: &AppState,
+    user_id: i64,
+    payload: &mut Multipart,
+    folder_id: Option<i64>,
+) -> Result<file::Model> {
+    // 流式写入临时文件（不在内存中缓冲整个文件）
+    let mut filename = String::from("unnamed");
+    let temp_path = format!("data/.tmp/{}", uuid::Uuid::new_v4());
+    tokio::fs::create_dir_all("data/.tmp")
+        .await
+        .map_err(|e| AsterError::file_upload_failed(format!("create temp dir: {e}")))?;
+
+    let mut temp_file = tokio::fs::File::create(&temp_path)
+        .await
+        .map_err(|e| AsterError::file_upload_failed(format!("create temp: {e}")))?;
+    let mut size: i64 = 0;
+
+    while let Some(field) = payload.next().await {
+        let mut field = field.map_err(|e| AsterError::file_upload_failed(e.to_string()))?;
+        let is_file = field
+            .content_disposition()
+            .and_then(|cd| cd.get_filename().map(|n| n.to_string()));
+
+        if let Some(name) = is_file {
+            filename = name;
+            while let Some(chunk) = field.next().await {
+                let chunk = chunk.map_err(|e| AsterError::file_upload_failed(e.to_string()))?;
+                temp_file
+                    .write_all(&chunk)
+                    .await
+                    .map_err(|e| AsterError::file_upload_failed(format!("write temp: {e}")))?;
+                size += chunk.len() as i64;
+            }
+        }
     }
 
-    // 创建文件记录
-    let file_model = file::ActiveModel {
-        name: Set(filename),
-        folder_id: Set(folder_id),
-        blob_id: Set(blob.id),
-        user_id: Set(user_id),
-        mime_type: Set(mime),
-        created_at: Set(now),
-        updated_at: Set(now),
-        ..Default::default()
-    };
-    let created = file_repo::create(db, file_model).await?;
+    temp_file
+        .flush()
+        .await
+        .map_err(|e| AsterError::file_upload_failed(format!("flush temp: {e}")))?;
+    drop(temp_file);
 
-    // 更新用户已用空间
-    user_repo::update_storage_used(db, user_id, size).await?;
+    if size == 0 {
+        let _ = tokio::fs::remove_file(&temp_path).await;
+        return Err(AsterError::validation_error("empty file"));
+    }
 
-    Ok(created)
+    let result =
+        store_from_temp(state, user_id, folder_id, &filename, &temp_path, size, None).await;
+
+    // 清理临时文件（put_file 可能已经 rename 走了，忽略错误）
+    let _ = tokio::fs::remove_file(&temp_path).await;
+
+    result
 }
 
 /// 获取文件信息
