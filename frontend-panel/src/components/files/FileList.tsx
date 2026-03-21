@@ -7,6 +7,7 @@ import {
 	Trash2,
 } from "lucide-react";
 import { useState } from "react";
+import type { FileInfo } from "@/types/api";
 import { toast } from "sonner";
 import { ShareDialog } from "@/components/files/ShareDialog";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,26 @@ import {
 import { handleApiError } from "@/hooks/useApiError";
 import { fileService } from "@/services/fileService";
 import { useFileStore } from "@/stores/fileStore";
+
+function FileThumbnail({ file }: { file: FileInfo }) {
+	const [failed, setFailed] = useState(false);
+	const isImage =
+		file.mime_type.startsWith("image/") && file.mime_type !== "image/svg+xml";
+
+	if (!isImage || failed) {
+		return <FileIcon className="h-4 w-4 text-muted-foreground" />;
+	}
+
+	return (
+		<img
+			src={fileService.thumbnailUrl(file.id)}
+			alt=""
+			className="h-8 w-8 rounded object-cover"
+			loading="lazy"
+			onError={() => setFailed(true)}
+		/>
+	);
+}
 
 function formatDate(dateStr: string): string {
 	const date = new Date(dateStr);
@@ -162,7 +183,7 @@ export function FileList() {
 					{files.map((file) => (
 						<TableRow key={`file-${file.id}`}>
 							<TableCell className="flex items-center gap-2">
-								<FileIcon className="h-4 w-4 text-muted-foreground" />
+								<FileThumbnail file={file} />
 								{file.name}
 							</TableCell>
 							<TableCell className="text-muted-foreground">

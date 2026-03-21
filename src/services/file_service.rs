@@ -202,6 +202,10 @@ pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
 
     // 减少引用计数，如果为 0 则删除物理文件
     if blob.ref_count <= 1 {
+        // best-effort 删除缩略图
+        if let Err(e) = crate::services::thumbnail_service::delete_thumbnail(state, &blob).await {
+            tracing::warn!("failed to delete thumbnail for blob {}: {e}", blob.id);
+        }
         let policy = policy_repo::find_by_id(db, blob.policy_id).await?;
         let driver = state.driver_registry.get_driver(&policy)?;
         driver.delete(&blob.storage_path).await?;

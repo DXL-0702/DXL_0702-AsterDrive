@@ -23,4 +23,6 @@ export const fileService = {
 		api.patch<FileInfo>(`/files/${id}`, { name }),
 
 	downloadUrl: (id: number) => `${config.apiBaseUrl}/files/${id}/download`,
+
+	thumbnailUrl: (id: number) => `${config.apiBaseUrl}/files/${id}/thumbnail`,
 };

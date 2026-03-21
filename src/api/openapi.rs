@@ -19,6 +19,7 @@ use utoipa::OpenApi;
         crate::api::routes::files::upload,
         crate::api::routes::files::get_file,
         crate::api::routes::files::download,
+        crate::api::routes::files::get_thumbnail,
         crate::api::routes::files::delete_file,
         crate::api::routes::files::patch_file,
         crate::api::routes::files::init_chunked_upload,

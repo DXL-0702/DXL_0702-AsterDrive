@@ -45,6 +45,7 @@ pub enum ErrorCode {
     UploadSessionExpired = 3005,
     ChunkUploadFailed = 3006,
     UploadAssemblyFailed = 3007,
+    ThumbnailFailed = 3008,
 
     // 存储策略错误 4000-4099
     StoragePolicyNotFound = 4000,
@@ -100,6 +101,9 @@ impl From<&AsterError> for ErrorCode {
             AsterError::UploadSessionExpired(_) => ErrorCode::UploadSessionExpired,
             AsterError::ChunkUploadFailed(_) => ErrorCode::ChunkUploadFailed,
             AsterError::UploadAssemblyFailed(_) => ErrorCode::UploadAssemblyFailed,
+
+            // 缩略图
+            AsterError::ThumbnailGenerationFailed(_) => ErrorCode::ThumbnailFailed,
 
             // 分享
             AsterError::ShareNotFound(_) => ErrorCode::ShareNotFound,

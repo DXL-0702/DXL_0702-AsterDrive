@@ -1,8 +1,10 @@
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::response::ApiResponse;
+use crate::db::repository::file_repo;
+use crate::errors::AsterError;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{auth_service::Claims, file_service, upload_service};
+use crate::services::{auth_service::Claims, file_service, thumbnail_service, upload_service};
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
@@ -26,6 +28,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         // standard file routes
         .route("/{id}", web::get().to(get_file))
         .route("/{id}/download", web::get().to(download))
+        .route("/{id}/thumbnail", web::get().to(get_thumbnail))
         .route("/{id}", web::delete().to(delete_file))
         .route("/{id}", web::patch().to(patch_file))
 }
@@ -100,6 +103,38 @@ pub async fn download(
 ) -> Result<HttpResponse> {
     let response = file_service::download(&state, *path, claims.user_id).await?;
     Ok(response)
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/files/{id}/thumbnail",
+    tag = "files",
+    operation_id = "get_thumbnail",
+    params(("id" = i64, Path, description = "File ID")),
+    responses(
+        (status = 200, description = "Thumbnail image (WebP)"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Not found or not an image"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_thumbnail(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    let f = file_service::get_info(&state, *path, claims.user_id).await?;
+    if !thumbnail_service::is_supported_mime(&f.mime_type) {
+        return Err(AsterError::thumbnail_generation_failed(
+            "unsupported image type",
+        ));
+    }
+    let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
+    let data = thumbnail_service::get_or_generate(&state, &blob).await?;
+    Ok(HttpResponse::Ok()
+        .content_type("image/webp")
+        .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
+        .body(data))
 }
 
 #[utoipa::path(

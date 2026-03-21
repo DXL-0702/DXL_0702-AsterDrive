@@ -95,6 +95,9 @@ define_errors! {
     UploadSessionExpired(  "E055", "Upload Session Expired"),
     ChunkUploadFailed(     "E056", "Chunk Upload Failed"),
     UploadAssemblyFailed(  "E057", "Upload Assembly Failed"),
+
+    // ========== E058-E059: 缩略图错误 ==========
+    ThumbnailGenerationFailed("E058", "Thumbnail Generation Failed"),
 }
 
 impl AsterError {
@@ -117,7 +120,8 @@ impl AsterError {
             | Self::StoragePolicyNotFound(_)
             | Self::FolderNotFound(_)
             | Self::ShareNotFound(_)
-            | Self::UploadSessionNotFound(_) => StatusCode::NOT_FOUND,
+            | Self::UploadSessionNotFound(_)
+            | Self::ThumbnailGenerationFailed(_) => StatusCode::NOT_FOUND,
 
             Self::ShareExpired(_) | Self::UploadSessionExpired(_) => StatusCode::GONE,
 
