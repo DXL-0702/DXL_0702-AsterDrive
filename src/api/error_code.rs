@@ -47,6 +47,7 @@ pub enum ErrorCode {
     UploadAssemblyFailed = 3007,
     ThumbnailFailed = 3008,
     ResourceLocked = 3009,
+    PreconditionFailed = 3010,
 
     // 存储策略错误 4000-4099
     StoragePolicyNotFound = 4000,
@@ -108,6 +109,7 @@ impl From<&AsterError> for ErrorCode {
 
             // 资源锁定
             AsterError::ResourceLocked(_) => ErrorCode::ResourceLocked,
+            AsterError::PreconditionFailed(_) => ErrorCode::PreconditionFailed,
 
             // 分享
             AsterError::ShareNotFound(_) => ErrorCode::ShareNotFound,

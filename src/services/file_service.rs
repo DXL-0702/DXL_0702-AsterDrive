@@ -308,6 +308,7 @@ async fn build_stream_response(
             "Content-Disposition",
             format!("attachment; filename=\"{}\"", f.name),
         ))
+        .insert_header(("ETag", format!("\"{}\"", blob.hash)))
         .streaming(reader_stream))
 }
 
@@ -492,6 +493,87 @@ pub async fn duplicate_file_record(
     user_repo::update_storage_used(db, src.user_id, blob.size).await?;
 
     Ok(new_file)
+}
+
+/// 覆盖文件内容（REST API 编辑入口）
+///
+/// 支持 ETag 乐观锁（If-Match）+ 悲观锁检查（is_locked）。
+/// 自动创建版本历史。返回 (更新后的 file, 新 blob hash)。
+pub async fn update_content(
+    state: &AppState,
+    file_id: i64,
+    user_id: i64,
+    body: actix_web::web::Bytes,
+    if_match: Option<&str>,
+) -> Result<(file::Model, String)> {
+    let db = &state.db;
+    let f = file_repo::find_by_id(db, file_id).await?;
+
+    if f.user_id != user_id {
+        return Err(AsterError::auth_forbidden("not your file"));
+    }
+    if f.deleted_at.is_some() {
+        return Err(AsterError::file_not_found(format!(
+            "file #{file_id} is in trash"
+        )));
+    }
+
+    // 悲观锁检查：如果文件被锁，只允许锁持有者或文件所有者写入
+    if f.is_locked {
+        let lock = crate::db::repository::lock_repo::find_by_entity(
+            db,
+            crate::types::EntityType::File,
+            file_id,
+        )
+        .await?;
+        if let Some(lock) = lock
+            && lock.owner_id != Some(user_id)
+        {
+            return Err(AsterError::resource_locked(
+                "file is locked by another user",
+            ));
+        }
+    }
+
+    // 乐观锁检查：ETag 比对
+    let current_blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
+    if let Some(etag) = if_match {
+        let expected = etag.trim_matches('"');
+        if expected != current_blob.hash {
+            return Err(AsterError::precondition_failed(
+                "file has been modified (ETag mismatch)",
+            ));
+        }
+    }
+
+    // 写入临时文件
+    let temp_path = format!("{}/{}", crate::utils::TEMP_DIR, uuid::Uuid::new_v4());
+    tokio::fs::create_dir_all(crate::utils::TEMP_DIR)
+        .await
+        .map_err(|e| AsterError::storage_driver_error(e.to_string()))?;
+    tokio::fs::write(&temp_path, &body)
+        .await
+        .map_err(|e| AsterError::storage_driver_error(e.to_string()))?;
+
+    let size = body.len() as i64;
+
+    // 复用 store_from_temp（自动版本溯源 + blob 去重）
+    // skip_lock_check=true 因为上面已经手动检查过锁持有者了
+    let updated = store_from_temp(
+        state,
+        user_id,
+        f.folder_id,
+        &f.name,
+        &temp_path,
+        size,
+        Some(file_id),
+        true,
+    )
+    .await?;
+
+    // 获取新 blob hash
+    let new_blob = file_repo::find_blob_by_id(db, updated.blob_id).await?;
+    Ok((updated, new_blob.hash.clone()))
 }
 
 /// 根据优先级链解析存储策略：文件夹 → 用户默认 → 系统默认

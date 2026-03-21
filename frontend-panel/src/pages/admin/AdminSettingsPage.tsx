@@ -92,8 +92,7 @@ export default function AdminSettingsPage() {
 	const grouped = useMemo(() => {
 		const groups: Record<string, SystemConfig[]> = {};
 		for (const c of configs) {
-			const cat =
-				c.source === "system" ? (c.category || "other") : "custom";
+			const cat = c.source === "system" ? c.category || "other" : "custom";
 			if (!groups[cat]) groups[cat] = [];
 			groups[cat].push(c);
 		}
@@ -172,10 +171,7 @@ export default function AdminSettingsPage() {
 		const schema = schemaMap.get(c.key);
 		if (!schema) return;
 		try {
-			const updated = await adminConfigService.set(
-				c.key,
-				schema.default_value,
-			);
+			const updated = await adminConfigService.set(c.key, schema.default_value);
 			setConfigs((prev) =>
 				prev.map((item) => (item.key === c.key ? updated : item)),
 			);
@@ -223,7 +219,9 @@ export default function AdminSettingsPage() {
 		return (
 			<TableRow
 				key={c.key}
-				className={c.requires_restart ? "bg-yellow-50/50 dark:bg-yellow-950/10" : ""}
+				className={
+					c.requires_restart ? "bg-yellow-50/50 dark:bg-yellow-950/10" : ""
+				}
 			>
 				<TableCell>
 					<div className="flex items-center gap-2">
@@ -331,9 +329,7 @@ export default function AdminSettingsPage() {
 						<TableHead className="w-28">Actions</TableHead>
 					</TableRow>
 				</TableHeader>
-				<TableBody>
-					{items.map(renderConfigRow)}
-				</TableBody>
+				<TableBody>{items.map(renderConfigRow)}</TableBody>
 			</Table>
 		);
 	};

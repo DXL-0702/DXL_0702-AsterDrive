@@ -6,7 +6,7 @@ use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{auth_service::Claims, file_service, thumbnail_service, upload_service};
 use crate::types::EntityType;
-use actix_web::{HttpResponse, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 
@@ -30,6 +30,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         .route("/{id}", web::get().to(get_file))
         .route("/{id}/download", web::get().to(download))
         .route("/{id}/thumbnail", web::get().to(get_thumbnail))
+        .route("/{id}/content", web::put().to(update_content))
         .route("/{id}/lock", web::post().to(set_lock))
         .route("/{id}/copy", web::post().to(copy_file))
         .route("/{id}/versions", web::get().to(list_versions))
@@ -354,6 +355,41 @@ pub async fn cancel_upload(
 ) -> Result<HttpResponse> {
     upload_service::cancel_upload(&state, &path.upload_id, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+// ── Content (Edit) ──────────────────────────────────────────────────
+
+#[utoipa::path(
+    put,
+    path = "/api/v1/files/{id}/content",
+    tag = "files",
+    operation_id = "update_file_content",
+    params(("id" = i64, Path, description = "File ID")),
+    request_body(content = Vec<u8>, content_type = "application/octet-stream"),
+    responses(
+        (status = 200, description = "Content updated", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+        (status = 412, description = "Precondition failed (ETag mismatch)"),
+        (status = 423, description = "File is locked by another user"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn update_content(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    req: HttpRequest,
+    body: web::Bytes,
+) -> Result<HttpResponse> {
+    let if_match = req.headers().get("If-Match").and_then(|v| v.to_str().ok());
+
+    let (file, new_hash) =
+        file_service::update_content(&state, *path, claims.user_id, body, if_match).await?;
+
+    Ok(HttpResponse::Ok()
+        .insert_header(("ETag", format!("\"{new_hash}\"")))
+        .json(ApiResponse::ok(file)))
 }
 
 // ── Lock ────────────────────────────────────────────────────────────

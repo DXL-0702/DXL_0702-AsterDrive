@@ -1,4 +1,4 @@
-import { api } from "./http";
+import { api, ApiError } from "./http";
 import type { FileInfo, FolderInfo, FolderContents } from "@/types/api";
 import { config } from "@/config/app";
 
@@ -41,6 +41,32 @@ export const fileService = {
 		api.post<FolderInfo>(`/folders/${id}/copy`, {
 			parent_id: parentId ?? null,
 		}),
+
+	updateContent: async (id: number, content: string, etag?: string) => {
+		const headers: Record<string, string> = {
+			"Content-Type": "application/octet-stream",
+		};
+		if (etag) headers["If-Match"] = etag;
+		const resp = await fetch(`${config.apiBaseUrl}/files/${id}/content`, {
+			method: "PUT",
+			headers,
+			body: content,
+			credentials: "include",
+		});
+		if (!resp.ok) {
+			const body = await resp
+				.json()
+				.catch(() => ({ code: resp.status, msg: resp.statusText }));
+			const err = new ApiError(
+				body.code ?? resp.status,
+				body.msg ?? resp.statusText,
+			);
+			(err as ApiError & { status: number }).status = resp.status;
+			throw err;
+		}
+		const body = await resp.json();
+		return body.data as FileInfo;
+	},
 
 	listVersions: (id: number) => api.get<FileVersion[]>(`/files/${id}/versions`),
 

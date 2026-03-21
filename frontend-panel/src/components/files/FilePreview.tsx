@@ -1,15 +1,22 @@
-import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useState, useCallback } from "react";
+import { X, Pencil, Save, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { fileService } from "@/services/fileService";
+import { handleApiError } from "@/hooks/useApiError";
 import type { FileInfo } from "@/types/api";
+import { toast } from "sonner";
 
 interface FilePreviewProps {
 	file: FileInfo;
 	onClose: () => void;
+	onFileUpdated?: () => void;
 }
 
-export function FilePreview({ file, onClose }: FilePreviewProps) {
+export function FilePreview({
+	file,
+	onClose,
+	onFileUpdated,
+}: FilePreviewProps) {
 	const isImage =
 		file.mime_type.startsWith("image/") && file.mime_type !== "image/svg+xml";
 	const isText =
@@ -62,7 +69,13 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
 							className="w-[80vw] h-[80vh]"
 						/>
 					)}
-					{isText && <TextPreview url={downloadUrl} />}
+					{isText && (
+						<TextPreview
+							file={file}
+							url={downloadUrl}
+							onFileUpdated={onFileUpdated}
+						/>
+					)}
 					{!isImage && !isVideo && !isAudio && !isPdf && !isText && (
 						<div className="text-center text-muted-foreground py-12">
 							Preview not available for this file type
@@ -74,24 +87,128 @@ export function FilePreview({ file, onClose }: FilePreviewProps) {
 	);
 }
 
-function TextPreview({ url }: { url: string }) {
+function TextPreview({
+	file,
+	url,
+	onFileUpdated,
+}: {
+	file: FileInfo;
+	url: string;
+	onFileUpdated?: () => void;
+}) {
 	const [content, setContent] = useState<string | null>(null);
 	const [error, setError] = useState(false);
+	const [editing, setEditing] = useState(false);
+	const [editContent, setEditContent] = useState("");
+	const [etag, setEtag] = useState<string | null>(null);
+	const [saving, setSaving] = useState(false);
 
-	useEffect(() => {
+	const loadContent = useCallback(() => {
 		fetch(url, { credentials: "include" })
-			.then((r) => r.text())
-			.then(setContent)
+			.then((r) => {
+				const et = r.headers.get("ETag");
+				if (et) setEtag(et);
+				return r.text();
+			})
+			.then((text) => {
+				setContent(text);
+				setEditContent(text);
+			})
 			.catch(() => setError(true));
 	}, [url]);
+
+	useEffect(() => {
+		loadContent();
+	}, [loadContent]);
+
+	const handleEdit = async () => {
+		try {
+			await fileService.setFileLock(file.id, true);
+			setEditing(true);
+		} catch (e) {
+			handleApiError(e);
+		}
+	};
+
+	const handleCancel = async () => {
+		setEditing(false);
+		setEditContent(content ?? "");
+		try {
+			await fileService.setFileLock(file.id, false);
+		} catch {
+			// 解锁失败不阻塞
+		}
+	};
+
+	const handleSave = async () => {
+		setSaving(true);
+		try {
+			await fileService.updateContent(file.id, editContent, etag ?? undefined);
+			setContent(editContent);
+			setEditing(false);
+			toast.success("File saved");
+			// 重新加载获取新 ETag
+			loadContent();
+			onFileUpdated?.();
+			try {
+				await fileService.setFileLock(file.id, false);
+			} catch {
+				// 解锁失败不阻塞
+			}
+		} catch (e: unknown) {
+			const status = (e as { status?: number })?.status;
+			if (status === 412) {
+				toast.error("File was modified by someone else. Please reload.");
+			} else {
+				handleApiError(e);
+			}
+		} finally {
+			setSaving(false);
+		}
+	};
 
 	if (error) return <div className="text-destructive p-4">Failed to load</div>;
 	if (content === null)
 		return <div className="text-muted-foreground p-4">Loading...</div>;
 
 	return (
-		<pre className="text-sm font-mono whitespace-pre-wrap p-4 max-h-[80vh] overflow-auto">
-			{content}
-		</pre>
+		<div className="flex flex-col">
+			<div className="flex items-center gap-2 px-4 py-2 border-b">
+				{!editing ? (
+					<Button variant="outline" size="sm" onClick={handleEdit}>
+						<Pencil className="h-3.5 w-3.5 mr-1" />
+						Edit
+					</Button>
+				) : (
+					<>
+						<Button
+							variant="default"
+							size="sm"
+							onClick={handleSave}
+							disabled={saving}
+						>
+							<Save className="h-3.5 w-3.5 mr-1" />
+							{saving ? "Saving..." : "Save"}
+						</Button>
+						<Button variant="outline" size="sm" onClick={handleCancel}>
+							<Undo2 className="h-3.5 w-3.5 mr-1" />
+							Cancel
+						</Button>
+					</>
+				)}
+			</div>
+			{editing ? (
+				<textarea
+					className="w-[80vw] h-[70vh] p-4 font-mono text-sm bg-background resize-none focus:outline-none"
+					value={editContent}
+					onChange={(e) => setEditContent(e.target.value)}
+					spellCheck={false}
+				/>
+			) : (
+				<pre className="text-sm font-mono whitespace-pre-wrap p-4 max-h-[80vh] overflow-auto">
+					{content}
+				</pre>
+			)}
+		</div>
 	);
 }

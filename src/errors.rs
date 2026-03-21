@@ -101,6 +101,9 @@ define_errors! {
 
     // ========== E059-E059: 资源锁定 ==========
     ResourceLocked("E059", "Resource Locked"),
+
+    // ========== E060: 前置条件失败 ==========
+    PreconditionFailed("E060", "Precondition Failed"),
 }
 
 impl AsterError {
@@ -119,6 +122,8 @@ impl AsterError {
             Self::AuthForbidden(_) => StatusCode::FORBIDDEN,
 
             Self::ResourceLocked(_) => StatusCode::LOCKED,
+
+            Self::PreconditionFailed(_) => StatusCode::PRECONDITION_FAILED,
 
             Self::RecordNotFound(_)
             | Self::FileNotFound(_)
