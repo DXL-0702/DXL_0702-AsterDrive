@@ -60,15 +60,11 @@ pub async fn create_share(
     // 校验文件/文件夹属于该用户
     if let Some(fid) = file_id {
         let f = file_repo::find_by_id(db, fid).await?;
-        if f.user_id != user_id {
-            return Err(AsterError::auth_forbidden("not your file"));
-        }
+        crate::utils::verify_owner(f.user_id, user_id, "file")?;
     }
     if let Some(fid) = folder_id {
         let f = folder_repo::find_by_id(db, fid).await?;
-        if f.user_id != user_id {
-            return Err(AsterError::auth_forbidden("not your folder"));
-        }
+        crate::utils::verify_owner(f.user_id, user_id, "folder")?;
     }
 
     let password_hash = match password {
@@ -186,9 +182,7 @@ pub async fn list_my_shares(state: &AppState, user_id: i64) -> Result<Vec<share:
 
 pub async fn delete_share(state: &AppState, share_id: i64, user_id: i64) -> Result<()> {
     let share = share_repo::find_by_id(&state.db, share_id).await?;
-    if share.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your share"));
-    }
+    crate::utils::verify_owner(share.user_id, user_id, "share")?;
     share_repo::delete(&state.db, share_id).await
 }
 

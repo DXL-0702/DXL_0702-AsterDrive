@@ -185,9 +185,7 @@ pub async fn upload_chunk(
     let db = &state.db;
     let session = upload_session_repo::find_by_id(db, upload_id).await?;
 
-    if session.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your upload"));
-    }
+    crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
     if session.status != UploadSessionStatus::Uploading {
         return Err(AsterError::chunk_upload_failed(format!(
             "session status is '{:?}', expected 'uploading'",
@@ -250,9 +248,7 @@ pub async fn complete_upload(
     let db = &state.db;
     let session = upload_session_repo::find_by_id(db, upload_id).await?;
 
-    if session.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your upload"));
-    }
+    crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
     // Presigned 模式走独立流程
     if session.status == UploadSessionStatus::Presigned {
         return complete_presigned_upload(state, session).await;
@@ -318,9 +314,10 @@ pub async fn complete_upload(
     let blob = match file_repo::find_blob_by_hash(db, &file_hash, policy.id).await? {
         Some(existing) => {
             // 已有相同内容，不需要再存，删除临时文件
-            let _ = tokio::fs::remove_file(&assembled_path).await;
-            let mut blob_active: file_blob::ActiveModel = existing.clone().into();
-            blob_active.ref_count = Set(existing.ref_count + 1);
+            crate::utils::cleanup_temp_file(&assembled_path).await;
+            let new_ref_count = existing.ref_count + 1;
+            let mut blob_active: file_blob::ActiveModel = existing.into();
+            blob_active.ref_count = Set(new_ref_count);
             blob_active.update(db).await.map_err(AsterError::from)?
         }
         None => {
@@ -381,7 +378,7 @@ pub async fn complete_upload(
 
     // 清理临时文件
     let temp_dir = format!("data/.uploads/{upload_id}");
-    let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+    crate::utils::cleanup_temp_dir(&temp_dir).await;
 
     Ok(created)
 }
@@ -449,8 +446,9 @@ async fn complete_presigned_upload(
         Some(existing) => {
             // 已有相同内容，删临时对象，ref_count++
             let _ = driver.delete(temp_key).await;
-            let mut blob_active: file_blob::ActiveModel = existing.clone().into();
-            blob_active.ref_count = Set(existing.ref_count + 1);
+            let new_ref_count = existing.ref_count + 1;
+            let mut blob_active: file_blob::ActiveModel = existing.into();
+            blob_active.ref_count = Set(new_ref_count);
             blob_active.updated_at = Set(now);
             blob_active.update(db).await.map_err(AsterError::from)?
         }
@@ -517,9 +515,7 @@ async fn complete_presigned_upload(
 /// 取消上传
 pub async fn cancel_upload(state: &AppState, upload_id: &str, user_id: i64) -> Result<()> {
     let session = upload_session_repo::find_by_id(&state.db, upload_id).await?;
-    if session.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your upload"));
-    }
+    crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
 
     // 清理 S3 临时对象
     if let Some(ref temp_key) = session.s3_temp_key {
@@ -530,7 +526,7 @@ pub async fn cancel_upload(state: &AppState, upload_id: &str, user_id: i64) -> R
     }
 
     let temp_dir = format!("data/.uploads/{upload_id}");
-    let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+    crate::utils::cleanup_temp_dir(&temp_dir).await;
     upload_session_repo::delete(&state.db, upload_id).await
 }
 
@@ -541,9 +537,7 @@ pub async fn get_progress(
     user_id: i64,
 ) -> Result<UploadProgressResponse> {
     let session = upload_session_repo::find_by_id(&state.db, upload_id).await?;
-    if session.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your upload"));
-    }
+    crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
 
     // 扫磁盘获取具体哪些 chunk 存在（用于断点续传判断缺哪些）
     let chunks_on_disk = scan_received_chunks(&session.id).await;
@@ -591,7 +585,7 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
             let _ = driver.delete(temp_key).await;
         }
         let temp_dir = format!("data/.uploads/{}", session.id);
-        let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+        crate::utils::cleanup_temp_dir(&temp_dir).await;
         let _ = upload_session_repo::delete(&state.db, &session.id).await;
     }
     if count > 0 {

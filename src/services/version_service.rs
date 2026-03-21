@@ -13,9 +13,7 @@ pub async fn list_versions(
     user_id: i64,
 ) -> Result<Vec<file_version::Model>> {
     let f = file_repo::find_by_id(&state.db, file_id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your file"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "file")?;
     version_repo::find_by_file_id(&state.db, file_id).await
 }
 
@@ -28,9 +26,7 @@ pub async fn restore_version(
 ) -> Result<crate::entities::file::Model> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, file_id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your file"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "file")?;
     if f.is_locked {
         return Err(AsterError::resource_locked("file is locked"));
     }
@@ -77,9 +73,7 @@ pub async fn delete_version(
 ) -> Result<()> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, file_id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your file"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "file")?;
 
     let version = version_repo::find_by_id(db, version_id)
         .await?
@@ -144,8 +138,9 @@ async fn cleanup_blob_if_unused(state: &AppState, blob_id: i64) -> Result<()> {
         let _ = driver.delete(&blob.storage_path).await;
         file_repo::delete_blob(db, blob.id).await?;
     } else {
-        let mut active: crate::entities::file_blob::ActiveModel = blob.clone().into();
-        active.ref_count = Set(blob.ref_count - 1);
+        let new_ref_count = blob.ref_count - 1;
+        let mut active: crate::entities::file_blob::ActiveModel = blob.into();
+        active.ref_count = Set(new_ref_count);
         active.updated_at = Set(Utc::now());
         use sea_orm::ActiveModelTrait;
         active.update(db).await.map_err(AsterError::from)?;

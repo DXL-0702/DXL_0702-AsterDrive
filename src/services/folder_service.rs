@@ -64,9 +64,7 @@ pub async fn list(
 /// 删除文件夹（软删除 → 回收站，递归标记子项）
 pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let folder = folder_repo::find_by_id(&state.db, id).await?;
-    if folder.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your folder"));
-    }
+    crate::utils::verify_owner(folder.user_id, user_id, "folder")?;
     if folder.is_locked {
         return Err(AsterError::resource_locked("folder is locked"));
     }
@@ -83,9 +81,7 @@ pub async fn update(
 ) -> Result<folder::Model> {
     let db = &state.db;
     let f = folder_repo::find_by_id(db, id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your folder"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "folder")?;
     if f.is_locked {
         return Err(AsterError::resource_locked("folder is locked"));
     }
@@ -99,9 +95,7 @@ pub async fn update(
             ));
         }
         let target = folder_repo::find_by_id(db, pid).await?;
-        if target.user_id != user_id {
-            return Err(AsterError::auth_forbidden("not your folder"));
-        }
+        crate::utils::verify_owner(target.user_id, user_id, "folder")?;
         // 循环检测：从目标往上遍历，如果遇到 id 说明是子文件夹
         let mut cursor = Some(pid);
         while let Some(cur_id) = cursor {
@@ -152,9 +146,7 @@ pub async fn copy_folder(
 ) -> Result<folder::Model> {
     let db = &state.db;
     let f = folder_repo::find_by_id(db, src_id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your folder"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "folder")?;
 
     // 副本命名：目标无冲突保留原名，有冲突则递增
     let dest = dest_parent_id.or(f.parent_id);

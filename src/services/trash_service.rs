@@ -25,9 +25,7 @@ pub async fn list_trash(state: &AppState, user_id: i64) -> Result<TrashContents>
 /// 恢复文件
 pub async fn restore_file(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let f = file_repo::find_by_id(&state.db, id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your file"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "file")?;
     if f.deleted_at.is_none() {
         return Err(AsterError::validation_error("file is not in trash"));
     }
@@ -52,9 +50,7 @@ pub async fn restore_file(state: &AppState, id: i64, user_id: i64) -> Result<()>
 /// 恢复文件夹（递归恢复子项）
 pub async fn restore_folder(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let f = folder_repo::find_by_id(&state.db, id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your folder"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "folder")?;
     if f.deleted_at.is_none() {
         return Err(AsterError::validation_error("folder is not in trash"));
     }
@@ -103,9 +99,7 @@ async fn recursive_restore(
 /// 永久删除单个文件
 pub async fn purge_file(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let f = file_repo::find_by_id(&state.db, id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your file"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "file")?;
     if f.deleted_at.is_none() {
         return Err(AsterError::validation_error("file is not in trash"));
     }
@@ -115,9 +109,7 @@ pub async fn purge_file(state: &AppState, id: i64, user_id: i64) -> Result<()> {
 /// 永久删除单个文件夹（递归）
 pub async fn purge_folder(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let f = folder_repo::find_by_id(&state.db, id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your folder"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "folder")?;
     if f.deleted_at.is_none() {
         return Err(AsterError::validation_error("folder is not in trash"));
     }

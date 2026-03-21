@@ -1,8 +1,37 @@
 pub mod hash;
 pub mod id;
 
+use crate::errors::{AsterError, Result};
+
 /// 临时文件目录（上传流式处理用）
 pub const TEMP_DIR: &str = "data/.tmp";
+
+/// 校验资源归属权，不匹配则返回 403
+pub fn verify_owner(entity_user_id: i64, user_id: i64, entity_name: &str) -> Result<()> {
+    if entity_user_id != user_id {
+        return Err(AsterError::auth_forbidden(format!(
+            "not your {entity_name}"
+        )));
+    }
+    Ok(())
+}
+
+/// 清理临时文件/目录，失败时记录 warn 日志而不是静默忽略
+pub async fn cleanup_temp_file(path: &str) {
+    if let Err(e) = tokio::fs::remove_file(path).await
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!("failed to cleanup temp file {path}: {e}");
+    }
+}
+
+pub async fn cleanup_temp_dir(path: &str) {
+    if let Err(e) = tokio::fs::remove_dir_all(path).await
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!("failed to cleanup temp dir {path}: {e}");
+    }
+}
 
 /// macOS / Office 生成的隐藏文件名，不在目录列表中显示
 pub fn is_hidden_name(name: &str) -> bool {

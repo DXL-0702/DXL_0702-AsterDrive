@@ -85,8 +85,9 @@ pub async fn store_from_temp(
     // Blob 去重
     let blob = match file_repo::find_blob_by_hash(db, &file_hash, policy.id).await? {
         Some(existing) => {
-            let mut active: file_blob::ActiveModel = existing.clone().into();
-            active.ref_count = Set(existing.ref_count + 1);
+            let new_ref_count = existing.ref_count + 1;
+            let mut active: file_blob::ActiveModel = existing.into();
+            active.ref_count = Set(new_ref_count);
             active.updated_at = Set(now);
             use sea_orm::ActiveModelTrait;
             active.update(db).await.map_err(AsterError::from)?
@@ -235,7 +236,7 @@ pub async fn upload(
     drop(temp_file);
 
     if size == 0 {
-        let _ = tokio::fs::remove_file(&temp_path).await;
+        crate::utils::cleanup_temp_file(&temp_path).await;
         return Err(AsterError::validation_error("empty file"));
     }
 
@@ -245,7 +246,7 @@ pub async fn upload(
     .await;
 
     // 清理临时文件（put_file 可能已经 rename 走了，忽略错误）
-    let _ = tokio::fs::remove_file(&temp_path).await;
+    crate::utils::cleanup_temp_file(&temp_path).await;
 
     result
 }
@@ -253,9 +254,7 @@ pub async fn upload(
 /// 获取文件信息
 pub async fn get_info(state: &AppState, id: i64, user_id: i64) -> Result<file::Model> {
     let f = file_repo::find_by_id(&state.db, id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your file"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "file")?;
     if f.deleted_at.is_some() {
         return Err(AsterError::file_not_found(format!(
             "file #{id} is in trash"
@@ -268,9 +267,7 @@ pub async fn get_info(state: &AppState, id: i64, user_id: i64) -> Result<file::M
 pub async fn download(state: &AppState, id: i64, user_id: i64) -> Result<HttpResponse> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your file"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "file")?;
     if f.deleted_at.is_some() {
         return Err(AsterError::file_not_found(format!(
             "file #{id} is in trash"
@@ -315,9 +312,7 @@ async fn build_stream_response(
 /// 删除文件（软删除 → 回收站）
 pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let f = file_repo::find_by_id(&state.db, id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your file"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "file")?;
     if f.is_locked {
         return Err(AsterError::resource_locked("file is locked"));
     }
@@ -328,9 +323,7 @@ pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
 pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your file"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "file")?;
     if f.is_locked {
         return Err(AsterError::resource_locked("file is locked"));
     }
@@ -362,8 +355,9 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
         driver.delete(&blob.storage_path).await?;
         file_repo::delete_blob(db, blob.id).await?;
     } else {
-        let mut active: file_blob::ActiveModel = blob.clone().into();
-        active.ref_count = Set(blob.ref_count - 1);
+        let new_ref_count = blob.ref_count - 1;
+        let mut active: file_blob::ActiveModel = blob.into();
+        active.ref_count = Set(new_ref_count);
         active.updated_at = Set(Utc::now());
         use sea_orm::ActiveModelTrait;
         active.update(db).await.map_err(AsterError::from)?;
@@ -382,9 +376,7 @@ pub async fn update(
 ) -> Result<file::Model> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your file"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "file")?;
     if f.is_locked {
         return Err(AsterError::resource_locked("file is locked"));
     }
@@ -393,9 +385,7 @@ pub async fn update(
     let target_folder = folder_id.or(f.folder_id);
     if let Some(fid) = folder_id {
         let target = crate::db::repository::folder_repo::find_by_id(db, fid).await?;
-        if target.user_id != user_id {
-            return Err(AsterError::auth_forbidden("not your folder"));
-        }
+        crate::utils::verify_owner(target.user_id, user_id, "folder")?;
     }
 
     // 同名冲突检查
@@ -431,9 +421,7 @@ pub async fn copy_file(
 ) -> Result<file::Model> {
     let db = &state.db;
     let src = file_repo::find_by_id(db, src_id).await?;
-    if src.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your file"));
-    }
+    crate::utils::verify_owner(src.user_id, user_id, "file")?;
 
     // 配额检查
     let blob = file_repo::find_blob_by_id(db, src.blob_id).await?;
@@ -469,8 +457,10 @@ pub async fn duplicate_file_record(
     let now = Utc::now();
 
     // blob ref_count++
-    let mut blob_active: file_blob::ActiveModel = blob.clone().into();
-    blob_active.ref_count = Set(blob.ref_count + 1);
+    let new_ref_count = blob.ref_count + 1;
+    let blob_size = blob.size;
+    let mut blob_active: file_blob::ActiveModel = blob.into();
+    blob_active.ref_count = Set(new_ref_count);
     blob_active.updated_at = Set(now);
     use sea_orm::ActiveModelTrait;
     blob_active.update(db).await.map_err(AsterError::from)?;
@@ -490,7 +480,7 @@ pub async fn duplicate_file_record(
     )
     .await?;
 
-    user_repo::update_storage_used(db, src.user_id, blob.size).await?;
+    user_repo::update_storage_used(db, src.user_id, blob_size).await?;
 
     Ok(new_file)
 }
@@ -508,10 +498,7 @@ pub async fn update_content(
 ) -> Result<(file::Model, String)> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, file_id).await?;
-
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your file"));
-    }
+    crate::utils::verify_owner(f.user_id, user_id, "file")?;
     if f.deleted_at.is_some() {
         return Err(AsterError::file_not_found(format!(
             "file #{file_id} is in trash"

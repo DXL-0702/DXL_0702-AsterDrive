@@ -66,9 +66,7 @@ pub async fn create(
     // 如果指定了 root_folder_id，验证文件夹属于该用户
     let root_folder_path = if let Some(fid) = root_folder_id {
         let folder = folder_repo::find_by_id(&state.db, fid).await?;
-        if folder.user_id != user_id {
-            return Err(AsterError::auth_forbidden("not your folder"));
-        }
+        crate::utils::verify_owner(folder.user_id, user_id, "folder")?;
         Some(build_folder_path(&state.db, fid).await?)
     } else {
         None
@@ -123,9 +121,7 @@ pub async fn list(state: &AppState, user_id: i64) -> Result<Vec<WebdavAccountInf
 /// 删除 WebDAV 账号（需要验证归属）
 pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let account = webdav_account_repo::find_by_id(&state.db, id).await?;
-    if account.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your WebDAV account"));
-    }
+    crate::utils::verify_owner(account.user_id, user_id, "account")?;
     webdav_account_repo::delete(&state.db, id).await
 }
 
@@ -136,11 +132,10 @@ pub async fn toggle_active(
     user_id: i64,
 ) -> Result<webdav_account::Model> {
     let account = webdav_account_repo::find_by_id(&state.db, id).await?;
-    if account.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your WebDAV account"));
-    }
-    let mut active: webdav_account::ActiveModel = account.clone().into();
-    active.is_active = Set(!account.is_active);
+    crate::utils::verify_owner(account.user_id, user_id, "account")?;
+    let new_is_active = !account.is_active;
+    let mut active: webdav_account::ActiveModel = account.into();
+    active.is_active = Set(new_is_active);
     active.updated_at = Set(Utc::now());
     webdav_account_repo::update(&state.db, active).await
 }
