@@ -4,21 +4,30 @@ use std::time::{Duration, SystemTime};
 use chrono::Utc;
 use dav_server::davpath::DavPath;
 use dav_server::ls::{DavLock, DavLockSystem};
-use sea_orm::{DatabaseConnection, Set};
+use sea_orm::DatabaseConnection;
 use xmltree::Element;
 
-use crate::db::repository::webdav_lock_repo;
-use crate::entities::webdav_lock;
+use crate::db::repository::lock_repo;
+use crate::entities::resource_lock;
+use crate::webdav::path_resolver::{self, ResolvedNode};
 
-/// 数据库支持的 WebDAV 锁系统，替代 MemLs
+/// 数据库支持的 WebDAV 锁系统
+///
+/// Per-request 创建（需要 user_id 做 path → entity_id 解析）
 #[derive(Debug, Clone)]
 pub struct DbLockSystem {
     db: DatabaseConnection,
+    user_id: i64,
+    root_folder_id: Option<i64>,
 }
 
 impl DbLockSystem {
-    pub fn new(db: DatabaseConnection) -> Box<Self> {
-        Box::new(Self { db })
+    pub fn new(db: DatabaseConnection, user_id: i64, root_folder_id: Option<i64>) -> Box<Self> {
+        Box::new(Self {
+            db,
+            user_id,
+            root_folder_id,
+        })
     }
 }
 
@@ -42,82 +51,58 @@ impl DavLockSystem for DbLockSystem {
         let timeout_dur = timeout;
 
         Box::pin(async move {
-            // 检查冲突：查询路径上的所有锁
-            let ancestor_paths = path_ancestors(&path_str);
-            let ancestor_locks = webdav_lock_repo::find_ancestors(&self.db, &ancestor_paths)
-                .await
-                .unwrap_or_default();
-
-            // 检查路径上的冲突锁
             let now = Utc::now();
-            for lock in &ancestor_locks {
-                // 跳过过期锁
-                if let Some(timeout_at) = lock.timeout_at
-                    && timeout_at < now
-                {
-                    continue;
-                }
 
-                // 如果锁在目标路径或祖先路径上
-                let lock_is_ancestor = lock.path != path_str;
-
-                // 祖先上的浅锁不影响子路径
-                if lock_is_ancestor && !lock.deep {
-                    continue;
-                }
-
-                // 排他锁冲突
-                if !lock.shared || !shared {
-                    return Err(model_to_dav_lock(lock));
-                }
-            }
-
-            // 如果 deep=true，还要检查子路径上的冲突锁
-            if deep {
-                let descendant_locks = webdav_lock_repo::find_by_path_prefix(&self.db, &path_str)
+            // 解析路径到 entity
+            let (entity_type, entity_id) =
+                resolve_path_to_entity(&self.db, self.user_id, self.root_folder_id, &path_str)
                     .await
-                    .unwrap_or_default();
+                    .map_err(|_| empty_dav_lock(&path_owned))?;
 
-                for lock in &descendant_locks {
-                    if let Some(timeout_at) = lock.timeout_at
-                        && timeout_at < now
-                    {
-                        continue;
-                    }
-                    if !lock.shared || !shared {
-                        return Err(model_to_dav_lock(lock));
-                    }
+            // 检查是否已锁
+            if let Some(existing) = lock_repo::find_by_entity(&self.db, &entity_type, entity_id)
+                .await
+                .unwrap_or(None)
+            {
+                let is_expired = existing.timeout_at.is_some_and(|t| t < now);
+                if !is_expired {
+                    return Err(model_to_dav_lock(&existing));
                 }
+                // 过期锁：清理
+                let _ = lock_repo::delete_by_entity(&self.db, &entity_type, entity_id).await;
+                let _ = crate::services::lock_service::resolve_entity_path(
+                    &self.db,
+                    &entity_type,
+                    entity_id,
+                )
+                .await;
+                // 重置 is_locked
+                set_is_locked(&self.db, &entity_type, entity_id, false).await;
             }
 
-            // 无冲突，创建新锁
             let token = format!("urn:uuid:{}", uuid::Uuid::new_v4());
             let timeout_at = timeout_dur.map(|d| now + chrono::Duration::from_std(d).unwrap());
 
-            let model = webdav_lock::ActiveModel {
-                token: Set(token.clone()),
-                path: Set(path_str.clone()),
-                principal: Set(principal_owned.clone()),
-                owner_xml: Set(owner_xml),
-                timeout_at: Set(timeout_at),
-                shared: Set(shared),
-                deep: Set(deep),
-                created_at: Set(now),
+            let model = resource_lock::ActiveModel {
+                token: sea_orm::Set(token.clone()),
+                entity_type: sea_orm::Set(entity_type.clone()),
+                entity_id: sea_orm::Set(entity_id),
+                path: sea_orm::Set(path_str),
+                owner_id: sea_orm::Set(None), // WebDAV 没有 user_id（用 principal 代替）
+                owner_info: sea_orm::Set(owner_xml),
+                timeout_at: sea_orm::Set(timeout_at),
+                shared: sea_orm::Set(shared),
+                deep: sea_orm::Set(deep),
+                created_at: sea_orm::Set(now),
                 ..Default::default()
             };
 
-            webdav_lock_repo::create(&self.db, model)
+            lock_repo::create(&self.db, model)
                 .await
-                .map_err(|_| DavLock {
-                    token: String::new(),
-                    path: Box::new(path_owned.clone()),
-                    principal: None,
-                    owner: None,
-                    timeout_at: None,
-                    timeout: None,
-                    shared: false,
-                    deep: false,
-                })?;
+                .map_err(|_| empty_dav_lock(&path_owned))?;
+
+            // 同步 is_locked
+            set_is_locked(&self.db, &entity_type, entity_id, true).await;
 
             Ok(DavLock {
                 token,
@@ -135,9 +120,19 @@ impl DavLockSystem for DbLockSystem {
     fn unlock(&self, _path: &DavPath, token: &str) -> LsFuture<'_, Result<(), ()>> {
         let token_owned = token.to_string();
         Box::pin(async move {
-            webdav_lock_repo::delete_by_token(&self.db, &token_owned)
+            // 查锁拿 entity 信息
+            let lock = lock_repo::find_by_token(&self.db, &token_owned)
                 .await
-                .map_err(|_| ())
+                .map_err(|_| ())?
+                .ok_or(())?;
+
+            lock_repo::delete_by_token(&self.db, &token_owned)
+                .await
+                .map_err(|_| ())?;
+
+            // 同步 is_locked
+            set_is_locked(&self.db, &lock.entity_type, lock.entity_id, false).await;
+            Ok(())
         })
     }
 
@@ -155,7 +150,7 @@ impl DavLockSystem for DbLockSystem {
             let now = Utc::now();
             let new_timeout_at = timeout_dur.map(|d| now + chrono::Duration::from_std(d).unwrap());
 
-            let lock = webdav_lock_repo::refresh(&self.db, &token_owned, new_timeout_at)
+            let lock = lock_repo::refresh(&self.db, &token_owned, new_timeout_at)
                 .await
                 .map_err(|_| ())?
                 .ok_or(())?;
@@ -163,9 +158,9 @@ impl DavLockSystem for DbLockSystem {
             Ok(DavLock {
                 token: lock.token,
                 path: Box::new(path_clone),
-                principal: lock.principal,
+                principal: None,
                 owner: lock
-                    .owner_xml
+                    .owner_info
                     .as_deref()
                     .and_then(deserialize_element)
                     .map(Box::new),
@@ -180,78 +175,63 @@ impl DavLockSystem for DbLockSystem {
     fn check(
         &self,
         path: &DavPath,
-        principal: Option<&str>,
+        _principal: Option<&str>,
         ignore_principal: bool,
         deep: bool,
         submitted_tokens: &[String],
     ) -> LsFuture<'_, Result<(), DavLock>> {
         let path_str = normalize_path(path);
-        let principal_owned = principal.map(|s| s.to_string());
         let tokens: Vec<String> = submitted_tokens.to_vec();
+        let _ = ignore_principal; // 简化：统一用 token 匹配
 
         Box::pin(async move {
             let now = Utc::now();
 
-            // 1. 查询从根到目标路径的所有祖先锁
+            // 查祖先路径的锁
             let ancestor_paths = path_ancestors(&path_str);
-            let mut all_locks = webdav_lock_repo::find_ancestors(&self.db, &ancestor_paths)
+            let mut all_locks = lock_repo::find_ancestors(&self.db, &ancestor_paths)
                 .await
                 .unwrap_or_default();
 
-            // 2. 如果 deep=true，还查后代路径的锁
+            // deep check：查后代路径的锁
             if deep {
-                let descendants = webdav_lock_repo::find_by_path_prefix(&self.db, &path_str)
+                let descendants = lock_repo::find_by_path_prefix(&self.db, &path_str)
                     .await
                     .unwrap_or_default();
                 all_locks.extend(descendants);
             }
 
-            // 去重（ancestor + prefix 可能重叠目标路径本身的锁）
             all_locks.sort_by_key(|l| l.id);
             all_locks.dedup_by_key(|l| l.id);
 
-            // RFC4918: 只要在路径链上持有任何一个锁，就视为对目标路径有权限
-            // （MemLs 的 holds_lock 状态机语义）
-            let holds_any_lock = all_locks.iter().any(|lock| {
+            // 持有任何一个锁就通过
+            let holds_any = all_locks.iter().any(|lock| {
                 if lock.timeout_at.is_some_and(|t| t < now) {
                     return false;
                 }
-                let token_held = tokens.contains(&lock.token);
-                let principal_ok = ignore_principal
-                    || match (&lock.principal, &principal_owned) {
-                        (Some(lp), Some(pp)) => lp == pp,
-                        (None, _) => true,
-                        _ => false,
-                    };
-                token_held && principal_ok
+                tokens.contains(&lock.token)
             });
 
-            if holds_any_lock {
+            if holds_any {
                 return Ok(());
             }
 
-            // 没有持有任何锁，检查是否存在冲突锁
+            // 检查冲突
             for lock in &all_locks {
-                // 跳过过期锁
-                if let Some(timeout_at) = lock.timeout_at
-                    && timeout_at < now
-                {
+                if lock.timeout_at.is_some_and(|t| t < now) {
                     continue;
                 }
 
-                // 祖先上的浅锁不影响子路径
-                let lock_is_ancestor = lock.path != path_str;
-                if lock_is_ancestor && !lock.deep {
+                let is_ancestor = lock.path != path_str;
+                if is_ancestor && !lock.deep {
                     continue;
                 }
 
-                // 后代锁（deep check 查出来的）不受限于非 deep 检查
-                let lock_is_descendant = lock.path.starts_with(&path_str) && lock.path != path_str;
-                if lock_is_descendant && !deep {
+                let is_descendant = lock.path.starts_with(&path_str) && lock.path != path_str;
+                if is_descendant && !deep {
                     continue;
                 }
 
-                // 冲突：未持有的活跃锁
                 return Err(model_to_dav_lock(lock));
             }
 
@@ -264,10 +244,8 @@ impl DavLockSystem for DbLockSystem {
 
         Box::pin(async move {
             let now = Utc::now();
-
-            // 查询路径及祖先的锁
             let ancestor_paths = path_ancestors(&path_str);
-            let locks = webdav_lock_repo::find_ancestors(&self.db, &ancestor_paths)
+            let locks = lock_repo::find_ancestors(&self.db, &ancestor_paths)
                 .await
                 .unwrap_or_default();
 
@@ -282,7 +260,16 @@ impl DavLockSystem for DbLockSystem {
     fn delete(&self, path: &DavPath) -> LsFuture<'_, Result<(), ()>> {
         let path_str = normalize_path(path);
         Box::pin(async move {
-            webdav_lock_repo::delete_by_path_prefix(&self.db, &path_str)
+            // 查出所有要删的锁（需要重置 is_locked）
+            let locks = lock_repo::find_by_path_prefix(&self.db, &path_str)
+                .await
+                .unwrap_or_default();
+
+            for lock in &locks {
+                set_is_locked(&self.db, &lock.entity_type, lock.entity_id, false).await;
+            }
+
+            lock_repo::delete_by_path_prefix(&self.db, &path_str)
                 .await
                 .map(|_| ())
                 .map_err(|_| ())
@@ -292,7 +279,6 @@ impl DavLockSystem for DbLockSystem {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-/// 规范化路径：确保以 / 开头
 fn normalize_path(path: &DavPath) -> String {
     let raw = String::from_utf8_lossy(path.as_bytes()).to_string();
     if raw.is_empty() || raw == "/" {
@@ -302,13 +288,10 @@ fn normalize_path(path: &DavPath) -> String {
     }
 }
 
-/// 生成路径的所有祖先列表（含自身）
-/// "/a/b/c" → ["/", "/a/", "/a/b/", "/a/b/c"]
 fn path_ancestors(path: &str) -> Vec<String> {
     let mut ancestors = vec!["/".to_string()];
     let trimmed = path.trim_start_matches('/');
     let mut current = String::from("/");
-
     for seg in trimmed.split('/') {
         if seg.is_empty() {
             continue;
@@ -319,26 +302,50 @@ fn path_ancestors(path: &str) -> Vec<String> {
             ancestors.push(current.clone());
         }
     }
-
-    // 也包含不带尾斜线的版本（文件路径没有尾斜线）
     if path != "/" && !path.ends_with('/') {
         ancestors.push(path.to_string());
     }
-
     ancestors.dedup();
     ancestors
 }
 
-fn model_to_dav_lock(lock: &webdav_lock::Model) -> DavLock {
-    // 从 DB path 重建 DavPath
+/// 从 WebDAV 路径解析出 (entity_type, entity_id)
+async fn resolve_path_to_entity(
+    db: &sea_orm::DatabaseConnection,
+    user_id: i64,
+    root_folder_id: Option<i64>,
+    path: &str,
+) -> Result<(String, i64), ()> {
+    let dav_path = DavPath::new(path).map_err(|_| ())?;
+    match path_resolver::resolve_path(db, user_id, &dav_path, root_folder_id).await {
+        Ok(ResolvedNode::File(f)) => Ok(("file".to_string(), f.id)),
+        Ok(ResolvedNode::Folder(f)) => Ok(("folder".to_string(), f.id)),
+        _ => Err(()),
+    }
+}
+
+fn empty_dav_lock(path: &DavPath) -> DavLock {
+    DavLock {
+        token: String::new(),
+        path: Box::new(path.clone()),
+        principal: None,
+        owner: None,
+        timeout_at: None,
+        timeout: None,
+        shared: false,
+        deep: false,
+    }
+}
+
+fn model_to_dav_lock(lock: &resource_lock::Model) -> DavLock {
     let dav_path = DavPath::new(&lock.path).unwrap_or_else(|_| DavPath::new("/").unwrap());
 
     DavLock {
         token: lock.token.clone(),
         path: Box::new(dav_path),
-        principal: lock.principal.clone(),
+        principal: lock.owner_id.map(|id| id.to_string()),
         owner: lock
-            .owner_xml
+            .owner_info
             .as_deref()
             .and_then(deserialize_element)
             .map(Box::new),
@@ -362,4 +369,35 @@ fn serialize_element(elem: &Element) -> String {
 
 fn deserialize_element(xml: &str) -> Option<Element> {
     Element::parse(Cursor::new(xml.as_bytes())).ok()
+}
+
+/// 同步 is_locked boolean 缓存
+async fn set_is_locked(
+    db: &sea_orm::DatabaseConnection,
+    entity_type: &str,
+    entity_id: i64,
+    locked: bool,
+) {
+    use sea_orm::ActiveModelTrait;
+    let now = Utc::now();
+
+    match entity_type {
+        "file" => {
+            if let Ok(f) = crate::db::repository::file_repo::find_by_id(db, entity_id).await {
+                let mut active: crate::entities::file::ActiveModel = f.into();
+                active.is_locked = sea_orm::Set(locked);
+                active.updated_at = sea_orm::Set(now);
+                let _ = active.update(db).await;
+            }
+        }
+        "folder" => {
+            if let Ok(f) = crate::db::repository::folder_repo::find_by_id(db, entity_id).await {
+                let mut active: crate::entities::folder::ActiveModel = f.into();
+                active.is_locked = sea_orm::Set(locked);
+                active.updated_at = sea_orm::Set(now);
+                let _ = active.update(db).await;
+            }
+        }
+        _ => {}
+    }
 }

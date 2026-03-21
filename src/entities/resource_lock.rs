@@ -3,17 +3,19 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize, ToSchema)]
-#[schema(as = WebdavLock)]
-#[sea_orm(table_name = "webdav_locks")]
+#[schema(as = ResourceLock)]
+#[sea_orm(table_name = "resource_locks")]
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     #[sea_orm(unique)]
     pub token: String,
+    pub entity_type: String,
+    pub entity_id: i64,
     pub path: String,
-    pub principal: Option<String>,
+    pub owner_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
-    pub owner_xml: Option<String>,
+    pub owner_info: Option<String>,
     #[schema(value_type = Option<String>)]
     pub timeout_at: Option<DateTimeUtc>,
     pub shared: bool,

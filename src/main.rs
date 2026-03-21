@@ -53,7 +53,7 @@ async fn main() -> std::io::Result<()> {
     let state = web::Data::new(state);
     let cleanup_state = state.clone();
     let trash_state = state.clone();
-    let lock_cleanup_db = db.clone();
+    let lock_cleanup_state = state.clone();
 
     let server = HttpServer::new(move || {
         let db = db.clone();
@@ -102,16 +102,14 @@ async fn main() -> std::io::Result<()> {
         }
     });
 
-    // 后台清理：过期 WebDAV 锁（每小时）
+    // 后台清理：过期资源锁（每小时）
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
         loop {
             interval.tick().await;
-            match aster_drive::db::repository::webdav_lock_repo::delete_expired(&lock_cleanup_db)
-                .await
-            {
-                Ok(n) if n > 0 => tracing::info!("cleaned up {n} expired WebDAV locks"),
-                Err(e) => tracing::warn!("webdav lock cleanup failed: {e}"),
+            match aster_drive::services::lock_service::cleanup_expired(&lock_cleanup_state).await {
+                Ok(n) if n > 0 => tracing::info!("cleaned up {n} expired locks"),
+                Err(e) => tracing::warn!("lock cleanup failed: {e}"),
                 _ => {}
             }
         }

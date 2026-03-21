@@ -382,7 +382,13 @@ pub async fn set_lock(
     path: web::Path<i64>,
     body: web::Json<SetLockReq>,
 ) -> Result<HttpResponse> {
-    let file = file_service::set_locked(&state, *path, claims.user_id, body.locked).await?;
+    use crate::services::lock_service;
+    if body.locked {
+        lock_service::lock(&state, "file", *path, Some(claims.user_id), None, None).await?;
+    } else {
+        lock_service::unlock(&state, "file", *path, claims.user_id).await?;
+    }
+    let file = file_service::get_info(&state, *path, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
 }
 

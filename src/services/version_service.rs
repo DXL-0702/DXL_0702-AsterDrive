@@ -47,10 +47,12 @@ pub async fn restore_version(
 
     // 删除当前 blob 的缩略图（恢复后缩略图按需重新生成）
     let current_blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
-    if let Err(e) =
-        crate::services::thumbnail_service::delete_thumbnail(state, &current_blob).await
+    if let Err(e) = crate::services::thumbnail_service::delete_thumbnail(state, &current_blob).await
     {
-        tracing::warn!("failed to delete thumbnail for blob {}: {e}", current_blob.id);
+        tracing::warn!(
+            "failed to delete thumbnail for blob {}: {e}",
+            current_blob.id
+        );
     }
 
     // 直接切换 blob_id（不创建新版本记录，避免回滚产生冗余版本）

@@ -1,11 +1,11 @@
 pub mod config_repo;
 pub mod file_repo;
 pub mod folder_repo;
+pub mod lock_repo;
 pub mod policy_repo;
 pub mod property_repo;
 pub mod share_repo;
 pub mod upload_session_repo;
-pub mod version_repo;
 pub mod user_repo;
+pub mod version_repo;
 pub mod webdav_account_repo;
-pub mod webdav_lock_repo;

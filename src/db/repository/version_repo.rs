@@ -26,10 +26,7 @@ pub async fn find_by_file_id(
         .map_err(AsterError::from)
 }
 
-pub async fn find_by_id(
-    db: &DatabaseConnection,
-    id: i64,
-) -> Result<Option<file_version::Model>> {
+pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<Option<file_version::Model>> {
     FileVersion::find_by_id(id)
         .one(db)
         .await

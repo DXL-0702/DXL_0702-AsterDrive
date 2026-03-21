@@ -175,7 +175,14 @@ pub async fn set_lock(
     path: web::Path<i64>,
     body: web::Json<SetLockReq>,
 ) -> Result<HttpResponse> {
-    let folder = folder_service::set_locked(&state, *path, claims.user_id, body.locked).await?;
+    use crate::services::lock_service;
+    if body.locked {
+        lock_service::lock(&state, "folder", *path, Some(claims.user_id), None, None).await?;
+    } else {
+        lock_service::unlock(&state, "folder", *path, claims.user_id).await?;
+    }
+    // 返回更新后的文件夹信息
+    let folder = crate::db::repository::folder_repo::find_by_id(&state.db, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
 }
 
@@ -206,7 +213,6 @@ pub async fn copy_folder(
     path: web::Path<i64>,
     body: web::Json<CopyFolderReq>,
 ) -> Result<HttpResponse> {
-    let folder =
-        folder_service::copy_folder(&state, *path, claims.user_id, body.parent_id).await?;
+    let folder = folder_service::copy_folder(&state, *path, claims.user_id, body.parent_id).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(folder)))
 }

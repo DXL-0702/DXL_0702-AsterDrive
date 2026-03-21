@@ -8,7 +8,6 @@ pub mod path_resolver;
 
 use actix_web::web;
 use dav_server::actix::{DavRequest, DavResponse};
-use dav_server::ls::DavLockSystem;
 use dav_server::{DavConfig, DavHandler};
 use sea_orm::DatabaseConnection;
 
@@ -16,11 +15,11 @@ use crate::config::WebDavConfig;
 use crate::db::repository::config_repo;
 use crate::runtime::AppState;
 
-/// WebDAV 共享状态（单例，所有请求共享）
+/// WebDAV 共享状态（单例）
 pub struct WebDavState {
     pub handler: DavHandler,
     pub prefix: String,
-    pub lock_system: Box<dyn DavLockSystem>,
+    pub db: DatabaseConnection,
 }
 
 /// WebDAV handler — 所有 HTTP 方法都路由到这里，由 dav-server 内部分派
@@ -66,13 +65,20 @@ pub async fn webdav_handler(
         auth_result.root_folder_id,
     );
 
-    // 4. 构建 per-request 配置
+    // 4. Per-request 锁系统（需要 user_id 做 path → entity 解析）
+    let lock_system = db_lock_system::DbLockSystem::new(
+        webdav.db.clone(),
+        auth_result.user_id,
+        auth_result.root_folder_id,
+    );
+
+    // 5. 构建 per-request 配置
     let config = DavConfig::new()
         .filesystem(Box::new(dav_fs))
-        .locksystem(webdav.lock_system.clone())
+        .locksystem(lock_system)
         .strip_prefix(&webdav.prefix);
 
-    // 5. 交给 dav-server 处理
+    // 6. 交给 dav-server 处理
     webdav
         .handler
         .handle_with(config, dav_req.request)
@@ -80,7 +86,7 @@ pub async fn webdav_handler(
         .into()
 }
 
-/// 注册 WebDAV 路由（需要 db 来创建 DbLockSystem）
+/// 注册 WebDAV 路由（需要 db 来创建 per-request DbLockSystem）
 pub fn configure(
     cfg: &mut web::ServiceConfig,
     webdav_config: &WebDavConfig,
@@ -89,7 +95,7 @@ pub fn configure(
     let webdav_state = web::Data::new(WebDavState {
         handler: DavHandler::builder().build_handler(),
         prefix: webdav_config.prefix.clone(),
-        lock_system: db_lock_system::DbLockSystem::new(db.clone()),
+        db: db.clone(),
     });
 
     cfg.app_data(webdav_state).service(

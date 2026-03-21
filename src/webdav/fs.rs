@@ -404,14 +404,9 @@ impl DavFileSystem for AsterDavFs {
                             .map_err(to_fs_error)?;
                     }
 
-                    file_service::duplicate_file_record(
-                        &state,
-                        &f,
-                        dest_parent_id,
-                        &dest_name,
-                    )
-                    .await
-                    .map_err(to_fs_error)?;
+                    file_service::duplicate_file_record(&state, &f, dest_parent_id, &dest_name)
+                        .await
+                        .map_err(to_fs_error)?;
                 }
                 ResolvedNode::Folder(f) => {
                     webdav_service::recursive_copy_folder(

@@ -139,7 +139,7 @@ use utoipa::OpenApi;
             crate::api::routes::trash::TrashItemPath,
             crate::api::routes::webdav_accounts::TestConnectionReq,
             crate::entities::entity_property::Model,
-            crate::entities::webdav_lock::Model,
+            crate::entities::resource_lock::Model,
             crate::api::routes::properties::SetPropReq,
         ),
     ),

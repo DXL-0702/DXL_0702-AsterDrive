@@ -28,16 +28,8 @@ impl MigrationTrait for Migration {
                             .big_integer()
                             .not_null(),
                     )
-                    .col(
-                        ColumnDef::new(FileVersions::Version)
-                            .integer()
-                            .not_null(),
-                    )
-                    .col(
-                        ColumnDef::new(FileVersions::Size)
-                            .big_integer()
-                            .not_null(),
-                    )
+                    .col(ColumnDef::new(FileVersions::Version).integer().not_null())
+                    .col(ColumnDef::new(FileVersions::Size).big_integer().not_null())
                     .col(
                         ColumnDef::new(FileVersions::CreatedAt)
                             .timestamp_with_time_zone()

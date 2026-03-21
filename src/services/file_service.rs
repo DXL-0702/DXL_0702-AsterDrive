@@ -124,8 +124,7 @@ pub async fn store_from_temp(
         let old_blob = file_repo::find_blob_by_id(db, old_file.blob_id).await?;
 
         // 覆盖时删除旧缩略图（新 blob 的缩略图会按需生成）
-        if let Err(e) =
-            crate::services::thumbnail_service::delete_thumbnail(state, &old_blob).await
+        if let Err(e) = crate::services::thumbnail_service::delete_thumbnail(state, &old_blob).await
         {
             tracing::warn!("failed to delete thumbnail for blob {}: {e}", old_blob.id);
         }
@@ -138,8 +137,7 @@ pub async fn store_from_temp(
         let updated = active.update(db).await.map_err(AsterError::from)?;
 
         // 版本溯源：保留旧 blob 作为历史版本（不减 ref_count）
-        let next_ver =
-            crate::db::repository::version_repo::next_version(db, existing_id).await?;
+        let next_ver = crate::db::repository::version_repo::next_version(db, existing_id).await?;
         crate::db::repository::version_repo::create(
             db,
             crate::entities::file_version::ActiveModel {
@@ -394,13 +392,12 @@ pub async fn update(
     let final_name = name.as_deref().unwrap_or(&f.name);
     if let Some(existing) =
         file_repo::find_by_name_in_folder(db, user_id, target_folder, final_name).await?
+        && existing.id != id
     {
-        if existing.id != id {
-            return Err(AsterError::validation_error(format!(
-                "file '{}' already exists in this folder",
-                final_name
-            )));
-        }
+        return Err(AsterError::validation_error(format!(
+            "file '{}' already exists in this folder",
+            final_name
+        )));
     }
 
     let mut active: file::ActiveModel = f.into();
@@ -410,25 +407,6 @@ pub async fn update(
     if let Some(fid) = folder_id {
         active.folder_id = Set(Some(fid));
     }
-    active.updated_at = Set(Utc::now());
-    use sea_orm::ActiveModelTrait;
-    active.update(db).await.map_err(AsterError::from)
-}
-
-/// 锁定/解锁文件
-pub async fn set_locked(
-    state: &AppState,
-    id: i64,
-    user_id: i64,
-    locked: bool,
-) -> Result<file::Model> {
-    let db = &state.db;
-    let f = file_repo::find_by_id(db, id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your file"));
-    }
-    let mut active: file::ActiveModel = f.into();
-    active.is_locked = Set(locked);
     active.updated_at = Set(Utc::now());
     use sea_orm::ActiveModelTrait;
     active.update(db).await.map_err(AsterError::from)

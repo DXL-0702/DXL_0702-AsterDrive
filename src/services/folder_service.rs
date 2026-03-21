@@ -120,13 +120,12 @@ pub async fn update(
     let final_name = name.as_deref().unwrap_or(&f.name);
     if let Some(existing) =
         folder_repo::find_by_name_in_parent(db, user_id, target_parent, final_name).await?
+        && existing.id != id
     {
-        if existing.id != id {
-            return Err(AsterError::validation_error(format!(
-                "folder '{}' already exists in this location",
-                final_name
-            )));
-        }
+        return Err(AsterError::validation_error(format!(
+            "folder '{}' already exists in this location",
+            final_name
+        )));
     }
 
     let mut active: folder::ActiveModel = f.into();
@@ -142,24 +141,6 @@ pub async fn update(
     active.updated_at = Set(Utc::now());
     use sea_orm::ActiveModelTrait;
     active.update(db).await.map_err(AsterError::from)
-}
-
-/// 锁定/解锁文件夹
-pub async fn set_locked(
-    state: &AppState,
-    id: i64,
-    user_id: i64,
-    locked: bool,
-) -> Result<folder::Model> {
-    let f = folder_repo::find_by_id(&state.db, id).await?;
-    if f.user_id != user_id {
-        return Err(AsterError::auth_forbidden("not your folder"));
-    }
-    let mut active: folder::ActiveModel = f.into();
-    active.is_locked = sea_orm::Set(locked);
-    active.updated_at = sea_orm::Set(Utc::now());
-    use sea_orm::ActiveModelTrait;
-    active.update(&state.db).await.map_err(AsterError::from)
 }
 
 /// 复制文件夹（递归复制所有文件和子文件夹）

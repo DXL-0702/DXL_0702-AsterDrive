@@ -943,16 +943,14 @@ macro_rules! setup_with_webdav {
         let db1 = state.db.clone();
         let db2 = state.db.clone();
         let webdav_config = aster_drive::config::WebDavConfig::default();
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(state))
-                .configure(move |cfg| {
-                    // WebDAV 必须在 api::configure 之前注册
-                    // 因为 api::configure 内部注册了 frontend SPA fallback 兜底
-                    aster_drive::webdav::configure(cfg, &webdav_config, &db2);
-                    api::configure(cfg, &db1);
-                }),
-        )
+        let app = test::init_service(App::new().app_data(web::Data::new(state)).configure(
+            move |cfg| {
+                // WebDAV 必须在 api::configure 之前注册
+                // 因为 api::configure 内部注册了 frontend SPA fallback 兜底
+                aster_drive::webdav::configure(cfg, &webdav_config, &db2);
+                api::configure(cfg, &db1);
+            },
+        ))
         .await;
         app
     }};
