@@ -1,6 +1,7 @@
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, Set,
 };
 
 use crate::entities::{
@@ -70,6 +71,15 @@ pub async fn create_blob(
     model: file_blob::ActiveModel,
 ) -> Result<file_blob::Model> {
     model.insert(db).await.map_err(AsterError::from)
+}
+
+/// 统计某存储策略下的 blob 数量（策略删除保护用）
+pub async fn count_blobs_by_policy(db: &DatabaseConnection, policy_id: i64) -> Result<u64> {
+    FileBlob::find()
+        .filter(file_blob::Column::PolicyId.eq(policy_id))
+        .count(db)
+        .await
+        .map_err(AsterError::from)
 }
 
 pub async fn create(db: &DatabaseConnection, model: file::ActiveModel) -> Result<file::Model> {

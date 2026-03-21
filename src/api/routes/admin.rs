@@ -28,6 +28,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         .route("/users", web::get().to(list_users))
         .route("/users/{id}", web::get().to(get_user))
         .route("/users/{id}", web::patch().to(update_user))
+        .route("/users/{id}", web::delete().to(force_delete_user))
         // user storage policies
         .route(
             "/users/{user_id}/policies",
@@ -404,6 +405,31 @@ pub async fn update_user(
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/users/{id}",
+    tag = "admin",
+    operation_id = "force_delete_user",
+    params(("id" = i64, Path, description = "User ID")),
+    responses(
+        (status = 200, description = "User and all data permanently deleted"),
+        (status = 400, description = "Cannot delete admin user"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Admin required"),
+        (status = 404, description = "User not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn force_delete_user(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    user_service::force_delete(&state, *path).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
 // ── User Storage Policies ───────────────────────────────────────────

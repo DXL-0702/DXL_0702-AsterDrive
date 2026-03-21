@@ -109,6 +109,20 @@ pub async fn find_deleted_children(
         .map_err(AsterError::from)
 }
 
+/// 清除引用某存储策略的所有 folder.policy_id（策略删除时调用）
+pub async fn clear_policy_references(db: &DatabaseConnection, policy_id: i64) -> Result<u64> {
+    let result = Folder::update_many()
+        .col_expr(
+            folder::Column::PolicyId,
+            sea_orm::sea_query::Expr::value(Option::<i64>::None),
+        )
+        .filter(folder::Column::PolicyId.eq(policy_id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected)
+}
+
 /// 查询过期的已删除文件夹（自动清理用）
 pub async fn find_expired_deleted(
     db: &DatabaseConnection,

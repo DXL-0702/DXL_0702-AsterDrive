@@ -50,15 +50,28 @@ pub async fn create(
 
 pub async fn delete(state: &AppState, id: i64) -> Result<()> {
     policy_repo::find_by_id(&state.db, id).await?;
+
+    // 引用保护：有 blob 引用则拒绝删除（blob 的物理文件依赖此策略的存储驱动）
+    let blob_count = crate::db::repository::file_repo::count_blobs_by_policy(&state.db, id).await?;
+    if blob_count > 0 {
+        return Err(AsterError::validation_error(format!(
+            "cannot delete policy: {blob_count} blob(s) still reference it"
+        )));
+    }
+
+    // 清除引用此策略的文件夹覆盖设置
+    let cleared =
+        crate::db::repository::folder_repo::clear_policy_references(&state.db, id).await?;
+    if cleared > 0 {
+        tracing::info!("cleared policy_id on {cleared} folders before deleting policy #{id}");
+    }
+
     storage_policy::Entity::delete_by_id(id)
         .exec(&state.db)
         .await
         .map_err(AsterError::from)?;
 
-    // invalidate cache
-    state.cache.delete(&format!("policy:{id}")).await;
-    state.cache.invalidate_prefix("user_default_policy:").await;
-
+    invalidate_policy_cache(state, id).await;
     Ok(())
 }
 
@@ -111,10 +124,7 @@ pub async fn update(
     active.updated_at = Set(Utc::now());
     let result = active.update(&state.db).await.map_err(AsterError::from)?;
 
-    // invalidate cache
-    state.cache.delete(&format!("policy:{id}")).await;
-    state.cache.invalidate_prefix("user_default_policy:").await;
-
+    invalidate_policy_cache(state, id).await;
     Ok(result)
 }
 
@@ -265,11 +275,16 @@ pub async fn remove_user_policy(state: &AppState, id: i64) -> Result<()> {
 
     policy_repo::delete_user_policy(&state.db, id).await?;
 
-    // invalidate cache
     state
         .cache
         .delete(&format!("user_default_policy:{user_id}"))
         .await;
 
     Ok(())
+}
+
+/// 统一的策略缓存失效
+async fn invalidate_policy_cache(state: &AppState, policy_id: i64) {
+    state.cache.delete(&format!("policy:{policy_id}")).await;
+    state.cache.invalidate_prefix("user_default_policy:").await;
 }
