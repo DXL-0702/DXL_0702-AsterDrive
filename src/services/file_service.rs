@@ -24,6 +24,7 @@ const HASH_BUF_SIZE: usize = 65536; // 64KB
 /// `existing_file_id`: Some 时覆盖现有文件，None 时新建
 ///
 /// 返回创建/更新的文件记录。临时文件可能被 put_file rename 走，调用方不要依赖它存在。
+/// `skip_lock_check`: WebDAV 持锁者写入时为 true（dav-server 已验证 lock token）
 pub async fn store_from_temp(
     state: &AppState,
     user_id: i64,
@@ -32,6 +33,7 @@ pub async fn store_from_temp(
     temp_path: &str,
     size: i64,
     existing_file_id: Option<i64>,
+    skip_lock_check: bool,
 ) -> Result<file::Model> {
     let db = &state.db;
 
@@ -118,7 +120,7 @@ pub async fn store_from_temp(
     if let Some(existing_id) = existing_file_id {
         // 覆盖现有文件
         let old_file = file_repo::find_by_id(db, existing_id).await?;
-        if old_file.is_locked {
+        if old_file.is_locked && !skip_lock_check {
             return Err(AsterError::resource_locked("file is locked"));
         }
         let old_blob = file_repo::find_blob_by_id(db, old_file.blob_id).await?;
@@ -238,7 +240,7 @@ pub async fn upload(
     }
 
     let result =
-        store_from_temp(state, user_id, folder_id, &filename, &temp_path, size, None).await;
+        store_from_temp(state, user_id, folder_id, &filename, &temp_path, size, None, false).await;
 
     // 清理临时文件（put_file 可能已经 rename 走了，忽略错误）
     let _ = tokio::fs::remove_file(&temp_path).await;

@@ -40,7 +40,7 @@ impl AsterDavMeta {
             len: 0,
             modified: to_system_time(folder.updated_at),
             created: to_system_time(folder.created_at),
-            etag: Some(format!("\"dir-{}\"", folder.updated_at.timestamp())),
+            etag: Some(format!("dir-{}", folder.updated_at.timestamp())),
         }
     }
 
@@ -50,7 +50,7 @@ impl AsterDavMeta {
             len: blob.size as u64,
             modified: to_system_time(file.updated_at),
             created: to_system_time(file.created_at),
-            etag: Some(format!("\"{}\"", &blob.hash)),
+            etag: Some(blob.hash.clone()),
         }
     }
 }

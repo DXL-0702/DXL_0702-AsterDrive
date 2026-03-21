@@ -94,12 +94,9 @@ impl DavFileSystem for AsterDavFs {
                         .await
                         .map_err(|_| FsError::GeneralFailure)?;
 
-                // 覆盖锁定文件时拒绝
-                if let Some(ref ef) = existing_file
-                    && ef.is_locked
-                {
-                    return Err(FsError::Forbidden);
-                }
+                // 注意：WebDAV 写操作不检查 is_locked
+                // dav-server 通过 lock token 验证保证只有持锁者能写
+                // is_locked 只挡 REST API / 前端操作
 
                 let existing_file_id = existing_file.map(|f| f.id);
 

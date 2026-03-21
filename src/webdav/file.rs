@@ -255,6 +255,7 @@ impl DavFile for AsterDavFile {
                 temp_path,
                 *written as i64,
                 *existing_file_id,
+                true, // WebDAV: skip lock check, dav-server validates lock token
             )
             .await
             .map_err(|e| {

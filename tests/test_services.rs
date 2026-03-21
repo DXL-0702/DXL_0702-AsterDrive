@@ -95,6 +95,7 @@ async fn test_file_service_get_info() {
         &temp_path,
         18,
         None,
+        false,
     )
     .await
     .unwrap();
@@ -257,6 +258,7 @@ async fn test_version_service_list_delete() {
         &temp1,
         9,
         None,
+        false,
     )
     .await
     .unwrap();
@@ -279,6 +281,7 @@ async fn test_version_service_list_delete() {
         &temp2,
         17,
         Some(file.id),
+        false,
     )
     .await
     .unwrap();
@@ -327,7 +330,7 @@ async fn test_copy_file_naming() {
     std::fs::write(&temp, "copy me").unwrap();
 
     let file = aster_drive::services::file_service::store_from_temp(
-        &state, user.id, None, "doc.txt", &temp, 7, None,
+        &state, user.id, None, "doc.txt", &temp, 7, None, false,
     )
     .await
     .unwrap();

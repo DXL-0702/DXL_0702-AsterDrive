@@ -1,5 +1,6 @@
 pub mod auth;
 pub mod db_lock_system;
+pub mod deltav;
 pub mod dir_entry;
 pub mod file;
 pub mod fs;
@@ -55,7 +56,37 @@ pub async fn webdav_handler(
         }
     };
 
-    // 3. 创建 per-user 文件系统（可能限制到指定文件夹）
+    // 3. DeltaV 方法拦截（dav-server 不支持 RFC3253）
+    let method = dav_req.request.method().to_string();
+    match method.as_str() {
+        "REPORT" => {
+            // 消费请求，分离 URI 和 body
+            let (parts, body) = dav_req.request.into_parts();
+            let body_bytes = collect_body(body).await;
+            return deltav::handle_report(
+                &parts.uri,
+                &body_bytes,
+                &state.db,
+                &auth_result,
+                &webdav.prefix,
+            )
+            .await
+            .into();
+        }
+        "VERSION-CONTROL" => {
+            return deltav::handle_version_control(
+                dav_req.request.uri(),
+                &state.db,
+                &auth_result,
+                &webdav.prefix,
+            )
+            .await
+            .into();
+        }
+        _ => {}
+    }
+
+    // 4. 创建 per-user 文件系统（可能限制到指定文件夹）
     let dav_fs = fs::AsterDavFs::new(
         state.db.clone(),
         state.driver_registry.clone(),
@@ -65,25 +96,66 @@ pub async fn webdav_handler(
         auth_result.root_folder_id,
     );
 
-    // 4. Per-request 锁系统（需要 user_id 做 path → entity 解析）
+    // 5. Per-request 锁系统（需要 user_id 做 path → entity 解析）
     let lock_system = db_lock_system::DbLockSystem::new(
         webdav.db.clone(),
         auth_result.user_id,
         auth_result.root_folder_id,
     );
 
-    // 5. 构建 per-request 配置
+    // 6. 构建 per-request 配置
     let config = DavConfig::new()
         .filesystem(Box::new(dav_fs))
         .locksystem(lock_system)
         .strip_prefix(&webdav.prefix);
 
-    // 6. 交给 dav-server 处理
-    webdav
+    // 7. 交给 dav-server 处理
+    let response: DavResponse = webdav
         .handler
         .handle_with(config, dav_req.request)
         .await
-        .into()
+        .into();
+
+    // 8. OPTIONS 响应追加 DeltaV 版本控制标记
+    if method == "OPTIONS" {
+        return append_deltav_header(response);
+    }
+
+    response
+}
+
+/// 从 http_body::Body 中收集全部字节
+async fn collect_body<B>(body: B) -> Vec<u8>
+where
+    B: http_body::Body<Data = bytes::Bytes>,
+{
+    let mut body = Box::pin(body);
+    let mut data = Vec::new();
+    loop {
+        match std::future::poll_fn(|cx| body.as_mut().poll_frame(cx)).await {
+            Some(Ok(frame)) => {
+                if let Ok(chunk) = frame.into_data() {
+                    data.extend_from_slice(&chunk);
+                }
+            }
+            _ => break,
+        }
+    }
+    data
+}
+
+/// 在 OPTIONS 响应的 DAV 头中追加 version-control 合规标记
+fn append_deltav_header(response: DavResponse) -> DavResponse {
+    let DavResponse(mut resp) = response;
+    if let Some(dav_value) = resp.headers().get("DAV").cloned() {
+        if let Ok(s) = dav_value.to_str() {
+            let new_value = format!("{s}, version-control");
+            if let Ok(hv) = http::HeaderValue::from_str(&new_value) {
+                resp.headers_mut().insert("DAV", hv);
+            }
+        }
+    }
+    DavResponse(resp)
 }
 
 /// 注册 WebDAV 路由（需要 db 来创建 per-request DbLockSystem）
