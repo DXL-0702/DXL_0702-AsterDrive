@@ -1,12 +1,12 @@
 use chrono::Utc;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use sea_orm::{DatabaseConnection, Set};
+use sea_orm::Set;
 use serde::{Deserialize, Serialize};
 
-use crate::config::AuthConfig;
 use crate::db::repository::{config_repo, user_repo};
 use crate::entities::user;
 use crate::errors::{AsterError, Result};
+use crate::runtime::AppState;
 use crate::types::{TokenType, UserRole, UserStatus};
 use crate::utils::hash;
 
@@ -21,12 +21,13 @@ pub struct Claims {
 
 /// 注册用户，返回用户信息（不含密码）
 pub async fn register(
-    db: &DatabaseConnection,
+    state: &AppState,
     username: &str,
     email: &str,
     password: &str,
-    _jwt_secret: &str,
 ) -> Result<user::Model> {
+    let db = &state.db;
+
     if user_repo::find_by_username(db, username).await?.is_some() {
         return Err(AsterError::validation_error("username already exists"));
     }
@@ -71,12 +72,10 @@ pub async fn register(
 }
 
 /// 登录，返回 (access_token, refresh_token)
-pub async fn login(
-    db: &DatabaseConnection,
-    username: &str,
-    password: &str,
-    auth_config: &AuthConfig,
-) -> Result<(String, String)> {
+pub async fn login(state: &AppState, username: &str, password: &str) -> Result<(String, String)> {
+    let db = &state.db;
+    let auth_config = &state.config.auth;
+
     let user = user_repo::find_by_username(db, username)
         .await?
         .ok_or_else(|| AsterError::auth_invalid_credentials("user not found"))?;
@@ -108,7 +107,8 @@ pub async fn login(
 }
 
 /// 用 refresh token 换 access token
-pub fn refresh_token(refresh: &str, auth_config: &AuthConfig) -> Result<String> {
+pub fn refresh_token(state: &AppState, refresh: &str) -> Result<String> {
+    let auth_config = &state.config.auth;
     let claims = verify_token(refresh, &auth_config.jwt_secret)?;
     if claims.token_type != TokenType::Refresh {
         return Err(AsterError::auth_token_invalid("not a refresh token"));

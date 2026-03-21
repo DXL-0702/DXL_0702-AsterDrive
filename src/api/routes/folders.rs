@@ -40,8 +40,7 @@ pub async fn create_folder(
     claims: web::ReqData<Claims>,
     body: web::Json<CreateFolderReq>,
 ) -> Result<HttpResponse> {
-    let folder =
-        folder_service::create(&state.db, claims.user_id, &body.name, body.parent_id).await?;
+    let folder = folder_service::create(&state, claims.user_id, &body.name, body.parent_id).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(folder)))
 }
 
@@ -60,7 +59,7 @@ pub async fn list_root(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
-    let contents = folder_service::list(&state.db, claims.user_id, None).await?;
+    let contents = folder_service::list(&state, claims.user_id, None).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 
@@ -82,7 +81,7 @@ pub async fn list_folder(
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let contents = folder_service::list(&state.db, claims.user_id, Some(*path)).await?;
+    let contents = folder_service::list(&state, claims.user_id, Some(*path)).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 
@@ -104,7 +103,7 @@ pub async fn delete_folder(
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    folder_service::delete(&state.db, *path, claims.user_id).await?;
+    folder_service::delete(&state, *path, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -136,7 +135,7 @@ pub async fn patch_folder(
     body: web::Json<PatchFolderReq>,
 ) -> Result<HttpResponse> {
     let folder = folder_service::update(
-        &state.db,
+        &state,
         *path,
         claims.user_id,
         body.name.clone(),

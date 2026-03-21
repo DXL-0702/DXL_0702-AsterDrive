@@ -2,22 +2,24 @@ use actix_multipart::Multipart;
 use actix_web::HttpResponse;
 use chrono::Utc;
 use futures::StreamExt;
-use sea_orm::{DatabaseConnection, Set};
+use sea_orm::Set;
 
+use crate::cache::CacheExt;
 use crate::db::repository::{file_repo, policy_repo, user_repo};
-use crate::entities::{file, file_blob};
+use crate::entities::{file, file_blob, user_storage_policy};
 use crate::errors::{AsterError, Result};
-use crate::storage::DriverRegistry;
+use crate::runtime::AppState;
 use crate::utils::hash;
 
 /// 上传文件
 pub async fn upload(
-    db: &DatabaseConnection,
-    registry: &DriverRegistry,
+    state: &AppState,
     user_id: i64,
     payload: &mut Multipart,
     folder_id: Option<i64>,
 ) -> Result<file::Model> {
+    let db = &state.db;
+
     // 读取 multipart field — 只取 file field 的数据
     let mut filename = String::from("unnamed");
     let mut data = Vec::new();
@@ -42,7 +44,7 @@ pub async fn upload(
     }
 
     // 确定存储策略
-    let policy = resolve_policy(db, user_id, folder_id).await?;
+    let policy = resolve_policy(state, user_id, folder_id).await?;
 
     // 检查文件大小限制
     if policy.max_file_size > 0 && (data.len() as i64) > policy.max_file_size {
@@ -80,7 +82,7 @@ pub async fn upload(
         None => {
             // 写入物理文件
             let storage_path = format!("{}/{}/{}", &file_hash[..2], &file_hash[2..4], &file_hash);
-            let driver = registry.get_driver(&policy)?;
+            let driver = state.driver_registry.get_driver(&policy)?;
             driver.put(&storage_path, &data).await?;
 
             file_repo::create_blob(
@@ -136,8 +138,8 @@ pub async fn upload(
 }
 
 /// 获取文件信息
-pub async fn get_info(db: &DatabaseConnection, id: i64, user_id: i64) -> Result<file::Model> {
-    let f = file_repo::find_by_id(db, id).await?;
+pub async fn get_info(state: &AppState, id: i64, user_id: i64) -> Result<file::Model> {
+    let f = file_repo::find_by_id(&state.db, id).await?;
     if f.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your file"));
     }
@@ -145,12 +147,8 @@ pub async fn get_info(db: &DatabaseConnection, id: i64, user_id: i64) -> Result<
 }
 
 /// 下载文件
-pub async fn download(
-    db: &DatabaseConnection,
-    registry: &DriverRegistry,
-    id: i64,
-    user_id: i64,
-) -> Result<HttpResponse> {
+pub async fn download(state: &AppState, id: i64, user_id: i64) -> Result<HttpResponse> {
+    let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
     if f.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your file"));
@@ -158,7 +156,7 @@ pub async fn download(
 
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
     let policy = policy_repo::find_by_id(db, blob.policy_id).await?;
-    let driver = registry.get_driver(&policy)?;
+    let driver = state.driver_registry.get_driver(&policy)?;
     let data = driver.get(&blob.storage_path).await?;
 
     Ok(HttpResponse::Ok()
@@ -171,15 +169,12 @@ pub async fn download(
 }
 
 /// 下载文件（无用户校验，用于分享链接）
-pub async fn download_raw(
-    db: &DatabaseConnection,
-    registry: &DriverRegistry,
-    id: i64,
-) -> Result<HttpResponse> {
+pub async fn download_raw(state: &AppState, id: i64) -> Result<HttpResponse> {
+    let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
     let policy = policy_repo::find_by_id(db, blob.policy_id).await?;
-    let driver = registry.get_driver(&policy)?;
+    let driver = state.driver_registry.get_driver(&policy)?;
     let data = driver.get(&blob.storage_path).await?;
 
     Ok(HttpResponse::Ok()
@@ -192,12 +187,8 @@ pub async fn download_raw(
 }
 
 /// 删除文件
-pub async fn delete(
-    db: &DatabaseConnection,
-    registry: &DriverRegistry,
-    id: i64,
-    user_id: i64,
-) -> Result<()> {
+pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
+    let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
     if f.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your file"));
@@ -212,7 +203,7 @@ pub async fn delete(
     // 减少引用计数，如果为 0 则删除物理文件
     if blob.ref_count <= 1 {
         let policy = policy_repo::find_by_id(db, blob.policy_id).await?;
-        let driver = registry.get_driver(&policy)?;
+        let driver = state.driver_registry.get_driver(&policy)?;
         driver.delete(&blob.storage_path).await?;
         file_repo::delete_blob(db, blob.id).await?;
     } else {
@@ -228,12 +219,13 @@ pub async fn delete(
 
 /// 更新文件（重命名/移动）
 pub async fn update(
-    db: &DatabaseConnection,
+    state: &AppState,
     id: i64,
     user_id: i64,
     name: Option<String>,
     folder_id: Option<i64>,
 ) -> Result<file::Model> {
+    let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
     if f.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your file"));
@@ -252,21 +244,58 @@ pub async fn update(
 
 /// 根据优先级链解析存储策略：文件夹 → 用户默认 → 系统默认
 pub async fn resolve_policy(
-    db: &DatabaseConnection,
+    state: &AppState,
     user_id: i64,
     folder_id: Option<i64>,
 ) -> Result<crate::entities::storage_policy::Model> {
+    let db = &state.db;
+
     // 1. 文件夹级策略
     if let Some(fid) = folder_id {
         let folder = crate::db::repository::folder_repo::find_by_id(db, fid).await?;
         if let Some(pid) = folder.policy_id {
-            return policy_repo::find_by_id(db, pid).await;
+            let cache_key = format!("policy:{pid}");
+            if let Some(cached) = state
+                .cache
+                .get::<crate::entities::storage_policy::Model>(&cache_key)
+                .await
+            {
+                return Ok(cached);
+            }
+            let policy = policy_repo::find_by_id(db, pid).await?;
+            state.cache.set(&cache_key, &policy, None).await;
+            return Ok(policy);
         }
     }
 
-    // 2. 用户默认策略
+    // 2. 用户默认策略（缓存）
+    let usp_cache_key = format!("user_default_policy:{user_id}");
+    if let Some(usp) = state
+        .cache
+        .get::<user_storage_policy::Model>(&usp_cache_key)
+        .await
+    {
+        let policy_cache_key = format!("policy:{}", usp.policy_id);
+        if let Some(cached) = state
+            .cache
+            .get::<crate::entities::storage_policy::Model>(&policy_cache_key)
+            .await
+        {
+            return Ok(cached);
+        }
+        let policy = policy_repo::find_by_id(db, usp.policy_id).await?;
+        state.cache.set(&policy_cache_key, &policy, None).await;
+        return Ok(policy);
+    }
+
     if let Some(usp) = policy_repo::find_user_default(db, user_id).await? {
-        return policy_repo::find_by_id(db, usp.policy_id).await;
+        state.cache.set(&usp_cache_key, &usp, None).await;
+        let policy = policy_repo::find_by_id(db, usp.policy_id).await?;
+        state
+            .cache
+            .set(&format!("policy:{}", policy.id), &policy, None)
+            .await;
+        return Ok(policy);
     }
 
     // 3. 系统默认策略

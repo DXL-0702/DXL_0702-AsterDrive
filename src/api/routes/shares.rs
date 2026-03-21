@@ -44,7 +44,7 @@ pub async fn create_share(
     body: web::Json<CreateShareReq>,
 ) -> Result<HttpResponse> {
     let share = share_service::create_share(
-        &state.db,
+        &state,
         claims.user_id,
         body.file_id,
         body.folder_id,
@@ -71,7 +71,7 @@ pub async fn list_shares(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
-    let shares = share_service::list_my_shares(&state.db, claims.user_id).await?;
+    let shares = share_service::list_my_shares(&state, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(shares)))
 }
 
@@ -93,6 +93,6 @@ pub async fn delete_share(
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    share_service::delete_share(&state.db, *path, claims.user_id).await?;
+    share_service::delete_share(&state, *path, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

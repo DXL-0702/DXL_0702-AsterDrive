@@ -54,14 +54,7 @@ pub async fn upload(
     query: web::Query<FileQuery>,
     mut payload: actix_multipart::Multipart,
 ) -> Result<HttpResponse> {
-    let file = file_service::upload(
-        &state.db,
-        &state.driver_registry,
-        claims.user_id,
-        &mut payload,
-        query.folder_id,
-    )
-    .await?;
+    let file = file_service::upload(&state, claims.user_id, &mut payload, query.folder_id).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
 }
 
@@ -83,7 +76,7 @@ pub async fn get_file(
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let file = file_service::get_info(&state.db, *path, claims.user_id).await?;
+    let file = file_service::get_info(&state, *path, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
 }
 
@@ -105,8 +98,7 @@ pub async fn download(
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let response =
-        file_service::download(&state.db, &state.driver_registry, *path, claims.user_id).await?;
+    let response = file_service::download(&state, *path, claims.user_id).await?;
     Ok(response)
 }
 
@@ -128,7 +120,7 @@ pub async fn delete_file(
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    file_service::delete(&state.db, &state.driver_registry, *path, claims.user_id).await?;
+    file_service::delete(&state, *path, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -159,7 +151,7 @@ pub async fn patch_file(
     body: web::Json<PatchFileReq>,
 ) -> Result<HttpResponse> {
     let file = file_service::update(
-        &state.db,
+        &state,
         *path,
         claims.user_id,
         body.name.clone(),
@@ -207,7 +199,7 @@ pub async fn init_chunked_upload(
     body: web::Json<InitUploadReq>,
 ) -> Result<HttpResponse> {
     let resp = upload_service::init_upload(
-        &state.db,
+        &state,
         claims.user_id,
         &body.filename,
         body.total_size,
@@ -241,7 +233,7 @@ pub async fn upload_chunk(
     body: actix_web::web::Bytes,
 ) -> Result<HttpResponse> {
     let resp = upload_service::upload_chunk(
-        &state.db,
+        &state,
         &path.upload_id,
         path.chunk_number,
         claims.user_id,
@@ -269,13 +261,7 @@ pub async fn complete_upload(
     claims: web::ReqData<Claims>,
     path: web::Path<UploadIdPath>,
 ) -> Result<HttpResponse> {
-    let file = upload_service::complete_upload(
-        &state.db,
-        &state.driver_registry,
-        &path.upload_id,
-        claims.user_id,
-    )
-    .await?;
+    let file = upload_service::complete_upload(&state, &path.upload_id, claims.user_id).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
 }
 
@@ -297,7 +283,7 @@ pub async fn get_upload_progress(
     claims: web::ReqData<Claims>,
     path: web::Path<UploadIdPath>,
 ) -> Result<HttpResponse> {
-    let resp = upload_service::get_progress(&state.db, &path.upload_id, claims.user_id).await?;
+    let resp = upload_service::get_progress(&state, &path.upload_id, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
 }
 
@@ -319,6 +305,6 @@ pub async fn cancel_upload(
     claims: web::ReqData<Claims>,
     path: web::Path<UploadIdPath>,
 ) -> Result<HttpResponse> {
-    upload_service::cancel_upload(&state.db, &path.upload_id, claims.user_id).await?;
+    upload_service::cancel_upload(&state, &path.upload_id, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

@@ -1,13 +1,13 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
+use sea_orm::{ActiveModelTrait, Set};
 use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::db::repository::{file_repo, policy_repo, upload_session_repo, user_repo};
 use crate::entities::{file, file_blob, upload_session};
 use crate::errors::{AsterError, Result};
+use crate::runtime::AppState;
 use crate::services::file_service;
-use crate::storage::DriverRegistry;
 use crate::utils::id;
 
 #[derive(Serialize, ToSchema)]
@@ -36,14 +36,16 @@ pub struct UploadProgressResponse {
 
 /// 上传协商：服务端根据存储策略决定上传模式
 pub async fn init_upload(
-    db: &DatabaseConnection,
+    state: &AppState,
     user_id: i64,
     filename: &str,
     total_size: i64,
     folder_id: Option<i64>,
 ) -> Result<InitUploadResponse> {
+    let db = &state.db;
+
     // 确定存储策略
-    let policy = file_service::resolve_policy(db, user_id, folder_id).await?;
+    let policy = file_service::resolve_policy(state, user_id, folder_id).await?;
 
     // 检查文件大小限制
     if policy.max_file_size > 0 && total_size > policy.max_file_size {
@@ -111,12 +113,13 @@ pub async fn init_upload(
 
 /// 上传单个分片
 pub async fn upload_chunk(
-    db: &DatabaseConnection,
+    state: &AppState,
     upload_id: &str,
     chunk_number: i32,
     user_id: i64,
     data: &[u8],
 ) -> Result<ChunkUploadResponse> {
+    let db = &state.db;
     let session = upload_session_repo::find_by_id(db, upload_id).await?;
 
     if session.user_id != user_id {
@@ -174,11 +177,11 @@ pub async fn upload_chunk(
 
 /// 完成分片上传：组装 → hash → 去重 → 写入最终存储
 pub async fn complete_upload(
-    db: &DatabaseConnection,
-    registry: &DriverRegistry,
+    state: &AppState,
     upload_id: &str,
     user_id: i64,
 ) -> Result<file::Model> {
+    let db = &state.db;
     let session = upload_session_repo::find_by_id(db, upload_id).await?;
 
     if session.user_id != user_id {
@@ -238,7 +241,7 @@ pub async fn complete_upload(
 
     // 获取策略 + driver
     let policy = policy_repo::find_by_id(db, session.policy_id).await?;
-    let driver = registry.get_driver(&policy)?;
+    let driver = state.driver_registry.get_driver(&policy)?;
 
     // 去重: 检查是否已有相同 blob
     let blob = match file_repo::find_blob_by_hash(db, &file_hash, policy.id).await? {
@@ -317,24 +320,24 @@ pub async fn complete_upload(
 }
 
 /// 取消上传
-pub async fn cancel_upload(db: &DatabaseConnection, upload_id: &str, user_id: i64) -> Result<()> {
-    let session = upload_session_repo::find_by_id(db, upload_id).await?;
+pub async fn cancel_upload(state: &AppState, upload_id: &str, user_id: i64) -> Result<()> {
+    let session = upload_session_repo::find_by_id(&state.db, upload_id).await?;
     if session.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your upload"));
     }
 
     let temp_dir = format!("data/.uploads/{upload_id}");
     let _ = tokio::fs::remove_dir_all(&temp_dir).await;
-    upload_session_repo::delete(db, upload_id).await
+    upload_session_repo::delete(&state.db, upload_id).await
 }
 
 /// 查询上传进度
 pub async fn get_progress(
-    db: &DatabaseConnection,
+    state: &AppState,
     upload_id: &str,
     user_id: i64,
 ) -> Result<UploadProgressResponse> {
-    let session = upload_session_repo::find_by_id(db, upload_id).await?;
+    let session = upload_session_repo::find_by_id(&state.db, upload_id).await?;
     if session.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your upload"));
     }
@@ -362,10 +365,10 @@ async fn scan_received_chunks(upload_id: &str) -> Vec<i32> {
     while let Ok(Some(entry)) = entries.next_entry().await {
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if let Some(num_str) = name.strip_prefix("chunk_") {
-            if let Ok(n) = num_str.parse::<i32>() {
-                received.push(n);
-            }
+        if let Some(num_str) = name.strip_prefix("chunk_")
+            && let Ok(n) = num_str.parse::<i32>()
+        {
+            received.push(n);
         }
     }
     received.sort();
@@ -373,13 +376,13 @@ async fn scan_received_chunks(upload_id: &str) -> Vec<i32> {
 }
 
 /// 清理过期的上传 session（后台任务调用）
-pub async fn cleanup_expired(db: &DatabaseConnection) -> Result<u32> {
-    let expired = upload_session_repo::find_expired(db).await?;
+pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
+    let expired = upload_session_repo::find_expired(&state.db).await?;
     let count = expired.len() as u32;
     for session in expired {
         let temp_dir = format!("data/.uploads/{}", session.id);
         let _ = tokio::fs::remove_dir_all(&temp_dir).await;
-        let _ = upload_session_repo::delete(db, &session.id).await;
+        let _ = upload_session_repo::delete(&state.db, &session.id).await;
     }
     if count > 0 {
         tracing::info!("cleaned up {count} expired upload sessions");

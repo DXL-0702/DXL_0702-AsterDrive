@@ -1,10 +1,11 @@
 use chrono::Utc;
-use sea_orm::{DatabaseConnection, Set};
+use sea_orm::Set;
 use serde::Serialize;
 
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
+use crate::runtime::AppState;
 
 #[derive(Serialize)]
 pub struct FolderContents {
@@ -13,13 +14,13 @@ pub struct FolderContents {
 }
 
 pub async fn create(
-    db: &DatabaseConnection,
+    state: &AppState,
     user_id: i64,
     name: &str,
     parent_id: Option<i64>,
 ) -> Result<folder::Model> {
     // 检查同名文件夹
-    if folder_repo::find_by_name_in_parent(db, user_id, parent_id, name)
+    if folder_repo::find_by_name_in_parent(&state.db, user_id, parent_id, name)
         .await?
         .is_some()
     {
@@ -39,36 +40,36 @@ pub async fn create(
         updated_at: Set(now),
         ..Default::default()
     };
-    folder_repo::create(db, model).await
+    folder_repo::create(&state.db, model).await
 }
 
 pub async fn list(
-    db: &DatabaseConnection,
+    state: &AppState,
     user_id: i64,
     parent_id: Option<i64>,
 ) -> Result<FolderContents> {
-    let folders = folder_repo::find_children(db, user_id, parent_id).await?;
-    let files = file_repo::find_by_folder(db, user_id, parent_id).await?;
+    let folders = folder_repo::find_children(&state.db, user_id, parent_id).await?;
+    let files = file_repo::find_by_folder(&state.db, user_id, parent_id).await?;
     Ok(FolderContents { folders, files })
 }
 
-pub async fn delete(db: &DatabaseConnection, id: i64, user_id: i64) -> Result<()> {
-    let folder = folder_repo::find_by_id(db, id).await?;
+pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
+    let folder = folder_repo::find_by_id(&state.db, id).await?;
     if folder.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your folder"));
     }
-    folder_repo::delete(db, id).await
+    folder_repo::delete(&state.db, id).await
 }
 
 pub async fn update(
-    db: &DatabaseConnection,
+    state: &AppState,
     id: i64,
     user_id: i64,
     name: Option<String>,
     parent_id: Option<i64>,
     policy_id: Option<i64>,
 ) -> Result<folder::Model> {
-    let f = folder_repo::find_by_id(db, id).await?;
+    let f = folder_repo::find_by_id(&state.db, id).await?;
     if f.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your folder"));
     }
@@ -84,13 +85,13 @@ pub async fn update(
     }
     active.updated_at = Set(Utc::now());
     use sea_orm::ActiveModelTrait;
-    active.update(db).await.map_err(AsterError::from)
+    active.update(&state.db).await.map_err(AsterError::from)
 }
 
 /// 列出文件夹内容（无用户校验，用于分享链接）
-pub async fn list_shared(db: &DatabaseConnection, folder_id: i64) -> Result<FolderContents> {
-    let folder = folder_repo::find_by_id(db, folder_id).await?;
-    let folders = folder_repo::find_children(db, folder.user_id, Some(folder_id)).await?;
-    let files = file_repo::find_by_folder(db, folder.user_id, Some(folder_id)).await?;
+pub async fn list_shared(state: &AppState, folder_id: i64) -> Result<FolderContents> {
+    let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
+    let folders = folder_repo::find_children(&state.db, folder.user_id, Some(folder_id)).await?;
+    let files = file_repo::find_by_folder(&state.db, folder.user_id, Some(folder_id)).await?;
     Ok(FolderContents { folders, files })
 }

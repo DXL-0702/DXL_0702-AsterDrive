@@ -7,7 +7,7 @@ use crate::db::repository::{file_repo, folder_repo, share_repo};
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::services::file_service;
+use crate::services::{file_service, folder_service};
 use crate::utils::{hash, id};
 
 /// 公开返回给前端的分享信息（不含密码哈希和内部 ID）
@@ -25,7 +25,7 @@ pub struct SharePublicInfo {
 }
 
 pub async fn create_share(
-    db: &DatabaseConnection,
+    state: &AppState,
     user_id: i64,
     file_id: Option<i64>,
     folder_id: Option<i64>,
@@ -33,6 +33,8 @@ pub async fn create_share(
     expires_at: Option<chrono::DateTime<Utc>>,
     max_downloads: i64,
 ) -> Result<share::Model> {
+    let db = &state.db;
+
     // 至少一个不为空
     if file_id.is_none() && folder_id.is_none() {
         return Err(AsterError::validation_error(
@@ -92,7 +94,8 @@ pub async fn create_share(
     share_repo::create(db, model).await
 }
 
-pub async fn get_share_info(db: &DatabaseConnection, token: &str) -> Result<SharePublicInfo> {
+pub async fn get_share_info(state: &AppState, token: &str) -> Result<SharePublicInfo> {
+    let db = &state.db;
     let share = share_repo::find_by_token(db, token)
         .await?
         .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
@@ -119,8 +122,8 @@ pub async fn get_share_info(db: &DatabaseConnection, token: &str) -> Result<Shar
     })
 }
 
-pub async fn verify_password(db: &DatabaseConnection, token: &str, password: &str) -> Result<()> {
-    let share = share_repo::find_by_token(db, token)
+pub async fn verify_password(state: &AppState, token: &str, password: &str) -> Result<()> {
+    let share = share_repo::find_by_token(&state.db, token)
         .await?
         .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
 
@@ -156,14 +159,14 @@ pub async fn download_shared_file(
     let _ = share_repo::increment_download_count(&state.db, share.id).await;
 
     // reuse existing download logic (bypass user ownership check)
-    file_service::download_raw(&state.db, &state.driver_registry, file_id).await
+    file_service::download_raw(state, file_id).await
 }
 
 pub async fn list_shared_folder(
-    db: &DatabaseConnection,
+    state: &AppState,
     token: &str,
-) -> Result<crate::services::folder_service::FolderContents> {
-    let share = share_repo::find_by_token(db, token)
+) -> Result<folder_service::FolderContents> {
+    let share = share_repo::find_by_token(&state.db, token)
         .await?
         .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
 
@@ -174,28 +177,28 @@ pub async fn list_shared_folder(
         .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
 
     // list folder contents (bypass user ownership — shared access)
-    crate::services::folder_service::list_shared(db, folder_id).await
+    folder_service::list_shared(state, folder_id).await
 }
 
-pub async fn list_my_shares(db: &DatabaseConnection, user_id: i64) -> Result<Vec<share::Model>> {
-    share_repo::find_by_user(db, user_id).await
+pub async fn list_my_shares(state: &AppState, user_id: i64) -> Result<Vec<share::Model>> {
+    share_repo::find_by_user(&state.db, user_id).await
 }
 
-pub async fn delete_share(db: &DatabaseConnection, share_id: i64, user_id: i64) -> Result<()> {
-    let share = share_repo::find_by_id(db, share_id).await?;
+pub async fn delete_share(state: &AppState, share_id: i64, user_id: i64) -> Result<()> {
+    let share = share_repo::find_by_id(&state.db, share_id).await?;
     if share.user_id != user_id {
         return Err(AsterError::auth_forbidden("not your share"));
     }
-    share_repo::delete(db, share_id).await
+    share_repo::delete(&state.db, share_id).await
 }
 
-pub async fn list_all(db: &DatabaseConnection) -> Result<Vec<share::Model>> {
-    share_repo::find_all(db).await
+pub async fn list_all(state: &AppState) -> Result<Vec<share::Model>> {
+    share_repo::find_all(&state.db).await
 }
 
-pub async fn admin_delete_share(db: &DatabaseConnection, share_id: i64) -> Result<()> {
-    share_repo::find_by_id(db, share_id).await?; // 校验存在
-    share_repo::delete(db, share_id).await
+pub async fn admin_delete_share(state: &AppState, share_id: i64) -> Result<()> {
+    share_repo::find_by_id(&state.db, share_id).await?; // 校验存在
+    share_repo::delete(&state.db, share_id).await
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────

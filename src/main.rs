@@ -59,7 +59,7 @@ async fn main() -> std::io::Result<()> {
         loop {
             interval.tick().await;
             if let Err(e) =
-                aster_drive::services::upload_service::cleanup_expired(&cleanup_state.db).await
+                aster_drive::services::upload_service::cleanup_expired(&cleanup_state).await
             {
                 tracing::warn!("upload cleanup failed: {e}");
             }

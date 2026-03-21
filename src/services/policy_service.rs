@@ -1,21 +1,22 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
+use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 
 use crate::db::repository::policy_repo;
 use crate::entities::{storage_policy, user_storage_policy};
 use crate::errors::{AsterError, Result};
+use crate::runtime::AppState;
 use crate::types::DriverType;
 
-pub async fn list_all(db: &DatabaseConnection) -> Result<Vec<storage_policy::Model>> {
-    policy_repo::find_all(db).await
+pub async fn list_all(state: &AppState) -> Result<Vec<storage_policy::Model>> {
+    policy_repo::find_all(&state.db).await
 }
 
-pub async fn get(db: &DatabaseConnection, id: i64) -> Result<storage_policy::Model> {
-    policy_repo::find_by_id(db, id).await
+pub async fn get(state: &AppState, id: i64) -> Result<storage_policy::Model> {
+    policy_repo::find_by_id(&state.db, id).await
 }
 
 pub async fn create(
-    db: &DatabaseConnection,
+    state: &AppState,
     name: &str,
     driver_type: DriverType,
     endpoint: &str,
@@ -44,20 +45,25 @@ pub async fn create(
         updated_at: Set(now),
         ..Default::default()
     };
-    policy_repo::create(db, model).await
+    policy_repo::create(&state.db, model).await
 }
 
-pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
-    policy_repo::find_by_id(db, id).await?;
+pub async fn delete(state: &AppState, id: i64) -> Result<()> {
+    policy_repo::find_by_id(&state.db, id).await?;
     storage_policy::Entity::delete_by_id(id)
-        .exec(db)
+        .exec(&state.db)
         .await
         .map_err(AsterError::from)?;
+
+    // invalidate cache
+    state.cache.delete(&format!("policy:{id}")).await;
+    state.cache.invalidate_prefix("user_default_policy:").await;
+
     Ok(())
 }
 
 pub async fn update(
-    db: &DatabaseConnection,
+    state: &AppState,
     id: i64,
     name: Option<String>,
     endpoint: Option<String>,
@@ -69,7 +75,7 @@ pub async fn update(
     chunk_size: Option<i64>,
     is_default: Option<bool>,
 ) -> Result<storage_policy::Model> {
-    let existing = policy_repo::find_by_id(db, id).await?;
+    let existing = policy_repo::find_by_id(&state.db, id).await?;
     let mut active: storage_policy::ActiveModel = existing.into();
     if let Some(v) = name {
         active.name = Set(v);
@@ -99,31 +105,37 @@ pub async fn update(
         active.is_default = Set(v);
     }
     active.updated_at = Set(Utc::now());
-    active.update(db).await.map_err(AsterError::from)
+    let result = active.update(&state.db).await.map_err(AsterError::from)?;
+
+    // invalidate cache
+    state.cache.delete(&format!("policy:{id}")).await;
+    state.cache.invalidate_prefix("user_default_policy:").await;
+
+    Ok(result)
 }
 
 // ── User Storage Policy ──────────────────────────────────────────────
 
 pub async fn list_user_policies(
-    db: &DatabaseConnection,
+    state: &AppState,
     user_id: i64,
 ) -> Result<Vec<user_storage_policy::Model>> {
-    policy_repo::find_user_policies(db, user_id).await
+    policy_repo::find_user_policies(&state.db, user_id).await
 }
 
 pub async fn assign_user_policy(
-    db: &DatabaseConnection,
+    state: &AppState,
     user_id: i64,
     policy_id: i64,
     is_default: bool,
     quota_bytes: i64,
 ) -> Result<user_storage_policy::Model> {
     // 校验策略存在
-    policy_repo::find_by_id(db, policy_id).await?;
+    policy_repo::find_by_id(&state.db, policy_id).await?;
 
     // 如果设为默认，先清除该用户的其他默认
     if is_default {
-        policy_repo::clear_user_default(db, user_id).await?;
+        policy_repo::clear_user_default(&state.db, user_id).await?;
     }
 
     let model = user_storage_policy::ActiveModel {
@@ -134,22 +146,31 @@ pub async fn assign_user_policy(
         created_at: Set(Utc::now()),
         ..Default::default()
     };
-    policy_repo::create_user_policy(db, model).await
+    let result = policy_repo::create_user_policy(&state.db, model).await?;
+
+    // invalidate cache
+    state
+        .cache
+        .delete(&format!("user_default_policy:{user_id}"))
+        .await;
+
+    Ok(result)
 }
 
 pub async fn update_user_policy(
-    db: &DatabaseConnection,
+    state: &AppState,
     id: i64,
     is_default: Option<bool>,
     quota_bytes: Option<i64>,
 ) -> Result<user_storage_policy::Model> {
-    let existing = policy_repo::find_user_policy_by_id(db, id).await?;
+    let existing = policy_repo::find_user_policy_by_id(&state.db, id).await?;
 
     // 如果设为默认，先清除该用户的其他默认
     if let Some(true) = is_default {
-        policy_repo::clear_user_default(db, existing.user_id).await?;
+        policy_repo::clear_user_default(&state.db, existing.user_id).await?;
     }
 
+    let user_id = existing.user_id;
     let mut active: user_storage_policy::ActiveModel = existing.into();
     if let Some(v) = is_default {
         active.is_default = Set(v);
@@ -157,11 +178,28 @@ pub async fn update_user_policy(
     if let Some(v) = quota_bytes {
         active.quota_bytes = Set(v);
     }
-    policy_repo::update_user_policy(db, active).await
+    let result = policy_repo::update_user_policy(&state.db, active).await?;
+
+    // invalidate cache
+    state
+        .cache
+        .delete(&format!("user_default_policy:{user_id}"))
+        .await;
+
+    Ok(result)
 }
 
-pub async fn remove_user_policy(db: &DatabaseConnection, id: i64) -> Result<()> {
-    // 校验存在
-    policy_repo::find_user_policy_by_id(db, id).await?;
-    policy_repo::delete_user_policy(db, id).await
+pub async fn remove_user_policy(state: &AppState, id: i64) -> Result<()> {
+    let existing = policy_repo::find_user_policy_by_id(&state.db, id).await?;
+    let user_id = existing.user_id;
+
+    policy_repo::delete_user_policy(&state.db, id).await?;
+
+    // invalidate cache
+    state
+        .cache
+        .delete(&format!("user_default_policy:{user_id}"))
+        .await;
+
+    Ok(())
 }

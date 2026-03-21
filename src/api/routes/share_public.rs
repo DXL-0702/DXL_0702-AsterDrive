@@ -30,7 +30,7 @@ pub async fn get_share_info(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
-    let info = share_service::get_share_info(&state.db, &path).await?;
+    let info = share_service::get_share_info(&state, &path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(info)))
 }
 
@@ -57,7 +57,7 @@ pub async fn verify_password(
     path: web::Path<String>,
     body: web::Json<VerifyPasswordReq>,
 ) -> Result<HttpResponse> {
-    share_service::verify_password(&state.db, &path, &body.password).await?;
+    share_service::verify_password(&state, &path, &body.password).await?;
 
     // 设置一个短期 cookie 标记密码已验证
     let cookie = actix_web::cookie::Cookie::build(format!("aster_share_{}", &*path), "1")
@@ -114,7 +114,7 @@ pub async fn list_shared_content(
 ) -> Result<HttpResponse> {
     check_share_password_cookie(&state, &path, &req).await?;
 
-    let contents = share_service::list_shared_folder(&state.db, &path).await?;
+    let contents = share_service::list_shared_folder(&state, &path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 

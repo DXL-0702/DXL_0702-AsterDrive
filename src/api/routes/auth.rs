@@ -89,14 +89,7 @@ pub async fn register(
     state: web::Data<AppState>,
     body: web::Json<RegisterReq>,
 ) -> Result<HttpResponse> {
-    let user = auth_service::register(
-        &state.db,
-        &body.username,
-        &body.email,
-        &body.password,
-        &state.config.auth.jwt_secret,
-    )
-    .await?;
+    let user = auth_service::register(&state, &body.username, &body.email, &body.password).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(user)))
 }
 
@@ -112,13 +105,7 @@ pub async fn register(
     ),
 )]
 pub async fn login(state: web::Data<AppState>, body: web::Json<LoginReq>) -> Result<HttpResponse> {
-    let (access, refresh_tok) = auth_service::login(
-        &state.db,
-        &body.username,
-        &body.password,
-        &state.config.auth,
-    )
-    .await?;
+    let (access, refresh_tok) = auth_service::login(&state, &body.username, &body.password).await?;
 
     Ok(HttpResponse::Ok()
         .cookie(build_cookie(
@@ -153,7 +140,7 @@ pub async fn refresh(
         .map(|c| c.value().to_string())
         .ok_or_else(|| crate::errors::AsterError::auth_token_invalid("missing refresh cookie"))?;
 
-    let access = auth_service::refresh_token(&refresh_tok, &state.config.auth)?;
+    let access = auth_service::refresh_token(&state, &refresh_tok)?;
 
     Ok(HttpResponse::Ok()
         .cookie(build_cookie(

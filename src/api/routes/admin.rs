@@ -69,7 +69,7 @@ pub async fn list_policies(
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let policies = policy_service::list_all(&state.db).await?;
+    let policies = policy_service::list_all(&state).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policies)))
 }
 
@@ -107,7 +107,7 @@ pub async fn create_policy(
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
     let policy = policy_service::create(
-        &state.db,
+        &state,
         &body.name,
         body.driver_type,
         body.endpoint.as_deref().unwrap_or_default(),
@@ -142,7 +142,7 @@ pub async fn get_policy(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let policy = policy_service::get(&state.db, *path).await?;
+    let policy = policy_service::get(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
 
@@ -183,7 +183,7 @@ pub async fn update_policy(
     require_admin(&claims)?;
     let body = body.into_inner();
     let policy = policy_service::update(
-        &state.db,
+        &state,
         *path,
         body.name,
         body.endpoint,
@@ -219,7 +219,7 @@ pub async fn delete_policy(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    policy_service::delete(&state.db, *path).await?;
+    policy_service::delete(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -242,7 +242,7 @@ pub async fn list_users(
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let users = user_service::list_all(&state.db).await?;
+    let users = user_service::list_all(&state).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(users)))
 }
 
@@ -266,7 +266,7 @@ pub async fn get_user(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let user = user_service::get(&state.db, *path).await?;
+    let user = user_service::get(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }
 
@@ -321,7 +321,7 @@ pub async fn update_user(
     }
 
     let user = user_service::update(
-        &state.db,
+        &state,
         target_id,
         body.role,
         body.status,
@@ -363,7 +363,7 @@ pub async fn list_user_policies(
     path: web::Path<UserPolicyPath>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let policies = policy_service::list_user_policies(&state.db, path.user_id).await?;
+    let policies = policy_service::list_user_policies(&state, path.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policies)))
 }
 
@@ -399,7 +399,7 @@ pub async fn assign_user_policy(
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
     let usp = policy_service::assign_user_policy(
-        &state.db,
+        &state,
         path.user_id,
         body.policy_id,
         body.is_default,
@@ -441,7 +441,7 @@ pub async fn update_user_policy(
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
     let usp =
-        policy_service::update_user_policy(&state.db, path.id, body.is_default, body.quota_bytes)
+        policy_service::update_user_policy(&state, path.id, body.is_default, body.quota_bytes)
             .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(usp)))
 }
@@ -469,7 +469,7 @@ pub async fn remove_user_policy(
     path: web::Path<UserPolicyItemPath>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    policy_service::remove_user_policy(&state.db, path.id).await?;
+    policy_service::remove_user_policy(&state, path.id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -492,7 +492,7 @@ pub async fn list_all_shares(
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let shares = share_service::list_all(&state.db).await?;
+    let shares = share_service::list_all(&state).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(shares)))
 }
 
@@ -516,7 +516,7 @@ pub async fn admin_delete_share(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    share_service::admin_delete_share(&state.db, *path).await?;
+    share_service::admin_delete_share(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -539,7 +539,7 @@ pub async fn list_config(
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let configs = config_service::list_all(&state.db).await?;
+    let configs = config_service::list_all(&state).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(configs)))
 }
 
@@ -563,7 +563,7 @@ pub async fn get_config(
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let config = config_service::get_by_key(&state.db, &path).await?;
+    let config = config_service::get_by_key(&state, &path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(config)))
 }
 
@@ -593,7 +593,7 @@ pub async fn set_config(
     body: web::Json<SetConfigReq>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let config = config_service::set(&state.db, &path, &body.value, claims.user_id).await?;
+    let config = config_service::set(&state, &path, &body.value, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(config)))
 }
 
@@ -617,7 +617,7 @@ pub async fn delete_config(
     path: web::Path<String>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    config_service::delete(&state.db, &path).await?;
+    config_service::delete(&state, &path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
