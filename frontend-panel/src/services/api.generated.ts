@@ -952,13 +952,18 @@ export interface components {
         EntityProperty: {
             /** Format: int64 */
             entity_id: number;
-            entity_type: string;
+            entity_type: components["schemas"]["EntityType"];
             /** Format: int64 */
             id: number;
             name: string;
             namespace: string;
             value?: string | null;
         };
+        /**
+         * @description 实体类型（文件/文件夹）
+         * @enum {string}
+         */
+        EntityType: "file" | "folder";
         /**
          * @description API 错误码，序列化为数字
          * @example 0
@@ -1032,7 +1037,7 @@ export interface components {
         InitUploadResponse: {
             /** Format: int64 */
             chunk_size?: number | null;
-            mode: string;
+            mode: components["schemas"]["UploadMode"];
             /** @description S3 presigned PUT URL（仅 presigned 模式） */
             presigned_url?: string | null;
             /** Format: int32 */
@@ -1066,6 +1071,7 @@ export interface components {
             /** Format: int64 */
             max_file_size?: number | null;
             name?: string | null;
+            options?: string | null;
             secret_key?: string | null;
         };
         PatchUserPolicyReq: {
@@ -1092,7 +1098,7 @@ export interface components {
             deep: boolean;
             /** Format: int64 */
             entity_id: number;
-            entity_type: string;
+            entity_type: components["schemas"]["EntityType"];
             /** Format: int64 */
             id: number;
             /** Format: int64 */
@@ -1168,13 +1174,27 @@ export interface components {
             updated_at: string;
         };
         SystemConfig: {
+            /** @description 分类（前端分组用） */
+            category?: string;
+            /** @description 描述 */
+            description?: string;
             /** Format: int64 */
             id: number;
+            /** @description 是否敏感值（前端脱敏显示） */
+            is_sensitive?: boolean;
             key: string;
+            /** @description 自定义配置的命名空间，系统配置为 "" */
+            namespace?: string;
+            /** @description 修改后是否需要重启才生效 */
+            requires_restart?: boolean;
+            /** @description 来源：system（代码定义）/ custom（用户创建） */
+            source?: string;
             updated_at: string;
             /** Format: int64 */
             updated_by?: number | null;
             value: string;
+            /** @description 值类型：string / number / boolean */
+            value_type?: string;
         };
         TestConnectionReq: {
             password: string;
@@ -1197,16 +1217,21 @@ export interface components {
             folders: components["schemas"]["FolderInfo"][];
         };
         TrashItemPath: {
-            entity_type: string;
+            entity_type: components["schemas"]["EntityType"];
             /** Format: int64 */
             id: number;
         };
+        /**
+         * @description 上传模式（不存 DB，仅 API 响应用）
+         * @enum {string}
+         */
+        UploadMode: "direct" | "chunked" | "presigned";
         UploadProgressResponse: {
             chunks_on_disk: number[];
             filename: string;
             /** Format: int32 */
             received_count: number;
-            status: string;
+            status: components["schemas"]["UploadSessionStatus"];
             /** Format: int32 */
             total_chunks: number;
             upload_id: string;
@@ -1225,7 +1250,7 @@ export interface components {
             /** Format: int32 */
             received_count: number;
             s3_temp_key?: string | null;
-            status: string;
+            status: components["schemas"]["UploadSessionStatus"];
             /** Format: int32 */
             total_chunks: number;
             /** Format: int64 */
@@ -1234,6 +1259,11 @@ export interface components {
             /** Format: int64 */
             user_id: number;
         };
+        /**
+         * @description 上传 session 状态
+         * @enum {string}
+         */
+        UploadSessionStatus: "uploading" | "assembling" | "completed" | "failed" | "presigned";
         UserInfo: {
             created_at: string;
             email: string;
@@ -1334,13 +1364,27 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
+                            /** @description 分类（前端分组用） */
+                            category?: string;
+                            /** @description 描述 */
+                            description?: string;
                             /** Format: int64 */
                             id: number;
+                            /** @description 是否敏感值（前端脱敏显示） */
+                            is_sensitive?: boolean;
                             key: string;
+                            /** @description 自定义配置的命名空间，系统配置为 "" */
+                            namespace?: string;
+                            /** @description 修改后是否需要重启才生效 */
+                            requires_restart?: boolean;
+                            /** @description 来源：system（代码定义）/ custom（用户创建） */
+                            source?: string;
                             updated_at: string;
                             /** Format: int64 */
                             updated_by?: number | null;
                             value: string;
+                            /** @description 值类型：string / number / boolean */
+                            value_type?: string;
                         }[];
                         msg: string;
                     };
@@ -1383,13 +1427,27 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
+                            /** @description 分类（前端分组用） */
+                            category?: string;
+                            /** @description 描述 */
+                            description?: string;
                             /** Format: int64 */
                             id: number;
+                            /** @description 是否敏感值（前端脱敏显示） */
+                            is_sensitive?: boolean;
                             key: string;
+                            /** @description 自定义配置的命名空间，系统配置为 "" */
+                            namespace?: string;
+                            /** @description 修改后是否需要重启才生效 */
+                            requires_restart?: boolean;
+                            /** @description 来源：system（代码定义）/ custom（用户创建） */
+                            source?: string;
                             updated_at: string;
                             /** Format: int64 */
                             updated_by?: number | null;
                             value: string;
+                            /** @description 值类型：string / number / boolean */
+                            value_type?: string;
                         };
                         msg: string;
                     };
@@ -1443,13 +1501,27 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
+                            /** @description 分类（前端分组用） */
+                            category?: string;
+                            /** @description 描述 */
+                            description?: string;
                             /** Format: int64 */
                             id: number;
+                            /** @description 是否敏感值（前端脱敏显示） */
+                            is_sensitive?: boolean;
                             key: string;
+                            /** @description 自定义配置的命名空间，系统配置为 "" */
+                            namespace?: string;
+                            /** @description 修改后是否需要重启才生效 */
+                            requires_restart?: boolean;
+                            /** @description 来源：system（代码定义）/ custom（用户创建） */
+                            source?: string;
                             updated_at: string;
                             /** Format: int64 */
                             updated_by?: number | null;
                             value: string;
+                            /** @description 值类型：string / number / boolean */
+                            value_type?: string;
                         };
                         msg: string;
                     };
@@ -1535,7 +1607,7 @@ export interface operations {
                             deep: boolean;
                             /** Format: int64 */
                             entity_id: number;
-                            entity_type: string;
+                            entity_type: components["schemas"]["EntityType"];
                             /** Format: int64 */
                             id: number;
                             /** Format: int64 */
@@ -2721,7 +2793,7 @@ export interface operations {
                         data?: {
                             /** Format: int64 */
                             chunk_size?: number | null;
-                            mode: string;
+                            mode: components["schemas"]["UploadMode"];
                             /** @description S3 presigned PUT URL（仅 presigned 模式） */
                             presigned_url?: string | null;
                             /** Format: int32 */
@@ -2766,7 +2838,7 @@ export interface operations {
                             filename: string;
                             /** Format: int32 */
                             received_count: number;
-                            status: string;
+                            status: components["schemas"]["UploadSessionStatus"];
                             /** Format: int32 */
                             total_chunks: number;
                             upload_id: string;
@@ -3761,7 +3833,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Entity type: 'file' or 'folder' */
-                entity_type: string;
+                entity_type: components["schemas"]["EntityType"];
                 /** @description Entity ID */
                 entity_id: number;
             };
@@ -3780,7 +3852,7 @@ export interface operations {
                         data?: {
                             /** Format: int64 */
                             entity_id: number;
-                            entity_type: string;
+                            entity_type: components["schemas"]["EntityType"];
                             /** Format: int64 */
                             id: number;
                             name: string;
@@ -3813,7 +3885,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Entity type: 'file' or 'folder' */
-                entity_type: string;
+                entity_type: components["schemas"]["EntityType"];
                 /** @description Entity ID */
                 entity_id: number;
             };
@@ -3836,7 +3908,7 @@ export interface operations {
                         data?: {
                             /** Format: int64 */
                             entity_id: number;
-                            entity_type: string;
+                            entity_type: components["schemas"]["EntityType"];
                             /** Format: int64 */
                             id: number;
                             name: string;
@@ -3876,7 +3948,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Entity type: 'file' or 'folder' */
-                entity_type: string;
+                entity_type: components["schemas"]["EntityType"];
                 /** @description Entity ID */
                 entity_id: number;
                 /** @description Property namespace */
@@ -4330,7 +4402,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description file or folder */
-                entity_type: string;
+                entity_type: components["schemas"]["EntityType"];
                 /** @description Entity ID */
                 id: number;
             };
@@ -4367,7 +4439,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description file or folder */
-                entity_type: string;
+                entity_type: components["schemas"]["EntityType"];
                 /** @description Entity ID */
                 id: number;
             };

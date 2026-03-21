@@ -14,6 +14,7 @@ mod m20250321_000010_file_versions;
 mod m20250321_000011_resource_locks;
 mod m20250321_000012_presigned_upload;
 mod m20250322_000001_system_config_metadata;
+mod m20250322_000002_config_source_namespace;
 
 pub struct Migrator;
 
@@ -35,6 +36,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250321_000011_resource_locks::Migration),
             Box::new(m20250321_000012_presigned_upload::Migration),
             Box::new(m20250322_000001_system_config_metadata::Migration),
+            Box::new(m20250322_000002_config_source_namespace::Migration),
         ]
     }
 }

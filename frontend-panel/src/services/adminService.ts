@@ -115,8 +115,20 @@ export const adminLockService = {
 
 // --- System Config ---
 
+export interface ConfigSchemaItem {
+	key: string;
+	value_type: string;
+	default_value: string;
+	category: string;
+	description: string;
+	requires_restart: boolean;
+	is_sensitive: boolean;
+}
+
 export const adminConfigService = {
 	list: () => api.get<SystemConfig[]>("/admin/config"),
+
+	schema: () => api.get<ConfigSchemaItem[]>("/admin/config/schema"),
 
 	get: (key: string) => api.get<SystemConfig>(`/admin/config/${key}`),
 

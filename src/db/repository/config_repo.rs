@@ -2,9 +2,7 @@ use crate::config::definitions::ALL_CONFIGS;
 use crate::entities::system_config::{self, Entity as SystemConfig};
 use crate::errors::{AsterError, Result};
 use chrono::Utc;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, InsertResult, QueryFilter, Set,
-};
+use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
 pub async fn find_all(db: &DatabaseConnection) -> Result<Vec<system_config::Model>> {
     SystemConfig::find().all(db).await.map_err(AsterError::from)
@@ -35,9 +33,11 @@ pub async fn upsert(
         active.updated_by = Set(Some(updated_by));
         active.update(db).await.map_err(AsterError::from)
     } else {
+        // 新建的配置默认为 custom
         let model = system_config::ActiveModel {
             key: Set(key.to_string()),
             value: Set(value.to_string()),
+            source: Set("custom".to_string()),
             updated_at: Set(now),
             updated_by: Set(Some(updated_by)),
             ..Default::default()
@@ -50,6 +50,14 @@ pub async fn delete_by_key(db: &DatabaseConnection, key: &str) -> Result<()> {
     let existing = find_by_key(db, key)
         .await?
         .ok_or_else(|| AsterError::record_not_found(format!("config key '{key}'")))?;
+
+    // 系统配置不允许删除
+    if existing.source == "system" {
+        return Err(AsterError::auth_forbidden(
+            "cannot delete system configuration",
+        ));
+    }
+
     SystemConfig::delete_by_id(existing.id)
         .exec(db)
         .await
@@ -57,65 +65,49 @@ pub async fn delete_by_key(db: &DatabaseConnection, key: &str) -> Result<()> {
     Ok(())
 }
 
-/// 确保所有配置项存在，不存在则使用默认值初始化（ON CONFLICT DO NOTHING）
+/// 确保所有系统配置存在，同步元信息（不覆盖用户修改的 value）
 pub async fn ensure_defaults(db: &DatabaseConnection) -> Result<usize> {
-    let mut inserted = 0;
+    let mut count = 0;
 
     for def in ALL_CONFIGS {
         let default_value = (def.default_fn)();
-        if insert_if_not_exists(db, def, &default_value).await? {
+
+        if let Some(existing) = find_by_key(db, def.key).await? {
+            // 已存在：同步元信息（不动 value）
+            let mut active: system_config::ActiveModel = existing.into();
+            active.source = Set("system".to_string());
+            active.value_type = Set(def.value_type.to_string());
+            active.requires_restart = Set(def.requires_restart);
+            active.is_sensitive = Set(def.is_sensitive);
+            active.category = Set(def.category.to_string());
+            active.description = Set(def.description.to_string());
+            active.update(db).await.map_err(AsterError::from)?;
+        } else {
+            // 不存在：插入默认值
+            let now = Utc::now();
+            let model = system_config::ActiveModel {
+                key: Set(def.key.to_string()),
+                value: Set(default_value),
+                value_type: Set(def.value_type.to_string()),
+                requires_restart: Set(def.requires_restart),
+                is_sensitive: Set(def.is_sensitive),
+                source: Set("system".to_string()),
+                namespace: Set(String::new()),
+                category: Set(def.category.to_string()),
+                description: Set(def.description.to_string()),
+                updated_at: Set(now),
+                updated_by: Set(None),
+                ..Default::default()
+            };
+            model.insert(db).await.map_err(AsterError::from)?;
             tracing::debug!("initialized config '{}' with default value", def.key);
-            inserted += 1;
+            count += 1;
         }
     }
 
-    if inserted > 0 {
-        tracing::info!("initialized {inserted} default configuration items");
+    if count > 0 {
+        tracing::info!("initialized {count} default configuration items");
     }
 
-    Ok(inserted)
-}
-
-/// 原子性插入：已存在则跳过
-async fn insert_if_not_exists(
-    db: &DatabaseConnection,
-    def: &crate::config::definitions::ConfigDef,
-    value: &str,
-) -> Result<bool> {
-    use sea_orm::sea_query::OnConflict;
-
-    let now = Utc::now();
-    let model = system_config::ActiveModel {
-        key: Set(def.key.to_string()),
-        value: Set(value.to_string()),
-        value_type: Set(def.value_type.to_string()),
-        requires_restart: Set(def.requires_restart),
-        is_sensitive: Set(def.is_sensitive),
-        updated_at: Set(now),
-        updated_by: Set(None),
-        ..Default::default()
-    };
-
-    let result: std::result::Result<InsertResult<system_config::ActiveModel>, sea_orm::DbErr> =
-        SystemConfig::insert(model)
-            .on_conflict(
-                OnConflict::column(system_config::Column::Key)
-                    .do_nothing()
-                    .to_owned(),
-            )
-            .exec(db)
-            .await;
-
-    match result {
-        Ok(_) => Ok(true),
-        Err(sea_orm::DbErr::RecordNotInserted) => Ok(false),
-        Err(e) => {
-            let err_str = e.to_string().to_lowercase();
-            if err_str.contains("no rows") || err_str.contains("record not inserted") {
-                Ok(false)
-            } else {
-                Err(AsterError::from(e))
-            }
-        }
-    }
+    Ok(count)
 }
