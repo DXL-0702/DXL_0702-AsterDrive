@@ -140,8 +140,8 @@ impl DavFileSystem for AsterDavFs {
                         let meta = AsterDavMeta::from_file(&f, &blob);
 
                         // 流式复制到临时文件
-                        let temp_path = format!("data/.tmp/{}", uuid::Uuid::new_v4());
-                        tokio::fs::create_dir_all("data/.tmp")
+                        let temp_path = format!("{}/{}", crate::utils::TEMP_DIR, uuid::Uuid::new_v4());
+                        tokio::fs::create_dir_all(crate::utils::TEMP_DIR)
                             .await
                             .map_err(|_| FsError::GeneralFailure)?;
 

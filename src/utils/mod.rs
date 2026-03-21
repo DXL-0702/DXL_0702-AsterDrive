@@ -1,6 +1,9 @@
 pub mod hash;
 pub mod id;
 
+/// 临时文件目录（上传流式处理用）
+pub const TEMP_DIR: &str = "data/.tmp";
+
 /// macOS / Office 生成的隐藏文件名，不在目录列表中显示
 pub fn is_hidden_name(name: &str) -> bool {
     name.starts_with("._")

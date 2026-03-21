@@ -197,8 +197,8 @@ pub async fn upload(
 ) -> Result<file::Model> {
     // 流式写入临时文件（不在内存中缓冲整个文件）
     let mut filename = String::from("unnamed");
-    let temp_path = format!("data/.tmp/{}", uuid::Uuid::new_v4());
-    tokio::fs::create_dir_all("data/.tmp")
+    let temp_path = format!("{}/{}", crate::utils::TEMP_DIR, uuid::Uuid::new_v4());
+    tokio::fs::create_dir_all(crate::utils::TEMP_DIR)
         .await
         .map_err(|e| AsterError::file_upload_failed(format!("create temp dir: {e}")))?;
 

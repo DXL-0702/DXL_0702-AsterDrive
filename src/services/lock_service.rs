@@ -134,8 +134,8 @@ async fn do_unlock_by_entity(state: &AppState, entity_type: &str, entity_id: i64
     Ok(())
 }
 
-/// 同步 is_locked boolean 缓存
-async fn set_entity_locked(
+/// 同步 is_locked boolean 缓存（pub 给 db_lock_system 调用）
+pub async fn set_entity_locked(
     db: &sea_orm::DatabaseConnection,
     entity_type: &str,
     entity_id: i64,

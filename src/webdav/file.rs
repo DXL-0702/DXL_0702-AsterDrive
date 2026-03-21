@@ -11,7 +11,7 @@ use crate::config::Config;
 use crate::storage::DriverRegistry;
 use crate::webdav::metadata::AsterDavMeta;
 
-const TEMP_DIR: &str = "data/.tmp";
+use crate::utils::TEMP_DIR;
 
 /// DavFile 实现，使用临时文件避免大文件内存爆炸
 pub struct AsterDavFile {
