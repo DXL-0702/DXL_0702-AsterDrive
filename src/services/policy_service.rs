@@ -27,6 +27,11 @@ pub async fn create(
     max_file_size: i64,
     is_default: bool,
 ) -> Result<storage_policy::Model> {
+    // 设为默认时清除其他策略的 default
+    if is_default {
+        policy_repo::clear_system_default(&state.db).await?;
+    }
+
     let now = Utc::now();
     let model = storage_policy::ActiveModel {
         name: Set(name.to_string()),
@@ -45,11 +50,26 @@ pub async fn create(
         updated_at: Set(now),
         ..Default::default()
     };
-    policy_repo::create(&state.db, model).await
+    let result = policy_repo::create(&state.db, model).await?;
+    if is_default {
+        invalidate_policy_cache(state, result.id).await;
+    }
+    Ok(result)
 }
 
 pub async fn delete(state: &AppState, id: i64) -> Result<()> {
-    policy_repo::find_by_id(&state.db, id).await?;
+    let policy = policy_repo::find_by_id(&state.db, id).await?;
+
+    // 不允许删除唯一的默认策略
+    if policy.is_default {
+        let all = policy_repo::find_all(&state.db).await?;
+        let default_count = all.iter().filter(|p| p.is_default).count();
+        if default_count <= 1 {
+            return Err(AsterError::validation_error(
+                "cannot delete the only default storage policy",
+            ));
+        }
+    }
 
     // 引用保护：有 blob 引用则拒绝删除（blob 的物理文件依赖此策略的存储驱动）
     let blob_count = crate::db::repository::file_repo::count_blobs_by_policy(&state.db, id).await?;
@@ -90,6 +110,27 @@ pub async fn update(
     options: Option<String>,
 ) -> Result<storage_policy::Model> {
     let existing = policy_repo::find_by_id(&state.db, id).await?;
+
+    // 不允许取消唯一的系统默认策略
+    if let Some(false) = is_default
+        && existing.is_default
+        && policy_repo::find_default(&state.db).await?.is_some()
+    {
+        // 检查是否是唯一的 default
+        let all = policy_repo::find_all(&state.db).await?;
+        let default_count = all.iter().filter(|p| p.is_default).count();
+        if default_count <= 1 {
+            return Err(AsterError::validation_error(
+                "cannot unset the only default storage policy",
+            ));
+        }
+    }
+
+    // 设为默认时清除其他
+    if let Some(true) = is_default {
+        policy_repo::clear_system_default(&state.db).await?;
+    }
+
     let mut active: storage_policy::ActiveModel = existing.into();
     if let Some(v) = name {
         active.name = Set(v);
@@ -272,8 +313,19 @@ pub async fn update_user_policy(
 pub async fn remove_user_policy(state: &AppState, id: i64) -> Result<()> {
     let existing = policy_repo::find_user_policy_by_id(&state.db, id).await?;
     let user_id = existing.user_id;
+    let was_default = existing.is_default;
 
     policy_repo::delete_user_policy(&state.db, id).await?;
+
+    // 删的是默认策略 → 自动把剩余第一个设为默认
+    if was_default {
+        let remaining = policy_repo::find_user_policies(&state.db, user_id).await?;
+        if let Some(first) = remaining.into_iter().next() {
+            let mut active: user_storage_policy::ActiveModel = first.into();
+            active.is_default = Set(true);
+            policy_repo::update_user_policy(&state.db, active).await?;
+        }
+    }
 
     state
         .cache

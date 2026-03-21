@@ -47,6 +47,21 @@ pub async fn create(
     model.insert(db).await.map_err(AsterError::from)
 }
 
+/// 清除所有系统策略的 is_default（新 default 设置前调用）
+pub async fn clear_system_default(db: &DatabaseConnection) -> Result<()> {
+    let defaults = StoragePolicy::find()
+        .filter(storage_policy::Column::IsDefault.eq(true))
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+    for m in defaults {
+        let mut active: storage_policy::ActiveModel = m.into();
+        active.is_default = Set(false);
+        active.update(db).await.map_err(AsterError::from)?;
+    }
+    Ok(())
+}
+
 // ── User Storage Policy ──────────────────────────────────────────────
 
 pub async fn find_user_policies(
