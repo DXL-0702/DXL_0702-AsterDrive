@@ -9,6 +9,7 @@ mod m20250321_000005_webdav_root_folder;
 mod m20250321_000006_entity_properties;
 mod m20250321_000007_soft_delete;
 mod m20250321_000008_add_is_locked;
+mod m20250321_000009_webdav_locks;
 
 pub struct Migrator;
 
@@ -25,6 +26,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250321_000006_entity_properties::Migration),
             Box::new(m20250321_000007_soft_delete::Migration),
             Box::new(m20250321_000008_add_is_locked::Migration),
+            Box::new(m20250321_000009_webdav_locks::Migration),
         ]
     }
 }

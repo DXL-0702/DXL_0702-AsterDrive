@@ -54,6 +54,9 @@ use utoipa::OpenApi;
         crate::api::routes::admin::delete_config,
         crate::api::routes::admin::list_all_shares,
         crate::api::routes::admin::admin_delete_share,
+        crate::api::routes::admin::list_locks,
+        crate::api::routes::admin::force_unlock,
+        crate::api::routes::admin::cleanup_expired_locks,
         // shares (authenticated)
         crate::api::routes::shares::create_share,
         crate::api::routes::shares::list_shares,
@@ -128,6 +131,7 @@ use utoipa::OpenApi;
             crate::api::routes::trash::TrashItemPath,
             crate::api::routes::webdav_accounts::TestConnectionReq,
             crate::entities::entity_property::Model,
+            crate::entities::webdav_lock::Model,
             crate::api::routes::properties::SetPropReq,
         ),
     ),

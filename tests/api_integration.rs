@@ -116,10 +116,11 @@ macro_rules! register_and_login {
 #[actix_web::test]
 async fn test_health() {
     let state = setup().await;
+    let db = state.db.clone();
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(state))
-            .configure(api::configure),
+            .configure(move |cfg| api::configure(cfg, &db)),
     )
     .await;
 
@@ -134,10 +135,11 @@ async fn test_health() {
 #[actix_web::test]
 async fn test_health_ready() {
     let state = setup().await;
+    let db = state.db.clone();
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(state))
-            .configure(api::configure),
+            .configure(move |cfg| api::configure(cfg, &db)),
     )
     .await;
 
@@ -152,10 +154,11 @@ async fn test_health_ready() {
 #[actix_web::test]
 async fn test_register_and_login() {
     let state = setup().await;
+    let db = state.db.clone();
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(state))
-            .configure(api::configure),
+            .configure(move |cfg| api::configure(cfg, &db)),
     )
     .await;
 
@@ -221,10 +224,11 @@ async fn test_register_and_login() {
 #[actix_web::test]
 async fn test_token_refresh() {
     let state = setup().await;
+    let db = state.db.clone();
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(state))
-            .configure(api::configure),
+            .configure(move |cfg| api::configure(cfg, &db)),
     )
     .await;
 
@@ -243,10 +247,11 @@ async fn test_token_refresh() {
 #[actix_web::test]
 async fn test_folders_crud() {
     let state = setup().await;
+    let db = state.db.clone();
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(state))
-            .configure(api::configure),
+            .configure(move |cfg| api::configure(cfg, &db)),
     )
     .await;
 
@@ -307,10 +312,11 @@ async fn test_folders_crud() {
 #[actix_web::test]
 async fn test_file_upload_download_delete() {
     let state = setup().await;
+    let db = state.db.clone();
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(state))
-            .configure(api::configure),
+            .configure(move |cfg| api::configure(cfg, &db)),
     )
     .await;
 
@@ -399,10 +405,11 @@ async fn test_file_upload_download_delete() {
 #[actix_web::test]
 async fn test_unauthorized_access() {
     let state = setup().await;
+    let db = state.db.clone();
     let app = test::init_service(
         App::new()
             .app_data(web::Data::new(state))
-            .configure(api::configure),
+            .configure(move |cfg| api::configure(cfg, &db)),
     )
     .await;
 

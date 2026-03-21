@@ -36,6 +36,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/locks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_locks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/locks/expired": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["cleanup_expired_locks"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/locks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["force_unlock"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/policies": {
         parameters: {
             query?: never;
@@ -388,6 +436,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/files/{id}/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["set_file_lock"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/files/{id}/thumbnail": {
         parameters: {
             query?: never;
@@ -436,6 +500,54 @@ export interface paths {
         patch: operations["patch_folder"];
         trace?: never;
     };
+    "/api/v1/folders/{id}/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["set_folder_lock"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/properties/{entity_type}/{entity_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_properties"];
+        put: operations["set_property"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/properties/{entity_type}/{entity_id}/{namespace}/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_property"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/s/{token}": {
         parameters: {
             query?: never;
@@ -476,6 +588,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["download_shared_file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/s/{token}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["shared_thumbnail"];
         put?: never;
         post?: never;
         delete?: never;
@@ -733,12 +861,22 @@ export interface components {
          * @enum {string}
          */
         DriverType: "local" | "s3";
+        EntityProperty: {
+            /** Format: int64 */
+            entity_id: number;
+            entity_type: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
+            namespace: string;
+            value?: string | null;
+        };
         /**
          * @description API 错误码，序列化为数字
          * @example 0
          * @enum {integer}
          */
-        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 2000 | 2001 | 2002 | 2003 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
+        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 2000 | 2001 | 2002 | 2003 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
         FileInfo: {
             /** Format: int64 */
             blob_id: number;
@@ -748,6 +886,7 @@ export interface components {
             folder_id?: number | null;
             /** Format: int64 */
             id: number;
+            is_locked?: boolean;
             mime_type: string;
             name: string;
             updated_at: string;
@@ -767,6 +906,7 @@ export interface components {
             deleted_at?: string | null;
             /** Format: int64 */
             id: number;
+            is_locked?: boolean;
             name: string;
             /** Format: int64 */
             parent_id?: number | null;
@@ -846,6 +986,14 @@ export interface components {
         };
         SetConfigReq: {
             value: string;
+        };
+        SetLockReq: {
+            locked: boolean;
+        };
+        SetPropReq: {
+            name: string;
+            namespace: string;
+            value?: string | null;
         };
         ShareInfo: {
             created_at: string;
@@ -1038,6 +1186,18 @@ export interface components {
             root_folder_path?: string | null;
             updated_at: string;
             username: string;
+        };
+        WebdavLock: {
+            created_at: string;
+            deep: boolean;
+            /** Format: int64 */
+            id: number;
+            owner_xml?: string | null;
+            path: string;
+            principal?: string | null;
+            shared: boolean;
+            timeout_at?: string | null;
+            token: string;
         };
     };
     responses: never;
@@ -1237,6 +1397,108 @@ export interface operations {
                 content?: never;
             };
             /** @description Config key not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_locks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description All WebDAV locks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            deep: boolean;
+                            /** Format: int64 */
+                            id: number;
+                            owner_xml?: string | null;
+                            path: string;
+                            principal?: string | null;
+                            shared: boolean;
+                            timeout_at?: string | null;
+                            token: string;
+                        }[];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    cleanup_expired_locks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Expired locks cleaned up */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    force_unlock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Lock ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Lock released */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Admin required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Lock not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -2303,6 +2565,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
+                            is_locked?: boolean;
                             mime_type: string;
                             name: string;
                             updated_at: string;
@@ -2478,6 +2741,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
+                            is_locked?: boolean;
                             mime_type: string;
                             name: string;
                             updated_at: string;
@@ -2585,6 +2849,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
+                            is_locked?: boolean;
                             mime_type: string;
                             name: string;
                             updated_at: string;
@@ -2679,6 +2944,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
+                            is_locked?: boolean;
                             mime_type: string;
                             name: string;
                             updated_at: string;
@@ -2723,6 +2989,66 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_file_lock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description File ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLockReq"];
+            };
+        };
+        responses: {
+            /** @description Lock state updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            blob_id: number;
+                            created_at: string;
+                            deleted_at?: string | null;
+                            /** Format: int64 */
+                            folder_id?: number | null;
+                            /** Format: int64 */
+                            id: number;
+                            is_locked?: boolean;
+                            mime_type: string;
+                            name: string;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                        };
+                        msg: string;
+                    };
+                };
             };
             /** @description Unauthorized */
             401: {
@@ -2835,6 +3161,7 @@ export interface operations {
                             deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
+                            is_locked?: boolean;
                             name: string;
                             /** Format: int64 */
                             parent_id?: number | null;
@@ -2965,6 +3292,7 @@ export interface operations {
                             deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
+                            is_locked?: boolean;
                             name: string;
                             /** Format: int64 */
                             parent_id?: number | null;
@@ -2986,6 +3314,228 @@ export interface operations {
                 content?: never;
             };
             /** @description Folder not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_folder_lock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Folder ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetLockReq"];
+            };
+        };
+        responses: {
+            /** @description Lock state updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            deleted_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            is_locked?: boolean;
+                            name: string;
+                            /** Format: int64 */
+                            parent_id?: number | null;
+                            /** Format: int64 */
+                            policy_id?: number | null;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Folder not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_properties: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity type: 'file' or 'folder' */
+                entity_type: string;
+                /** @description Entity ID */
+                entity_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Properties list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            entity_id: number;
+                            entity_type: string;
+                            /** Format: int64 */
+                            id: number;
+                            name: string;
+                            namespace: string;
+                            value?: string | null;
+                        }[];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Entity not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    set_property: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity type: 'file' or 'folder' */
+                entity_type: string;
+                /** @description Entity ID */
+                entity_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetPropReq"];
+            };
+        };
+        responses: {
+            /** @description Property set */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            entity_id: number;
+                            entity_type: string;
+                            /** Format: int64 */
+                            id: number;
+                            name: string;
+                            namespace: string;
+                            value?: string | null;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description DAV: namespace is read-only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Entity not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    delete_property: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Entity type: 'file' or 'folder' */
+                entity_type: string;
+                /** @description Entity ID */
+                entity_id: number;
+                /** @description Property namespace */
+                namespace: string;
+                /** @description Property name */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Property deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description DAV: namespace is read-only */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Entity not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3120,6 +3670,41 @@ export interface operations {
                 content?: never;
             };
             /** @description Share not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    shared_thumbnail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share token */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Thumbnail image (WebP) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Password required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found or not an image */
             404: {
                 headers: {
                     [name: string]: unknown;

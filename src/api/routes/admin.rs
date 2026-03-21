@@ -53,6 +53,10 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
         .route("/config/{key}", web::get().to(get_config))
         .route("/config/{key}", web::put().to(set_config))
         .route("/config/{key}", web::delete().to(delete_config))
+        // webdav locks
+        .route("/locks", web::get().to(list_locks))
+        .route("/locks/expired", web::delete().to(cleanup_expired_locks))
+        .route("/locks/{id}", web::delete().to(force_unlock))
 }
 
 // ── Policies ─────────────────────────────────────────────────────────
@@ -690,6 +694,74 @@ pub async fn delete_config(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+// ── WebDAV Locks ────────────────────────────────────────────────────
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/locks",
+    tag = "admin",
+    operation_id = "list_locks",
+    responses(
+        (status = 200, description = "All WebDAV locks", body = inline(ApiResponse<Vec<crate::entities::webdav_lock::Model>>)),
+        (status = 403, description = "Admin required"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_locks(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let locks = crate::db::repository::webdav_lock_repo::find_all(&state.db).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(locks)))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/locks/{id}",
+    tag = "admin",
+    operation_id = "force_unlock",
+    params(("id" = i64, Path, description = "Lock ID")),
+    responses(
+        (status = 200, description = "Lock released"),
+        (status = 403, description = "Admin required"),
+        (status = 404, description = "Lock not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn force_unlock(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let lock = crate::db::repository::webdav_lock_repo::find_by_id(&state.db, *path)
+        .await?
+        .ok_or_else(|| crate::errors::AsterError::record_not_found("lock not found"))?;
+    crate::db::repository::webdav_lock_repo::delete_by_id(&state.db, lock.id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/admin/locks/expired",
+    tag = "admin",
+    operation_id = "cleanup_expired_locks",
+    responses(
+        (status = 200, description = "Expired locks cleaned up"),
+        (status = 403, description = "Admin required"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn cleanup_expired_locks(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let count = crate::db::repository::webdav_lock_repo::delete_expired(&state.db).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(serde_json::json!({ "removed": count }))))
+}
 
 fn require_admin(claims: &Claims) -> Result<()> {
     use crate::errors::AsterError;

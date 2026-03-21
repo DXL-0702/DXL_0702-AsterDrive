@@ -3,12 +3,17 @@ use crate::runtime::AppState;
 use actix_web::{HttpResponse, web};
 
 pub fn routes() -> actix_web::Scope {
-    web::scope("/health")
+    let scope = web::scope("/health")
         .route("", web::get().to(health))
         .route("", web::head().to(health))
         .route("/ready", web::get().to(ready))
         .route("/ready", web::head().to(ready))
-    // .route("/memory", web::get().to(memory)) // TODO: 上 Prometheus 后用 metrics 替代
+        .route("/memory", web::get().to(memory));
+
+    #[cfg(feature = "metrics")]
+    let scope = scope.route("/metrics", web::get().to(metrics_endpoint));
+
+    scope
 }
 
 #[utoipa::path(
@@ -58,6 +63,30 @@ pub async fn memory() -> HttpResponse {
         "heap_allocated_mb": format!("{allocated:.2}"),
         "heap_peak_mb": format!("{peak:.2}"),
     })))
+}
+
+#[cfg(feature = "metrics")]
+pub async fn metrics_endpoint() -> HttpResponse {
+    let Some(metrics) = crate::metrics::get_metrics() else {
+        return HttpResponse::ServiceUnavailable()
+            .content_type("text/plain")
+            .body("Metrics not initialized");
+    };
+
+    // 更新 uptime
+    metrics.uptime_seconds.set(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0),
+    );
+
+    match metrics.export() {
+        Ok(output) => HttpResponse::Ok()
+            .content_type("text/plain; version=0.0.4; charset=utf-8")
+            .body(output),
+        Err(e) => HttpResponse::InternalServerError().body(format!("Failed to export: {e}")),
+    }
 }
 
 fn compile_time() -> &'static str {

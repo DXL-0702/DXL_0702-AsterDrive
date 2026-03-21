@@ -4,7 +4,9 @@ import {
 	Folder,
 	Link,
 	Loader2,
+	Lock,
 	Trash2,
+	Unlock,
 } from "lucide-react";
 import { useState } from "react";
 import type { FileInfo } from "@/types/api";
@@ -65,6 +67,26 @@ export function FileList() {
 	const deleteFile = useFileStore((s) => s.deleteFile);
 	const deleteFolder = useFileStore((s) => s.deleteFolder);
 	const loading = useFileStore((s) => s.loading);
+	const refresh = useFileStore((s) => s.refresh);
+
+	const handleToggleLock = async (
+		type: "file" | "folder",
+		id: number,
+		currentLocked: boolean,
+	) => {
+		try {
+			if (type === "file") {
+				await fileService.setFileLock(id, !currentLocked);
+			} else {
+				await fileService.setFolderLock(id, !currentLocked);
+			}
+			toast.success(currentLocked ? "Unlocked" : "Locked");
+			refresh();
+		} catch (error) {
+			handleApiError(error);
+		}
+	};
+
 	const [shareTarget, setShareTarget] = useState<{
 		fileId?: number;
 		folderId?: number;
@@ -173,6 +195,22 @@ export function FileList() {
 										className="h-8 w-8"
 										onClick={(e) => {
 											e.stopPropagation();
+											handleToggleLock("folder", folder.id, folder.is_locked ?? false);
+										}}
+									>
+										{folder.is_locked ? (
+											<Lock className="h-4 w-4 text-red-500" />
+										) : (
+											<Unlock className="h-4 w-4 text-muted-foreground" />
+										)}
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										className="h-8 w-8"
+										disabled={folder.is_locked}
+										onClick={(e) => {
+											e.stopPropagation();
 											handleDeleteFolder(folder.id);
 										}}
 									>
@@ -226,6 +264,21 @@ export function FileList() {
 										variant="ghost"
 										size="icon"
 										className="h-8 w-8"
+										onClick={() =>
+											handleToggleLock("file", file.id, file.is_locked ?? false)
+										}
+									>
+										{file.is_locked ? (
+											<Lock className="h-4 w-4 text-red-500" />
+										) : (
+											<Unlock className="h-4 w-4 text-muted-foreground" />
+										)}
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										className="h-8 w-8"
+										disabled={file.is_locked}
 										onClick={() => handleDeleteFile(file.id)}
 									>
 										<Trash2 className="h-4 w-4" />

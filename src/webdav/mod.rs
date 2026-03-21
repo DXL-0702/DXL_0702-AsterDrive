@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod db_lock_system;
 pub mod dir_entry;
 pub mod file;
 pub mod fs;
@@ -7,8 +8,9 @@ pub mod path_resolver;
 
 use actix_web::web;
 use dav_server::actix::{DavRequest, DavResponse};
-use dav_server::memls::MemLs;
+use dav_server::ls::DavLockSystem;
 use dav_server::{DavConfig, DavHandler};
+use sea_orm::DatabaseConnection;
 
 use crate::config::WebDavConfig;
 use crate::db::repository::config_repo;
@@ -18,7 +20,7 @@ use crate::runtime::AppState;
 pub struct WebDavState {
     pub handler: DavHandler,
     pub prefix: String,
-    pub lock_system: Box<MemLs>,
+    pub lock_system: Box<dyn DavLockSystem>,
 }
 
 /// WebDAV handler — 所有 HTTP 方法都路由到这里，由 dav-server 内部分派
@@ -78,12 +80,16 @@ pub async fn webdav_handler(
         .into()
 }
 
-/// 注册 WebDAV 路由
-pub fn configure(cfg: &mut web::ServiceConfig, webdav_config: &WebDavConfig) {
+/// 注册 WebDAV 路由（需要 db 来创建 DbLockSystem）
+pub fn configure(
+    cfg: &mut web::ServiceConfig,
+    webdav_config: &WebDavConfig,
+    db: &DatabaseConnection,
+) {
     let webdav_state = web::Data::new(WebDavState {
         handler: DavHandler::builder().build_handler(),
         prefix: webdav_config.prefix.clone(),
-        lock_system: MemLs::new(),
+        lock_system: db_lock_system::DbLockSystem::new(db.clone()),
     });
 
     cfg.app_data(webdav_state).service(

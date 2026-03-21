@@ -27,6 +27,18 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("startup failed");
 
+    // 4. 初始化 Prometheus 指标（metrics feature）
+    #[cfg(feature = "metrics")]
+    {
+        match aster_drive::metrics::init_metrics() {
+            Ok(()) => {
+                aster_drive::metrics::spawn_system_metrics_updater();
+                tracing::info!("prometheus metrics initialized");
+            }
+            Err(e) => tracing::warn!("failed to init metrics: {e}"),
+        }
+    }
+
     // 清理 WebDAV 临时文件（上次启动的孤儿文件）
     let _ = tokio::fs::remove_dir_all("data/.tmp").await;
 
@@ -37,11 +49,14 @@ async fn main() -> std::io::Result<()> {
         n => n,
     };
 
+    let db = state.db.clone();
     let state = web::Data::new(state);
     let cleanup_state = state.clone();
     let trash_state = state.clone();
+    let lock_cleanup_db = db.clone();
 
     let server = HttpServer::new(move || {
+        let db = db.clone();
         App::new()
             .wrap(actix_web::middleware::Compress::default())
             .wrap(aster_drive::api::middleware::request_id::RequestIdMiddleware)
@@ -50,7 +65,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(actix_web::web::PayloadConfig::new(10 * 1024 * 1024))
             .app_data(actix_web::web::JsonConfig::default().limit(1024 * 1024))
             .app_data(state.clone())
-            .configure(aster_drive::api::configure)
+            .configure(move |cfg| aster_drive::api::configure(cfg, &db))
     })
     .keep_alive(std::time::Duration::from_secs(30))
     .client_request_timeout(std::time::Duration::from_millis(5000))
@@ -83,6 +98,21 @@ async fn main() -> std::io::Result<()> {
                 aster_drive::services::trash_service::cleanup_expired(&trash_state).await
             {
                 tracing::warn!("trash cleanup failed: {e}");
+            }
+        }
+    });
+
+    // 后台清理：过期 WebDAV 锁（每小时）
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            match aster_drive::db::repository::webdav_lock_repo::delete_expired(&lock_cleanup_db)
+                .await
+            {
+                Ok(n) if n > 0 => tracing::info!("cleaned up {n} expired WebDAV locks"),
+                Err(e) => tracing::warn!("webdav lock cleanup failed: {e}"),
+                _ => {}
             }
         }
     });

@@ -91,6 +91,29 @@ export const adminUserPolicyService = {
 		api.delete<void>(`/admin/users/${userId}/policies/${id}`),
 };
 
+// --- WebDAV Locks ---
+
+interface WebdavLock {
+	id: number;
+	token: string;
+	path: string;
+	principal: string | null;
+	owner_xml: string | null;
+	timeout_at: string | null;
+	shared: boolean;
+	deep: boolean;
+	created_at: string;
+}
+
+export const adminLockService = {
+	list: () => api.get<WebdavLock[]>("/admin/locks"),
+
+	forceUnlock: (id: number) => api.delete<void>(`/admin/locks/${id}`),
+
+	cleanupExpired: () =>
+		api.delete<{ removed: number }>("/admin/locks/expired"),
+};
+
 // --- System Config ---
 
 export const adminConfigService = {

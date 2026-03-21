@@ -8,6 +8,7 @@ const AdminUsersPage = lazy(() => import("@/pages/admin/AdminUsersPage"));
 const AdminPoliciesPage = lazy(() => import("@/pages/admin/AdminPoliciesPage"));
 const AdminSettingsPage = lazy(() => import("@/pages/admin/AdminSettingsPage"));
 const AdminSharesPage = lazy(() => import("@/pages/admin/AdminSharesPage"));
+const AdminLocksPage = lazy(() => import("@/pages/admin/AdminLocksPage"));
 const ShareViewPage = lazy(() => import("@/pages/ShareViewPage"));
 const WebdavAccountsPage = lazy(() => import("@/pages/WebdavAccountsPage"));
 const TrashPage = lazy(() => import("@/pages/TrashPage"));
@@ -87,6 +88,7 @@ export const router = createBrowserRouter([
 			{ path: "/admin/users", element: <AdminUsersPage /> },
 			{ path: "/admin/policies", element: <AdminPoliciesPage /> },
 			{ path: "/admin/shares", element: <AdminSharesPage /> },
+			{ path: "/admin/locks", element: <AdminLocksPage /> },
 			{ path: "/admin/settings", element: <AdminSettingsPage /> },
 		],
 	},

@@ -8,7 +8,7 @@ use actix_web::{HttpResponse, web};
 use error_code::ErrorCode;
 use response::ApiResponse;
 
-pub fn configure(cfg: &mut web::ServiceConfig) {
+pub fn configure(cfg: &mut web::ServiceConfig, db: &sea_orm::DatabaseConnection) {
     cfg.service(
         web::scope("/api/v1")
             .service(routes::auth::routes())
@@ -43,7 +43,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 
     // WebDAV — 在 frontend fallback 之前注册
     if let Some(config) = crate::config::try_get_config() {
-        crate::webdav::configure(cfg, &config.webdav);
+        crate::webdav::configure(cfg, &config.webdav, db);
     }
 
     // frontend 最后注册，兜底所有未匹配路由

@@ -25,4 +25,10 @@ export const fileService = {
 	downloadUrl: (id: number) => `${config.apiBaseUrl}/files/${id}/download`,
 
 	thumbnailUrl: (id: number) => `${config.apiBaseUrl}/files/${id}/thumbnail`,
+
+	setFileLock: (id: number, locked: boolean) =>
+		api.post<FileInfo>(`/files/${id}/lock`, { locked }),
+
+	setFolderLock: (id: number, locked: boolean) =>
+		api.post<FolderInfo>(`/folders/${id}/lock`, { locked }),
 };
