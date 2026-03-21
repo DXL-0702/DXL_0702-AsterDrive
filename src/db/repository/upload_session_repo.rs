@@ -1,8 +1,8 @@
 use crate::entities::upload_session::{self, Entity as UploadSession};
 use crate::errors::{AsterError, Result};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
 
-pub async fn find_by_id(db: &DatabaseConnection, id: &str) -> Result<upload_session::Model> {
+pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: &str) -> Result<upload_session::Model> {
     UploadSession::find_by_id(id.to_string())
         .one(db)
         .await
@@ -10,21 +10,21 @@ pub async fn find_by_id(db: &DatabaseConnection, id: &str) -> Result<upload_sess
         .ok_or_else(|| AsterError::upload_session_not_found(format!("session {id}")))
 }
 
-pub async fn create(
-    db: &DatabaseConnection,
+pub async fn create<C: ConnectionTrait>(
+    db: &C,
     model: upload_session::ActiveModel,
 ) -> Result<upload_session::Model> {
     model.insert(db).await.map_err(AsterError::from)
 }
 
-pub async fn update(
-    db: &DatabaseConnection,
+pub async fn update<C: ConnectionTrait>(
+    db: &C,
     model: upload_session::ActiveModel,
 ) -> Result<upload_session::Model> {
     model.update(db).await.map_err(AsterError::from)
 }
 
-pub async fn delete(db: &DatabaseConnection, id: &str) -> Result<()> {
+pub async fn delete<C: ConnectionTrait>(db: &C, id: &str) -> Result<()> {
     UploadSession::delete_by_id(id.to_string())
         .exec(db)
         .await
@@ -33,7 +33,7 @@ pub async fn delete(db: &DatabaseConnection, id: &str) -> Result<()> {
 }
 
 /// 查找所有过期且未完成的 session
-pub async fn find_expired(db: &DatabaseConnection) -> Result<Vec<upload_session::Model>> {
+pub async fn find_expired<C: ConnectionTrait>(db: &C) -> Result<Vec<upload_session::Model>> {
     let now = chrono::Utc::now();
     UploadSession::find()
         .filter(upload_session::Column::ExpiresAt.lt(now))

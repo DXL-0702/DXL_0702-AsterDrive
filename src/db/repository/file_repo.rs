@@ -1,6 +1,6 @@
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, Set,
 };
 
@@ -10,7 +10,7 @@ use crate::entities::{
 };
 use crate::errors::{AsterError, Result};
 
-pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<file::Model> {
+pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file::Model> {
     File::find_by_id(id)
         .one(db)
         .await
@@ -19,8 +19,8 @@ pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<file::Model>
 }
 
 /// 查询文件夹下的文件（排除已删除）
-pub async fn find_by_folder(
-    db: &DatabaseConnection,
+pub async fn find_by_folder<C: ConnectionTrait>(
+    db: &C,
     user_id: i64,
     folder_id: Option<i64>,
 ) -> Result<Vec<file::Model>> {
@@ -36,8 +36,8 @@ pub async fn find_by_folder(
 }
 
 /// 按名称查文件（排除已删除）
-pub async fn find_by_name_in_folder(
-    db: &DatabaseConnection,
+pub async fn find_by_name_in_folder<C: ConnectionTrait>(
+    db: &C,
     user_id: i64,
     folder_id: Option<i64>,
     name: &str,
@@ -53,8 +53,8 @@ pub async fn find_by_name_in_folder(
     q.one(db).await.map_err(AsterError::from)
 }
 
-pub async fn find_blob_by_hash(
-    db: &DatabaseConnection,
+pub async fn find_blob_by_hash<C: ConnectionTrait>(
+    db: &C,
     hash: &str,
     policy_id: i64,
 ) -> Result<Option<file_blob::Model>> {
@@ -66,15 +66,15 @@ pub async fn find_blob_by_hash(
         .map_err(AsterError::from)
 }
 
-pub async fn create_blob(
-    db: &DatabaseConnection,
+pub async fn create_blob<C: ConnectionTrait>(
+    db: &C,
     model: file_blob::ActiveModel,
 ) -> Result<file_blob::Model> {
     model.insert(db).await.map_err(AsterError::from)
 }
 
 /// 统计某存储策略下的 blob 数量（策略删除保护用）
-pub async fn count_blobs_by_policy(db: &DatabaseConnection, policy_id: i64) -> Result<u64> {
+pub async fn count_blobs_by_policy<C: ConnectionTrait>(db: &C, policy_id: i64) -> Result<u64> {
     FileBlob::find()
         .filter(file_blob::Column::PolicyId.eq(policy_id))
         .count(db)
@@ -82,11 +82,11 @@ pub async fn count_blobs_by_policy(db: &DatabaseConnection, policy_id: i64) -> R
         .map_err(AsterError::from)
 }
 
-pub async fn create(db: &DatabaseConnection, model: file::ActiveModel) -> Result<file::Model> {
+pub async fn create<C: ConnectionTrait>(db: &C, model: file::ActiveModel) -> Result<file::Model> {
     model.insert(db).await.map_err(AsterError::from)
 }
 
-pub async fn find_blob_by_id(db: &DatabaseConnection, id: i64) -> Result<file_blob::Model> {
+pub async fn find_blob_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file_blob::Model> {
     FileBlob::find_by_id(id)
         .one(db)
         .await
@@ -95,8 +95,8 @@ pub async fn find_blob_by_id(db: &DatabaseConnection, id: i64) -> Result<file_bl
 }
 
 /// 批量查询 blob，返回 id → Model 的映射
-pub async fn find_blobs_by_ids(
-    db: &DatabaseConnection,
+pub async fn find_blobs_by_ids<C: ConnectionTrait>(
+    db: &C,
     ids: &[i64],
 ) -> Result<std::collections::HashMap<i64, file_blob::Model>> {
     if ids.is_empty() {
@@ -111,7 +111,7 @@ pub async fn find_blobs_by_ids(
 }
 
 /// 硬删除文件记录（回收站清理用）
-pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
+pub async fn delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     File::delete_by_id(id)
         .exec(db)
         .await
@@ -119,7 +119,7 @@ pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
     Ok(())
 }
 
-pub async fn delete_blob(db: &DatabaseConnection, id: i64) -> Result<()> {
+pub async fn delete_blob<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     FileBlob::delete_by_id(id)
         .exec(db)
         .await
@@ -130,7 +130,7 @@ pub async fn delete_blob(db: &DatabaseConnection, id: i64) -> Result<()> {
 // ── 软删除 / 回收站 ─────────────────────────────────────────────────
 
 /// 软删除：标记 deleted_at
-pub async fn soft_delete(db: &DatabaseConnection, id: i64) -> Result<()> {
+pub async fn soft_delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     let f = find_by_id(db, id).await?;
     let mut active: file::ActiveModel = f.into();
     active.deleted_at = Set(Some(Utc::now()));
@@ -139,7 +139,7 @@ pub async fn soft_delete(db: &DatabaseConnection, id: i64) -> Result<()> {
 }
 
 /// 恢复：清除 deleted_at
-pub async fn restore(db: &DatabaseConnection, id: i64) -> Result<()> {
+pub async fn restore<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     let f = find_by_id(db, id).await?;
     let mut active: file::ActiveModel = f.into();
     active.deleted_at = Set(None);
@@ -148,8 +148,8 @@ pub async fn restore(db: &DatabaseConnection, id: i64) -> Result<()> {
 }
 
 /// 查询用户回收站中的文件
-pub async fn find_deleted_by_user(
-    db: &DatabaseConnection,
+pub async fn find_deleted_by_user<C: ConnectionTrait>(
+    db: &C,
     user_id: i64,
 ) -> Result<Vec<file::Model>> {
     File::find()
@@ -162,8 +162,8 @@ pub async fn find_deleted_by_user(
 }
 
 /// 查询某文件夹下的已删除文件（递归恢复/清理用，避免 N+1）
-pub async fn find_deleted_in_folder(
-    db: &DatabaseConnection,
+pub async fn find_deleted_in_folder<C: ConnectionTrait>(
+    db: &C,
     folder_id: i64,
 ) -> Result<Vec<file::Model>> {
     File::find()
@@ -175,8 +175,8 @@ pub async fn find_deleted_in_folder(
 }
 
 /// 查询过期的已删除文件（自动清理用）
-pub async fn find_expired_deleted(
-    db: &DatabaseConnection,
+pub async fn find_expired_deleted<C: ConnectionTrait>(
+    db: &C,
     before: chrono::DateTime<Utc>,
 ) -> Result<Vec<file::Model>> {
     File::find()

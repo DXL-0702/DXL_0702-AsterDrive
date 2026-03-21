@@ -1,30 +1,33 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
 
 use crate::entities::resource_lock::{self, Entity as ResourceLock};
 use crate::errors::{AsterError, Result};
 use crate::types::EntityType;
 
-pub async fn create(
-    db: &DatabaseConnection,
+pub async fn create<C: ConnectionTrait>(
+    db: &C,
     model: resource_lock::ActiveModel,
 ) -> Result<resource_lock::Model> {
     model.insert(db).await.map_err(AsterError::from)
 }
 
-pub async fn find_all(db: &DatabaseConnection) -> Result<Vec<resource_lock::Model>> {
+pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<resource_lock::Model>> {
     ResourceLock::find().all(db).await.map_err(AsterError::from)
 }
 
-pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<Option<resource_lock::Model>> {
+pub async fn find_by_id<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+) -> Result<Option<resource_lock::Model>> {
     ResourceLock::find_by_id(id)
         .one(db)
         .await
         .map_err(AsterError::from)
 }
 
-pub async fn find_by_token(
-    db: &DatabaseConnection,
+pub async fn find_by_token<C: ConnectionTrait>(
+    db: &C,
     token: &str,
 ) -> Result<Option<resource_lock::Model>> {
     ResourceLock::find()
@@ -35,8 +38,8 @@ pub async fn find_by_token(
 }
 
 /// 查询单个资源的锁
-pub async fn find_by_entity(
-    db: &DatabaseConnection,
+pub async fn find_by_entity<C: ConnectionTrait>(
+    db: &C,
     entity_type: EntityType,
     entity_id: i64,
 ) -> Result<Option<resource_lock::Model>> {
@@ -49,8 +52,8 @@ pub async fn find_by_entity(
 }
 
 /// 路径前缀查询（WebDAV deep lock 用）
-pub async fn find_by_path_prefix(
-    db: &DatabaseConnection,
+pub async fn find_by_path_prefix<C: ConnectionTrait>(
+    db: &C,
     prefix: &str,
 ) -> Result<Vec<resource_lock::Model>> {
     ResourceLock::find()
@@ -61,8 +64,8 @@ pub async fn find_by_path_prefix(
 }
 
 /// 祖先路径查询（WebDAV check 用）
-pub async fn find_ancestors(
-    db: &DatabaseConnection,
+pub async fn find_ancestors<C: ConnectionTrait>(
+    db: &C,
     paths: &[String],
 ) -> Result<Vec<resource_lock::Model>> {
     if paths.is_empty() {
@@ -75,7 +78,7 @@ pub async fn find_ancestors(
         .map_err(AsterError::from)
 }
 
-pub async fn delete_by_id(db: &DatabaseConnection, id: i64) -> Result<()> {
+pub async fn delete_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     ResourceLock::delete_by_id(id)
         .exec(db)
         .await
@@ -83,7 +86,7 @@ pub async fn delete_by_id(db: &DatabaseConnection, id: i64) -> Result<()> {
     Ok(())
 }
 
-pub async fn delete_by_token(db: &DatabaseConnection, token: &str) -> Result<()> {
+pub async fn delete_by_token<C: ConnectionTrait>(db: &C, token: &str) -> Result<()> {
     ResourceLock::delete_many()
         .filter(resource_lock::Column::Token.eq(token))
         .exec(db)
@@ -92,8 +95,8 @@ pub async fn delete_by_token(db: &DatabaseConnection, token: &str) -> Result<()>
     Ok(())
 }
 
-pub async fn delete_by_entity(
-    db: &DatabaseConnection,
+pub async fn delete_by_entity<C: ConnectionTrait>(
+    db: &C,
     entity_type: EntityType,
     entity_id: i64,
 ) -> Result<()> {
@@ -107,7 +110,7 @@ pub async fn delete_by_entity(
 }
 
 /// 删除路径前缀匹配的所有锁
-pub async fn delete_by_path_prefix(db: &DatabaseConnection, prefix: &str) -> Result<u64> {
+pub async fn delete_by_path_prefix<C: ConnectionTrait>(db: &C, prefix: &str) -> Result<u64> {
     let res = ResourceLock::delete_many()
         .filter(resource_lock::Column::Path.starts_with(prefix))
         .exec(db)
@@ -117,7 +120,7 @@ pub async fn delete_by_path_prefix(db: &DatabaseConnection, prefix: &str) -> Res
 }
 
 /// 查找并返回所有过期锁
-pub async fn find_expired(db: &DatabaseConnection) -> Result<Vec<resource_lock::Model>> {
+pub async fn find_expired<C: ConnectionTrait>(db: &C) -> Result<Vec<resource_lock::Model>> {
     let now = Utc::now();
     ResourceLock::find()
         .filter(resource_lock::Column::TimeoutAt.is_not_null())
@@ -128,7 +131,7 @@ pub async fn find_expired(db: &DatabaseConnection) -> Result<Vec<resource_lock::
 }
 
 /// 删除过期锁（返回删除数量）
-pub async fn delete_expired(db: &DatabaseConnection) -> Result<u64> {
+pub async fn delete_expired<C: ConnectionTrait>(db: &C) -> Result<u64> {
     let now = Utc::now();
     let res = ResourceLock::delete_many()
         .filter(resource_lock::Column::TimeoutAt.is_not_null())
@@ -139,8 +142,8 @@ pub async fn delete_expired(db: &DatabaseConnection) -> Result<u64> {
     Ok(res.rows_affected)
 }
 
-pub async fn refresh(
-    db: &DatabaseConnection,
+pub async fn refresh<C: ConnectionTrait>(
+    db: &C,
     token: &str,
     new_timeout_at: Option<chrono::DateTime<Utc>>,
 ) -> Result<Option<resource_lock::Model>> {

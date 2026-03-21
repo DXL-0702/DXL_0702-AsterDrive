@@ -1,6 +1,5 @@
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
 };
 
 use crate::entities::entity_property::{self, Entity as EntityProperty};
@@ -8,8 +7,8 @@ use crate::errors::{AsterError, Result};
 use crate::types::EntityType;
 
 /// 查询实体的所有属性
-pub async fn find_by_entity(
-    db: &DatabaseConnection,
+pub async fn find_by_entity<C: ConnectionTrait>(
+    db: &C,
     entity_type: EntityType,
     entity_id: i64,
 ) -> Result<Vec<entity_property::Model>> {
@@ -22,8 +21,8 @@ pub async fn find_by_entity(
 }
 
 /// 插入或更新属性
-pub async fn upsert(
-    db: &DatabaseConnection,
+pub async fn upsert<C: ConnectionTrait>(
+    db: &C,
     entity_type: EntityType,
     entity_id: i64,
     namespace: &str,
@@ -58,8 +57,8 @@ pub async fn upsert(
 }
 
 /// 删除单个属性
-pub async fn delete_prop(
-    db: &DatabaseConnection,
+pub async fn delete_prop<C: ConnectionTrait>(
+    db: &C,
     entity_type: EntityType,
     entity_id: i64,
     namespace: &str,
@@ -77,8 +76,8 @@ pub async fn delete_prop(
 }
 
 /// 删除实体的所有属性（实体删除时级联清理）
-pub async fn delete_all_for_entity(
-    db: &DatabaseConnection,
+pub async fn delete_all_for_entity<C: ConnectionTrait>(
+    db: &C,
     entity_type: EntityType,
     entity_id: i64,
 ) -> Result<()> {
@@ -92,8 +91,8 @@ pub async fn delete_all_for_entity(
 }
 
 /// 检查实体是否有自定义属性
-pub async fn has_properties(
-    db: &DatabaseConnection,
+pub async fn has_properties<C: ConnectionTrait>(
+    db: &C,
     entity_type: EntityType,
     entity_id: i64,
 ) -> Result<bool> {

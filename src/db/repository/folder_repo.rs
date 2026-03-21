@@ -1,12 +1,12 @@
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,
 };
 
 use crate::entities::folder::{self, Entity as Folder};
 use crate::errors::{AsterError, Result};
 
-pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<folder::Model> {
+pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<folder::Model> {
     Folder::find_by_id(id)
         .one(db)
         .await
@@ -15,8 +15,8 @@ pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<folder::Mode
 }
 
 /// 查询子文件夹（排除已删除）
-pub async fn find_children(
-    db: &DatabaseConnection,
+pub async fn find_children<C: ConnectionTrait>(
+    db: &C,
     user_id: i64,
     parent_id: Option<i64>,
 ) -> Result<Vec<folder::Model>> {
@@ -32,8 +32,8 @@ pub async fn find_children(
 }
 
 /// 按名称查文件夹（排除已删除）
-pub async fn find_by_name_in_parent(
-    db: &DatabaseConnection,
+pub async fn find_by_name_in_parent<C: ConnectionTrait>(
+    db: &C,
     user_id: i64,
     parent_id: Option<i64>,
     name: &str,
@@ -49,12 +49,15 @@ pub async fn find_by_name_in_parent(
     q.one(db).await.map_err(AsterError::from)
 }
 
-pub async fn create(db: &DatabaseConnection, model: folder::ActiveModel) -> Result<folder::Model> {
+pub async fn create<C: ConnectionTrait>(
+    db: &C,
+    model: folder::ActiveModel,
+) -> Result<folder::Model> {
     model.insert(db).await.map_err(AsterError::from)
 }
 
 /// 硬删除文件夹记录（回收站清理用）
-pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
+pub async fn delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     Folder::delete_by_id(id)
         .exec(db)
         .await
@@ -65,7 +68,7 @@ pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
 // ── 软删除 / 回收站 ─────────────────────────────────────────────────
 
 /// 软删除：标记 deleted_at
-pub async fn soft_delete(db: &DatabaseConnection, id: i64) -> Result<()> {
+pub async fn soft_delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     let f = find_by_id(db, id).await?;
     let mut active: folder::ActiveModel = f.into();
     active.deleted_at = Set(Some(Utc::now()));
@@ -74,7 +77,7 @@ pub async fn soft_delete(db: &DatabaseConnection, id: i64) -> Result<()> {
 }
 
 /// 恢复：清除 deleted_at
-pub async fn restore(db: &DatabaseConnection, id: i64) -> Result<()> {
+pub async fn restore<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     let f = find_by_id(db, id).await?;
     let mut active: folder::ActiveModel = f.into();
     active.deleted_at = Set(None);
@@ -83,8 +86,8 @@ pub async fn restore(db: &DatabaseConnection, id: i64) -> Result<()> {
 }
 
 /// 查询用户回收站中的文件夹（只查顶层被删除的，不含子目录）
-pub async fn find_deleted_by_user(
-    db: &DatabaseConnection,
+pub async fn find_deleted_by_user<C: ConnectionTrait>(
+    db: &C,
     user_id: i64,
 ) -> Result<Vec<folder::Model>> {
     Folder::find()
@@ -97,8 +100,8 @@ pub async fn find_deleted_by_user(
 }
 
 /// 查询某文件夹下的已删除子文件夹（递归恢复/清理用，避免 N+1）
-pub async fn find_deleted_children(
-    db: &DatabaseConnection,
+pub async fn find_deleted_children<C: ConnectionTrait>(
+    db: &C,
     parent_id: i64,
 ) -> Result<Vec<folder::Model>> {
     Folder::find()
@@ -110,7 +113,7 @@ pub async fn find_deleted_children(
 }
 
 /// 清除引用某存储策略的所有 folder.policy_id（策略删除时调用）
-pub async fn clear_policy_references(db: &DatabaseConnection, policy_id: i64) -> Result<u64> {
+pub async fn clear_policy_references<C: ConnectionTrait>(db: &C, policy_id: i64) -> Result<u64> {
     let result = Folder::update_many()
         .col_expr(
             folder::Column::PolicyId,
@@ -124,8 +127,8 @@ pub async fn clear_policy_references(db: &DatabaseConnection, policy_id: i64) ->
 }
 
 /// 查询过期的已删除文件夹（自动清理用）
-pub async fn find_expired_deleted(
-    db: &DatabaseConnection,
+pub async fn find_expired_deleted<C: ConnectionTrait>(
+    db: &C,
     before: chrono::DateTime<Utc>,
 ) -> Result<Vec<folder::Model>> {
     Folder::find()

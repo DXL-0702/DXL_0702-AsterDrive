@@ -1,11 +1,10 @@
 use crate::entities::user::{self, Entity as User};
 use crate::errors::{AsterError, Result};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
 };
 
-pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<user::Model> {
+pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<user::Model> {
     User::find_by_id(id)
         .one(db)
         .await
@@ -13,8 +12,8 @@ pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<user::Model>
         .ok_or_else(|| AsterError::record_not_found(format!("user #{id}")))
 }
 
-pub async fn find_by_username(
-    db: &DatabaseConnection,
+pub async fn find_by_username<C: ConnectionTrait>(
+    db: &C,
     username: &str,
 ) -> Result<Option<user::Model>> {
     User::find()
@@ -24,7 +23,7 @@ pub async fn find_by_username(
         .map_err(AsterError::from)
 }
 
-pub async fn find_by_email(db: &DatabaseConnection, email: &str) -> Result<Option<user::Model>> {
+pub async fn find_by_email<C: ConnectionTrait>(db: &C, email: &str) -> Result<Option<user::Model>> {
     User::find()
         .filter(user::Column::Email.eq(email))
         .one(db)
@@ -32,19 +31,19 @@ pub async fn find_by_email(db: &DatabaseConnection, email: &str) -> Result<Optio
         .map_err(AsterError::from)
 }
 
-pub async fn find_all(db: &DatabaseConnection) -> Result<Vec<user::Model>> {
+pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<user::Model>> {
     User::find().all(db).await.map_err(AsterError::from)
 }
 
-pub async fn count_all(db: &DatabaseConnection) -> Result<u64> {
+pub async fn count_all<C: ConnectionTrait>(db: &C) -> Result<u64> {
     User::find().count(db).await.map_err(AsterError::from)
 }
 
-pub async fn create(db: &DatabaseConnection, model: user::ActiveModel) -> Result<user::Model> {
+pub async fn create<C: ConnectionTrait>(db: &C, model: user::ActiveModel) -> Result<user::Model> {
     model.insert(db).await.map_err(AsterError::from)
 }
 
-pub async fn update_storage_used(db: &DatabaseConnection, id: i64, delta: i64) -> Result<()> {
+pub async fn update_storage_used<C: ConnectionTrait>(db: &C, id: i64, delta: i64) -> Result<()> {
     let user = find_by_id(db, id).await?;
     let new_used = (user.storage_used + delta).max(0);
     let mut active: user::ActiveModel = user.into();

@@ -2,14 +2,14 @@ use crate::config::definitions::ALL_CONFIGS;
 use crate::entities::system_config::{self, Entity as SystemConfig};
 use crate::errors::{AsterError, Result};
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
 
-pub async fn find_all(db: &DatabaseConnection) -> Result<Vec<system_config::Model>> {
+pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<system_config::Model>> {
     SystemConfig::find().all(db).await.map_err(AsterError::from)
 }
 
-pub async fn find_by_key(
-    db: &DatabaseConnection,
+pub async fn find_by_key<C: ConnectionTrait>(
+    db: &C,
     key: &str,
 ) -> Result<Option<system_config::Model>> {
     SystemConfig::find()
@@ -19,8 +19,8 @@ pub async fn find_by_key(
         .map_err(AsterError::from)
 }
 
-pub async fn upsert(
-    db: &DatabaseConnection,
+pub async fn upsert<C: ConnectionTrait>(
+    db: &C,
     key: &str,
     value: &str,
     updated_by: i64,
@@ -46,7 +46,7 @@ pub async fn upsert(
     }
 }
 
-pub async fn delete_by_key(db: &DatabaseConnection, key: &str) -> Result<()> {
+pub async fn delete_by_key<C: ConnectionTrait>(db: &C, key: &str) -> Result<()> {
     let existing = find_by_key(db, key)
         .await?
         .ok_or_else(|| AsterError::record_not_found(format!("config key '{key}'")))?;
@@ -66,7 +66,7 @@ pub async fn delete_by_key(db: &DatabaseConnection, key: &str) -> Result<()> {
 }
 
 /// 确保所有系统配置存在，同步元信息（不覆盖用户修改的 value）
-pub async fn ensure_defaults(db: &DatabaseConnection) -> Result<usize> {
+pub async fn ensure_defaults<C: ConnectionTrait>(db: &C) -> Result<usize> {
     let mut count = 0;
 
     for def in ALL_CONFIGS {

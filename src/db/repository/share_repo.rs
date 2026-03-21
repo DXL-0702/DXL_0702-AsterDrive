@@ -1,8 +1,8 @@
 use crate::entities::share::{self, Entity as Share};
 use crate::errors::{AsterError, Result};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
 
-pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<share::Model> {
+pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<share::Model> {
     Share::find_by_id(id)
         .one(db)
         .await
@@ -10,7 +10,10 @@ pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<share::Model
         .ok_or_else(|| AsterError::share_not_found(format!("share #{id}")))
 }
 
-pub async fn find_by_token(db: &DatabaseConnection, token: &str) -> Result<Option<share::Model>> {
+pub async fn find_by_token<C: ConnectionTrait>(
+    db: &C,
+    token: &str,
+) -> Result<Option<share::Model>> {
     Share::find()
         .filter(share::Column::Token.eq(token))
         .one(db)
@@ -18,7 +21,7 @@ pub async fn find_by_token(db: &DatabaseConnection, token: &str) -> Result<Optio
         .map_err(AsterError::from)
 }
 
-pub async fn find_by_user(db: &DatabaseConnection, user_id: i64) -> Result<Vec<share::Model>> {
+pub async fn find_by_user<C: ConnectionTrait>(db: &C, user_id: i64) -> Result<Vec<share::Model>> {
     Share::find()
         .filter(share::Column::UserId.eq(user_id))
         .all(db)
@@ -26,13 +29,13 @@ pub async fn find_by_user(db: &DatabaseConnection, user_id: i64) -> Result<Vec<s
         .map_err(AsterError::from)
 }
 
-pub async fn find_all(db: &DatabaseConnection) -> Result<Vec<share::Model>> {
+pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<share::Model>> {
     Share::find().all(db).await.map_err(AsterError::from)
 }
 
 /// 查找用户对同一资源是否已有活跃分享
-pub async fn find_active_by_resource(
-    db: &DatabaseConnection,
+pub async fn find_active_by_resource<C: ConnectionTrait>(
+    db: &C,
     user_id: i64,
     file_id: Option<i64>,
     folder_id: Option<i64>,
@@ -47,11 +50,11 @@ pub async fn find_active_by_resource(
     q.one(db).await.map_err(AsterError::from)
 }
 
-pub async fn create(db: &DatabaseConnection, model: share::ActiveModel) -> Result<share::Model> {
+pub async fn create<C: ConnectionTrait>(db: &C, model: share::ActiveModel) -> Result<share::Model> {
     model.insert(db).await.map_err(AsterError::from)
 }
 
-pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
+pub async fn delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     Share::delete_by_id(id)
         .exec(db)
         .await
@@ -59,7 +62,7 @@ pub async fn delete(db: &DatabaseConnection, id: i64) -> Result<()> {
     Ok(())
 }
 
-pub async fn increment_view_count(db: &DatabaseConnection, id: i64) -> Result<()> {
+pub async fn increment_view_count<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     let share = find_by_id(db, id).await?;
     let new_count = share.view_count + 1;
     let mut active: share::ActiveModel = share.into();
@@ -68,7 +71,7 @@ pub async fn increment_view_count(db: &DatabaseConnection, id: i64) -> Result<()
     Ok(())
 }
 
-pub async fn increment_download_count(db: &DatabaseConnection, id: i64) -> Result<()> {
+pub async fn increment_download_count<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     let share = find_by_id(db, id).await?;
     let new_count = share.download_count + 1;
     let mut active: share::ActiveModel = share.into();

@@ -3,9 +3,9 @@ use crate::entities::{
     user_storage_policy::{self, Entity as UserStoragePolicy},
 };
 use crate::errors::{AsterError, Result};
-use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
+use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
 
-pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<storage_policy::Model> {
+pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<storage_policy::Model> {
     StoragePolicy::find_by_id(id)
         .one(db)
         .await
@@ -13,7 +13,7 @@ pub async fn find_by_id(db: &DatabaseConnection, id: i64) -> Result<storage_poli
         .ok_or_else(|| AsterError::storage_policy_not_found(format!("policy #{id}")))
 }
 
-pub async fn find_default(db: &DatabaseConnection) -> Result<Option<storage_policy::Model>> {
+pub async fn find_default<C: ConnectionTrait>(db: &C) -> Result<Option<storage_policy::Model>> {
     StoragePolicy::find()
         .filter(storage_policy::Column::IsDefault.eq(true))
         .one(db)
@@ -21,15 +21,15 @@ pub async fn find_default(db: &DatabaseConnection) -> Result<Option<storage_poli
         .map_err(AsterError::from)
 }
 
-pub async fn find_all(db: &DatabaseConnection) -> Result<Vec<storage_policy::Model>> {
+pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<storage_policy::Model>> {
     StoragePolicy::find()
         .all(db)
         .await
         .map_err(AsterError::from)
 }
 
-pub async fn find_user_default(
-    db: &DatabaseConnection,
+pub async fn find_user_default<C: ConnectionTrait>(
+    db: &C,
     user_id: i64,
 ) -> Result<Option<user_storage_policy::Model>> {
     UserStoragePolicy::find()
@@ -40,15 +40,15 @@ pub async fn find_user_default(
         .map_err(AsterError::from)
 }
 
-pub async fn create(
-    db: &DatabaseConnection,
+pub async fn create<C: ConnectionTrait>(
+    db: &C,
     model: storage_policy::ActiveModel,
 ) -> Result<storage_policy::Model> {
     model.insert(db).await.map_err(AsterError::from)
 }
 
 /// 清除所有系统策略的 is_default（新 default 设置前调用）
-pub async fn clear_system_default(db: &DatabaseConnection) -> Result<()> {
+pub async fn clear_system_default<C: ConnectionTrait>(db: &C) -> Result<()> {
     let defaults = StoragePolicy::find()
         .filter(storage_policy::Column::IsDefault.eq(true))
         .all(db)
@@ -64,8 +64,8 @@ pub async fn clear_system_default(db: &DatabaseConnection) -> Result<()> {
 
 // ── User Storage Policy ──────────────────────────────────────────────
 
-pub async fn find_user_policies(
-    db: &DatabaseConnection,
+pub async fn find_user_policies<C: ConnectionTrait>(
+    db: &C,
     user_id: i64,
 ) -> Result<Vec<user_storage_policy::Model>> {
     UserStoragePolicy::find()
@@ -75,8 +75,8 @@ pub async fn find_user_policies(
         .map_err(AsterError::from)
 }
 
-pub async fn find_user_policy_by_id(
-    db: &DatabaseConnection,
+pub async fn find_user_policy_by_id<C: ConnectionTrait>(
+    db: &C,
     id: i64,
 ) -> Result<user_storage_policy::Model> {
     UserStoragePolicy::find_by_id(id)
@@ -87,7 +87,7 @@ pub async fn find_user_policy_by_id(
 }
 
 /// 清除用户的其他默认策略（设 is_default=false）
-pub async fn clear_user_default(db: &DatabaseConnection, user_id: i64) -> Result<()> {
+pub async fn clear_user_default<C: ConnectionTrait>(db: &C, user_id: i64) -> Result<()> {
     use sea_orm::QueryFilter;
     let existing = UserStoragePolicy::find()
         .filter(user_storage_policy::Column::UserId.eq(user_id))
@@ -104,21 +104,21 @@ pub async fn clear_user_default(db: &DatabaseConnection, user_id: i64) -> Result
     Ok(())
 }
 
-pub async fn create_user_policy(
-    db: &DatabaseConnection,
+pub async fn create_user_policy<C: ConnectionTrait>(
+    db: &C,
     model: user_storage_policy::ActiveModel,
 ) -> Result<user_storage_policy::Model> {
     model.insert(db).await.map_err(AsterError::from)
 }
 
-pub async fn update_user_policy(
-    db: &DatabaseConnection,
+pub async fn update_user_policy<C: ConnectionTrait>(
+    db: &C,
     model: user_storage_policy::ActiveModel,
 ) -> Result<user_storage_policy::Model> {
     model.update(db).await.map_err(AsterError::from)
 }
 
-pub async fn delete_user_policy(db: &DatabaseConnection, id: i64) -> Result<()> {
+pub async fn delete_user_policy<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     UserStoragePolicy::delete_by_id(id)
         .exec(db)
         .await

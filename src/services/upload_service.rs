@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, Set};
+use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -209,19 +209,34 @@ pub async fn upload_chunk(
 
     let chunk_path = format!("data/.uploads/{upload_id}/chunk_{chunk_number}");
 
-    // 幂等：如果文件已存在，不重复写也不重复计数
-    if tokio::fs::try_exists(&chunk_path).await.unwrap_or(false) {
-        let updated = upload_session_repo::find_by_id(db, upload_id).await?;
-        return Ok(ChunkUploadResponse {
-            received_count: updated.received_count,
-            total_chunks: updated.total_chunks,
-        });
-    }
-
-    // 写分片到临时文件
-    tokio::fs::write(&chunk_path, data)
+    // 用 create_new (O_EXCL) 原子创建文件，已存在则幂等返回
+    use tokio::fs::OpenOptions;
+    use tokio::io::AsyncWriteExt;
+    match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&chunk_path)
         .await
-        .map_err(|e| AsterError::chunk_upload_failed(format!("write chunk: {e}")))?;
+    {
+        Ok(mut file) => {
+            file.write_all(data)
+                .await
+                .map_err(|e| AsterError::chunk_upload_failed(format!("write chunk: {e}")))?;
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            // 幂等：分片已上传过，直接返回当前进度
+            let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+            return Ok(ChunkUploadResponse {
+                received_count: updated.received_count,
+                total_chunks: updated.total_chunks,
+            });
+        }
+        Err(e) => {
+            return Err(AsterError::chunk_upload_failed(format!(
+                "create chunk file: {e}"
+            )));
+        }
+    }
 
     // 原子 +1（sea-query Expr 避免 read-modify-write race condition）
     use crate::entities::upload_session::{Column, Entity as UploadSession};
@@ -273,13 +288,13 @@ pub async fn complete_upload(
         )));
     }
 
-    // 标记为 assembling
+    // ── [事务外] 标记为 assembling ──
     let mut active: upload_session::ActiveModel = session.clone().into();
     active.status = Set(UploadSessionStatus::Assembling);
     active.updated_at = Set(Utc::now());
     upload_session_repo::update(db, active).await?;
 
-    // 流式拼接分片到临时文件 + 计算 sha256（不在内存中组装完整文件）
+    // ── [事务外] 流式拼接分片 + sha256 ──
     use sha2::{Digest, Sha256};
     use tokio::io::AsyncWriteExt;
 
@@ -311,25 +326,34 @@ pub async fn complete_upload(
     let file_hash = format!("{:x}", hasher.finalize());
     let now = Utc::now();
 
-    // 获取策略 + driver
+    // ── [事务外] 获取策略 + driver + put_file ──
     let policy = policy_repo::find_by_id(db, session.policy_id).await?;
     let driver = state.driver_registry.get_driver(&policy)?;
 
-    // 去重: 检查是否已有相同 blob
-    let blob = match file_repo::find_blob_by_hash(db, &file_hash, policy.id).await? {
+    let storage_path = format!("{}/{}/{}", &file_hash[..2], &file_hash[2..4], &file_hash);
+    let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
+        .await?
+        .is_some();
+    if blob_pre_exists {
+        // 已有相同内容，不需要再存
+        crate::utils::cleanup_temp_file(&assembled_path).await;
+    } else {
+        // 零拷贝：LocalDriver rename，S3 流式上传，不读进内存
+        driver.put_file(&storage_path, &assembled_path).await?;
+    }
+
+    // ── [事务内] blob 查找/创建 → 文件记录创建 → 配额更新 → session 状态更新 ──
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+
+    // Blob 去重（事务内重新检查，防止并发竞争）
+    let blob = match file_repo::find_blob_by_hash(&txn, &file_hash, policy.id).await? {
         Some(existing) => {
-            // 已有相同内容，不需要再存，删除临时文件
-            crate::utils::cleanup_temp_file(&assembled_path).await;
             let new_ref_count = existing.ref_count + 1;
             let mut blob_active: file_blob::ActiveModel = existing.into();
             blob_active.ref_count = Set(new_ref_count);
-            blob_active.update(db).await.map_err(AsterError::from)?
+            blob_active.update(&txn).await.map_err(AsterError::from)?
         }
         None => {
-            let storage_path = format!("{}/{}/{}", &file_hash[..2], &file_hash[2..4], &file_hash);
-            // 零拷贝：LocalDriver rename，S3 流式上传，不读进内存
-            driver.put_file(&storage_path, &assembled_path).await?;
-
             let blob_model = file_blob::ActiveModel {
                 hash: Set(file_hash),
                 size: Set(size),
@@ -340,15 +364,21 @@ pub async fn complete_upload(
                 updated_at: Set(now),
                 ..Default::default()
             };
-            file_repo::create_blob(db, blob_model).await?
+            file_repo::create_blob(&txn, blob_model).await?
         }
     };
 
-    // 检查同名文件
-    if file_repo::find_by_name_in_folder(db, session.user_id, session.folder_id, &session.filename)
-        .await?
-        .is_some()
+    // 检查同名文件（事务内检查保证一致性）
+    if file_repo::find_by_name_in_folder(
+        &txn,
+        session.user_id,
+        session.folder_id,
+        &session.filename,
+    )
+    .await?
+    .is_some()
     {
+        // txn drop 自动 rollback
         return Err(AsterError::validation_error(format!(
             "file '{}' already exists in this folder",
             session.filename
@@ -369,19 +399,21 @@ pub async fn complete_upload(
         updated_at: Set(now),
         ..Default::default()
     };
-    let created = file_repo::create(db, file_model).await?;
+    let created = file_repo::create(&txn, file_model).await?;
 
-    // 更新用户已用空间
-    user_repo::update_storage_used(db, session.user_id, size).await?;
+    // 配额更新
+    user_repo::update_storage_used(&txn, session.user_id, size).await?;
 
-    // 标记完成
-    let session_fresh = upload_session_repo::find_by_id(db, upload_id).await?;
+    // session 状态更新
+    let session_fresh = upload_session_repo::find_by_id(&txn, upload_id).await?;
     let mut active: upload_session::ActiveModel = session_fresh.into();
     active.status = Set(UploadSessionStatus::Completed);
     active.updated_at = Set(Utc::now());
-    upload_session_repo::update(db, active).await?;
+    upload_session_repo::update(&txn, active).await?;
 
-    // 清理临时文件
+    txn.commit().await.map_err(AsterError::from)?;
+
+    // ── [事务外] 清理临时文件 ──
     let temp_dir = format!("data/.uploads/{upload_id}");
     crate::utils::cleanup_temp_dir(&temp_dir).await;
 
@@ -397,13 +429,14 @@ async fn complete_presigned_upload(
     let temp_key = session
         .s3_temp_key
         .as_deref()
-        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_temp_key"))?;
+        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_temp_key"))?
+        .to_string();
 
     let policy = policy_repo::find_by_id(db, session.policy_id).await?;
     let driver = state.driver_registry.get_driver(&policy)?;
 
-    // 验证临时对象存在 + 大小匹配
-    let meta = driver.metadata(temp_key).await.map_err(|_| {
+    // ── [事务外] S3 metadata 检查 ──
+    let meta = driver.metadata(&temp_key).await.map_err(|_| {
         AsterError::upload_assembly_failed(
             "S3 temp object not found - upload may not have completed",
         )
@@ -411,7 +444,7 @@ async fn complete_presigned_upload(
     let actual_size = meta.size as i64;
 
     if actual_size != session.total_size {
-        if let Err(e) = driver.delete(temp_key).await {
+        if let Err(e) = driver.delete(&temp_key).await {
             tracing::warn!("failed to delete S3 temp object: {e}");
         }
         return Err(AsterError::upload_assembly_failed(format!(
@@ -420,18 +453,18 @@ async fn complete_presigned_upload(
         )));
     }
 
-    // 标记 assembling
+    // ── [事务外] 标记 assembling ──
     let mut active: upload_session::ActiveModel = session.clone().into();
     active.status = Set(UploadSessionStatus::Assembling);
     active.updated_at = Set(Utc::now());
     upload_session_repo::update(db, active).await?;
 
-    // 流式 SHA256（从 S3 读，64KB buffer）
+    // ── [事务外] 流式 SHA256（从 S3 读，64KB buffer） ──
     let file_hash = {
         use sha2::{Digest, Sha256};
         use tokio::io::AsyncReadExt;
         let mut hasher = Sha256::new();
-        let mut stream = driver.get_stream(temp_key).await?;
+        let mut stream = driver.get_stream(&temp_key).await?;
         let mut buf = vec![0u8; 65536];
         loop {
             let n = stream
@@ -448,27 +481,28 @@ async fn complete_presigned_upload(
 
     let now = Utc::now();
 
-    // Blob 去重
-    let blob = match file_repo::find_blob_by_hash(db, &file_hash, policy.id).await? {
+    // ── [事务外] copy_object（仅新 blob 时需要） ──
+    let storage_path = format!("{}/{}/{}", &file_hash[..2], &file_hash[2..4], &file_hash);
+    let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
+        .await?
+        .is_some();
+    if !blob_pre_exists {
+        driver.copy_object(&temp_key, &storage_path).await?;
+    }
+
+    // ── [事务内] blob 查找/创建 → 文件记录创建 → 配额更新 → session 状态更新 ──
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+
+    // Blob 去重（事务内重新检查，防止并发竞争）
+    let blob = match file_repo::find_blob_by_hash(&txn, &file_hash, policy.id).await? {
         Some(existing) => {
-            // 已有相同内容，删临时对象，ref_count++
-            if let Err(e) = driver.delete(temp_key).await {
-                tracing::warn!("failed to delete S3 temp object: {e}");
-            }
             let new_ref_count = existing.ref_count + 1;
             let mut blob_active: file_blob::ActiveModel = existing.into();
             blob_active.ref_count = Set(new_ref_count);
             blob_active.updated_at = Set(now);
-            blob_active.update(db).await.map_err(AsterError::from)?
+            blob_active.update(&txn).await.map_err(AsterError::from)?
         }
         None => {
-            // 新内容：S3 server-side copy 到最终路径
-            let storage_path = format!("{}/{}/{}", &file_hash[..2], &file_hash[2..4], &file_hash);
-            driver.copy_object(temp_key, &storage_path).await?;
-            if let Err(e) = driver.delete(temp_key).await {
-                tracing::warn!("failed to delete S3 temp object: {e}");
-            }
-
             let blob_model = file_blob::ActiveModel {
                 hash: Set(file_hash),
                 size: Set(actual_size),
@@ -479,15 +513,21 @@ async fn complete_presigned_upload(
                 updated_at: Set(now),
                 ..Default::default()
             };
-            file_repo::create_blob(db, blob_model).await?
+            file_repo::create_blob(&txn, blob_model).await?
         }
     };
 
-    // 检查同名文件
-    if file_repo::find_by_name_in_folder(db, session.user_id, session.folder_id, &session.filename)
-        .await?
-        .is_some()
+    // 检查同名文件（事务内检查保证一致性）
+    if file_repo::find_by_name_in_folder(
+        &txn,
+        session.user_id,
+        session.folder_id,
+        &session.filename,
+    )
+    .await?
+    .is_some()
     {
+        // txn drop 自动 rollback
         return Err(AsterError::validation_error(format!(
             "file '{}' already exists in this folder",
             session.filename
@@ -508,17 +548,24 @@ async fn complete_presigned_upload(
         updated_at: Set(now),
         ..Default::default()
     };
-    let created = file_repo::create(db, file_model).await?;
+    let created = file_repo::create(&txn, file_model).await?;
 
-    // 更新配额
-    user_repo::update_storage_used(db, session.user_id, actual_size).await?;
+    // 配额更新
+    user_repo::update_storage_used(&txn, session.user_id, actual_size).await?;
 
-    // 标记完成
-    let session_fresh = upload_session_repo::find_by_id(db, &session.id).await?;
+    // session 状态更新
+    let session_fresh = upload_session_repo::find_by_id(&txn, &session.id).await?;
     let mut active: upload_session::ActiveModel = session_fresh.into();
     active.status = Set(UploadSessionStatus::Completed);
     active.updated_at = Set(Utc::now());
-    upload_session_repo::update(db, active).await?;
+    upload_session_repo::update(&txn, active).await?;
+
+    txn.commit().await.map_err(AsterError::from)?;
+
+    // ── [事务外] S3 临时对象清理（best-effort） ──
+    if let Err(e) = driver.delete(&temp_key).await {
+        tracing::warn!("failed to delete S3 temp object: {e}");
+    }
 
     Ok(created)
 }
