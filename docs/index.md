@@ -4,26 +4,31 @@ layout: home
 hero:
   name: AsterDrive
   text: 自托管云存储系统
-  tagline: 基于 Rust + React 构建，单二进制部署，可插拔存储后端
+  tagline: Rust + React 构建，单二进制部署，覆盖文件管理、分享、WebDAV、版本与回收站
   actions:
     - theme: brand
       text: 快速开始
       link: /guide/getting-started
     - theme: alt
-      text: GitHub
-      link: https://github.com/AptS-1547/AsterDrive
+      text: 架构概览
+      link: /architecture
+    - theme: alt
+      text: API 文档
+      link: /api/
 
 features:
   - title: 单二进制部署
-    details: 前端通过 rust-embed 嵌入，一个可执行文件包含全部功能
+    details: 前端打包产物通过 rust-embed 内嵌到后端，生产环境只需一个可执行文件或一个镜像
   - title: 多数据库支持
-    details: SQLite（默认）、MySQL、PostgreSQL，通过 sea-orm 统一抽象
+    details: SQLite、MySQL、PostgreSQL 统一走 SeaORM，启动时自动执行迁移
   - title: 可插拔存储
-    details: 本地文件系统和 S3 兼容后端，通过存储策略灵活分配
-  - title: 文件去重
-    details: SHA-256 内容哈希 + 引用计数，相同文件只存一份
-  - title: 安全认证
-    details: JWT HttpOnly Cookie，access/refresh token 自动轮换
-  - title: OpenAPI 文档
-    details: utoipa 自动生成，内置 Swagger UI
+    details: 通过存储策略在本地文件系统与 S3 兼容对象存储之间切换，并支持用户/文件夹级覆盖
+  - title: 上传与去重
+    details: 直传与分片上传共存，流式 SHA-256 去重，避免重复保存相同内容
+  - title: 分享与公开访问
+    details: 文件和文件夹都可分享，支持密码、过期时间、下载次数限制与公开访问页
+  - title: WebDAV 集成
+    details: 独立 WebDAV 账号、目录级访问范围、数据库锁与属性存储，兼容桌面客户端挂载
+  - title: 生命周期管理
+    details: 回收站、历史版本、缩略图、资源锁、后台清理任务全部内建
 ---

@@ -1,49 +1,107 @@
 # 管理 API
 
-需要管理员权限。普通用户调用会返回 `403`。
+以下路径都相对于 `/api/v1`，且都需要管理员权限。
 
-## GET /admin/policies
+## 存储策略
 
-列出所有存储策略。
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/admin/policies` | 列出全部存储策略 |
+| `POST` | `/admin/policies` | 创建存储策略 |
+| `GET` | `/admin/policies/{id}` | 读取策略详情 |
+| `PATCH` | `/admin/policies/{id}` | 更新策略 |
+| `DELETE` | `/admin/policies/{id}` | 删除策略 |
+| `POST` | `/admin/policies/{id}/test` | 测试已保存策略 |
+| `POST` | `/admin/policies/test` | 用临时参数测试连接 |
 
-**响应：** `200` 返回策略数组。
-
-## POST /admin/policies
-
-创建存储策略。
-
-**请求体：**
+### 创建策略示例
 
 ```json
 {
-  "name": "my-s3",
+  "name": "archive-s3",
   "driver_type": "s3",
-  "endpoint": "https://s3.amazonaws.com",
-  "bucket": "my-bucket",
+  "endpoint": "https://s3.example.com",
+  "bucket": "archive",
   "access_key": "AKIA...",
   "secret_key": "...",
   "base_path": "asterdrive/",
-  "max_file_size": 104857600,
+  "max_file_size": 10737418240,
+  "chunk_size": 10485760,
   "is_default": false
 }
 ```
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `name` | string | 是 | 策略名称 |
-| `driver_type` | string | 是 | `"local"` 或 `"s3"` |
-| `endpoint` | string | 否 | S3 endpoint |
-| `bucket` | string | 否 | S3 bucket |
-| `access_key` | string | 否 | S3 access key |
-| `secret_key` | string | 否 | S3 secret key |
-| `base_path` | string | 否 | 文件存储基础路径 |
-| `max_file_size` | i64 | 否 | 最大文件大小（字节），0 = 无限 |
-| `is_default` | bool | 否 | 是否为默认策略 |
+注意：当前创建逻辑会先把 `chunk_size` 写成默认值 `5 MiB`，若要精确调整，建议创建后再 `PATCH`。
 
-## GET /admin/policies/{id} {#get-policy}
+## 用户与用户策略
 
-获取策略详情。
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/admin/users` | 列出用户 |
+| `GET` | `/admin/users/{id}` | 获取用户详情 |
+| `PATCH` | `/admin/users/{id}` | 更新角色、状态、总配额 |
+| `GET` | `/admin/users/{user_id}/policies` | 列出用户绑定的策略 |
+| `POST` | `/admin/users/{user_id}/policies` | 给用户分配策略 |
+| `PATCH` | `/admin/users/{user_id}/policies/{id}` | 更新用户策略项 |
+| `DELETE` | `/admin/users/{user_id}/policies/{id}` | 删除用户策略项 |
 
-## DELETE /admin/policies/{id} {#delete-policy}
+### 更新用户示例
 
-删除策略。正在使用的策略无法删除。
+```json
+{
+  "role": "user",
+  "status": "active",
+  "storage_quota": 107374182400
+}
+```
+
+当前实现有一个保护规则：
+
+- 初始管理员账号 `id = 1` 不能被禁用
+- 初始管理员账号 `id = 1` 不能被降级为非管理员
+
+### 分配用户策略示例
+
+```json
+{
+  "policy_id": 3,
+  "is_default": true,
+  "quota_bytes": 53687091200
+}
+```
+
+`quota_bytes` 是该用户在该策略上的额度。
+
+## 系统运行时配置
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/admin/config` | 列出全部运行时配置 |
+| `GET` | `/admin/config/{key}` | 获取单个配置项 |
+| `PUT` | `/admin/config/{key}` | 设置配置项 |
+| `DELETE` | `/admin/config/{key}` | 删除配置项 |
+
+### 设置配置项示例
+
+```json
+{
+  "value": "14"
+}
+```
+
+## 分享审计
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/admin/shares` | 查看全站分享 |
+| `DELETE` | `/admin/shares/{id}` | 管理员删除任意分享 |
+
+## 锁管理
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/admin/locks` | 查看全部资源锁 |
+| `DELETE` | `/admin/locks/{id}` | 强制解锁 |
+| `DELETE` | `/admin/locks/expired` | 清理全部过期锁 |
+
+这些锁主要服务于 WebDAV 与覆盖写入流程。

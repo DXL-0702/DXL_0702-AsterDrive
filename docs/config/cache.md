@@ -13,20 +13,23 @@ default_ttl = 3600
 | 字段 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
 | `enabled` | bool | `true` | 是否启用缓存 |
-| `backend` | string | `"memory"` | 缓存后端：`"memory"` 或 `"redis"` |
-| `redis_url` | string | `""` | Redis 连接地址，仅 `backend = "redis"` 时需要 |
-| `default_ttl` | u64 | `3600` | 默认缓存 TTL（秒） |
+| `backend` | string | `"memory"` | 缓存后端，支持 `memory` 与 `redis` |
+| `redis_url` | string | `""` | Redis 连接地址，仅 `backend = "redis"` 时使用 |
+| `default_ttl` | u64 | `3600` | 默认 TTL，单位秒 |
 
-## Memory 缓存
+## 后端实现
 
-使用 [moka](https://github.com/moka-rs/moka) 作为本地内存缓存，适合单实例部署。
+- `memory`：基于 `moka`
+- `redis`：基于 `redis-rs`
+- 禁用缓存：使用 `NoopCache`
 
-## Redis 缓存
+## Redis 回退行为
 
-多实例部署时使用 Redis 作为共享缓存：
+如果配置了 Redis 但连接初始化失败，当前实现不会阻止服务启动，而是自动回退到内存缓存。
+
+## 关闭缓存
 
 ```toml
 [cache]
-backend = "redis"
-redis_url = "redis://localhost:6379"
+enabled = false
 ```

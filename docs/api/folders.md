@@ -1,41 +1,89 @@
 # 文件夹 API
 
-所有接口需要认证。
+以下路径都相对于 `/api/v1`，且都需要认证。
 
-## GET /folders
+## 接口列表
 
-列出根目录下的文件夹和文件。
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/folders` | 列出根目录内容 |
+| `POST` | `/folders` | 创建文件夹 |
+| `GET` | `/folders/{id}` | 列出指定文件夹内容 |
+| `PATCH` | `/folders/{id}` | 重命名、移动或切换策略 |
+| `DELETE` | `/folders/{id}` | 软删除文件夹 |
+| `POST` | `/folders/{id}/lock` | 简单锁定或解锁 |
+| `POST` | `/folders/{id}/copy` | 递归复制文件夹 |
 
-**响应：** `200` 返回 `{ folders: [...], files: [...] }`。
+## `GET /folders`
 
-## POST /folders
-
-创建文件夹。
-
-**请求体：**
-
-```json
-{ "name": "Documents", "parent_id": null }
-```
-
-`parent_id` 为 `null` 表示在根目录下创建。
-
-## GET /folders/{id} {#get-folder}
-
-列出指定文件夹的内容。
-
-## PATCH /folders/{id} {#patch-folder}
-
-修改文件夹属性。
-
-**请求体：**
+返回根目录内容：
 
 ```json
-{ "name": "新名称", "parent_id": 3, "policy_id": 2 }
+{
+  "folders": [],
+  "files": []
+}
 ```
 
-所有字段可选。`policy_id` 可覆盖该文件夹的存储策略。
+## `POST /folders`
 
-## DELETE /folders/{id} {#delete-folder}
+请求体：
 
-删除文件夹及其所有内容。
+```json
+{
+  "name": "Documents",
+  "parent_id": null
+}
+```
+
+`parent_id = null` 表示在根目录创建。
+
+## `GET /folders/{id}`
+
+读取指定文件夹下的文件夹和文件列表。
+
+## `PATCH /folders/{id}`
+
+请求体：
+
+```json
+{
+  "name": "New Name",
+  "parent_id": 3,
+  "policy_id": 2
+}
+```
+
+字段含义：
+
+- `name`：重命名
+- `parent_id`：移动到其他父目录
+- `policy_id`：给该目录绑定存储策略
+
+当前实现还会做这些校验：
+
+- 不能把文件夹移动到自己下面
+- 不能把文件夹移动到自己的子孙目录下
+- 目标位置出现同名文件夹会报错
+
+## `DELETE /folders/{id}`
+
+删除是软删除，会递归标记子文件和子文件夹进入回收站。
+
+## `POST /folders/{id}/lock`
+
+请求体：
+
+```json
+{ "locked": true }
+```
+
+## `POST /folders/{id}/copy`
+
+请求体：
+
+```json
+{ "parent_id": 10 }
+```
+
+服务端会递归复制整个目录树，并自动处理副本命名冲突。

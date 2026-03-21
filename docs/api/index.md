@@ -1,36 +1,70 @@
 # API 概览
 
-所有接口路径前缀为 `/api/v1`。
+除健康检查外，所有 REST 接口都挂在：
+
+```text
+/api/v1
+```
 
 ## 响应格式
 
+统一响应包装如下：
+
 ```json
-{ "code": 0, "msg": "", "data": { ... } }
+{
+  "code": 0,
+  "msg": "",
+  "data": {}
+}
 ```
 
-`code` 按域分组：
+字段含义：
 
-| 范围 | 域 |
+- `code`：数字错误码，`0` 表示成功
+- `msg`：错误消息；成功时通常为空
+- `data`：响应体，部分成功接口会省略
+
+## 错误码分域
+
+| 范围 | 含义 |
 |------|------|
 | `0` | 成功 |
-| `1000-1999` | 通用错误 |
-| `2000-2999` | 认证错误 |
-| `3000-3999` | 文件错误 |
-| `4000-4999` | 策略错误 |
-| `5000-5999` | 文件夹错误 |
+| `1000-1099` | 通用错误 |
+| `2000-2099` | 认证错误 |
+| `3000-3099` | 文件/上传/锁/缩略图错误 |
+| `4000-4099` | 存储策略与驱动错误 |
+| `5000-5099` | 文件夹错误 |
+| `6000-6099` | 分享错误 |
 
 ## 认证方式
 
-大部分接口需要认证。登录后 token 通过 HttpOnly Cookie 自动携带，也支持 `Authorization: Bearer <token>` 头。
+当前仓库使用三种认证模式：
 
-## Swagger UI
+- 浏览器/API：HttpOnly Cookie
+- API 客户端：`Authorization: Bearer <jwt>`
+- WebDAV：`Authorization: Basic ...` 或 Bearer JWT
 
-运行时访问 `/swagger-ui` 查看完整的交互式 API 文档。
+## OpenAPI 与 Swagger
 
-## 接口列表
+当前代码的行为分两类：
 
-- [认证](/api/auth) - 注册、登录、token 管理
-- [文件](/api/files) - 上传、下载、删除、修改
-- [文件夹](/api/folders) - 创建、列表、删除、修改
-- [管理](/api/admin) - 存储策略 CRUD（需管理员权限）
-- [健康检查](/api/health) - 存活和就绪探针
+- debug 构建：注册 `/swagger-ui` 与 `/api-docs/openapi.json`
+- release 构建：不注册 Swagger UI
+
+前端使用的静态 OpenAPI 文件可通过下面命令生成：
+
+```bash
+cargo test --test generate_openapi
+```
+
+## 模块索引
+
+- [认证](/api/auth)
+- [文件](/api/files)
+- [文件夹](/api/folders)
+- [分享](/api/shares)
+- [回收站](/api/trash)
+- [WebDAV](/api/webdav)
+- [属性](/api/properties)
+- [管理](/api/admin)
+- [健康检查](/api/health)

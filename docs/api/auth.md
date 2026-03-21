@@ -1,48 +1,70 @@
 # 认证 API
 
-## POST /auth/register
+以下路径都相对于 `/api/v1`。
 
-注册新用户。第一个注册的用户自动成为管理员。
+## 接口列表
 
-**请求体：**
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `POST` | `/auth/register` | 注册用户；第一个用户自动成为管理员 |
+| `POST` | `/auth/login` | 登录并写入认证 Cookie |
+| `POST` | `/auth/refresh` | 刷新 access token |
+| `POST` | `/auth/logout` | 清除认证 Cookie |
+| `GET` | `/auth/me` | 读取当前登录用户信息 |
 
-```json
-{ "username": "admin", "email": "admin@example.com", "password": "password" }
-```
+## `POST /auth/register`
 
-**响应：** `201` 返回用户信息。
-
-## POST /auth/login
-
-登录，成功后在响应中设置 `aster_access` 和 `aster_refresh` HttpOnly Cookie。
-
-**请求体：**
+请求体：
 
 ```json
-{ "username": "admin", "password": "password" }
+{
+  "username": "admin",
+  "email": "admin@example.com",
+  "password": "password"
+}
 ```
 
-**响应：** `200`
+成功返回创建后的用户信息。
 
-## POST /auth/refresh
+## `POST /auth/login`
 
-使用 refresh cookie 刷新 access token。
+请求体：
 
-**响应：** `200` 设置新的 access cookie。
+```json
+{
+  "username": "admin",
+  "password": "password"
+}
+```
 
-## POST /auth/logout
+成功后会设置两个 HttpOnly Cookie：
 
-清除认证 Cookie。
+- `aster_access`
+- `aster_refresh`
 
-**响应：** `200`
+## `POST /auth/refresh`
 
-## GET /auth/me
+使用 refresh Cookie 刷新 access token。
 
-获取当前登录用户信息。支持 Cookie 或 Bearer token。
+注意：
 
-**响应：** `200` 返回用户信息。
+- 当前实现只读取 refresh Cookie
+- 不支持通过 Bearer header 刷新
+
+## `POST /auth/logout`
+
+清除 `aster_access` 与 `aster_refresh` Cookie。
+
+## `GET /auth/me`
+
+支持两种方式：
+
+- 浏览器通过 Cookie
+- API 客户端通过 `Authorization: Bearer <jwt>`
 
 ## 限流
 
-- `/auth/login`：每秒 1 次，突发 5 次
-- `/auth/register`：每秒 1 次，突发 3 次
+认证相关接口内置了轻量限流：
+
+- `/auth/login`：每秒 1 次，突发 5
+- `/auth/register`：每秒 1 次，突发 3

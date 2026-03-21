@@ -20,7 +20,7 @@ const VERSION = getVersion()
 
 export default defineConfig({
   title: 'AsterDrive',
-  description: '自托管云存储系统，基于 Rust + React 构建',
+  description: '自托管云存储系统，支持分享、WebDAV、版本、回收站与多存储策略',
 
   locales: {
     root: {
@@ -29,10 +29,11 @@ export default defineConfig({
       themeConfig: {
         nav: [
           { text: '首页', link: '/' },
-          { text: '快速开始', link: '/guide/getting-started' },
+          { text: '使用指南', link: '/guide/getting-started' },
           { text: '配置', link: '/config/' },
           { text: 'API', link: '/api/' },
           { text: '部署', link: '/deployment/' },
+          { text: '架构', link: '/architecture' },
           {
             text: `v${VERSION}`,
             items: [
@@ -61,7 +62,7 @@ export default defineConfig({
   },
 
   head: [
-    ['meta', { name: 'theme-color', content: '#646cff' }],
+    ['meta', { name: 'theme-color', content: '#1f8f6a' }],
     ['meta', { name: 'og:type', content: 'website' }],
     ['meta', { name: 'og:locale', content: 'zh_CN' }],
     ['meta', { name: 'og:title', content: 'AsterDrive | 自托管云存储' }],
@@ -75,7 +76,8 @@ export default defineConfig({
           text: '开始使用',
           items: [
             { text: '安装', link: '/guide/installation' },
-            { text: '快速开始', link: '/guide/getting-started' }
+            { text: '快速开始', link: '/guide/getting-started' },
+            { text: '核心流程', link: '/guide/core-workflows' }
           ]
         }
       ],
@@ -88,6 +90,8 @@ export default defineConfig({
             { text: '数据库', link: '/config/database' },
             { text: '认证', link: '/config/auth' },
             { text: '存储策略', link: '/config/storage' },
+            { text: 'WebDAV', link: '/config/webdav' },
+            { text: '运行时配置', link: '/config/runtime' },
             { text: '缓存', link: '/config/cache' },
             { text: '日志', link: '/config/logging' }
           ]
@@ -101,6 +105,10 @@ export default defineConfig({
             { text: '认证', link: '/api/auth' },
             { text: '文件', link: '/api/files' },
             { text: '文件夹', link: '/api/folders' },
+            { text: '分享', link: '/api/shares' },
+            { text: '回收站', link: '/api/trash' },
+            { text: 'WebDAV', link: '/api/webdav' },
+            { text: '属性', link: '/api/properties' },
             { text: '管理', link: '/api/admin' },
             { text: '健康检查', link: '/api/health' }
           ]
@@ -115,6 +123,12 @@ export default defineConfig({
             { text: 'systemd', link: '/deployment/systemd' },
             { text: '反向代理', link: '/deployment/proxy' }
           ]
+        }
+      ],
+      '/architecture': [
+        {
+          text: '架构',
+          items: [{ text: '系统架构', link: '/architecture' }]
         }
       ]
     },
