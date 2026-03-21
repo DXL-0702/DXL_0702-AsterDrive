@@ -141,7 +141,13 @@ pub async fn purge_all(state: &AppState, user_id: i64) -> Result<u32> {
 /// 自动清理过期回收站条目（后台任务调用）
 pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
     let retention_days = match config_repo::find_by_key(&state.db, "trash_retention_days").await? {
-        Some(cfg) => cfg.value.parse::<i64>().unwrap_or(DEFAULT_RETENTION_DAYS),
+        Some(cfg) => cfg.value.parse::<i64>().unwrap_or_else(|_| {
+            tracing::warn!(
+                "invalid trash_retention_days value '{}', using default",
+                cfg.value
+            );
+            DEFAULT_RETENTION_DAYS
+        }),
         None => DEFAULT_RETENTION_DAYS,
     };
 

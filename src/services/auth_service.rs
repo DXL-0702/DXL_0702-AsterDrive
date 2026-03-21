@@ -52,7 +52,13 @@ pub async fn register(
 
     // 从 system_config 读取默认配额
     let default_quota = match config_repo::find_by_key(db, "default_storage_quota").await? {
-        Some(cfg) => cfg.value.parse::<i64>().unwrap_or(0),
+        Some(cfg) => cfg.value.parse::<i64>().unwrap_or_else(|_| {
+            tracing::warn!(
+                "invalid default_storage_quota value '{}', using 0",
+                cfg.value
+            );
+            0
+        }),
         None => 0,
     };
 

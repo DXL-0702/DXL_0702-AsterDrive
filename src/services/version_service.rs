@@ -151,7 +151,13 @@ async fn cleanup_blob_if_unused(state: &AppState, blob_id: i64) -> Result<()> {
 
 async fn get_max_versions(state: &AppState) -> u64 {
     match config_repo::find_by_key(&state.db, "max_versions_per_file").await {
-        Ok(Some(cfg)) => cfg.value.parse().unwrap_or(10),
+        Ok(Some(cfg)) => cfg.value.parse().unwrap_or_else(|_| {
+            tracing::warn!(
+                "invalid max_versions_per_file value '{}', using 10",
+                cfg.value
+            );
+            10
+        }),
         _ => 10,
     }
 }

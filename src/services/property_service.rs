@@ -55,6 +55,23 @@ pub async fn set(
         return Err(AsterError::auth_forbidden("DAV: namespace is read-only"));
     }
 
+    // 输入长度限制
+    if namespace.len() > 256 {
+        return Err(AsterError::validation_error("namespace too long (max 256)"));
+    }
+    if name.len() > 256 {
+        return Err(AsterError::validation_error(
+            "property name too long (max 256)",
+        ));
+    }
+    if let Some(v) = value
+        && v.len() > 65536
+    {
+        return Err(AsterError::validation_error(
+            "property value too long (max 64KB)",
+        ));
+    }
+
     property_repo::upsert(&state.db, entity_type, entity_id, namespace, name, value).await
 }
 
