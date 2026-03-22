@@ -1,19 +1,12 @@
 import { Check, Loader2, Pencil, Plus, Trash2, Wifi } from "lucide-react";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { AdminLayout } from "@/components/layout/AdminLayout";
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-	AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -92,6 +85,7 @@ function TestConnectionButton({
 	form: PolicyFormData;
 	editingId: number | null;
 }) {
+	const { t } = useTranslation("admin");
 	const [testing, setTesting] = useState(false);
 	const [result, setResult] = useState<boolean | null>(null);
 
@@ -112,7 +106,7 @@ function TestConnectionButton({
 				});
 			}
 			setResult(true);
-			toast.success("Connection test passed");
+			toast.success(t("connection_success"));
 		} catch (e) {
 			setResult(false);
 			handleApiError(e);
@@ -131,21 +125,23 @@ function TestConnectionButton({
 			{testing ? (
 				<Loader2 className="h-4 w-4 mr-1 animate-spin" />
 			) : result === true ? (
-				<Check className="h-4 w-4 mr-1 text-green-600" />
+				<Check className="h-4 w-4 mr-1 text-green-600 dark:text-green-400" />
 			) : (
 				<Wifi className="h-4 w-4 mr-1" />
 			)}
-			Test
+			{t("test_connection")}
 		</Button>
 	);
 }
 
 export default function AdminPoliciesPage() {
+	const { t } = useTranslation("admin");
 	const [policies, setPolicies] = useState<StoragePolicy[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [editingId, setEditingId] = useState<number | null>(null);
 	const [form, setForm] = useState<PolicyFormData>(emptyForm);
+	const [deleteId, setDeleteId] = useState<number | null>(null);
 
 	const load = useCallback(async () => {
 		try {
@@ -255,51 +251,45 @@ export default function AdminPoliciesPage() {
 		value: PolicyFormData[K],
 	) => setForm((prev) => ({ ...prev, [key]: value }));
 
+	const deletePolicyName =
+		deleteId !== null
+			? (policies.find((p) => p.id === deleteId)?.name ?? "")
+			: "";
+
 	return (
 		<AdminLayout>
 			<div className="p-6 space-y-4">
 				<div className="flex items-center justify-between">
-					<h2 className="text-lg font-semibold">Storage Policies</h2>
+					<h2 className="text-lg font-semibold">{t("policies")}</h2>
 					<Button size="sm" onClick={openCreate}>
 						<Plus className="h-4 w-4 mr-1" />
-						New Policy
+						{t("new_policy")}
 					</Button>
 				</div>
 
-				<ScrollArea className="flex-1">
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead className="w-16">ID</TableHead>
-								<TableHead>Name</TableHead>
-								<TableHead>Driver</TableHead>
-								<TableHead>Endpoint / Path</TableHead>
-								<TableHead>Bucket</TableHead>
-								<TableHead className="w-20">Default</TableHead>
-								<TableHead className="w-24">Actions</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{loading ? (
+				{loading ? (
+					<LoadingSpinner text={t("common:loading")} />
+				) : policies.length === 0 ? (
+					<EmptyState
+						title={t("no_policies")}
+						description={t("no_policies_desc")}
+					/>
+				) : (
+					<ScrollArea className="flex-1">
+						<Table>
+							<TableHeader>
 								<TableRow>
-									<TableCell
-										colSpan={7}
-										className="text-center text-muted-foreground"
-									>
-										Loading...
-									</TableCell>
+									<TableHead className="w-16">{t("id")}</TableHead>
+									<TableHead>{t("common:name")}</TableHead>
+									<TableHead>{t("driver_type")}</TableHead>
+									<TableHead>{t("endpoint_path")}</TableHead>
+									<TableHead>{t("bucket")}</TableHead>
+									<TableHead className="w-20">{t("is_default")}</TableHead>
+									<TableHead className="w-24">{t("common:actions")}</TableHead>
 								</TableRow>
-							) : policies.length === 0 ? (
-								<TableRow>
-									<TableCell
-										colSpan={7}
-										className="text-center text-muted-foreground"
-									>
-										No policies
-									</TableCell>
-								</TableRow>
-							) : (
-								policies.map((p) => (
+							</TableHeader>
+							<TableBody>
+								{policies.map((p) => (
 									<TableRow key={p.id}>
 										<TableCell className="font-mono text-xs">{p.id}</TableCell>
 										<TableCell className="font-medium">{p.name}</TableCell>
@@ -318,8 +308,8 @@ export default function AdminPoliciesPage() {
 										</TableCell>
 										<TableCell>
 											{p.is_default && (
-												<Badge className="bg-blue-100 text-blue-700 border-blue-300">
-													Default
+												<Badge className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
+													{t("is_default")}
 												</Badge>
 											)}
 										</TableCell>
@@ -333,57 +323,48 @@ export default function AdminPoliciesPage() {
 												>
 													<Pencil className="h-3.5 w-3.5" />
 												</Button>
-												<AlertDialog>
-													<AlertDialogTrigger
-														render={
-															<Button
-																variant="ghost"
-																size="icon"
-																className="h-8 w-8 text-destructive"
-															/>
-														}
-													>
-														<Trash2 className="h-3.5 w-3.5" />
-													</AlertDialogTrigger>
-													<AlertDialogContent>
-														<AlertDialogHeader>
-															<AlertDialogTitle>
-																Delete policy "{p.name}"?
-															</AlertDialogTitle>
-															<AlertDialogDescription>
-																This will not delete stored files, but new
-																uploads using this policy will fail.
-															</AlertDialogDescription>
-														</AlertDialogHeader>
-														<AlertDialogFooter>
-															<AlertDialogCancel>Cancel</AlertDialogCancel>
-															<AlertDialogAction
-																onClick={() => handleDelete(p.id)}
-															>
-																Delete
-															</AlertDialogAction>
-														</AlertDialogFooter>
-													</AlertDialogContent>
-												</AlertDialog>
+												<Button
+													variant="ghost"
+													size="icon"
+													className="h-8 w-8 text-destructive"
+													onClick={() => setDeleteId(p.id)}
+												>
+													<Trash2 className="h-3.5 w-3.5" />
+												</Button>
 											</div>
 										</TableCell>
 									</TableRow>
-								))
-							)}
-						</TableBody>
-					</Table>
-				</ScrollArea>
+								))}
+							</TableBody>
+						</Table>
+					</ScrollArea>
+				)}
+
+				<ConfirmDialog
+					open={deleteId !== null}
+					onOpenChange={(open) => {
+						if (!open) setDeleteId(null);
+					}}
+					title={`${t("delete_policy")} "${deletePolicyName}"?`}
+					description={t("delete_policy_desc")}
+					confirmLabel={t("common:delete")}
+					onConfirm={() => {
+						if (deleteId !== null) handleDelete(deleteId);
+						setDeleteId(null);
+					}}
+					variant="destructive"
+				/>
 
 				<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
 					<DialogContent className="max-w-lg">
 						<DialogHeader>
 							<DialogTitle>
-								{editingId ? "Edit Policy" : "Create Policy"}
+								{editingId ? t("edit_policy") : t("create_policy")}
 							</DialogTitle>
 						</DialogHeader>
 						<form onSubmit={handleSubmit} className="space-y-4">
 							<div className="space-y-2">
-								<Label htmlFor="name">Name</Label>
+								<Label htmlFor="name">{t("common:name")}</Label>
 								<Input
 									id="name"
 									value={form.name}
@@ -394,7 +375,7 @@ export default function AdminPoliciesPage() {
 
 							{!editingId && (
 								<div className="space-y-2">
-									<Label>Driver Type</Label>
+									<Label>{t("driver_type")}</Label>
 									<Select
 										value={form.driver_type}
 										onValueChange={(v) =>
@@ -413,7 +394,7 @@ export default function AdminPoliciesPage() {
 							)}
 
 							<div className="space-y-2">
-								<Label htmlFor="base_path">Base Path</Label>
+								<Label htmlFor="base_path">{t("base_path")}</Label>
 								<Input
 									id="base_path"
 									value={form.base_path}
@@ -427,7 +408,7 @@ export default function AdminPoliciesPage() {
 							{form.driver_type === "s3" && (
 								<>
 									<div className="space-y-2">
-										<Label htmlFor="endpoint">Endpoint</Label>
+										<Label htmlFor="endpoint">{t("endpoint")}</Label>
 										<Input
 											id="endpoint"
 											value={form.endpoint}
@@ -436,7 +417,7 @@ export default function AdminPoliciesPage() {
 										/>
 									</div>
 									<div className="space-y-2">
-										<Label htmlFor="bucket">Bucket</Label>
+										<Label htmlFor="bucket">{t("bucket")}</Label>
 										<Input
 											id="bucket"
 											value={form.bucket}
@@ -471,11 +452,10 @@ export default function AdminPoliciesPage() {
 										/>
 										<div>
 											<Label htmlFor="presigned_upload">
-												Presigned Upload (client direct to S3)
+												{t("presigned_upload")}
 											</Label>
 											<p className="text-xs text-muted-foreground">
-												Files ≤ 5 GB upload directly to S3. Requires CORS on the
-												bucket.
+												{t("presigned_upload_desc")}
 											</p>
 										</div>
 									</div>
@@ -483,18 +463,20 @@ export default function AdminPoliciesPage() {
 							)}
 
 							<div className="space-y-2">
-								<Label htmlFor="max_file_size">Max File Size (bytes)</Label>
+								<Label htmlFor="max_file_size">
+									{t("max_file_size")} (bytes)
+								</Label>
 								<Input
 									id="max_file_size"
 									type="number"
 									value={form.max_file_size}
 									onChange={(e) => setField("max_file_size", e.target.value)}
-									placeholder="0 = unlimited"
+									placeholder={`0 = ${t("common:unlimited").toLowerCase()}`}
 								/>
 							</div>
 
 							<div className="space-y-2">
-								<Label htmlFor="chunk_size">Chunk Size (MB)</Label>
+								<Label htmlFor="chunk_size">{t("chunk_size")}</Label>
 								<Input
 									id="chunk_size"
 									type="number"
@@ -503,7 +485,7 @@ export default function AdminPoliciesPage() {
 									placeholder="5 = 5MB, 0 = single upload only"
 								/>
 								<p className="text-xs text-muted-foreground">
-									Files larger than this use chunked upload. 0 disables it.
+									{t("chunk_size_desc")}
 								</p>
 							</div>
 
@@ -513,13 +495,13 @@ export default function AdminPoliciesPage() {
 									checked={form.is_default}
 									onCheckedChange={(v) => setField("is_default", v)}
 								/>
-								<Label htmlFor="is_default">Set as default policy</Label>
+								<Label htmlFor="is_default">{t("set_as_default")}</Label>
 							</div>
 
 							<div className="flex gap-2">
 								<TestConnectionButton form={form} editingId={editingId} />
 								<Button type="submit" className="flex-1">
-									{editingId ? "Save Changes" : "Create"}
+									{editingId ? t("save_changes") : t("common:create")}
 								</Button>
 							</div>
 						</form>

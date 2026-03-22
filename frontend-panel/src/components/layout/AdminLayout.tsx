@@ -8,38 +8,49 @@ import {
 	Users,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router-dom";
+import { LanguageSwitcher } from "@/components/common/LanguageSwitcher";
+import { ThemeSwitcher } from "@/components/common/ThemeSwitcher";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 
-const navItems = [
-	{ to: "/admin/users", label: "Users", icon: Users },
-	{ to: "/admin/policies", label: "Storage Policies", icon: HardDrive },
-	{ to: "/admin/shares", label: "Shares", icon: Link },
-	{ to: "/admin/locks", label: "Locks", icon: Lock },
-	{ to: "/admin/settings", label: "Settings", icon: Settings },
-	{ to: "/admin/audit", label: "Audit Log", icon: ClipboardList },
-];
+export function AdminLayout({ children }: { children: ReactNode }) {
+	const { t } = useTranslation("admin");
 
-interface AdminLayoutProps {
-	children: ReactNode;
-}
+	const navItems = [
+		{ to: "/admin/users", label: t("users"), icon: Users },
+		{ to: "/admin/policies", label: t("policies"), icon: HardDrive },
+		{ to: "/admin/shares", label: t("shares"), icon: Link },
+		{ to: "/admin/locks", label: t("locks"), icon: Lock },
+		{ to: "/admin/settings", label: t("system_settings"), icon: Settings },
+		{
+			to: "/admin/audit",
+			label: t("audit_log"),
+			icon: ClipboardList,
+		},
+	];
 
-export function AdminLayout({ children }: AdminLayoutProps) {
 	return (
 		<div className="h-screen flex flex-col">
 			<div className="flex flex-1 overflow-hidden">
-				<aside className="w-56 border-r flex flex-col">
-					<div className="p-3 flex items-center gap-2">
-						<NavLink
-							to="/"
-							className="text-muted-foreground hover:text-foreground transition-colors"
-						>
-							<ArrowLeft className="h-4 w-4" />
-						</NavLink>
-						<span className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">
-							Admin
-						</span>
+				<aside className="w-56 border-r flex flex-col shrink-0">
+					<div className="p-3 flex items-center justify-between">
+						<div className="flex items-center gap-2">
+							<NavLink
+								to="/"
+								className="text-muted-foreground hover:text-foreground transition-colors"
+							>
+								<ArrowLeft className="h-4 w-4" />
+							</NavLink>
+							<span className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">
+								{t("title")}
+							</span>
+						</div>
+						<div className="flex items-center gap-0.5">
+							<ThemeSwitcher />
+							<LanguageSwitcher />
+						</div>
 					</div>
 					<Separator />
 					<ScrollArea className="flex-1">

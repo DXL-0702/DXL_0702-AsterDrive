@@ -1,0 +1,9 @@
+{
+	"placeholder": "Search files and folders...",
+	"all": "All",
+	"files_only": "Files only",
+	"folders_only": "Folders only",
+	"results": "Found {{files}} file(s) and {{folders}} folder(s)",
+	"no_results": "No results found",
+	"no_results_desc": "Try a different search term."
+}

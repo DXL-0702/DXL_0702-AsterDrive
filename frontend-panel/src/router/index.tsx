@@ -13,6 +13,7 @@ const ShareViewPage = lazy(() => import("@/pages/ShareViewPage"));
 const WebdavAccountsPage = lazy(() => import("@/pages/WebdavAccountsPage"));
 const TrashPage = lazy(() => import("@/pages/TrashPage"));
 const SearchPage = lazy(() => import("@/pages/SearchPage"));
+const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const AdminAuditPage = lazy(() => import("@/pages/admin/AdminAuditPage"));
 
 function Loading() {
@@ -73,6 +74,7 @@ export const router = createBrowserRouter([
 			{ path: "/settings/webdav", element: <WebdavAccountsPage /> },
 			{ path: "/trash", element: <TrashPage /> },
 			{ path: "/search", element: <SearchPage /> },
+			{ path: "/settings", element: <SettingsPage /> },
 		],
 	},
 	{

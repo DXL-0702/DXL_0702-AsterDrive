@@ -1,12 +1,23 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { AlertTriangle, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import type { FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { AdminLayout } from "@/components/layout/AdminLayout";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-	adminConfigService,
-	type ConfigSchemaItem,
-} from "@/services/adminService";
-import { handleApiError } from "@/hooks/useApiError";
-import type { SystemConfig } from "@/types/api";
+	Dialog,
+	DialogContent,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
 	Table,
 	TableBody,
@@ -15,28 +26,6 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import {
-	Dialog,
-	DialogContent,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-	AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
 	Tooltip,
@@ -44,8 +33,12 @@ import {
 	TooltipProvider,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Plus, Pencil, Trash2, AlertTriangle, RotateCcw } from "lucide-react";
-import { toast } from "sonner";
+import { handleApiError } from "@/hooks/useApiError";
+import {
+	adminConfigService,
+	type ConfigSchemaItem,
+} from "@/services/adminService";
+import type { SystemConfig } from "@/types/api";
 
 const CATEGORY_LABELS: Record<string, string> = {
 	webdav: "WebDAV",
@@ -54,6 +47,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export default function AdminSettingsPage() {
+	const { t } = useTranslation("admin");
 	const [configs, setConfigs] = useState<SystemConfig[]>([]);
 	const [schemas, setSchemas] = useState<ConfigSchemaItem[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -61,6 +55,7 @@ export default function AdminSettingsPage() {
 	const [editingKey, setEditingKey] = useState<string | null>(null);
 	const [formKey, setFormKey] = useState("");
 	const [formValue, setFormValue] = useState("");
+	const [deleteKey, setDeleteKey] = useState<string | null>(null);
 
 	const load = useCallback(async () => {
 		try {
@@ -88,7 +83,6 @@ export default function AdminSettingsPage() {
 		return m;
 	}, [schemas]);
 
-	// 按 category 分组：系统配置按 category，自定义配置归 "custom"
 	const grouped = useMemo(() => {
 		const groups: Record<string, SystemConfig[]> = {};
 		for (const c of configs) {
@@ -100,7 +94,6 @@ export default function AdminSettingsPage() {
 	}, [configs]);
 
 	const categories = useMemo(() => {
-		// 系统分类排前面，custom 放最后
 		const cats = Object.keys(grouped);
 		const system = cats.filter((c) => c !== "custom").sort();
 		const custom = cats.filter((c) => c === "custom");
@@ -184,7 +177,6 @@ export default function AdminSettingsPage() {
 	const renderValue = (c: SystemConfig) => {
 		const schema = schemaMap.get(c.key);
 
-		// boolean → Switch
 		if (c.value_type === "boolean") {
 			return (
 				<Switch
@@ -194,18 +186,18 @@ export default function AdminSettingsPage() {
 			);
 		}
 
-		// sensitive → 脱敏
 		if (c.is_sensitive) {
-			return <span className="text-muted-foreground">{"•".repeat(8)}</span>;
+			return <span className="text-muted-foreground">{"*".repeat(8)}</span>;
 		}
 
-		// number 或 string → 显示值 + 默认值比对
 		const isDefault = schema && c.value === schema.default_value;
 		return (
 			<span className="font-mono text-sm">
 				{c.value}
 				{isDefault && (
-					<span className="text-muted-foreground ml-1">(default)</span>
+					<span className="text-muted-foreground ml-1">
+						({t("is_default").toLowerCase()})
+					</span>
 				)}
 			</span>
 		);
@@ -220,7 +212,7 @@ export default function AdminSettingsPage() {
 			<TableRow
 				key={c.key}
 				className={
-					c.requires_restart ? "bg-yellow-50/50 dark:bg-yellow-950/10" : ""
+					c.requires_restart ? "bg-yellow-50/50 dark:bg-yellow-950/20" : ""
 				}
 			>
 				<TableCell>
@@ -230,9 +222,9 @@ export default function AdminSettingsPage() {
 							<TooltipProvider>
 								<Tooltip>
 									<TooltipTrigger>
-										<AlertTriangle className="h-3.5 w-3.5 text-yellow-600" />
+										<AlertTriangle className="h-3.5 w-3.5 text-yellow-600 dark:text-yellow-400" />
 									</TooltipTrigger>
-									<TooltipContent>Requires restart</TooltipContent>
+									<TooltipContent>{t("requires_restart")}</TooltipContent>
 								</Tooltip>
 							</TooltipProvider>
 						)}
@@ -269,7 +261,7 @@ export default function AdminSettingsPage() {
 											<Button
 												variant="ghost"
 												size="icon"
-												className="h-8 w-8 text-yellow-600"
+												className="h-8 w-8 text-yellow-600 dark:text-yellow-400"
 												onClick={() => handleReset(c)}
 											/>
 										}
@@ -277,39 +269,22 @@ export default function AdminSettingsPage() {
 										<RotateCcw className="h-3.5 w-3.5" />
 									</TooltipTrigger>
 									<TooltipContent>
-										Reset to default ({schema?.default_value})
+										{t("reset_to_default", {
+											value: schema?.default_value,
+										})}
 									</TooltipContent>
 								</Tooltip>
 							</TooltipProvider>
 						)}
 						{!isSystem && (
-							<AlertDialog>
-								<AlertDialogTrigger
-									render={
-										<Button
-											variant="ghost"
-											size="icon"
-											className="h-8 w-8 text-destructive"
-										/>
-									}
-								>
-									<Trash2 className="h-3.5 w-3.5" />
-								</AlertDialogTrigger>
-								<AlertDialogContent>
-									<AlertDialogHeader>
-										<AlertDialogTitle>Delete "{c.key}"?</AlertDialogTitle>
-										<AlertDialogDescription>
-											This config entry will be permanently removed.
-										</AlertDialogDescription>
-									</AlertDialogHeader>
-									<AlertDialogFooter>
-										<AlertDialogCancel>Cancel</AlertDialogCancel>
-										<AlertDialogAction onClick={() => handleDelete(c.key)}>
-											Delete
-										</AlertDialogAction>
-									</AlertDialogFooter>
-								</AlertDialogContent>
-							</AlertDialog>
+							<Button
+								variant="ghost"
+								size="icon"
+								className="h-8 w-8 text-destructive"
+								onClick={() => setDeleteKey(c.key)}
+							>
+								<Trash2 className="h-3.5 w-3.5" />
+							</Button>
 						)}
 					</div>
 				</TableCell>
@@ -323,10 +298,10 @@ export default function AdminSettingsPage() {
 			<Table>
 				<TableHeader>
 					<TableRow>
-						<TableHead className="w-[40%]">Key</TableHead>
-						<TableHead>Value</TableHead>
-						<TableHead className="w-24">Type</TableHead>
-						<TableHead className="w-28">Actions</TableHead>
+						<TableHead className="w-[40%]">{t("config_key")}</TableHead>
+						<TableHead>{t("config_value")}</TableHead>
+						<TableHead className="w-24">{t("common:type")}</TableHead>
+						<TableHead className="w-28">{t("common:actions")}</TableHead>
 					</TableRow>
 				</TableHeader>
 				<TableBody>{items.map(renderConfigRow)}</TableBody>
@@ -338,19 +313,17 @@ export default function AdminSettingsPage() {
 		<AdminLayout>
 			<div className="p-6 space-y-4">
 				<div className="flex items-center justify-between">
-					<h2 className="text-lg font-semibold">System Settings</h2>
+					<h2 className="text-lg font-semibold">{t("system_settings")}</h2>
 					<Button size="sm" onClick={openCreate}>
 						<Plus className="h-4 w-4 mr-1" />
-						Add Custom Config
+						{t("add_custom_config")}
 					</Button>
 				</div>
 
 				{loading ? (
-					<p className="text-muted-foreground text-center py-8">Loading...</p>
+					<LoadingSpinner text={t("common:loading")} />
 				) : categories.length === 0 ? (
-					<p className="text-muted-foreground text-center py-8">
-						No config entries
-					</p>
+					<EmptyState title={t("no_config")} />
 				) : categories.length === 1 ? (
 					renderCategory(categories[0])
 				) : (
@@ -373,17 +346,32 @@ export default function AdminSettingsPage() {
 					</Tabs>
 				)}
 
+				<ConfirmDialog
+					open={deleteKey !== null}
+					onOpenChange={(open) => {
+						if (!open) setDeleteKey(null);
+					}}
+					title={`${t("common:delete")} "${deleteKey}"?`}
+					description={t("delete_config_desc")}
+					confirmLabel={t("common:delete")}
+					onConfirm={() => {
+						if (deleteKey !== null) handleDelete(deleteKey);
+						setDeleteKey(null);
+					}}
+					variant="destructive"
+				/>
+
 				{/* Create / Edit Dialog */}
 				<Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
 					<DialogContent className="max-w-md">
 						<DialogHeader>
 							<DialogTitle>
-								{editingKey ? "Edit Config" : "Add Custom Config"}
+								{editingKey ? t("edit_config") : t("add_custom_config")}
 							</DialogTitle>
 						</DialogHeader>
 						<form onSubmit={handleSubmit} className="space-y-4">
 							<div className="space-y-2">
-								<Label htmlFor="config-key">Key</Label>
+								<Label htmlFor="config-key">{t("config_key")}</Label>
 								<Input
 									id="config-key"
 									value={formKey}
@@ -399,16 +387,16 @@ export default function AdminSettingsPage() {
 								)}
 							</div>
 							<div className="space-y-2">
-								<Label htmlFor="config-value">Value</Label>
+								<Label htmlFor="config-value">{t("config_value")}</Label>
 								<Input
 									id="config-value"
 									value={formValue}
 									onChange={(e) => setFormValue(e.target.value)}
-									placeholder="Value"
+									placeholder={t("config_value")}
 								/>
 							</div>
 							<Button type="submit" className="w-full">
-								{editingKey ? "Save" : "Create"}
+								{editingKey ? t("common:save") : t("common:create")}
 							</Button>
 						</form>
 					</DialogContent>

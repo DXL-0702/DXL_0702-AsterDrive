@@ -1,6 +1,6 @@
-import { api, ApiError } from "./http";
-import type { FileInfo, FolderInfo, FolderContents } from "@/types/api";
 import { config } from "@/config/app";
+import type { FileInfo, FolderContents, FolderInfo } from "@/types/api";
+import { ApiError, api } from "./http";
 
 export const fileService = {
 	listRoot: () => api.get<FolderContents>("/folders"),

@@ -9,10 +9,22 @@ import {
 	Wifi,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import {
 	Table,
 	TableBody,
@@ -21,14 +33,13 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { handleApiError } from "@/hooks/useApiError";
-import { webdavAccountService } from "@/services/webdavAccountService";
 import { fileService } from "@/services/fileService";
-import type { WebdavAccountInfo, FolderInfo } from "@/types/api";
+import { webdavAccountService } from "@/services/webdavAccountService";
+import type { FolderInfo, WebdavAccountInfo } from "@/types/api";
 
 export default function WebdavAccountsPage() {
+	const { t } = useTranslation();
 	const [accounts, setAccounts] = useState<WebdavAccountInfo[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [creating, setCreating] = useState(false);
@@ -44,6 +55,7 @@ export default function WebdavAccountsPage() {
 	} | null>(null);
 	const [testing, setTesting] = useState(false);
 	const [testResult, setTestResult] = useState<boolean | null>(null);
+	const [deleteId, setDeleteId] = useState<number | null>(null);
 
 	const fetchAccounts = useCallback(async () => {
 		try {
@@ -72,7 +84,7 @@ export default function WebdavAccountsPage() {
 
 	const handleCreate = async () => {
 		if (!newUsername.trim()) {
-			toast.error("Username is required");
+			toast.error(t("username_required"));
 			return;
 		}
 		setCreating(true);
@@ -82,7 +94,10 @@ export default function WebdavAccountsPage() {
 				newPassword.trim() || undefined,
 				selectedFolderId,
 			);
-			setShowPassword({ username: result.username, password: result.password });
+			setShowPassword({
+				username: result.username,
+				password: result.password,
+			});
 			setTestResult(null);
 			setNewUsername("");
 			setNewPassword("");
@@ -125,7 +140,7 @@ export default function WebdavAccountsPage() {
 				showPassword.password,
 			);
 			setTestResult(true);
-			toast.success("Connection test passed");
+			toast.success(t("admin:connection_success"));
 		} catch {
 			setTestResult(false);
 			toast.error("Connection test failed");
@@ -136,18 +151,17 @@ export default function WebdavAccountsPage() {
 
 	const copyToClipboard = (text: string) => {
 		navigator.clipboard.writeText(text);
-		toast.success("Copied to clipboard");
+		toast.success(t("copied_to_clipboard"));
 	};
 
 	return (
-		<AppLayout>
-			<PageHeader title="WebDAV Accounts" />
+		<AppLayout title={t("webdav")}>
 			<div className="flex-1 overflow-auto p-6 space-y-6">
 				{/* Create form */}
 				<div className="border rounded-lg p-4 space-y-4 max-w-lg">
-					<h3 className="font-medium">Create WebDAV Account</h3>
+					<h3 className="font-medium">{t("create_webdav_account")}</h3>
 					<div className="space-y-2">
-						<Label htmlFor="username">Username</Label>
+						<Label htmlFor="username">{t("admin:username")}</Label>
 						<Input
 							id="username"
 							value={newUsername}
@@ -157,9 +171,9 @@ export default function WebdavAccountsPage() {
 					</div>
 					<div className="space-y-2">
 						<Label htmlFor="password">
-							Password{" "}
+							{t("auth:password")}{" "}
 							<span className="text-muted-foreground font-normal">
-								(leave empty to auto-generate)
+								({t("auto_generate_password")})
 							</span>
 						</Label>
 						<Input
@@ -167,37 +181,41 @@ export default function WebdavAccountsPage() {
 							type="password"
 							value={newPassword}
 							onChange={(e) => setNewPassword(e.target.value)}
-							placeholder="Auto-generate 16 chars"
 						/>
 					</div>
 					<div className="space-y-2">
 						<Label htmlFor="rootFolder">
-							Access Scope{" "}
+							{t("access_scope")}{" "}
 							<span className="text-muted-foreground font-normal">
-								(optional, limit to a folder)
+								({t("access_scope_desc")})
 							</span>
 						</Label>
-						<select
-							id="rootFolder"
-							className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors"
-							value={selectedFolderId ?? ""}
-							onChange={(e) =>
-								setSelectedFolderId(
-									e.target.value ? Number(e.target.value) : undefined,
-								)
+						<Select
+							value={
+								selectedFolderId != null ? String(selectedFolderId) : "__all__"
+							}
+							onValueChange={(v) =>
+								setSelectedFolderId(v === "__all__" ? undefined : Number(v))
 							}
 						>
-							<option value="">All files (full access)</option>
-							{folders.map((f) => (
-								<option key={f.id} value={f.id}>
-									/{f.name}
-								</option>
-							))}
-						</select>
+							<SelectTrigger className="w-full">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="__all__">
+									{t("all_files_full_access")}
+								</SelectItem>
+								{folders.map((f) => (
+									<SelectItem key={f.id} value={String(f.id)}>
+										/{f.name}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
 					</div>
 					<Button onClick={handleCreate} disabled={creating}>
 						<Plus className="h-4 w-4 mr-1" />
-						Create
+						{t("create")}
 					</Button>
 				</div>
 
@@ -205,7 +223,7 @@ export default function WebdavAccountsPage() {
 				{showPassword && (
 					<div className="border border-yellow-500 bg-yellow-50 dark:bg-yellow-950 rounded-lg p-4 max-w-lg">
 						<p className="text-sm font-medium mb-2">
-							Save this password now — it won't be shown again:
+							{t("save_password_warning")}
 						</p>
 						<div className="flex items-center gap-2">
 							<code className="flex-1 bg-background px-3 py-2 rounded border font-mono text-sm">
@@ -229,18 +247,18 @@ export default function WebdavAccountsPage() {
 								{testing ? (
 									<Loader2 className="h-4 w-4 mr-1 animate-spin" />
 								) : testResult === true ? (
-									<Check className="h-4 w-4 mr-1 text-green-600" />
+									<Check className="h-4 w-4 mr-1 text-green-600 dark:text-green-400" />
 								) : (
 									<Wifi className="h-4 w-4 mr-1" />
 								)}
-								Test Connection
+								{t("admin:test_connection")}
 							</Button>
 							<Button
 								variant="ghost"
 								size="sm"
 								onClick={() => setShowPassword(null)}
 							>
-								Dismiss
+								{t("dismiss")}
 							</Button>
 						</div>
 					</div>
@@ -248,20 +266,21 @@ export default function WebdavAccountsPage() {
 
 				{/* Accounts list */}
 				{loading ? (
-					<div className="text-muted-foreground">Loading...</div>
+					<LoadingSpinner text={t("loading")} />
 				) : accounts.length === 0 ? (
-					<div className="text-muted-foreground">
-						No WebDAV accounts yet. Create one to connect via WebDAV.
-					</div>
+					<EmptyState
+						title={t("no_webdav_accounts")}
+						description={t("no_webdav_accounts_desc")}
+					/>
 				) : (
 					<Table>
 						<TableHeader>
 							<TableRow>
-								<TableHead>Username</TableHead>
-								<TableHead>Scope</TableHead>
-								<TableHead>Status</TableHead>
-								<TableHead>Created</TableHead>
-								<TableHead className="w-[120px]">Actions</TableHead>
+								<TableHead>{t("admin:username")}</TableHead>
+								<TableHead>{t("access_scope")}</TableHead>
+								<TableHead>{t("status")}</TableHead>
+								<TableHead>{t("created_at")}</TableHead>
+								<TableHead className="w-[120px]">{t("actions")}</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
@@ -276,17 +295,19 @@ export default function WebdavAccountsPage() {
 											</span>
 										) : (
 											<span className="text-muted-foreground text-sm">
-												All files
+												{t("all_files")}
 											</span>
 										)}
 									</TableCell>
 									<TableCell>
 										<span
 											className={
-												acc.is_active ? "text-green-600" : "text-red-500"
+												acc.is_active
+													? "text-green-600 dark:text-green-400"
+													: "text-red-500 dark:text-red-400"
 											}
 										>
-											{acc.is_active ? "Active" : "Disabled"}
+											{acc.is_active ? t("active") : t("disabled_status")}
 										</span>
 									</TableCell>
 									<TableCell className="text-muted-foreground">
@@ -299,15 +320,17 @@ export default function WebdavAccountsPage() {
 												size="icon"
 												className="h-8 w-8"
 												onClick={() => handleToggle(acc.id)}
-												title={acc.is_active ? "Disable" : "Enable"}
+												title={
+													acc.is_active ? t("disabled_status") : t("active")
+												}
 											>
 												<Power className="h-4 w-4" />
 											</Button>
 											<Button
 												variant="ghost"
 												size="icon"
-												className="h-8 w-8"
-												onClick={() => handleDelete(acc.id)}
+												className="h-8 w-8 text-destructive"
+												onClick={() => setDeleteId(acc.id)}
 											>
 												<Trash2 className="h-4 w-4" />
 											</Button>
@@ -321,7 +344,7 @@ export default function WebdavAccountsPage() {
 
 				{/* Connection info */}
 				<div className="border rounded-lg p-4 max-w-lg text-sm text-muted-foreground space-y-1">
-					<p className="font-medium text-foreground">Connection Info</p>
+					<p className="font-medium text-foreground">{t("connection_info")}</p>
 					<p>
 						URL:{" "}
 						<code className="bg-muted px-1 rounded">
@@ -331,6 +354,21 @@ export default function WebdavAccountsPage() {
 					<p>Use your WebDAV username and password to connect.</p>
 				</div>
 			</div>
+
+			<ConfirmDialog
+				open={deleteId !== null}
+				onOpenChange={(open) => {
+					if (!open) setDeleteId(null);
+				}}
+				title={t("are_you_sure")}
+				description={t("cannot_undo")}
+				confirmLabel={t("delete")}
+				onConfirm={() => {
+					if (deleteId !== null) handleDelete(deleteId);
+					setDeleteId(null);
+				}}
+				variant="destructive"
+			/>
 		</AppLayout>
 	);
 }

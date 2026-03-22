@@ -1,5 +1,5 @@
+import type { WebdavAccountCreated, WebdavAccountInfo } from "@/types/api";
 import { api } from "./http";
-import type { WebdavAccountInfo, WebdavAccountCreated } from "@/types/api";
 
 export const webdavAccountService = {
 	list: () => api.get<WebdavAccountInfo[]>("/webdav-accounts"),

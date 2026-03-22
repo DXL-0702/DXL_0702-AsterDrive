@@ -1,7 +1,9 @@
 import { AlertTriangle, Download, FileIcon, Folder, Lock } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -18,6 +20,7 @@ import type { FolderContents, SharePublicInfo } from "@/types/api";
 import { ErrorCode } from "@/types/api";
 
 export default function ShareViewPage() {
+	const { t } = useTranslation();
 	const { token } = useParams<{ token: string }>();
 	const [info, setInfo] = useState<SharePublicInfo | null>(null);
 	const [needsPassword, setNeedsPassword] = useState(false);
@@ -44,21 +47,21 @@ export default function ShareViewPage() {
 		} catch (e) {
 			if (e instanceof ApiError) {
 				if (e.code === ErrorCode.ShareExpired) {
-					setError("This share link has expired.");
+					setError(t("share_expired"));
 				} else if (e.code === ErrorCode.ShareNotFound) {
-					setError("Share link not found.");
+					setError(t("share_not_found"));
 				} else if (e.code === ErrorCode.ShareDownloadLimitReached) {
-					setError("Download limit reached.");
+					setError(t("download_limit_reached"));
 				} else {
 					setError(e.message);
 				}
 			} else {
-				setError("Failed to load share.");
+				setError(t("failed_to_load_share"));
 			}
 		} finally {
 			setLoading(false);
 		}
-	}, [token]);
+	}, [token, t]);
 
 	useEffect(() => {
 		loadInfo();
@@ -71,7 +74,7 @@ export default function ShareViewPage() {
 			await shareService.verifyPassword(token, password);
 			setPasswordVerified(true);
 			setNeedsPassword(false);
-			toast.success("Password verified");
+			toast.success(t("password_verified"));
 
 			if (info?.share_type === "folder") {
 				const contents = await shareService.listContent(token);
@@ -90,19 +93,19 @@ export default function ShareViewPage() {
 
 	if (loading) {
 		return (
-			<div className="min-h-screen flex items-center justify-center">
-				<p className="text-muted-foreground">Loading...</p>
+			<div className="min-h-screen flex items-center justify-center bg-background">
+				<LoadingSpinner text={t("loading")} />
 			</div>
 		);
 	}
 
 	if (error) {
 		return (
-			<div className="min-h-screen flex items-center justify-center">
+			<div className="min-h-screen flex items-center justify-center bg-background">
 				<Card className="w-full max-w-sm">
 					<CardHeader className="text-center">
 						<AlertTriangle className="h-10 w-10 text-destructive mx-auto mb-2" />
-						<CardTitle>Unavailable</CardTitle>
+						<CardTitle>{t("unavailable")}</CardTitle>
 						<CardDescription>{error}</CardDescription>
 					</CardHeader>
 				</Card>
@@ -120,19 +123,19 @@ export default function ShareViewPage() {
 					<CardHeader className="text-center">
 						<Lock className="h-10 w-10 text-muted-foreground mx-auto mb-2" />
 						<CardTitle>{info.name}</CardTitle>
-						<CardDescription>This share is password protected</CardDescription>
+						<CardDescription>{t("password_protected")}</CardDescription>
 					</CardHeader>
 					<CardContent>
 						<form onSubmit={handleVerifyPassword} className="space-y-4">
 							<Input
 								type="password"
-								placeholder="Enter password"
+								placeholder={t("auth:password")}
 								value={password}
 								onChange={(e) => setPassword(e.target.value)}
 								autoFocus
 							/>
 							<Button type="submit" className="w-full">
-								Verify
+								{t("verify")}
 							</Button>
 						</form>
 					</CardContent>
@@ -151,16 +154,21 @@ export default function ShareViewPage() {
 						<CardTitle>{info.name}</CardTitle>
 						<CardDescription>
 							{info.max_downloads > 0
-								? `${info.download_count} / ${info.max_downloads} downloads`
-								: `${info.download_count} downloads`}
+								? t("n_of_m_downloads", {
+										count: info.download_count,
+										max: info.max_downloads,
+									})
+								: t("n_downloads", {
+										count: info.download_count,
+									})}
 							{info.expires_at &&
-								` \u00b7 Expires ${new Date(info.expires_at).toLocaleDateString()}`}
+								` \u00b7 ${t("expires_date", { date: new Date(info.expires_at).toLocaleDateString() })}`}
 						</CardDescription>
 					</CardHeader>
 					<CardContent>
 						<Button className="w-full" onClick={handleDownload}>
 							<Download className="h-4 w-4 mr-2" />
-							Download
+							{t("files:download")}
 						</Button>
 					</CardContent>
 				</Card>
@@ -178,9 +186,9 @@ export default function ShareViewPage() {
 						<CardTitle>{info.name}</CardTitle>
 					</div>
 					<CardDescription>
-						Shared folder
+						{t("shared_folder")}
 						{info.expires_at &&
-							` \u00b7 Expires ${new Date(info.expires_at).toLocaleDateString()}`}
+							` \u00b7 ${t("expires_date", { date: new Date(info.expires_at).toLocaleDateString() })}`}
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -207,12 +215,14 @@ export default function ShareViewPage() {
 							{folderContents.folders.length === 0 &&
 								folderContents.files.length === 0 && (
 									<p className="text-sm text-muted-foreground text-center py-4">
-										Empty folder
+										{t("empty_folder")}
 									</p>
 								)}
 						</div>
 					) : (
-						<p className="text-sm text-muted-foreground">Loading contents...</p>
+						<p className="text-sm text-muted-foreground">
+							{t("loading_contents")}
+						</p>
 					)}
 				</CardContent>
 			</Card>

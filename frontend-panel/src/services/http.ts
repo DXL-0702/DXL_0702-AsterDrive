@@ -1,5 +1,5 @@
-import axios from "axios";
 import type { AxiosInstance } from "axios";
+import axios from "axios";
 import { config } from "@/config/app";
 import type { ApiResponse } from "@/types/api";
 import { ErrorCode } from "@/types/api";

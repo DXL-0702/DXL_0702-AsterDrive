@@ -1,8 +1,11 @@
 import { FileIcon, Folder, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import {
 	Table,
@@ -13,18 +16,20 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
+import { formatDate } from "@/lib/format";
 import { trashService } from "@/services/trashService";
 import type { FileInfo, FolderInfo } from "@/types/api";
 
-function formatDate(dateStr: string | null | undefined): string {
-	if (!dateStr) return "-";
-	return new Date(dateStr).toLocaleDateString();
-}
-
 export default function TrashPage() {
+	const { t } = useTranslation();
 	const [files, setFiles] = useState<FileInfo[]>([]);
 	const [folders, setFolders] = useState<FolderInfo[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [purgeAllOpen, setPurgeAllOpen] = useState(false);
+	const [purgeTarget, setPurgeTarget] = useState<{
+		type: "file" | "folder";
+		id: number;
+	} | null>(null);
 
 	const load = useCallback(async () => {
 		try {
@@ -46,7 +51,7 @@ export default function TrashPage() {
 		try {
 			if (type === "file") await trashService.restoreFile(id);
 			else await trashService.restoreFolder(id);
-			toast.success("Restored");
+			toast.success(t("restored"));
 			load();
 		} catch (err) {
 			handleApiError(err);
@@ -57,7 +62,7 @@ export default function TrashPage() {
 		try {
 			if (type === "file") await trashService.purgeFile(id);
 			else await trashService.purgeFolder(id);
-			toast.success("Permanently deleted");
+			toast.success(t("permanently_deleted"));
 			load();
 		} catch (err) {
 			handleApiError(err);
@@ -67,7 +72,7 @@ export default function TrashPage() {
 	const handlePurgeAll = async () => {
 		try {
 			await trashService.purgeAll();
-			toast.success("Trash emptied");
+			toast.success(t("trash_emptied"));
 			load();
 		} catch (err) {
 			handleApiError(err);
@@ -77,32 +82,37 @@ export default function TrashPage() {
 	const isEmpty = files.length === 0 && folders.length === 0;
 
 	return (
-		<AppLayout>
-			<PageHeader
-				title="Trash"
-				actions={
-					!isEmpty && (
-						<Button variant="destructive" size="sm" onClick={handlePurgeAll}>
-							<Trash2 className="h-4 w-4 mr-1" />
-							Empty Trash
-						</Button>
-					)
-				}
-			/>
+		<AppLayout
+			title={t("trash")}
+			actions={
+				!isEmpty && !loading ? (
+					<Button
+						variant="destructive"
+						size="sm"
+						onClick={() => setPurgeAllOpen(true)}
+					>
+						<Trash2 className="h-4 w-4 mr-1" />
+						{t("admin:empty_trash")}
+					</Button>
+				) : undefined
+			}
+		>
 			<div className="flex-1 overflow-auto p-6">
 				{loading ? (
-					<div className="text-muted-foreground">Loading...</div>
+					<LoadingSpinner text={t("loading")} />
 				) : isEmpty ? (
-					<div className="text-muted-foreground text-center py-12">
-						Trash is empty
-					</div>
+					<EmptyState
+						icon={<Trash2 className="h-10 w-10" />}
+						title={t("admin:trash_empty")}
+						description={t("admin:trash_empty_desc")}
+					/>
 				) : (
 					<Table>
 						<TableHeader>
 							<TableRow>
-								<TableHead className="w-[50%]">Name</TableHead>
-								<TableHead>Deleted</TableHead>
-								<TableHead className="w-[120px]">Actions</TableHead>
+								<TableHead className="w-[50%]">{t("name")}</TableHead>
+								<TableHead>{t("admin:deleted_at")}</TableHead>
+								<TableHead className="w-[120px]">{t("actions")}</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
@@ -113,7 +123,7 @@ export default function TrashPage() {
 										{f.name}
 									</TableCell>
 									<TableCell className="text-muted-foreground">
-										{formatDate(f.deleted_at)}
+										{f.deleted_at ? formatDate(f.deleted_at) : "-"}
 									</TableCell>
 									<TableCell>
 										<div className="flex gap-1">
@@ -121,7 +131,7 @@ export default function TrashPage() {
 												variant="ghost"
 												size="icon"
 												className="h-8 w-8"
-												title="Restore"
+												title={t("admin:restore")}
 												onClick={() => handleRestore("folder", f.id)}
 											>
 												<RotateCcw className="h-4 w-4" />
@@ -130,8 +140,13 @@ export default function TrashPage() {
 												variant="ghost"
 												size="icon"
 												className="h-8 w-8 text-destructive"
-												title="Delete permanently"
-												onClick={() => handlePurge("folder", f.id)}
+												title={t("admin:purge")}
+												onClick={() =>
+													setPurgeTarget({
+														type: "folder",
+														id: f.id,
+													})
+												}
 											>
 												<Trash2 className="h-4 w-4" />
 											</Button>
@@ -146,7 +161,7 @@ export default function TrashPage() {
 										{f.name}
 									</TableCell>
 									<TableCell className="text-muted-foreground">
-										{formatDate(f.deleted_at)}
+										{f.deleted_at ? formatDate(f.deleted_at) : "-"}
 									</TableCell>
 									<TableCell>
 										<div className="flex gap-1">
@@ -154,7 +169,7 @@ export default function TrashPage() {
 												variant="ghost"
 												size="icon"
 												className="h-8 w-8"
-												title="Restore"
+												title={t("admin:restore")}
 												onClick={() => handleRestore("file", f.id)}
 											>
 												<RotateCcw className="h-4 w-4" />
@@ -163,8 +178,13 @@ export default function TrashPage() {
 												variant="ghost"
 												size="icon"
 												className="h-8 w-8 text-destructive"
-												title="Delete permanently"
-												onClick={() => handlePurge("file", f.id)}
+												title={t("admin:purge")}
+												onClick={() =>
+													setPurgeTarget({
+														type: "file",
+														id: f.id,
+													})
+												}
 											>
 												<Trash2 className="h-4 w-4" />
 											</Button>
@@ -176,6 +196,33 @@ export default function TrashPage() {
 					</Table>
 				)}
 			</div>
+
+			<ConfirmDialog
+				open={purgeAllOpen}
+				onOpenChange={setPurgeAllOpen}
+				title={t("are_you_sure")}
+				description={t("admin:confirm_empty_trash")}
+				confirmLabel={t("admin:empty_trash")}
+				onConfirm={handlePurgeAll}
+				variant="destructive"
+			/>
+
+			<ConfirmDialog
+				open={purgeTarget !== null}
+				onOpenChange={(open) => {
+					if (!open) setPurgeTarget(null);
+				}}
+				title={t("are_you_sure")}
+				description={t("admin:confirm_purge")}
+				confirmLabel={t("admin:purge")}
+				onConfirm={() => {
+					if (purgeTarget) {
+						handlePurge(purgeTarget.type, purgeTarget.id);
+					}
+					setPurgeTarget(null);
+				}}
+				variant="destructive"
+			/>
 		</AppLayout>
 	);
 }

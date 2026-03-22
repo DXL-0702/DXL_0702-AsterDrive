@@ -1,68 +1,54 @@
-import { HardDrive, Search, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { FolderTree } from "@/components/folders/FolderTree";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
+import { useCallback, useState } from "react";
+import { Sidebar } from "@/components/layout/Sidebar";
+import { TopBar } from "@/components/layout/TopBar";
+import { STORAGE_KEYS } from "@/config/app";
 
 interface AppLayoutProps {
 	children: ReactNode;
+	title?: string;
+	actions?: ReactNode;
 }
 
-export function AppLayout({ children }: AppLayoutProps) {
-	const location = useLocation();
+function getInitialCollapsed(): boolean {
+	if (typeof window === "undefined") return false;
+	return localStorage.getItem(STORAGE_KEYS.sidebarCollapsed) === "true";
+}
+
+export function AppLayout({ children, title, actions }: AppLayoutProps) {
+	const [collapsed, setCollapsed] = useState(getInitialCollapsed);
+	const [mobileOpen, setMobileOpen] = useState(false);
+
+	const handleToggle = useCallback(() => {
+		setCollapsed((prev) => {
+			const next = !prev;
+			localStorage.setItem(STORAGE_KEYS.sidebarCollapsed, String(next));
+			return next;
+		});
+	}, []);
+
+	const handleMobileToggle = useCallback(() => {
+		setMobileOpen((prev) => !prev);
+	}, []);
+
+	const handleMobileClose = useCallback(() => {
+		setMobileOpen(false);
+	}, []);
 
 	return (
 		<div className="h-screen flex flex-col">
+			<TopBar
+				onSidebarToggle={handleMobileToggle}
+				title={title}
+				actions={actions}
+			/>
 			<div className="flex flex-1 overflow-hidden">
-				{/* Left sidebar */}
-				<aside className="w-60 border-r flex flex-col">
-					<div className="p-3 font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-						Folders
-					</div>
-					<Separator />
-					<ScrollArea className="flex-1">
-						<FolderTree />
-					</ScrollArea>
-					<Separator />
-					<div className="p-2 space-y-1">
-						<Link
-							to="/trash"
-							className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
-								location.pathname === "/trash"
-									? "bg-accent text-accent-foreground"
-									: "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-							}`}
-						>
-							<Trash2 className="h-4 w-4" />
-							Trash
-						</Link>
-						<Link
-							to="/settings/webdav"
-							className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
-								location.pathname === "/settings/webdav"
-									? "bg-accent text-accent-foreground"
-									: "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-							}`}
-						>
-							<HardDrive className="h-4 w-4" />
-							WebDAV
-						</Link>
-						<Link
-							to="/search"
-							className={`flex items-center gap-2 px-3 py-2 text-sm rounded-md transition-colors ${
-								location.pathname === "/search"
-									? "bg-accent text-accent-foreground"
-									: "text-muted-foreground hover:text-foreground hover:bg-accent/50"
-							}`}
-						>
-							<Search className="h-4 w-4" />
-							Search
-						</Link>
-					</div>
-				</aside>
-
-				{/* Right content */}
+				<Sidebar
+					collapsed={collapsed}
+					onToggle={handleToggle}
+					mobileOpen={mobileOpen}
+					onMobileClose={handleMobileClose}
+				/>
 				<main className="flex-1 flex flex-col overflow-hidden">{children}</main>
 			</div>
 		</div>

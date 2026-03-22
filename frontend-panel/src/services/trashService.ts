@@ -1,5 +1,5 @@
-import { api } from "./http";
 import type { TrashContents } from "@/types/api";
+import { api } from "./http";
 
 export const trashService = {
 	list: () => api.get<TrashContents>("/trash"),

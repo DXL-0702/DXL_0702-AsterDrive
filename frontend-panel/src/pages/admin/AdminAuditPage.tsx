@@ -1,9 +1,19 @@
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ScrollText } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import {
 	Table,
 	TableBody,
@@ -13,19 +23,17 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
+import { formatDateAbsolute } from "@/lib/format";
 import type { AuditLogEntry } from "@/services/auditService";
 import { auditService } from "@/services/auditService";
 
-function formatDate(dateStr: string): string {
-	return new Date(dateStr).toLocaleString();
-}
-
 export default function AdminAuditPage() {
+	const { t } = useTranslation("admin");
 	const [items, setItems] = useState<AuditLogEntry[]>([]);
 	const [total, setTotal] = useState(0);
 	const [offset, setOffset] = useState(0);
 	const [actionFilter, setActionFilter] = useState("");
-	const [entityTypeFilter, setEntityTypeFilter] = useState("");
+	const [entityTypeFilter, setEntityTypeFilter] = useState("__all__");
 	const [loading, setLoading] = useState(true);
 	const limit = 20;
 
@@ -34,7 +42,8 @@ export default function AdminAuditPage() {
 		try {
 			const page = await auditService.list({
 				action: actionFilter || undefined,
-				entity_type: entityTypeFilter || undefined,
+				entity_type:
+					entityTypeFilter === "__all__" ? undefined : entityTypeFilter,
 				limit,
 				offset,
 			});
@@ -57,10 +66,10 @@ export default function AdminAuditPage() {
 	return (
 		<AdminLayout>
 			<div className="p-4 space-y-4">
-				<h2 className="text-lg font-semibold">Audit Log</h2>
+				<h2 className="text-lg font-semibold">{t("audit_log")}</h2>
 				<div className="flex gap-2">
 					<Input
-						placeholder="Filter by action..."
+						placeholder={t("audit_filter_action")}
 						value={actionFilter}
 						onChange={(e) => {
 							setActionFilter(e.target.value);
@@ -68,71 +77,78 @@ export default function AdminAuditPage() {
 						}}
 						className="max-w-xs"
 					/>
-					<select
+					<Select
 						value={entityTypeFilter}
-						onChange={(e) => {
-							setEntityTypeFilter(e.target.value);
+						onValueChange={(v) => {
+							if (v) setEntityTypeFilter(v);
 							setOffset(0);
 						}}
-						className="border rounded-md px-3 py-2 text-sm bg-background"
 					>
-						<option value="">All types</option>
-						<option value="file">File</option>
-						<option value="folder">Folder</option>
-					</select>
+						<SelectTrigger className="w-[150px]">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							<SelectItem value="__all__">{t("audit_all_types")}</SelectItem>
+							<SelectItem value="file">{t("common:file")}</SelectItem>
+							<SelectItem value="folder">{t("common:folder")}</SelectItem>
+						</SelectContent>
+					</Select>
 				</div>
 
-				<ScrollArea className="flex-1">
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead>Time</TableHead>
-								<TableHead>User</TableHead>
-								<TableHead>Action</TableHead>
-								<TableHead>Entity</TableHead>
-								<TableHead>Name</TableHead>
-								<TableHead>IP</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{items.map((item) => (
-								<TableRow key={item.id}>
-									<TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-										{formatDate(item.created_at)}
-									</TableCell>
-									<TableCell>{item.user_id}</TableCell>
-									<TableCell>
-										<span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
-											{item.action}
-										</span>
-									</TableCell>
-									<TableCell className="text-muted-foreground">
-										{item.entity_type ?? "---"}
-									</TableCell>
-									<TableCell>{item.entity_name ?? "---"}</TableCell>
-									<TableCell className="text-xs text-muted-foreground">
-										{item.ip_address ?? "---"}
-									</TableCell>
-								</TableRow>
-							))}
-							{!loading && items.length === 0 && (
+				{loading ? (
+					<LoadingSpinner text={t("common:loading")} />
+				) : items.length === 0 ? (
+					<EmptyState
+						icon={<ScrollText className="h-10 w-10" />}
+						title={t("no_audit_logs")}
+					/>
+				) : (
+					<ScrollArea className="flex-1">
+						<Table>
+							<TableHeader>
 								<TableRow>
-									<TableCell
-										colSpan={6}
-										className="text-center py-8 text-muted-foreground"
-									>
-										No audit log entries
-									</TableCell>
+									<TableHead>{t("audit_time")}</TableHead>
+									<TableHead>{t("audit_user")}</TableHead>
+									<TableHead>{t("audit_action")}</TableHead>
+									<TableHead>{t("audit_entity")}</TableHead>
+									<TableHead>{t("common:name")}</TableHead>
+									<TableHead>{t("audit_ip")}</TableHead>
 								</TableRow>
-							)}
-						</TableBody>
-					</Table>
-				</ScrollArea>
+							</TableHeader>
+							<TableBody>
+								{items.map((item) => (
+									<TableRow key={item.id}>
+										<TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+											{formatDateAbsolute(item.created_at)}
+										</TableCell>
+										<TableCell>{item.user_id}</TableCell>
+										<TableCell>
+											<span className="inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-950 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
+												{item.action}
+											</span>
+										</TableCell>
+										<TableCell className="text-muted-foreground">
+											{item.entity_type ?? "---"}
+										</TableCell>
+										<TableCell>{item.entity_name ?? "---"}</TableCell>
+										<TableCell className="text-xs text-muted-foreground">
+											{item.ip_address ?? "---"}
+										</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+					</ScrollArea>
+				)}
 
 				{totalPages > 1 && (
 					<div className="flex items-center justify-between">
 						<span className="text-sm text-muted-foreground">
-							{total} entries, page {currentPage} of {totalPages}
+							{t("entries_page", {
+								total,
+								current: currentPage,
+								pages: totalPages,
+							})}
 						</span>
 						<div className="flex gap-1">
 							<Button

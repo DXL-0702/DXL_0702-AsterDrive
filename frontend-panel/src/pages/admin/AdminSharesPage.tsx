@@ -1,18 +1,11 @@
-import { ExternalLink, Trash2 } from "lucide-react";
+import { ExternalLink, Link2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { AdminLayout } from "@/components/layout/AdminLayout";
-import {
-	AlertDialog,
-	AlertDialogAction,
-	AlertDialogCancel,
-	AlertDialogContent,
-	AlertDialogDescription,
-	AlertDialogFooter,
-	AlertDialogHeader,
-	AlertDialogTitle,
-	AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -29,8 +22,10 @@ import { api } from "@/services/http";
 import type { ShareInfo } from "@/types/api";
 
 export default function AdminSharesPage() {
+	const { t } = useTranslation("admin");
 	const [shares, setShares] = useState<ShareInfo[]>([]);
 	const [loading, setLoading] = useState(true);
+	const [deleteId, setDeleteId] = useState<number | null>(null);
 
 	const load = useCallback(async () => {
 		try {
@@ -64,45 +59,40 @@ export default function AdminSharesPage() {
 	const isLimitReached = (s: ShareInfo) =>
 		s.max_downloads > 0 && s.download_count >= s.max_downloads;
 
+	const deleteToken =
+		deleteId !== null
+			? (shares.find((s) => s.id === deleteId)?.token ?? "")
+			: "";
+
 	return (
 		<AdminLayout>
 			<div className="p-6 space-y-4">
-				<h2 className="text-lg font-semibold">Shares</h2>
-				<ScrollArea className="flex-1">
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead className="w-16">ID</TableHead>
-								<TableHead>Token</TableHead>
-								<TableHead>User</TableHead>
-								<TableHead>Type</TableHead>
-								<TableHead>Status</TableHead>
-								<TableHead>Downloads</TableHead>
-								<TableHead>Created</TableHead>
-								<TableHead className="w-20">Actions</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{loading ? (
+				<h2 className="text-lg font-semibold">{t("shares")}</h2>
+				{loading ? (
+					<LoadingSpinner text={t("common:loading")} />
+				) : shares.length === 0 ? (
+					<EmptyState
+						icon={<Link2 className="h-10 w-10" />}
+						title={t("no_shares")}
+						description={t("no_shares_desc")}
+					/>
+				) : (
+					<ScrollArea className="flex-1">
+						<Table>
+							<TableHeader>
 								<TableRow>
-									<TableCell
-										colSpan={8}
-										className="text-center text-muted-foreground"
-									>
-										Loading...
-									</TableCell>
+									<TableHead className="w-16">{t("id")}</TableHead>
+									<TableHead>Token</TableHead>
+									<TableHead>{t("audit_user")}</TableHead>
+									<TableHead>{t("common:type")}</TableHead>
+									<TableHead>{t("common:status")}</TableHead>
+									<TableHead>Downloads</TableHead>
+									<TableHead>{t("common:created_at")}</TableHead>
+									<TableHead className="w-20">{t("common:actions")}</TableHead>
 								</TableRow>
-							) : shares.length === 0 ? (
-								<TableRow>
-									<TableCell
-										colSpan={8}
-										className="text-center text-muted-foreground"
-									>
-										No shares
-									</TableCell>
-								</TableRow>
-							) : (
-								shares.map((s) => (
+							</TableHeader>
+							<TableBody>
+								{shares.map((s) => (
 									<TableRow key={s.id}>
 										<TableCell className="font-mono text-xs">{s.id}</TableCell>
 										<TableCell>
@@ -119,30 +109,32 @@ export default function AdminSharesPage() {
 										<TableCell className="text-xs">#{s.user_id}</TableCell>
 										<TableCell>
 											<Badge variant="outline">
-												{s.file_id != null ? "File" : "Folder"}
+												{s.file_id != null
+													? t("common:file")
+													: t("common:folder")}
 											</Badge>
 										</TableCell>
 										<TableCell>
 											{isExpired(s) ? (
 												<Badge
 													variant="outline"
-													className="text-red-600 border-red-600"
+													className="text-red-600 dark:text-red-400 border-red-600 dark:border-red-400"
 												>
-													Expired
+													{t("common:expired")}
 												</Badge>
 											) : isLimitReached(s) ? (
 												<Badge
 													variant="outline"
-													className="text-orange-600 border-orange-600"
+													className="text-orange-600 dark:text-orange-400 border-orange-600 dark:border-orange-400"
 												>
-													Limit
+													{t("limit_reached")}
 												</Badge>
 											) : (
 												<Badge
 													variant="outline"
-													className="text-green-600 border-green-600"
+													className="text-green-600 dark:text-green-400 border-green-600 dark:border-green-400"
 												>
-													Active
+													{t("common:active")}
 												</Badge>
 											)}
 										</TableCell>
@@ -154,45 +146,37 @@ export default function AdminSharesPage() {
 											{new Date(s.created_at).toLocaleDateString()}
 										</TableCell>
 										<TableCell>
-											<AlertDialog>
-												<AlertDialogTrigger
-													render={
-														<Button
-															variant="ghost"
-															size="icon"
-															className="h-8 w-8 text-destructive"
-														/>
-													}
-												>
-													<Trash2 className="h-3.5 w-3.5" />
-												</AlertDialogTrigger>
-												<AlertDialogContent>
-													<AlertDialogHeader>
-														<AlertDialogTitle>
-															Delete share "{s.token}"?
-														</AlertDialogTitle>
-														<AlertDialogDescription>
-															The share link will stop working immediately.
-														</AlertDialogDescription>
-													</AlertDialogHeader>
-													<AlertDialogFooter>
-														<AlertDialogCancel>Cancel</AlertDialogCancel>
-														<AlertDialogAction
-															onClick={() => handleDelete(s.id)}
-														>
-															Delete
-														</AlertDialogAction>
-													</AlertDialogFooter>
-												</AlertDialogContent>
-											</AlertDialog>
+											<Button
+												variant="ghost"
+												size="icon"
+												className="h-8 w-8 text-destructive"
+												onClick={() => setDeleteId(s.id)}
+											>
+												<Trash2 className="h-3.5 w-3.5" />
+											</Button>
 										</TableCell>
 									</TableRow>
-								))
-							)}
-						</TableBody>
-					</Table>
-				</ScrollArea>
+								))}
+							</TableBody>
+						</Table>
+					</ScrollArea>
+				)}
 			</div>
+
+			<ConfirmDialog
+				open={deleteId !== null}
+				onOpenChange={(open) => {
+					if (!open) setDeleteId(null);
+				}}
+				title={`${t("common:delete")} "${deleteToken}"?`}
+				description={t("delete_share_desc")}
+				confirmLabel={t("common:delete")}
+				onConfirm={() => {
+					if (deleteId !== null) handleDelete(deleteId);
+					setDeleteId(null);
+				}}
+				variant="destructive"
+			/>
 		</AdminLayout>
 	);
 }

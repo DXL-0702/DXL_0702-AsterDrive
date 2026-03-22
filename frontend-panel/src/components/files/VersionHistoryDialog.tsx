@@ -18,8 +18,8 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
-import { fileService } from "@/services/fileService";
 import type { FileVersion } from "@/services/fileService";
+import { fileService } from "@/services/fileService";
 
 function formatSize(bytes: number): string {
 	if (bytes < 1024) return `${bytes} B`;

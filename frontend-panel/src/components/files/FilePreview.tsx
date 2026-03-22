@@ -1,10 +1,10 @@
-import { useEffect, useState, useCallback } from "react";
-import { X, Pencil, Save, Undo2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { fileService } from "@/services/fileService";
-import { handleApiError } from "@/hooks/useApiError";
-import type { FileInfo } from "@/types/api";
+import { Pencil, Save, Undo2, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { handleApiError } from "@/hooks/useApiError";
+import { fileService } from "@/services/fileService";
+import type { FileInfo } from "@/types/api";
 
 interface FilePreviewProps {
 	file: FileInfo;

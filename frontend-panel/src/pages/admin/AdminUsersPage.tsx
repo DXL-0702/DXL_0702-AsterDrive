@@ -1,6 +1,9 @@
 import { HardDrive, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { EmptyState } from "@/components/common/EmptyState";
+import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,6 +34,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
+import { formatBytes } from "@/lib/format";
 import {
 	adminPolicyService,
 	adminUserPolicyService,
@@ -44,14 +48,6 @@ import type {
 	UserStoragePolicy,
 } from "@/types/api";
 
-function formatBytes(bytes: number): string {
-	if (bytes === 0) return "0 B";
-	const k = 1024;
-	const sizes = ["B", "KB", "MB", "GB", "TB"];
-	const i = Math.floor(Math.log(bytes) / Math.log(k));
-	return `${(bytes / k ** i).toFixed(1)} ${sizes[i]}`;
-}
-
 function QuotaCell({
 	user,
 	onUpdate,
@@ -59,6 +55,7 @@ function QuotaCell({
 	user: UserInfo;
 	onUpdate: (id: number, quota: number) => void;
 }) {
+	const { t } = useTranslation();
 	const [editing, setEditing] = useState(false);
 	const [value, setValue] = useState("");
 
@@ -106,7 +103,7 @@ function QuotaCell({
 		>
 			<div className="text-xs">
 				{formatBytes(used)}
-				{quota > 0 ? ` / ${formatBytes(quota)}` : " / Unlimited"}
+				{quota > 0 ? ` / ${formatBytes(quota)}` : ` / ${t("unlimited")}`}
 			</div>
 			{quota > 0 && <Progress value={pct} className="h-1.5 mt-1" />}
 		</button>
@@ -122,6 +119,7 @@ function UserPolicyDialog({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 }) {
+	const { t } = useTranslation("admin");
 	const [assignments, setAssignments] = useState<UserStoragePolicy[]>([]);
 	const [policies, setPolicies] = useState<StoragePolicy[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -170,7 +168,7 @@ function UserPolicyDialog({
 			setAddPolicyId(null);
 			setAddQuota("");
 			setAddDefault(false);
-			toast.success("Policy assigned");
+			toast.success(t("policy_assigned"));
 		} catch (e) {
 			handleApiError(e);
 		}
@@ -199,7 +197,7 @@ function UserPolicyDialog({
 		try {
 			await adminUserPolicyService.remove(userId, id);
 			setAssignments((prev) => prev.filter((a) => a.id !== id));
-			toast.success("Assignment removed");
+			toast.success(t("assignment_removed"));
 		} catch (e) {
 			handleApiError(e);
 		}
@@ -214,17 +212,17 @@ function UserPolicyDialog({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="max-w-lg">
 				<DialogHeader>
-					<DialogTitle>Storage Policy Assignments</DialogTitle>
+					<DialogTitle>{t("storage_policy_assignments")}</DialogTitle>
 				</DialogHeader>
 
 				{loading ? (
-					<p className="text-sm text-muted-foreground">Loading...</p>
+					<LoadingSpinner />
 				) : (
 					<div className="space-y-4">
 						{/* Existing assignments */}
 						{assignments.length === 0 ? (
 							<p className="text-sm text-muted-foreground">
-								No policies assigned. Using system default.
+								{t("no_policies_assigned")}
 							</p>
 						) : (
 							<div className="space-y-2">
@@ -238,16 +236,16 @@ function UserPolicyDialog({
 												{policyName(a.policy_id)}
 											</div>
 											<div className="text-xs text-muted-foreground">
-												Quota:{" "}
+												{t("quota")}:{" "}
 												{a.quota_bytes > 0
 													? formatBytes(a.quota_bytes)
-													: "Unlimited"}
+													: t("common:unlimited")}
 											</div>
 										</div>
 										<div className="flex items-center gap-2">
 											{a.is_default && (
-												<Badge className="bg-blue-100 text-blue-700 border-blue-300">
-													Default
+												<Badge className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
+													{t("is_default")}
 												</Badge>
 											)}
 											<Button
@@ -255,7 +253,7 @@ function UserPolicyDialog({
 												size="sm"
 												onClick={() => handleToggleDefault(a)}
 											>
-												{a.is_default ? "Unset default" : "Set default"}
+												{a.is_default ? t("unset_default") : t("set_default")}
 											</Button>
 											<Button
 												variant="ghost"
@@ -276,14 +274,14 @@ function UserPolicyDialog({
 							<div className="border-t pt-4 space-y-3">
 								<Label className="text-sm font-medium">
 									<Plus className="h-3.5 w-3.5 inline mr-1" />
-									Assign Policy
+									{t("assign_policy")}
 								</Label>
 								<Select
 									value={addPolicyId != null ? String(addPolicyId) : ""}
 									onValueChange={(v) => setAddPolicyId(v ? Number(v) : null)}
 								>
 									<SelectTrigger>
-										<SelectValue placeholder="Select policy..." />
+										<SelectValue placeholder={t("select_policy")} />
 									</SelectTrigger>
 									<SelectContent>
 										{availablePolicies.map((p) => (
@@ -296,7 +294,7 @@ function UserPolicyDialog({
 								<div className="flex items-center gap-3">
 									<div className="flex-1">
 										<Input
-											placeholder="Quota (MB, 0=unlimited)"
+											placeholder={`${t("quota")} (MB, 0=${t("common:unlimited").toLowerCase()})`}
 											value={addQuota}
 											onChange={(e) => setAddQuota(e.target.value)}
 										/>
@@ -306,7 +304,7 @@ function UserPolicyDialog({
 											checked={addDefault}
 											onCheckedChange={setAddDefault}
 										/>
-										<span className="text-xs">Default</span>
+										<span className="text-xs">{t("is_default")}</span>
 									</div>
 								</div>
 								<Button
@@ -315,7 +313,7 @@ function UserPolicyDialog({
 									disabled={!addPolicyId}
 									onClick={handleAssign}
 								>
-									Assign
+									{t("common:confirm")}
 								</Button>
 							</div>
 						)}
@@ -327,6 +325,7 @@ function UserPolicyDialog({
 }
 
 export default function AdminUsersPage() {
+	const { t } = useTranslation("admin");
 	const [users, setUsers] = useState<UserInfo[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [policyDialogUserId, setPolicyDialogUserId] = useState<number | null>(
@@ -371,7 +370,9 @@ export default function AdminUsersPage() {
 
 	const updateQuota = async (id: number, storage_quota: number) => {
 		try {
-			const updated = await adminUserService.update(id, { storage_quota });
+			const updated = await adminUserService.update(id, {
+				storage_quota,
+			});
 			setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
 			toast.success("Quota updated");
 		} catch (e) {
@@ -382,42 +383,28 @@ export default function AdminUsersPage() {
 	return (
 		<AdminLayout>
 			<div className="p-6 space-y-4">
-				<h2 className="text-lg font-semibold">Users</h2>
-				<ScrollArea className="flex-1">
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead className="w-16">ID</TableHead>
-								<TableHead>Username</TableHead>
-								<TableHead>Email</TableHead>
-								<TableHead className="w-32">Role</TableHead>
-								<TableHead className="w-32">Status</TableHead>
-								<TableHead className="w-40">Storage</TableHead>
-								<TableHead className="w-24">Policies</TableHead>
-								<TableHead>Created</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{loading ? (
+				<h2 className="text-lg font-semibold">{t("users")}</h2>
+				{loading ? (
+					<LoadingSpinner text={t("common:loading")} />
+				) : users.length === 0 ? (
+					<EmptyState title={t("no_users")} />
+				) : (
+					<ScrollArea className="flex-1">
+						<Table>
+							<TableHeader>
 								<TableRow>
-									<TableCell
-										colSpan={8}
-										className="text-center text-muted-foreground"
-									>
-										Loading...
-									</TableCell>
+									<TableHead className="w-16">{t("id")}</TableHead>
+									<TableHead>{t("username")}</TableHead>
+									<TableHead>{t("email")}</TableHead>
+									<TableHead className="w-32">{t("role")}</TableHead>
+									<TableHead className="w-32">{t("common:status")}</TableHead>
+									<TableHead className="w-40">{t("storage")}</TableHead>
+									<TableHead className="w-24">{t("policies")}</TableHead>
+									<TableHead>{t("common:created_at")}</TableHead>
 								</TableRow>
-							) : users.length === 0 ? (
-								<TableRow>
-									<TableCell
-										colSpan={8}
-										className="text-center text-muted-foreground"
-									>
-										No users
-									</TableCell>
-								</TableRow>
-							) : (
-								users.map((user) => (
+							</TableHeader>
+							<TableBody>
+								{users.map((user) => (
 									<TableRow key={user.id}>
 										<TableCell className="font-mono text-xs">
 											{user.id}
@@ -458,17 +445,17 @@ export default function AdminUsersPage() {
 													<SelectItem value="active">
 														<Badge
 															variant="outline"
-															className="text-green-600 border-green-600"
+															className="text-green-600 dark:text-green-400 border-green-600 dark:border-green-400"
 														>
-															Active
+															{t("common:active")}
 														</Badge>
 													</SelectItem>
 													<SelectItem value="disabled">
 														<Badge
 															variant="outline"
-															className="text-red-600 border-red-600"
+															className="text-red-600 dark:text-red-400 border-red-600 dark:border-red-400"
 														>
-															Disabled
+															{t("common:disabled_status")}
 														</Badge>
 													</SelectItem>
 												</SelectContent>
@@ -485,18 +472,18 @@ export default function AdminUsersPage() {
 												onClick={() => setPolicyDialogUserId(user.id)}
 											>
 												<HardDrive className="h-3.5 w-3.5 mr-1" />
-												Manage
+												{t("common:manage")}
 											</Button>
 										</TableCell>
 										<TableCell className="text-muted-foreground text-xs">
 											{new Date(user.created_at).toLocaleDateString()}
 										</TableCell>
 									</TableRow>
-								))
-							)}
-						</TableBody>
-					</Table>
-				</ScrollArea>
+								))}
+							</TableBody>
+						</Table>
+					</ScrollArea>
+				)}
 			</div>
 			{policyDialogUserId !== null && (
 				<UserPolicyDialog

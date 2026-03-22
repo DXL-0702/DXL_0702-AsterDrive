@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { STORAGE_KEYS } from "@/config/app";
 import { fileService } from "@/services/fileService";
 import type { FileInfo, FolderInfo } from "@/types/api";
 
@@ -7,18 +8,57 @@ interface BreadcrumbItem {
 	name: string;
 }
 
+type ViewMode = "grid" | "list";
+type SortBy = "name" | "date" | "size" | "type";
+type SortOrder = "asc" | "desc";
+
+function getStored<T extends string>(key: string, fallback: T): T {
+	if (typeof window === "undefined") return fallback;
+	return (localStorage.getItem(key) as T) || fallback;
+}
+
 interface FileState {
+	// Navigation
 	currentFolderId: number | null;
+	breadcrumb: BreadcrumbItem[];
+
+	// Data
 	folders: FolderInfo[];
 	files: FileInfo[];
-	breadcrumb: BreadcrumbItem[];
 	loading: boolean;
+
+	// View preferences (persisted)
+	viewMode: ViewMode;
+	sortBy: SortBy;
+	sortOrder: SortOrder;
+
+	// Selection
+	selectedFileIds: Set<number>;
+	selectedFolderIds: Set<number>;
+
+	// Navigation actions
 	navigateTo: (folderId: number | null, folderName?: string) => Promise<void>;
 	refresh: () => Promise<void>;
+
+	// View actions
+	setViewMode: (mode: ViewMode) => void;
+	setSortBy: (sortBy: SortBy) => void;
+	toggleSortOrder: () => void;
+
+	// Selection actions
+	toggleFileSelection: (id: number) => void;
+	toggleFolderSelection: (id: number) => void;
+	selectAll: () => void;
+	clearSelection: () => void;
+	selectionCount: () => number;
+
+	// CRUD actions
 	createFolder: (name: string) => Promise<void>;
 	deleteFile: (id: number) => Promise<void>;
 	deleteFolder: (id: number) => Promise<void>;
 }
+
+export type { BreadcrumbItem, SortBy, SortOrder, ViewMode };
 
 export const useFileStore = create<FileState>((set, get) => ({
 	currentFolderId: null,
@@ -27,8 +67,19 @@ export const useFileStore = create<FileState>((set, get) => ({
 	breadcrumb: [{ id: null, name: "Root" }],
 	loading: false,
 
+	viewMode: getStored(STORAGE_KEYS.viewMode, "list"),
+	sortBy: getStored(STORAGE_KEYS.sortBy, "name"),
+	sortOrder: getStored(STORAGE_KEYS.sortOrder, "asc"),
+
+	selectedFileIds: new Set(),
+	selectedFolderIds: new Set(),
+
 	navigateTo: async (folderId, folderName) => {
-		set({ loading: true });
+		set({
+			loading: true,
+			selectedFileIds: new Set(),
+			selectedFolderIds: new Set(),
+		});
 		try {
 			const contents =
 				folderId === null
@@ -50,7 +101,10 @@ export const useFileStore = create<FileState>((set, get) => ({
 					// Going deeper
 					newBreadcrumb = [
 						...breadcrumb,
-						{ id: folderId, name: folderName || `Folder ${folderId}` },
+						{
+							id: folderId,
+							name: folderName || `Folder ${folderId}`,
+						},
 					];
 				}
 			}
@@ -69,9 +123,75 @@ export const useFileStore = create<FileState>((set, get) => ({
 	},
 
 	refresh: async () => {
-		const { currentFolderId, navigateTo, breadcrumb } = get();
-		const currentName = breadcrumb[breadcrumb.length - 1]?.name;
-		await navigateTo(currentFolderId, currentName);
+		const { currentFolderId } = get();
+		set({ loading: true });
+		try {
+			const contents =
+				currentFolderId === null
+					? await fileService.listRoot()
+					: await fileService.listFolder(currentFolderId);
+			set({
+				folders: contents.folders,
+				files: contents.files,
+				loading: false,
+			});
+		} catch (error) {
+			set({ loading: false });
+			throw error;
+		}
+	},
+
+	setViewMode: (mode) => {
+		localStorage.setItem(STORAGE_KEYS.viewMode, mode);
+		set({ viewMode: mode });
+	},
+
+	setSortBy: (sortBy) => {
+		localStorage.setItem(STORAGE_KEYS.sortBy, sortBy);
+		set({ sortBy });
+	},
+
+	toggleSortOrder: () => {
+		const newOrder = get().sortOrder === "asc" ? "desc" : "asc";
+		localStorage.setItem(STORAGE_KEYS.sortOrder, newOrder);
+		set({ sortOrder: newOrder });
+	},
+
+	toggleFileSelection: (id) => {
+		const next = new Set(get().selectedFileIds);
+		if (next.has(id)) {
+			next.delete(id);
+		} else {
+			next.add(id);
+		}
+		set({ selectedFileIds: next });
+	},
+
+	toggleFolderSelection: (id) => {
+		const next = new Set(get().selectedFolderIds);
+		if (next.has(id)) {
+			next.delete(id);
+		} else {
+			next.add(id);
+		}
+		set({ selectedFolderIds: next });
+	},
+
+	selectAll: () => {
+		const { files, folders } = get();
+		set({
+			selectedFileIds: new Set(files.map((f) => f.id)),
+			selectedFolderIds: new Set(folders.map((f) => f.id)),
+		});
+	},
+
+	clearSelection: () => {
+		set({ selectedFileIds: new Set(), selectedFolderIds: new Set() });
+	},
+
+	selectionCount: () => {
+		const { selectedFileIds, selectedFolderIds } = get();
+		return selectedFileIds.size + selectedFolderIds.size;
 	},
 
 	createFolder: async (name) => {
@@ -82,11 +202,18 @@ export const useFileStore = create<FileState>((set, get) => ({
 
 	deleteFile: async (id) => {
 		await fileService.deleteFile(id);
+		// Remove from selection
+		const next = new Set(get().selectedFileIds);
+		next.delete(id);
+		set({ selectedFileIds: next });
 		await get().refresh();
 	},
 
 	deleteFolder: async (id) => {
 		await fileService.deleteFolder(id);
+		const next = new Set(get().selectedFolderIds);
+		next.delete(id);
+		set({ selectedFolderIds: next });
 		await get().refresh();
 	},
 }));
