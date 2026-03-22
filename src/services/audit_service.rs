@@ -95,7 +95,7 @@ pub async fn query(
     limit: u64,
     offset: u64,
 ) -> Result<AuditLogPage> {
-    let limit = limit.min(200).max(1);
+    let limit = limit.clamp(1, 200);
     let (items, total) = audit_log_repo::find_with_filters(
         &state.db,
         user_id,

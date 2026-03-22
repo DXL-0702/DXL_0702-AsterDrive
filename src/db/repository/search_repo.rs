@@ -35,7 +35,7 @@ pub struct FileSearchItem {
 
 /// Build a case-insensitive LIKE condition using LOWER() for cross-DB compatibility.
 /// Escapes `%` and `_` in the search query to prevent wildcard injection.
-fn name_like_condition<E: EntityTrait>(
+fn name_like_condition(
     column: impl sea_orm::sea_query::IntoColumnRef + Copy,
     query: &str,
 ) -> sea_orm::sea_query::SimpleExpr {
@@ -65,7 +65,7 @@ pub async fn search_files<C: ConnectionTrait>(
         .add(file::Column::DeletedAt.is_null());
 
     if let Some(q) = query {
-        condition = condition.add(name_like_condition::<File>((File, file::Column::Name), q));
+        condition = condition.add(name_like_condition((File, file::Column::Name), q));
     }
 
     if let Some(mt) = mime_type {
@@ -144,10 +144,7 @@ pub async fn search_folders<C: ConnectionTrait>(
         .add(folder::Column::DeletedAt.is_null());
 
     if let Some(q) = query {
-        condition = condition.add(name_like_condition::<Folder>(
-            (Folder, folder::Column::Name),
-            q,
-        ));
+        condition = condition.add(name_like_condition((Folder, folder::Column::Name), q));
     }
 
     if let Some(after) = created_after {

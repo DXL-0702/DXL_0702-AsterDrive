@@ -131,14 +131,9 @@ where
 {
     let mut body = Box::pin(body);
     let mut data = Vec::new();
-    loop {
-        match std::future::poll_fn(|cx| body.as_mut().poll_frame(cx)).await {
-            Some(Ok(frame)) => {
-                if let Ok(chunk) = frame.into_data() {
-                    data.extend_from_slice(&chunk);
-                }
-            }
-            _ => break,
+    while let Some(Ok(frame)) = std::future::poll_fn(|cx| body.as_mut().poll_frame(cx)).await {
+        if let Ok(chunk) = frame.into_data() {
+            data.extend_from_slice(&chunk);
         }
     }
     data

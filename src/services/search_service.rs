@@ -46,18 +46,18 @@ pub async fn search(
     params: &SearchParams,
 ) -> Result<SearchResults> {
     // Validation
-    if let Some(ref q) = params.q {
-        if q.is_empty() {
-            return Err(AsterError::validation_error(
-                "search query must not be empty",
-            ));
-        }
+    if let Some(ref q) = params.q
+        && q.is_empty()
+    {
+        return Err(AsterError::validation_error(
+            "search query must not be empty",
+        ));
     }
 
-    if let (Some(min), Some(max)) = (params.min_size, params.max_size) {
-        if min > max {
-            return Err(AsterError::validation_error("min_size must be <= max_size"));
-        }
+    if let (Some(min), Some(max)) = (params.min_size, params.max_size)
+        && min > max
+    {
+        return Err(AsterError::validation_error("min_size must be <= max_size"));
     }
 
     let limit = params.limit.unwrap_or(50).clamp(1, 100);
