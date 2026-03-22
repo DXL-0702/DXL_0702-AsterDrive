@@ -5,6 +5,94 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.2] - 2026-03-23
+
+### Release Highlights
+
+**前端完整重写！** 从 PoC 级别升级到现代 UI 架构，新增国际化、主题系统、响应式布局。
+
+- **i18n 国际化** — react-i18next，中英双语，5 个命名空间，即时切换
+- **主题系统** — Light / Dark / System 三种模式 + 4 套色板（Blue / Green / Purple / Orange），CSS 变量 oklch
+- **响应式布局** — 可折叠侧栏、全局顶栏、移动端 overlay
+- **网格 / 列表视图** — 双视图切换，记住偏好，缩略图卡片 + 可排序表格
+- **多选 + 批量操作** — 勾选框选择，底部浮动操作栏，批量删除 / 移动 / 复制
+- **递归文件夹树** — 懒加载展开，替代原来的平铺列表
+
+### Added
+
+- **i18n 系统**
+  - react-i18next + i18next-browser-languagedetector
+  - 5 个命名空间：common / files / auth / admin / search
+  - 中英双语完整翻译（125+ 键值对）
+  - 自动检测浏览器语言，localStorage 持久化
+- **主题系统**
+  - `themeStore` — Light / Dark / System 模式，matchMedia 监听系统偏好
+  - 4 套色板预设（blue / green / purple / orange），每套含 light + dark 变体
+  - CSS 变量 oklch 色彩空间，`[data-theme]` 属性切换
+  - 所有偏好存 localStorage
+- **公共组件库** `components/common/`
+  - ThemeSwitcher — Sun / Moon / Monitor 下拉切换
+  - ColorPresetPicker — 色板圆点选择器
+  - LanguageSwitcher — 中英语言下拉
+  - EmptyState — 图标 + 标题 + 描述 + 操作按钮
+  - LoadingSpinner — 居中旋转加载
+  - ConfirmDialog — AlertDialog 封装，destructive 变体
+  - ViewToggle — 网格 / 列表图标切换
+  - BatchActionBar — 底部浮动栏（选择数 + 删除 / 移动 / 复制）
+- **新布局组件**
+  - Sidebar — 桌面可折叠（240px / 56px），移动端 overlay + 遮罩
+  - TopBar — 全局顶栏：汉堡菜单 + 面包屑 + 主题 / 语言 / 用户下拉
+- **文件浏览器组件**
+  - FileGrid — 响应式网格（2-6 列），缩略图卡片
+  - FileTable — 列表表格，可排序列头，全选勾选框
+  - FileCard — 网格卡片，hover 显示勾选框
+  - FileThumbnail — 提取复用，sm / lg 两种尺寸
+  - FileContextMenu — 右键菜单（下载 / 分享 / 复制 / 重命名 / 锁 / 版本 / 删除）
+  - CreateFolderDialog — 从 FileBrowserPage 提取
+  - RenameDialog — 文件 / 文件夹重命名，自动选中文件名（不含扩展名）
+- **设置页** `/settings`
+  - 主题模式 + 色板选择
+  - 语言切换
+  - 文件浏览器默认视图模式
+- **键盘快捷键**
+  - Ctrl/Cmd + A — 全选
+  - Escape — 取消选择
+  - / 或 Ctrl/Cmd + K — 聚焦搜索
+- **工具函数** `lib/format.ts`
+  - `formatBytes` / `formatDate` / `formatDateAbsolute`
+  - 替代 5 处重复实现
+
+### Changed
+
+- **AppLayout** — 重写为 TopBar + 可折叠 Sidebar + main content 三段式
+- **FolderTree** — 从平铺列表重写为递归懒加载树（展开 / 折叠 / 子文件夹加载）
+- **fileStore** — 完全重写，新增 viewMode / sortBy / sortOrder / selectedFileIds / selectedFolderIds
+- **FileBrowserPage** — 从 267 行单体重写为 ~80 行编排器
+- **PageHeader** — 简化为薄层组件，面包屑移至 TopBar
+- **AdminLayout** — 加 i18n 翻译 + ThemeSwitcher / LanguageSwitcher
+- **所有 11 个页面** — 全部加入 i18n 翻译，hardcoded 英文字符串归零
+- **所有破坏性操作** — 统一使用 ConfirmDialog 确认
+- **所有原生 `<select>`** — 统一替换为 shadcn Select 组件
+- **暗色模式兼容** — Badge / 状态色全部加 `dark:` 变体
+
+### Removed
+
+- `FileList.tsx` — 被 FileGrid + FileTable 替代
+- FileBrowserPage 中的 batch PoC 面板（手动输入 ID）— 被 BatchActionBar 替代
+- 5 处重复的 `formatBytes` / `formatDate` 内联函数
+
+### Dependencies
+
+- 新增 `react-i18next` 16.6
+- 新增 `i18next` 25.10
+- 新增 `i18next-browser-languagedetector` 8.2
+
+---
+
+**统计数据**：
+- 79 files changed, 3,632 insertions(+), 1,506 deletions(-)
+- 1 commit
+
 ## [v0.0.1-alpha.1] - 2026-03-23
 
 ### Release Highlights
@@ -131,4 +219,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
+[v0.0.1-alpha.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.1...v0.0.1-alpha.2
 [v0.0.1-alpha.1]: https://github.com/AptS-1547/AsterDrive/releases/tag/v0.0.1-alpha.1
