@@ -6,6 +6,7 @@ use actix_web::{
 use futures::future::{LocalBoxFuture, Ready, ok};
 use std::rc::Rc;
 
+use crate::errors::AsterError;
 use crate::runtime::AppState;
 use crate::services::auth_service;
 
@@ -70,7 +71,7 @@ where
                 });
 
             match token {
-                None => Err(actix_web::error::ErrorUnauthorized("missing token")),
+                None => Err(AsterError::auth_invalid_credentials("missing token").into()),
                 Some(t) => match auth_service::verify_token(&t, &state.config.auth.jwt_secret) {
                     Ok(claims) => {
                         // 查数据库确认用户状态
@@ -82,11 +83,13 @@ where
                                 req.extensions_mut().insert(claims);
                                 svc.call(req).await
                             }
-                            Ok(_) => Err(actix_web::error::ErrorForbidden("account is disabled")),
-                            Err(_) => Err(actix_web::error::ErrorUnauthorized("user not found")),
+                            Ok(_) => Err(AsterError::auth_forbidden("account is disabled").into()),
+                            Err(_) => {
+                                Err(AsterError::auth_invalid_credentials("user not found").into())
+                            }
                         }
                     }
-                    Err(_) => Err(actix_web::error::ErrorUnauthorized("invalid token")),
+                    Err(_) => Err(AsterError::auth_token_invalid("invalid token").into()),
                 },
             }
         })
