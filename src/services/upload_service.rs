@@ -296,7 +296,9 @@ pub async fn complete_upload(
 
     // ── [事务外] 流式拼接分片 + sha256 ──
     use sha2::{Digest, Sha256};
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    const ASSEMBLY_BUFFER_SIZE: usize = 64 * 1024;
 
     let assembled_path = format!("data/.uploads/{upload_id}/_assembled");
     let mut out_file = tokio::fs::File::create(&assembled_path)
@@ -304,18 +306,31 @@ pub async fn complete_upload(
         .map_aster_err_ctx("create assembled file", AsterError::upload_assembly_failed)?;
     let mut hasher = Sha256::new();
     let mut size: i64 = 0;
+    let mut buffer = vec![0u8; ASSEMBLY_BUFFER_SIZE];
 
     for i in 0..session.total_chunks {
         let chunk_path = format!("data/.uploads/{upload_id}/chunk_{i}");
-        let chunk_data = tokio::fs::read(&chunk_path)
+        let mut chunk_file = tokio::fs::File::open(&chunk_path)
             .await
-            .map_err(|e| AsterError::upload_assembly_failed(format!("read chunk {i}: {e}")))?;
-        hasher.update(&chunk_data);
-        size += chunk_data.len() as i64;
-        out_file
-            .write_all(&chunk_data)
-            .await
-            .map_aster_err_ctx("write assembled", AsterError::upload_assembly_failed)?;
+            .map_err(|e| AsterError::upload_assembly_failed(format!("open chunk {i}: {e}")))?;
+
+        loop {
+            let n = chunk_file
+                .read(&mut buffer)
+                .await
+                .map_err(|e| AsterError::upload_assembly_failed(format!("read chunk {i}: {e}")))?;
+            if n == 0 {
+                break;
+            }
+
+            let data = &buffer[..n];
+            hasher.update(data);
+            size += n as i64;
+            out_file
+                .write_all(data)
+                .await
+                .map_aster_err_ctx("write assembled", AsterError::upload_assembly_failed)?;
+        }
     }
     out_file
         .flush()

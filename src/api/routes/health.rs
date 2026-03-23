@@ -7,8 +7,10 @@ pub fn routes() -> actix_web::Scope {
         .route("", web::get().to(health))
         .route("", web::head().to(health))
         .route("/ready", web::get().to(ready))
-        .route("/ready", web::head().to(ready))
-        .route("/memory", web::get().to(memory));
+        .route("/ready", web::head().to(ready));
+
+    #[cfg(debug_assertions)]
+    let scope = scope.route("/memory", web::get().to(memory));
 
     #[cfg(feature = "metrics")]
     let scope = scope.route("/metrics", web::get().to(metrics_endpoint));

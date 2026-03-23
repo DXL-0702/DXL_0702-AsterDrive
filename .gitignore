@@ -1,6 +1,7 @@
 /target
 
 .DS_store
+/tmp
 
 # 运行时生成
 /config.toml

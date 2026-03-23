@@ -69,6 +69,119 @@ async fn test_chunked_upload_flow() {
 }
 
 #[actix_web::test]
+async fn test_chunked_upload_streaming_assembly_preserves_content() {
+    use aster_drive::db::repository::file_repo;
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "streamuser", "stream@test.com", "password123")
+        .await
+        .unwrap();
+
+    let init = upload_service::init_upload(&state, user.id, "streamed.txt", 10_485_760, None)
+        .await
+        .unwrap();
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Chunked);
+
+    let upload_id = init.upload_id.unwrap();
+    let chunk0 = b"hello ";
+    let chunk1 = b"streamed world";
+
+    let resp0 = upload_service::upload_chunk(&state, &upload_id, 0, user.id, chunk0)
+        .await
+        .unwrap();
+    assert_eq!(resp0.received_count, 1);
+    let resp1 = upload_service::upload_chunk(&state, &upload_id, 1, user.id, chunk1)
+        .await
+        .unwrap();
+    assert_eq!(resp1.received_count, 2);
+
+    let file = upload_service::complete_upload(&state, &upload_id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(file.name, "streamed.txt");
+
+    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id)
+        .await
+        .unwrap();
+    let policy = aster_drive::db::repository::policy_repo::find_by_id(&state.db, blob.policy_id)
+        .await
+        .unwrap();
+    let driver = state.driver_registry.get_driver(&policy).unwrap();
+    let stored = driver.get(&blob.storage_path).await.unwrap();
+
+    assert_eq!(stored, [chunk0.as_slice(), chunk1.as_slice()].concat());
+    assert_eq!(blob.size, stored.len() as i64);
+}
+
+#[actix_web::test]
+async fn test_direct_and_chunked_upload_produce_same_blob_for_same_content() {
+    use aster_drive::db::repository::file_repo;
+    use aster_drive::services::{auth_service, file_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "compareuser", "compare@test.com", "password123")
+        .await
+        .unwrap();
+
+    let pattern = b"same content across direct and chunked upload paths\n";
+    let content = pattern.repeat((10_485_760 / pattern.len()) + 1);
+    let content = &content[..10_485_760];
+    let temp_path = format!("{}/{}", aster_drive::utils::TEMP_DIR, uuid::Uuid::new_v4());
+    tokio::fs::create_dir_all(aster_drive::utils::TEMP_DIR)
+        .await
+        .unwrap();
+    tokio::fs::write(&temp_path, content).await.unwrap();
+
+    let direct_file = file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "same-direct.txt",
+        &temp_path,
+        content.len() as i64,
+        None,
+        false,
+    )
+    .await
+    .unwrap();
+
+    let init = upload_service::init_upload(&state, user.id, "same-chunked.txt", content.len() as i64, None)
+        .await
+        .unwrap();
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Chunked);
+
+    let upload_id = init.upload_id.unwrap();
+    let total_chunks = init.total_chunks.unwrap();
+    let chunk_size = init.chunk_size.unwrap() as usize;
+    for chunk_number in 0..total_chunks {
+        let start = chunk_number as usize * chunk_size;
+        let end = ((chunk_number as usize + 1) * chunk_size).min(content.len());
+        let chunk = &content[start..end];
+        upload_service::upload_chunk(&state, &upload_id, chunk_number, user.id, chunk)
+            .await
+            .unwrap();
+    }
+    let chunked_file = upload_service::complete_upload(&state, &upload_id, user.id)
+        .await
+        .unwrap();
+
+    let direct_blob = file_repo::find_blob_by_id(&state.db, direct_file.blob_id)
+        .await
+        .unwrap();
+    let chunked_blob = file_repo::find_blob_by_id(&state.db, chunked_file.blob_id)
+        .await
+        .unwrap();
+
+    assert_eq!(direct_blob.id, chunked_blob.id);
+    assert_eq!(direct_blob.hash, chunked_blob.hash);
+    assert_eq!(direct_blob.size, chunked_blob.size);
+    assert_eq!(direct_blob.ref_count, 2);
+
+    let _ = tokio::fs::remove_file(&temp_path).await;
+}
+
+#[actix_web::test]
 async fn test_chunked_upload_cancel() {
     let state = common::setup().await;
     let app = create_test_app!(state);
