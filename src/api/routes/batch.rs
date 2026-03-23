@@ -47,16 +47,18 @@ pub struct BatchCopyReq {
     pub target_folder_id: Option<i64>,
 }
 
+const MAX_BATCH_ITEMS: usize = 1000;
+
 fn validate_batch_ids(file_ids: &[i64], folder_ids: &[i64]) -> Result<()> {
     if file_ids.is_empty() && folder_ids.is_empty() {
         return Err(AsterError::validation_error(
             "at least one file or folder ID is required",
         ));
     }
-    if file_ids.len() + folder_ids.len() > 100 {
-        return Err(AsterError::validation_error(
-            "batch size cannot exceed 100 items",
-        ));
+    if file_ids.len() + folder_ids.len() > MAX_BATCH_ITEMS {
+        return Err(AsterError::validation_error(format!(
+            "batch size cannot exceed {MAX_BATCH_ITEMS} items",
+        )));
     }
     Ok(())
 }

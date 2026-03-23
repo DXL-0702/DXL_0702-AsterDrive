@@ -146,9 +146,15 @@ async fn test_direct_and_chunked_upload_produce_same_blob_for_same_content() {
     .await
     .unwrap();
 
-    let init = upload_service::init_upload(&state, user.id, "same-chunked.txt", content.len() as i64, None)
-        .await
-        .unwrap();
+    let init = upload_service::init_upload(
+        &state,
+        user.id,
+        "same-chunked.txt",
+        content.len() as i64,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(init.mode, aster_drive::types::UploadMode::Chunked);
 
     let upload_id = init.upload_id.unwrap();

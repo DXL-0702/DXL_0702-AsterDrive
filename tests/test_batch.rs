@@ -270,6 +270,44 @@ async fn test_batch_copy_files() {
 }
 
 #[actix_web::test]
+async fn test_batch_limit_allows_1000_items() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/batch/delete")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .set_json(serde_json::json!({
+            "file_ids": (1..=1000).collect::<Vec<i64>>(),
+            "folder_ids": []
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_batch_limit_rejects_over_1000_items() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/batch/delete")
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .set_json(serde_json::json!({
+            "file_ids": (1..=1001).collect::<Vec<i64>>(),
+            "folder_ids": []
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["msg"], "batch size cannot exceed 1000 items");
+}
+
+#[actix_web::test]
 async fn test_batch_empty_request() {
     let state = common::setup().await;
     let app = create_test_app!(state);
