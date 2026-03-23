@@ -3,7 +3,9 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { handleApiError } from "@/hooks/useApiError";
+import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { fileService } from "@/services/fileService";
+import { api } from "@/services/http";
 import type { FileInfo } from "@/types/api";
 
 interface FilePreviewProps {
@@ -27,7 +29,11 @@ export function FilePreview({
 	const isVideo = file.mime_type.startsWith("video/");
 	const isAudio = file.mime_type.startsWith("audio/");
 
-	const downloadUrl = fileService.downloadUrl(file.id);
+	const downloadPath = fileService.downloadPath(file.id);
+	const needsBlob = isImage || isVideo || isAudio || isPdf;
+	const { blobUrl, error: blobError } = useBlobUrl(
+		needsBlob ? downloadPath : null,
+	);
 
 	return (
 		<div
@@ -45,26 +51,32 @@ export function FilePreview({
 					</Button>
 				</div>
 				<div className="flex-1 overflow-auto bg-background/50 rounded-b-lg p-2">
-					{isImage && (
+					{needsBlob && !blobUrl && !blobError && (
+						<div className="text-muted-foreground p-4">Loading...</div>
+					)}
+					{needsBlob && blobError && (
+						<div className="text-destructive p-4">Failed to load</div>
+					)}
+					{isImage && blobUrl && (
 						<img
-							src={downloadUrl}
+							src={blobUrl}
 							alt={file.name}
 							className="max-w-full max-h-[80vh] object-contain mx-auto"
 						/>
 					)}
-					{isVideo && (
+					{isVideo && blobUrl && (
 						<video
-							src={downloadUrl}
+							src={blobUrl}
 							controls
 							className="max-w-full max-h-[80vh] mx-auto"
 						/>
 					)}
-					{isAudio && (
-						<audio src={downloadUrl} controls className="w-full mt-4" />
+					{isAudio && blobUrl && (
+						<audio src={blobUrl} controls className="w-full mt-4" />
 					)}
-					{isPdf && (
+					{isPdf && blobUrl && (
 						<iframe
-							src={downloadUrl}
+							src={blobUrl}
 							title={file.name}
 							className="w-[80vw] h-[80vh]"
 						/>
@@ -72,7 +84,7 @@ export function FilePreview({
 					{isText && (
 						<TextPreview
 							file={file}
-							url={downloadUrl}
+							url={downloadPath}
 							onFileUpdated={onFileUpdated}
 						/>
 					)}
@@ -104,15 +116,13 @@ function TextPreview({
 	const [saving, setSaving] = useState(false);
 
 	const loadContent = useCallback(() => {
-		fetch(url, { credentials: "include" })
+		api.client
+			.get(url, { responseType: "text" })
 			.then((r) => {
-				const et = r.headers.get("ETag");
+				const et = r.headers.etag;
 				if (et) setEtag(et);
-				return r.text();
-			})
-			.then((text) => {
-				setContent(text);
-				setEditContent(text);
+				setContent(r.data);
+				setEditContent(r.data);
 			})
 			.catch(() => setError(true));
 	}, [url]);

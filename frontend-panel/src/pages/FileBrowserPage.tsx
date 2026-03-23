@@ -20,6 +20,7 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { fileService } from "@/services/fileService";
 import { useFileStore } from "@/stores/fileStore";
 import type { FileInfo } from "@/types/api";
+import { api } from "@/services/http";
 
 export default function FileBrowserPage() {
 	const { t } = useTranslation("files");
@@ -48,11 +49,10 @@ export default function FileBrowserPage() {
 	const handleDownload = useCallback(
 		async (fileId: number, fileName: string) => {
 			try {
-				const url = fileService.downloadUrl(fileId);
-				const res = await fetch(url, { credentials: "include" });
-				if (!res.ok) throw new Error(`download failed: ${res.status}`);
-				const blob = await res.blob();
-				const objectUrl = URL.createObjectURL(blob);
+				const res = await api.client.get(fileService.downloadPath(fileId), {
+					responseType: "blob",
+				});
+				const objectUrl = URL.createObjectURL(res.data);
 				const a = document.createElement("a");
 				a.href = objectUrl;
 				a.download = fileName;

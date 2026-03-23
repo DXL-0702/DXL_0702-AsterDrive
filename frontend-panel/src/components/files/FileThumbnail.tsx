@@ -1,5 +1,5 @@
 import { FileIcon } from "lucide-react";
-import { useState } from "react";
+import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import type { FileInfo } from "@/types/api";
@@ -10,11 +10,13 @@ interface FileThumbnailProps {
 }
 
 export function FileThumbnail({ file, size = "sm" }: FileThumbnailProps) {
-	const [failed, setFailed] = useState(false);
 	const isImage =
 		file.mime_type.startsWith("image/") && file.mime_type !== "image/svg+xml";
+	const { blobUrl, error } = useBlobUrl(
+		isImage ? fileService.thumbnailPath(file.id) : null,
+	);
 
-	if (!isImage || failed) {
+	if (!isImage || error || !blobUrl) {
 		return (
 			<FileIcon
 				className={cn(
@@ -27,14 +29,12 @@ export function FileThumbnail({ file, size = "sm" }: FileThumbnailProps) {
 
 	return (
 		<img
-			src={fileService.thumbnailUrl(file.id)}
+			src={blobUrl}
 			alt=""
 			className={cn(
 				"rounded object-cover",
 				size === "sm" ? "h-8 w-8" : "h-20 w-20",
 			)}
-			loading="lazy"
-			onError={() => setFailed(true)}
 		/>
 	);
 }

@@ -1,5 +1,5 @@
-import { config } from "@/config/app";
 import type { FileInfo, FolderContents, FolderInfo } from "@/types/api";
+import type { ErrorCode } from "@/types/api";
 import { ApiError, api } from "./http";
 
 export const fileService = {
@@ -22,9 +22,9 @@ export const fileService = {
 	renameFile: (id: number, name: string) =>
 		api.patch<FileInfo>(`/files/${id}`, { name }),
 
-	downloadUrl: (id: number) => `${config.apiBaseUrl}/files/${id}/download`,
+	downloadPath: (id: number) => `/files/${id}/download`,
 
-	thumbnailUrl: (id: number) => `${config.apiBaseUrl}/files/${id}/thumbnail`,
+	thumbnailPath: (id: number) => `/files/${id}/thumbnail`,
 
 	setFileLock: (id: number, locked: boolean) =>
 		api.post<FileInfo>(`/files/${id}/lock`, { locked }),
@@ -47,25 +47,27 @@ export const fileService = {
 			"Content-Type": "application/octet-stream",
 		};
 		if (etag) headers["If-Match"] = etag;
-		const resp = await fetch(`${config.apiBaseUrl}/files/${id}/content`, {
-			method: "PUT",
-			headers,
-			body: content,
-			credentials: "include",
-		});
-		if (!resp.ok) {
-			const body = await resp
-				.json()
-				.catch(() => ({ code: resp.status, msg: resp.statusText }));
-			const err = new ApiError(
-				body.code ?? resp.status,
-				body.msg ?? resp.statusText,
-			);
-			(err as ApiError & { status: number }).status = resp.status;
+		try {
+			const resp = await api.client.put(`/files/${id}/content`, content, {
+				headers,
+			});
+			return resp.data.data as FileInfo;
+		} catch (err: unknown) {
+			if (err && typeof err === "object" && "response" in err) {
+				const axiosErr = err as {
+					response: { status: number; data?: { code?: number; msg?: string } };
+				};
+				const status = axiosErr.response.status;
+				const body = axiosErr.response.data;
+				const apiErr = new ApiError(
+					(body?.code ?? status) as ErrorCode,
+					body?.msg ?? `HTTP ${status}`,
+				);
+				(apiErr as ApiError & { status: number }).status = status;
+				throw apiErr;
+			}
 			throw err;
 		}
-		const body = await resp.json();
-		return body.data as FileInfo;
 	},
 
 	listVersions: (id: number) => api.get<FileVersion[]>(`/files/${id}/versions`),

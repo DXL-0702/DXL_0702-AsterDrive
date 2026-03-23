@@ -33,7 +33,10 @@ const passwordSchema = z
 function AnimateHeight({
 	show,
 	children,
-}: { show: boolean; children: React.ReactNode }) {
+}: {
+	show: boolean;
+	children: React.ReactNode;
+}) {
 	const [render, setRender] = useState(show);
 	const [visible, setVisible] = useState(show);
 
@@ -73,7 +76,10 @@ function AnimateHeight({
 function AnimateText({
 	text,
 	className,
-}: { text: string; className?: string }) {
+}: {
+	text: string;
+	className?: string;
+}) {
 	const [displayed, setDisplayed] = useState(text);
 	const [animating, setAnimating] = useState(false);
 
@@ -175,11 +181,7 @@ export default function LoginPage() {
 
 	// ── Live validation ──
 
-	const validateSingle = (
-		field: string,
-		value: string,
-		schema: z.ZodType,
-	) => {
+	const validateSingle = (field: string, value: string, schema: z.ZodType) => {
 		const result = schema.safeParse(value);
 		setErrors((prev) => {
 			if (result.success) {
@@ -199,17 +201,20 @@ export default function LoginPage() {
 		// Validate identifier as username or email
 		const idSchema = isEmail ? emailSchema : usernameSchema;
 		const idResult = idSchema.safeParse(identifier.trim());
-		if (!idResult.success) errs.identifier = idResult.error.issues[0]?.message ?? "";
+		if (!idResult.success)
+			errs.identifier = idResult.error.issues[0]?.message ?? "";
 
 		// Validate extra field for register/setup
 		if (mode === "register" || mode === "setup") {
 			const extraSchema = isEmail ? usernameSchema : emailSchema;
 			const extraResult = extraSchema.safeParse(extraField.trim());
-			if (!extraResult.success) errs.extra = extraResult.error.issues[0]?.message ?? "";
+			if (!extraResult.success)
+				errs.extra = extraResult.error.issues[0]?.message ?? "";
 		}
 
 		const pwResult = passwordSchema.safeParse(password);
-		if (!pwResult.success) errs.password = pwResult.error.issues[0]?.message ?? "";
+		if (!pwResult.success)
+			errs.password = pwResult.error.issues[0]?.message ?? "";
 
 		setErrors(errs);
 		return Object.keys(errs).length === 0;
@@ -316,7 +321,11 @@ export default function LoginPage() {
 					<div className="mb-6 overflow-hidden">
 						<h2 className="text-xl font-semibold tracking-tight">
 							<AnimateText
-								text={mode === "setup" ? t("welcome_setup") : t("sign_in_to_account")}
+								text={
+									mode === "setup"
+										? t("welcome_setup")
+										: t("sign_in_to_account")
+								}
 							/>
 						</h2>
 						<p className="text-sm text-muted-foreground mt-1">
@@ -377,7 +386,8 @@ export default function LoginPage() {
 								autoComplete="username"
 								className={cn(
 									"h-10",
-									errors.identifier && "border-destructive focus-visible:ring-destructive",
+									errors.identifier &&
+										"border-destructive focus-visible:ring-destructive",
 								)}
 							/>
 							{errors.identifier && (
@@ -405,7 +415,8 @@ export default function LoginPage() {
 									autoComplete={isEmail ? "off" : "email"}
 									className={cn(
 										"h-10",
-										errors.extra && "border-destructive focus-visible:ring-destructive",
+										errors.extra &&
+											"border-destructive focus-visible:ring-destructive",
 									)}
 								/>
 								{errors.extra && (
@@ -428,14 +439,21 @@ export default function LoginPage() {
 									onChange={(e) => {
 										setPassword(e.target.value);
 										if (mode !== "login") {
-											validateSingle("password", e.target.value, passwordSchema);
+											validateSingle(
+												"password",
+												e.target.value,
+												passwordSchema,
+											);
 										}
 									}}
 									required
-									autoComplete={mode === "login" ? "current-password" : "new-password"}
+									autoComplete={
+										mode === "login" ? "current-password" : "new-password"
+									}
 									className={cn(
 										"h-10 pr-10",
-										errors.password && "border-destructive focus-visible:ring-destructive",
+										errors.password &&
+											"border-destructive focus-visible:ring-destructive",
 									)}
 								/>
 								<button
@@ -444,10 +462,16 @@ export default function LoginPage() {
 									onClick={() => setShowPassword(!showPassword)}
 									tabIndex={-1}
 									aria-label={
-										showPassword ? t("common:hide_password") : t("common:show_password")
+										showPassword
+											? t("common:hide_password")
+											: t("common:show_password")
 									}
 								>
-									{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+									{showPassword ? (
+										<EyeOff className="h-4 w-4" />
+									) : (
+										<Eye className="h-4 w-4" />
+									)}
 								</button>
 							</div>
 							{errors.password && (
