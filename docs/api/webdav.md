@@ -1,12 +1,8 @@
 # WebDAV API 与协议能力
 
-WebDAV 相关能力包括三部分：
+WebDAV 相关内容可以分成三块：账号、挂载入口、协议能力。
 
-- 账号管理 REST API
-- 实际的 WebDAV 挂载入口
-- 与 WebDAV 相关的锁、属性和版本历史能力
-
-## 账号管理 API
+## 账号接口
 
 以下路径都相对于 `/api/v1`，且都需要认证。
 
@@ -18,9 +14,15 @@ WebDAV 相关能力包括三部分：
 | `POST` | `/webdav-accounts/{id}/toggle` | 启用或停用账号 |
 | `POST` | `/webdav-accounts/test` | 测试一组 WebDAV 凭据 |
 
-### `POST /webdav-accounts`
+常用点：
 
-请求体：
+- 创建账号时，`password` 为空会自动生成随机密码
+- 明文密码只在创建时返回一次
+- `root_folder_id` 为空表示可访问整个用户空间
+- `/toggle` 没有请求体，每调用一次就在启用 / 停用之间切换
+- `/test` 用来先验账号密码，不必真的挂载客户端
+
+创建请求示例：
 
 ```json
 {
@@ -30,21 +32,15 @@ WebDAV 相关能力包括三部分：
 }
 ```
 
-行为说明：
+## 挂载地址
 
-- `password` 为空时会自动生成 16 位随机密码
-- 明文密码只会在创建接口返回一次
-- `root_folder_id` 为空表示可访问该用户的全部空间
-
-## 实际 WebDAV 挂载地址
-
-默认地址：
+默认 WebDAV 路径是：
 
 ```text
 /webdav
 ```
 
-完整 URL 例如：
+完整地址例如：
 
 ```text
 http://localhost:3000/webdav
@@ -52,11 +48,9 @@ http://localhost:3000/webdav
 
 如果修改了 `[webdav].prefix`，挂载地址也会一起变化。
 
-## 协议层当前支持的能力
+## 协议能力
 
-### 标准 WebDAV
-
-仓库测试已经覆盖并确认可用的常见方法包括：
+当前已覆盖常见 WebDAV 方法：
 
 - `PROPFIND`
 - `MKCOL`
@@ -69,43 +63,23 @@ http://localhost:3000/webdav
 - `UNLOCK`
 - `OPTIONS`
 
-### DeltaV 最小子集
-
-当前仓库还额外补了 `dav-server` 不自带的最小 RFC3253 支持：
+另外还补了最小 DeltaV 子集：
 
 - `REPORT` 的 `DAV:version-tree`
 - `VERSION-CONTROL`
 - `OPTIONS` 的 `DAV: version-control`
 
-这部分直接复用 `file_versions` 表，因此 WebDAV 客户端可以读取历史版本树。
+这部分直接复用 `file_versions`，所以客户端可以读取历史版本树。
 
-当前限制：
+限制也很直接：
 
-- `REPORT version-tree` 只支持文件，不支持文件夹
-- 目前实现的是“最小可用子集”，不是完整 DeltaV 服务器
+- `REPORT version-tree` 只支持文件
+- 当前不是完整 DeltaV 服务器，只是最小可用子集
 
-## 认证方式
+## 认证与运行时开关
 
-### Basic Auth
+- Basic Auth：使用 WebDAV 专用账号，可限制到 `root_folder_id`
+- Bearer JWT：复用普通登录态，不受 `root_folder_id` 限制
+- `webdav_enabled = false` 时，WebDAV 请求会直接返回 `503`
 
-- 使用 `webdav_accounts` 中的专用用户名和密码
-- 可限制到 `root_folder_id`
-
-### Bearer JWT
-
-- 复用普通登录 JWT
-- 不受 `root_folder_id` 限制，直接访问整个用户空间
-
-## 锁与属性
-
-WebDAV 使用数据库锁与属性表：
-
-- 锁记录保存在 `resource_locks`
-- 自定义属性保存在 `entity_properties`
-- 管理员可通过 `/api/v1/admin/locks` 查看和清理锁
-
-REST 层的 `/files/{id}/lock` 与 `/folders/{id}/lock` 也是走同一套锁服务。
-
-## 运行时开关
-
-管理员把 `webdav_enabled` 设为 `"false"` 后，WebDAV 请求会直接返回 `503`。
+如果部署在反向代理后面，还要确认代理层允许 WebDAV 方法和相关请求头，见 [反向代理部署](/deployment/proxy)。

@@ -13,127 +13,68 @@
 - `/admin/shares`
 - `/admin/locks`
 - `/admin/settings`
+- `/admin/audit`
 
 前端界面后续可以调整，但下面这些管理能力已经由服务端实现。
 
+## 当前管理后台已经覆盖什么
+
+- 用户角色、状态、总配额
+- 用户可用存储策略分配与默认策略
+- 本地 / S3 存储策略管理与连通性测试
+- 全站分享审计与删除
+- 资源锁查看、强制解锁、过期锁清理
+- `system_config` 在线维护与 schema 驱动表单
+- 审计日志分页查询
+
 ## 用户管理
 
-管理员可以管理全部用户账号。
+用户管理页主要做三件事：
 
-### 当前可做的事
+- 调整角色和状态
+- 修改总配额
+- 必要时强制删除普通用户
 
-- 列出全部用户
-- 查看单个用户详情
-- 在 `user` 和 `admin` 之间切换角色
-- 禁用或重新启用账号
-- 修改用户总存储配额
-- 强制永久删除非管理员用户及其全部数据
+保护规则也很简单：
 
-更新用户：
+- 初始管理员 `id = 1` 不能被禁用、降级或删除
+- 其他管理员必须先降级为普通用户，才能被强制删除
 
-```bash
-curl -X PATCH http://127.0.0.1:3000/api/v1/admin/users/42 \
-  -b cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{"role":"user","status":"active","storage_quota":107374182400}'
-```
-
-强制删除非管理员用户：
-
-```bash
-curl -X DELETE http://127.0.0.1:3000/api/v1/admin/users/42 \
-  -b cookies.txt
-```
-
-当前保护规则：
-
-- 初始管理员账号 `id = 1` 不能被禁用
-- 初始管理员账号不能被降级
-- 初始管理员账号不能被删除
-- 其他管理员账号必须先降级为普通用户，才能被强制删除
-
-强制删除是不可逆操作，会清理这个用户的文件、文件夹、分享、WebDAV 账号、策略分配、上传会话、资源锁以及用户记录本身。
+强制删除是不可逆操作，会连同这个用户的文件、分享、WebDAV 账号、策略分配和上传会话一起清掉。
 
 ## 存储策略管理
 
-存储策略决定文件写到哪里，以及上传时用什么方式。
+存储策略页决定两件事：文件写到哪里、上传怎么走。
 
-### 支持的策略类型
+当前支持：
 
 - `local`
 - `s3`
 
-### 当前可做的事
+前端已经接好：创建、编辑、设为默认、删除、测试已保存策略、测试临时参数。
 
-- 创建本地或 S3 兼容策略
-- 编辑已有策略
-- 测试已保存策略的连通性
-- 在保存前直接测试一组参数
-- 把某个策略设为系统默认策略
-- 删除可安全删除的策略
+需要记住的限制：
 
-创建一个 S3 策略：
-
-```bash
-curl -X POST http://127.0.0.1:3000/api/v1/admin/policies \
-  -b cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name":"archive-s3",
-    "driver_type":"s3",
-    "endpoint":"https://s3.example.com",
-    "bucket":"archive",
-    "access_key":"AKIA...",
-    "secret_key":"secret",
-    "base_path":"asterdrive/",
-    "max_file_size":10737418240,
-    "is_default":false
-  }'
-```
-
-测试已保存策略：
-
-```bash
-curl -X POST http://127.0.0.1:3000/api/v1/admin/policies/3/test \
-  -b cookies.txt
-```
-
-删除保护和当前限制：
-
-- 不能删除系统里唯一的默认存储策略
+- 不能删除系统里唯一的默认策略
 - 只要还有 Blob 引用该策略，就不能删除
-- 如果取消默认标记会导致系统没有任何默认策略，也会被拒绝
 - `PATCH /api/v1/admin/policies/{id}` 不能修改 `driver_type`
-- 创建策略时 `chunk_size` 当前会先写成固定的 `5 MiB`，如果要改，创建后再 `PATCH`
+- 创建策略时 `chunk_size` 目前先写固定 `5 MiB`，真要改得创建后再改
 
 ## 用户存储策略分配
 
-用户级策略分配决定某个用户能用哪些存储策略，以及默认使用哪一个。
+这页处理的是“某个用户能用哪些策略”。
 
-### 当前可做的事
+需要分清两种额度：
 
-- 给一个用户分配多个策略
-- 指定其中一个为该用户默认策略
-- 为每条用户策略分配设置配额
-- 在用户仍有其他策略时移除某条分配
+- `storage_quota`：用户总额度
+- `quota_bytes`：某条用户策略分配上的额度
 
-给用户分配策略：
+另外还有两条规则：
 
-```bash
-curl -X POST http://127.0.0.1:3000/api/v1/admin/users/42/policies \
-  -b cookies.txt \
-  -H "Content-Type: application/json" \
-  -d '{"policy_id":3,"is_default":true,"quota_bytes":53687091200}'
-```
-
-这里有几点要区分：
-
-- `quota_bytes` 是“这个用户在这条策略分配上的额度”
-- 用户本身的 `storage_quota` 是“用户总额度”
 - 一个用户只能有一个默认分配策略
 - 不能移除用户唯一剩下的那条策略分配
 
-上传时的策略解析顺序是：
+策略解析顺序仍然是：
 
 ```text
 文件夹策略 -> 用户默认策略 -> 系统默认策略
@@ -182,6 +123,22 @@ curl -X PUT http://127.0.0.1:3000/api/v1/admin/config/trash_retention_days \
 - 系统配置不允许删除
 - 管理员可以创建自定义配置项，供插件或自定义前端使用
 - 系统配置的 schema 可通过 `/api/v1/admin/config/schema` 读取
+- 前端设置页会按 category 分组展示，并标记是否需要重启
+
+## 审计日志
+
+当前前端已经提供 `/admin/audit` 页面，对应后端也支持审计日志查询。
+
+管理员可以：
+
+- 分页查看关键操作
+- 按 action 和 entity type 过滤
+- 看到时间、用户、实体名称、IP 等字段
+
+审计日志是否记录、保留多久，取决于运行时配置：
+
+- `audit_log_enabled`
+- `audit_log_retention_days`
 
 ## WebDAV 锁管理
 

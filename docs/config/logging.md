@@ -48,3 +48,9 @@ level = "info"
 format = "json"
 file = "/var/log/asterdrive.log"
 ```
+
+补充建议：
+
+- 容器部署优先输出到 stdout，再交给 Docker / Kubernetes / Loki / ELK 收集
+- `json` 更适合集中式日志系统；`text` 更适合本地排障
+- 审计日志和普通运行日志不是一回事：审计日志写数据库，运行日志走 tracing 输出

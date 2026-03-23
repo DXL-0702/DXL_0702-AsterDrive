@@ -25,6 +25,8 @@ sudo chown -R asterdrive:asterdrive /var/lib/asterdrive
 
 把配置文件放进工作目录：
 
+如果你不想手写，也可以先让服务在这个工作目录里启动一次，利用自动生成逻辑产出默认 `config.toml`，再补上数据库地址、JWT 密钥和日志配置。
+
 ```bash
 sudo cp config.toml /var/lib/asterdrive/config.toml
 sudo chown asterdrive:asterdrive /var/lib/asterdrive/config.toml
@@ -71,6 +73,13 @@ sudo systemctl status asterdrive
 ```bash
 journalctl -u asterdrive -f
 ```
+
+上线后建议先确认：
+
+- `/health` 返回 200
+- `/health/ready` 返回 200
+- 首次启动日志里已完成 migration 与默认策略初始化
+- 如果启用了 WebDAV，实际挂载路径与 `[webdav].prefix` 一致
 
 ## 7. 常见变体
 

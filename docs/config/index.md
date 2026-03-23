@@ -41,8 +41,18 @@ ASTER__WEBDAV__PREFIX=/dav
 | `webdav_enabled` | 是否启用 WebDAV |
 | `trash_retention_days` | 回收站保留天数 |
 | `max_versions_per_file` | 单文件最大历史版本数 |
+| `audit_log_enabled` | 是否记录审计日志 |
+| `audit_log_retention_days` | 审计日志保留天数 |
 
 运行时配置由管理员通过 `/api/v1/admin/config/*` 在线维护，详情见 [运行时配置](/config/runtime)。
+
+## 三类配置各自适合放什么
+
+| 类型 | 放什么 | 典型示例 |
+| --- | --- | --- |
+| 静态配置 | 影响启动与路由注册的参数 | 监听地址、数据库 URL、JWT 密钥、日志格式、WebDAV 前缀 |
+| 运行时配置 | 允许管理员在线调整的业务开关 | WebDAV 开关、回收站保留期、版本保留数、审计日志保留期 |
+| 存储策略 | 文件写入哪个后端以及怎么上传 | local / s3、`base_path`、`chunk_size`、`presigned_upload` |
 
 ## 当前生成的默认配置
 
@@ -90,3 +100,10 @@ payload_limit = 10737418240
 - 运行时优先读取的 `./frontend-panel/dist`
 
 部署时请始终先确定工作目录，再决定挂载方案。
+
+## 继续阅读
+
+- [服务器](/config/server)
+- [存储策略](/config/storage)
+- [运行时配置](/config/runtime)
+- [WebDAV](/config/webdav)

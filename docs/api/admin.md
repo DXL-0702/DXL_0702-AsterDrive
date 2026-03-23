@@ -2,6 +2,8 @@
 
 以下路径都相对于 `/api/v1`，且都需要管理员权限。
 
+这页只保留管理端最值得记住的接口分组；更偏使用体验的内容见 [管理面板](/guide/admin-console)。
+
 ## 存储策略
 
 | 方法 | 路径 | 说明 |
@@ -82,6 +84,7 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/admin/config` | 列出全部运行时配置 |
+| `GET` | `/admin/config/schema` | 读取系统配置 schema |
 | `GET` | `/admin/config/{key}` | 获取单个配置项 |
 | `PUT` | `/admin/config/{key}` | 设置配置项 |
 | `DELETE` | `/admin/config/{key}` | 删除配置项 |
@@ -92,6 +95,21 @@
 - `webdav_enabled`
 - `trash_retention_days`
 - `max_versions_per_file`
+- `audit_log_enabled`
+- `audit_log_retention_days`
+
+### 读取 schema
+
+这个接口会返回：
+
+- `value_type`
+- `default_value`
+- `category`
+- `description`
+- `requires_restart`
+- `is_sensitive`
+
+前端管理后台就是靠它动态渲染设置页，而不是写死每个配置项。
 
 ### 设置配置项示例
 
@@ -107,6 +125,26 @@
 | --- | --- | --- |
 | `GET` | `/admin/shares` | 查看全站分享 |
 | `DELETE` | `/admin/shares/{id}` | 管理员删除任意分享 |
+
+## 审计日志
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/admin/audit-logs` | 分页查询审计日志 |
+
+当前实现支持这些查询参数：
+
+- `user_id`
+- `action`
+- `entity_type`
+- `after`
+- `before`
+- `limit`
+- `offset`
+
+其中 `after` 和 `before` 使用 RFC3339 时间字符串。
+
+返回结果包含分页信息与日志项，日志项里会带时间、用户、动作、实体、名称、IP 等字段。
 
 ## 锁管理
 

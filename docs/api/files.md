@@ -15,6 +15,7 @@
 | `GET` | `/files/{id}` | 获取文件元信息 |
 | `GET` | `/files/{id}/download` | 下载文件内容 |
 | `GET` | `/files/{id}/thumbnail` | 获取缩略图 |
+| `PUT` | `/files/{id}/content` | 覆盖文件内容并写入版本历史 |
 | `PATCH` | `/files/{id}` | 重命名或移动文件 |
 | `DELETE` | `/files/{id}` | 软删除到回收站 |
 | `POST` | `/files/{id}/lock` | 简化锁定 / 解锁 |
@@ -23,117 +24,40 @@
 | `POST` | `/files/{id}/versions/{version_id}/restore` | 恢复某个版本 |
 | `DELETE` | `/files/{id}/versions/{version_id}` | 删除某个版本 |
 
-## 上传模式协商
+## 上传
 
-### `POST /files/upload/init`
+上传的入口主要有两类：
 
-请求体：
+- `POST /files/upload/init`：先协商模式
+- `POST /files/upload`：直接走普通 multipart 上传
 
-```json
-{
-  "filename": "archive.zip",
-  "total_size": 5368709120,
-  "folder_id": 12
-}
-```
+协商接口会返回三种模式之一：
 
-服务端会根据目标存储策略返回三种模式之一：
+- `direct`：小文件直接上传
+- `chunked`：大文件分片上传，可断点续传
+- `presigned`：S3 直传到对象存储
 
-### `mode = "direct"`
+其中 `presigned` 只会在 S3 策略且开启 `options.presigned_upload` 时出现；对象存储侧还必须配置好 CORS。
 
-说明：
+### 直传、分片和完成阶段
 
-- 客户端应改走 `POST /files/upload`
-- 响应里不会有 `upload_id`
+- `POST /files/upload`：普通 multipart 上传；空文件会报错，同目录同名文件不会覆盖
+- `PUT /files/upload/{upload_id}/{chunk_number}`：上传单个分片，`chunk_number` 从 `0` 开始
+- `GET /files/upload/{upload_id}`：查询分片进度，也是前端断点续传依赖的接口
+- `POST /files/upload/{upload_id}/complete`：完成 `chunked` 或 `presigned` 上传
 
-### `mode = "chunked"`
+无论是分片合并还是 S3 直传完成，服务端最后都会做同样几件事：校验大小和配额、计算 SHA-256、Blob 去重、创建最终文件记录。
 
-返回值会带：
+## 文件操作
 
-- `upload_id`
-- `chunk_size`
-- `total_chunks`
+- `GET /files/{id}`：读取文件元信息；已进回收站的文件会按“找不到”处理
+- `GET /files/{id}/download`：流式下载文件
+- `GET /files/{id}/thumbnail`：读取缩略图（仅支持的图片类型）
+- `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
+- `PATCH /files/{id}`：改名或移动
+- `DELETE /files/{id}`：软删除到回收站
 
-### `mode = "presigned"`
-
-只在 S3 兼容策略场景出现。返回值会带：
-
-- `upload_id`
-- `presigned_url`
-
-然后客户端需要：
-
-1. 把文件直接 `PUT` 到 `presigned_url`
-2. 再调用 `POST /files/upload/{upload_id}/complete`
-
-## 普通直传
-
-### `POST /files/upload`
-
-查询参数：
-
-| 参数 | 类型 | 说明 |
-| --- | --- | --- |
-| `folder_id` | `i64?` | 目标文件夹；为空时表示根目录 |
-
-请求体是 `multipart/form-data`。
-
-当前实现行为：
-
-- 空文件会报错
-- 同目录同名文件会报错
-- 该接口不会覆盖已有文件
-
-## 分片上传
-
-### `PUT /files/upload/{upload_id}/{chunk_number}`
-
-- `chunk_number` 从 `0` 开始
-- 请求体使用 `application/octet-stream`
-- 对已经存在的分片是幂等的
-
-### `GET /files/upload/{upload_id}`
-
-返回：
-
-- 上传状态
-- 已接收分片数量
-- 服务器磁盘上已存在的分片编号 `chunks_on_disk`
-
-这正是前端断点续传依赖的接口。
-
-### `POST /files/upload/{upload_id}/complete`
-
-对于 `chunked` 模式，服务端会：
-
-1. 组装临时文件
-2. 计算 SHA-256
-3. 校验大小和配额
-4. 进行 Blob 去重
-5. 创建最终文件记录
-
-对于 `presigned` 模式，服务端会：
-
-1. 从 S3 临时 key 读取对象
-2. 计算 SHA-256
-3. 进行去重与最终落盘
-4. 创建最终文件记录
-
-## 普通文件操作
-
-### `GET /files/{id}`
-
-读取文件元信息。
-
-已经进入回收站的文件会按“找不到”处理。
-
-### `GET /files/{id}/download`
-
-流式下载文件，响应会带：
-
-- `Content-Type`
-- `Content-Length`
-- `Content-Disposition: attachment`
+其中 `PUT /files/{id}/content` 支持 `If-Match`，会检查锁状态，成功后自动生成历史版本，并返回新的 `ETag`。
 
 ### `PATCH /files/{id}`
 
@@ -161,59 +85,31 @@
 
 这是软删除，文件会进入回收站，而不是立刻删物理内容。
 
-## 缩略图
+### 缩略图
 
-### `GET /files/{id}/thumbnail`
-
-当前实现会：
-
-- 仅对支持的图片类型生成缩略图
-- 统一返回 WebP
-- 以 Blob 为粒度复用与缓存
+当前缩略图只对支持的图片类型生成，统一返回 WebP，并按 Blob 复用缓存。
 
 ## 锁与复制
 
 ### `POST /files/{id}/lock`
 
-请求体：
-
-```json
-{ "locked": true }
-```
-
-这是一层简化的 REST 锁接口。底层真实锁记录仍保存在 `resource_locks`。
+这是简化的 REST 锁接口：`locked = true` 表示加锁，`locked = false` 表示解锁。底层真实锁记录仍保存在 `resource_locks`。
 
 ### `POST /files/{id}/copy`
 
-请求体：
-
-```json
-{ "folder_id": 8 }
-```
-
-当前行为：
-
-- 底层 Blob 不会物理复制，只增加引用计数
-- 若目标目录已有同名文件，会自动生成 `name (1).ext` 这类副本名
-- `folder_id = null` 当前表示“沿用原目录”，不能把文件复制到根目录
+复制文件不会物理复制 Blob，只增加引用计数；目标目录同名时会自动生成副本名。当前 `folder_id = null` 仍不能表达“复制到根目录”。
 
 ## 版本历史
 
-历史版本主要来自覆盖写入流程，例如 WebDAV 覆盖已有文件。
+历史版本主要来自覆盖写入，例如：
 
-### `GET /files/{id}/versions`
+- `PUT /files/{id}/content`
+- WebDAV `PUT` 覆盖已有文件
 
-返回该文件当前保存的历史版本数组，按版本号倒序。
+对应接口：
 
-### `POST /files/{id}/versions/{version_id}/restore`
+- `GET /files/{id}/versions`
+- `POST /files/{id}/versions/{version_id}/restore`
+- `DELETE /files/{id}/versions/{version_id}`
 
-把当前文件切回指定历史版本。
-
-当前实现细节：
-
-- 恢复后不会再额外创建一个“回滚前版本”
-- 被恢复的版本记录会被删除，因为它已经成为当前版本
-
-### `DELETE /files/{id}/versions/{version_id}`
-
-删除指定历史版本；若其底层 Blob 不再被任何文件或版本引用，会连带清理物理内容。
+当前语义要记住一条：恢复版本不会额外生成一条“回滚前版本”，被恢复的版本记录会直接消失，因为它已经重新变成当前版本。

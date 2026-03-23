@@ -77,6 +77,15 @@ curl -X POST http://127.0.0.1:3000/api/v1/auth/login \
   -d '{"username":"admin","password":"change-this-password"}'
 ```
 
+## 部署后建议马上验证的项目
+
+- `GET /health`：确认服务存活
+- `GET /health/ready`：确认数据库连通
+- 管理后台能正常打开并登录
+- 默认存储策略已创建，且可以上传一个小文件
+- 如果要用 WebDAV，先创建一个专用账号并用客户端做一次真实连接测试
+- 如果要用分享，至少创建一个文件分享确认 `/s/:token` 能正常访问
+
 ## 当前工作目录会影响默认路径
 
 AsterDrive 当前默认使用相对路径。
@@ -89,7 +98,7 @@ AsterDrive 当前默认使用相对路径。
 
 ## Docker 部署
 
-仓库提供多阶段 `Dockerfile`，最终产物是单个 `scratch` 镜像。
+仓库提供多阶段 `Dockerfile`，最终产物是单个 Alpine 运行镜像。
 
 从源码构建镜像：
 
@@ -115,9 +124,10 @@ docker run -d \
 - 如果不覆盖路径，`config.toml` 会生成在 `/config.toml`
 - 默认 SQLite 文件会落在 `/asterdrive.db`
 - 默认本地存储策略仍然使用 `data/uploads`，在容器里会解析为 `/data/uploads`
+- 运行镜像改为 Alpine 后，运行时会额外携带基础系统库和 CA 证书，不再是 `scratch` 静态镜像
 
 在容器里，通常更推荐把数据库和上传目录都放到 `/data`。
-如果你希望静态配置在容器替换后仍然保留，可以改用环境变量或显式挂载 `/config.toml`。
+如果你希望静态配置在容器替换后仍然保留，可以改用环境变量或显式挂载 `/config.toml`。由于当前运行镜像是 Alpine，不再依赖 `scratch` 静态镜像假设，但默认路径规则保持不变。
 
 ## 反向代理
 

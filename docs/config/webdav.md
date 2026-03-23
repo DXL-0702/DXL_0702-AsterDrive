@@ -53,7 +53,13 @@ WebDAV 在前端 SPA fallback 之前注册，因此：
 如果 WebDAV 放在反向代理后面，请确保代理层不会丢失：
 
 - `Authorization`
-- WebDAV 方法：`PROPFIND`、`LOCK`、`UNLOCK`、`MOVE`、`COPY`
-- 相关头：`Depth`、`Destination`、`Overwrite`、`If`、`Lock-Token`
+- WebDAV 方法：`PROPFIND`、`PROPPATCH`、`MKCOL`、`MOVE`、`COPY`、`LOCK`、`UNLOCK`、`REPORT`、`VERSION-CONTROL`
+- 相关头：`Depth`、`Destination`、`Overwrite`、`If`、`Lock-Token`、`Timeout`
 
 完整示例见 [反向代理部署](/deployment/proxy)。
+
+## 客户端与账号边界
+
+- WebDAV 专用账号使用独立的用户名和密码，更适合 Finder、Windows 映射网络驱动器、rclone 等桌面客户端
+- `root_folder_id` 只对 Basic Auth 的 WebDAV 专用账号生效
+- 普通网页登录后的 Bearer JWT 也可以访问 WebDAV，但访问范围是整个用户空间

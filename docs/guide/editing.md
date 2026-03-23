@@ -6,7 +6,7 @@
 
 | 入口 | 适用场景 | 真实能力 |
 | --- | --- | --- |
-| 浏览器内文本编辑 | 快速改 `.txt`、`.md`、`.json`、`.xml` 一类文本文件 | 前端先读取内容与 `ETag`，进入编辑时加锁，保存时走 `PUT /api/v1/files/{id}/content` |
+| 浏览器内文本编辑 | 快速改 `.txt`、`.md`、`.json`、`.xml` 一类文本文件 | 前端先读取内容与 `ETag`，进入编辑时加锁，使用 Monaco 编辑器，保存时走 `PUT /api/v1/files/{id}/content` |
 | REST 覆盖写入 | 自己做编辑器、脚本或集成外部服务 | 支持 `If-Match` 乐观锁，支持显式文件锁，自动生成历史版本 |
 | WebDAV 编辑 | Finder、cadaver、桌面同步盘、Office 类客户端 | 支持 `LOCK` / `UNLOCK` / `PUT`，覆盖写入自动进版本历史，附带最小 DeltaV |
 
@@ -43,7 +43,7 @@
 -> 读取文本内容 + ETag
 -> 点击 Edit
 -> POST /api/v1/files/{id}/lock { "locked": true }
--> 本地 textarea 编辑
+-> Monaco 本地编辑
 -> PUT /api/v1/files/{id}/content + If-Match
 -> 成功后刷新内容与 ETag
 -> POST /api/v1/files/{id}/lock { "locked": false }
@@ -58,104 +58,31 @@
 
 当前限制：
 
-- 只支持纯文本编辑，实际控件就是一个 `textarea`
-- 没有 diff、语法高亮、多人协作或自动合并
-- 当前前端只在 `Save` 或 `Cancel` 时显式解锁；如果编辑中直接关闭预览弹窗，锁不会自动释放，需要在文件列表手动解锁，或者由管理员在 `/admin/locks` 强制解锁
+- 只支持文本类文件编辑，不是 Office / 富文本协作编辑器
+- 当前前端使用 Monaco 提供代码与文本编辑体验，但仍没有多人协作或自动合并
+- 关闭预览弹窗时会对未保存修改做确认；异常中断时如果锁没有释放，仍可能需要手动解锁，或者由管理员在 `/admin/locks` 强制解锁
 
 ## REST 编辑接口
 
-如果你要自己接入编辑器、脚本或自动化流程，核心接口就三个：
+如果你要自己接入脚本或外部编辑器，核心只看三个接口：
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| `GET` | `/api/v1/files/{id}/download` | 下载当前内容，并读取响应头 `ETag` |
-| `PUT` | `/api/v1/files/{id}/content` | 覆盖文件内容 |
-| `POST` | `/api/v1/files/{id}/lock` | 显式锁定 / 解锁文件 |
+| `GET` | `/api/v1/files/{id}/download` | 读取当前内容和 `ETag` |
+| `PUT` | `/api/v1/files/{id}/content` | 覆盖内容 |
+| `POST` | `/api/v1/files/{id}/lock` | 显式加锁 / 解锁 |
+
+推荐顺序：先读内容和 `ETag`，编辑完成后带 `If-Match` 保存；需要避免并发覆盖时，再额外加锁。
+
+这条链路的关键点只有几个：
+
+- `If-Match` 用来做乐观并发校验
+- 保存成功后会返回新的 `ETag`
+- 每次成功覆盖都会自动生成历史版本
+- 如果文件被其他人锁住，保存会失败
+- 异常中断导致的残留锁，可以由管理员在 `/admin/locks` 强制清理
 
 相关 API 的完整列表见 [文件 API](../api/files.md)。
-
-### 推荐流程
-
-```text
-1. POST /api/v1/files/{id}/lock     -> 锁定文件（可选，但推荐）
-2. GET  /api/v1/files/{id}/download -> 读取内容和 ETag
-3. 本地编辑
-4. PUT  /api/v1/files/{id}/content  -> 带 If-Match 保存
-5. POST /api/v1/files/{id}/lock     -> 解锁
-```
-
-### 读取当前内容
-
-```http
-GET /api/v1/files/123/download
-Cookie: aster_access=...
-```
-
-关键响应头：
-
-- `ETag: "<sha256>"`，当前实现里的 `ETag` 就是 Blob 的 SHA-256
-- `Content-Type`
-- `Content-Length`
-
-### 覆盖内容
-
-```http
-PUT /api/v1/files/123/content
-Cookie: aster_access=...
-Content-Type: application/octet-stream
-If-Match: "current-sha256"
-
-new file content
-```
-
-行为说明：
-
-- `If-Match` 可选
-- 传了 `If-Match` 就会做乐观锁校验
-- 不传 `If-Match` 也能保存，但等于强制覆盖，不做并发冲突检测
-- 每次成功覆盖都会自动生成一条历史版本
-- 响应头会返回新的 `ETag`
-
-常见状态码：
-
-| 状态码 | 含义 |
-| --- | --- |
-| `200` | 保存成功 |
-| `401` | 未登录或认证失效 |
-| `403` | 文件不属于当前用户 |
-| `404` | 文件不存在，或文件已经在回收站 |
-| `412` | `If-Match` 不匹配，说明保存前文件已经变了 |
-| `423` | 文件被其他用户锁住 |
-| `507` | 超出用户存储配额 |
-
-### 简化文件锁
-
-```http
-POST /api/v1/files/123/lock
-Content-Type: application/json
-
-{ "locked": true }
-```
-
-```http
-POST /api/v1/files/123/lock
-Content-Type: application/json
-
-{ "locked": false }
-```
-
-这套 REST 锁和 WebDAV 锁共用同一张 `resource_locks` 表，但语义并不完全相同：
-
-| 项目 | REST 锁 |
-| --- | --- |
-| 创建方式 | `POST /api/v1/files/{id}/lock` |
-| 锁所有者 | 当前登录用户 |
-| 超时 | 当前实现没有超时，除非主动解锁或管理员介入 |
-| 谁可以写 `PUT /content` | 文件所有者；如果锁也是自己加的，这把锁不会拦住自己 |
-| 谁可以解锁 | 锁持有者或文件所有者 |
-| 管理员介入 | `/api/v1/admin/locks` 和前端 `/admin/locks` 可强制解锁 |
-
-补充一点：文件一旦进入锁定状态，普通 REST 删除、重命名、移动都会被拒绝；只有“覆盖内容”这条路径会允许文件所有者在自己持有锁时继续保存。
 
 ## WebDAV 编辑
 

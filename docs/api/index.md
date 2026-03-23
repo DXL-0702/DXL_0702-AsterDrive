@@ -1,5 +1,7 @@
 # API 概览
 
+这页按功能分组带你找接口，不打算把每个接口都写成 OpenAPI 导出物。
+
 除健康检查外，所有 REST 接口都挂在：
 
 ```text
@@ -64,6 +66,7 @@
 - [认证](/api/auth)
 - [文件](/api/files)
 - [文件夹](/api/folders)
+- [批量操作](/api/batch)
 - [分享](/api/shares)
 - [回收站](/api/trash)
 - [WebDAV](/api/webdav)
@@ -71,9 +74,25 @@
 - [管理](/api/admin)
 - [健康检查](/api/health)
 
+其中比较值得优先看的几组能力是：
+
+- 上传与版本：见 [文件](/api/files)
+- 批量删除 / 移动 / 复制：见 [批量操作](/api/batch)
+- 回收站恢复与清理：见 [回收站](/api/trash)
+- 公开分享：见 [分享](/api/shares)
+- WebDAV 协议、账号与 DeltaV：见 [WebDAV](/api/webdav)
+- 后台策略、锁、运行时配置与审计：见 [管理](/api/admin)
+
 ## OpenAPI 与 Swagger
 
-当前仓库里有两条使用路径：
+如果你就是想要机器可读规范，也还是有两条路：
 
-- `debug` 构建：注册 `/swagger-ui` 与 `/api-docs/openapi.json`
+- `debug` 构建：访问 `/swagger-ui` 与 `/api-docs/openapi.json`
 - 任意构建：运行 `cargo test --test generate_openapi` 导出静态规范到 `frontend-panel/generated/openapi.json`
+
+## 继续阅读
+
+- [认证](/api/auth)
+- [文件](/api/files)
+- [分享](/api/shares)
+- [管理](/api/admin)

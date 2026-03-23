@@ -46,6 +46,8 @@ pub struct ConfigDef {
 | `max_versions_per_file` | number | `"10"` | storage | 单文件最多保留多少历史版本 |
 | `trash_retention_days` | number | `"7"` | storage | 回收站保留天数 |
 | `default_storage_quota` | number | `"0"` | storage | 新用户默认配额（字节，0=不限制） |
+| `audit_log_enabled` | boolean | `"true"` | audit | 是否记录审计日志 |
+| `audit_log_retention_days` | number | `"90"` | audit | 审计日志保留天数 |
 
 ### 生效时机
 
@@ -53,6 +55,8 @@ pub struct ConfigDef {
 - **`max_versions_per_file`** — 文件被覆盖产生新版本时读取
 - **`trash_retention_days`** — 后台任务每小时读取并清理
 - **`default_storage_quota`** — 新用户注册时读取，不影响已有用户
+- **`audit_log_enabled`** — 实时生效；关闭后新业务操作不再写审计日志
+- **`audit_log_retention_days`** — 后台清理任务每小时读取并清理
 
 ## 自定义配置
 

@@ -12,6 +12,7 @@ cargo run
 - 创建默认 SQLite 数据库
 - 执行数据库迁移
 - 如果系统里还没有任何存储策略，自动创建默认本地策略 `Local Default`
+- 初始化内置运行时配置 `system_config`
 
 默认地址：
 
@@ -126,3 +127,9 @@ OpenAPI 有两种使用方式：
 
 - `debug` 构建下访问 `http://localhost:3000/swagger-ui`
 - 运行 `cargo test --test generate_openapi` 生成静态规范
+
+## 继续阅读
+
+- [用户手册](/guide/user-guide)
+- [部署概览](/deployment/)
+- [配置概览](/config/)

@@ -29,7 +29,8 @@ export default defineConfig({
       themeConfig: {
         nav: [
           { text: '首页', link: '/' },
-          { text: '使用指南', link: '/guide/getting-started' },
+          { text: '快速开始', link: '/guide/getting-started' },
+          { text: '使用指南', link: '/guide/user-guide' },
           { text: '配置', link: '/config/' },
           { text: 'API', link: '/api/' },
           { text: '部署', link: '/deployment/' },
@@ -79,6 +80,8 @@ export default defineConfig({
             { text: '快速开始', link: '/guide/getting-started' },
             { text: '用户手册', link: '/guide/user-guide' },
             { text: '核心流程', link: '/guide/core-workflows' },
+            { text: '上传模式', link: '/guide/upload-modes' },
+            { text: '分享', link: '/guide/sharing' },
             { text: '文件编辑', link: '/guide/editing' },
             { text: '管理面板', link: '/guide/admin-console' }
           ]
@@ -108,6 +111,7 @@ export default defineConfig({
             { text: '认证', link: '/api/auth' },
             { text: '文件', link: '/api/files' },
             { text: '文件夹', link: '/api/folders' },
+            { text: '批量操作', link: '/api/batch' },
             { text: '分享', link: '/api/shares' },
             { text: '回收站', link: '/api/trash' },
             { text: 'WebDAV', link: '/api/webdav' },
@@ -122,6 +126,8 @@ export default defineConfig({
           text: '部署',
           items: [
             { text: '部署概览', link: '/deployment/' },
+            { text: '运行时行为', link: '/deployment/runtime-behavior' },
+            { text: '前端资源', link: '/deployment/frontend-assets' },
             { text: 'Docker', link: '/deployment/docker' },
             { text: 'systemd', link: '/deployment/systemd' },
             { text: '反向代理', link: '/deployment/proxy' }

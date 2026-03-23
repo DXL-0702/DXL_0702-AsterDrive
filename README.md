@@ -1,202 +1,190 @@
-# AsterDrive
+<p align="center">
+  <img src="frontend-panel/public/static/logo.svg" alt="AsterDrive" width="320" />
+</p>
 
-Self-hosted cloud storage system built with Rust and React.
+<h1 align="center">AsterDrive</h1>
 
-Single binary deployment, pluggable storage backends, multi-database support.
+<p align="center">
+  Self-hosted cloud storage built with Rust and React.
+  <br />
+  Single-binary delivery, Alpine container support, storage policies, WebDAV, sharing, version history, trash, and three upload modes.
+</p>
 
-## Features
+<p align="center">
+  <a href="https://asterdrive.docs.esap.cc/"><img alt="Documentation Site" src="https://img.shields.io/badge/docs-VitePress-7C3AED?style=for-the-badge&logo=vitepress&logoColor=white"></a>
+  <a href="README.zh.md"><img alt="中文 README" src="https://img.shields.io/badge/README-中文-E11D48?style=for-the-badge"></a>
+  <a href="docs/guide/getting-started.md"><img alt="Quick Start" src="https://img.shields.io/badge/quick%20start-guide-2563EB?style=for-the-badge"></a>
+  <a href="docs/architecture.md"><img alt="Architecture" src="https://img.shields.io/badge/architecture-overview-0F172A?style=for-the-badge"></a>
+  <a href="docs/api/index.md"><img alt="API Docs" src="https://img.shields.io/badge/API-reference-059669?style=for-the-badge"></a>
+  <a href="docs/deployment/docker.md"><img alt="Docker" src="https://img.shields.io/badge/docker-deployment-2496ED?style=for-the-badge&logo=docker&logoColor=white"></a>
+</p>
 
-- **Single Binary** - Frontend embedded via `rust-embed`, no separate web server needed
-- **Multi-Database** - SQLite (default), MySQL, PostgreSQL via sea-orm
-- **Pluggable Storage** - Local filesystem and S3-compatible backends, driven by storage policies
-- **JWT Auth** - HttpOnly cookie-based authentication with access/refresh token rotation
-- **File Deduplication** - SHA-256 content hashing with reference counting
-- **Folder System** - Hierarchical folders with per-folder storage policy override
-- **Admin API** - Storage policy CRUD for administrators
-- **OpenAPI Docs** - Auto-generated Swagger UI at `/swagger-ui`
-- **Rate Limiting** - Per-endpoint rate limiting on auth routes
-- **Structured Logging** - Text or JSON format, configurable level and file output
+## Highlights
 
-## Quick Start
+- **Single binary delivery** - frontend assets are embedded into the Rust server with `rust-embed`
+- **Multi-database** - SQLite by default, with MySQL and PostgreSQL support through SeaORM
+- **Pluggable storage policies** - local filesystem and S3-compatible object storage, with user-level and folder-level overrides
+- **Three upload modes** - `direct`, `chunked`, and `presigned`, negotiated by policy and file size
+- **Sharing** - file and folder sharing with password, expiration time, download limits, public share page, and shared child-file download support
+- **WebDAV** - dedicated WebDAV accounts, scoped root folder access, database-backed locks, and custom properties
+- **Lifecycle management** - trash, version history, thumbnails, locks, periodic cleanup jobs, and runtime config management
+- **Admin console** - manage users, storage policies, runtime settings, WebDAV accounts, and audit logs from the frontend panel
+
+## Quick start
+
+### Run from source
 
 ```bash
-# Build and run (auto-generates config.toml on first start)
-cargo run
+git clone https://github.com/AptS-1547/AsterDrive.git
+cd AsterDrive
 
-# Or with Docker
+cd frontend-panel
+bun install
+bun run build
+cd ..
+
+cargo run
+```
+
+On first startup, AsterDrive will automatically:
+
+- generate `config.toml` in the current working directory if it does not exist
+- create the default SQLite database when using the default database URL
+- run all database migrations
+- create the default local storage policy
+- initialize built-in runtime configuration items
+
+Default address:
+
+```text
+http://127.0.0.1:3000
+```
+
+The first registered user becomes `admin`.
+
+### Run with Docker
+
+```bash
+# Build image
+docker build -t asterdrive .
+
+# Run container
+docker run -d \
+  --name asterdrive \
+  -p 3000:3000 \
+  -e ASTER__SERVER__HOST=0.0.0.0 \
+  -e "ASTER__DATABASE__URL=sqlite:///data/asterdrive.db?mode=rwc" \
+  -v asterdrive-data:/data \
+  asterdrive
+
+# Or use Compose
 docker compose up -d
 ```
 
-The server starts at `http://127.0.0.1:3000`. The first registered user becomes admin.
+The current container image is an **Alpine runtime image**. The recommended persistent volume is `/data`.
 
-## Configuration
+See [`docker-compose.yml`](docker-compose.yml) and [`docs/deployment/docker.md`](docs/deployment/docker.md) for a complete deployment example.
 
-On first startup, AsterDrive generates a `config.toml` with sensible defaults and a random JWT secret.
+## Core capabilities
 
-```toml
-[server]
-host = "127.0.0.1"
-port = 3000
-workers = 0              # 0 = auto-detect CPU cores
+### File management
 
-[database]
-url = "sqlite://asterdrive.db?mode=rwc"
-pool_size = 10
-retry_count = 3
+- hierarchical folders
+- file upload, download, rename, move, copy, delete
+- inline search and batch operations
+- thumbnails and file previews
+- Monaco-based text editing with lock awareness
 
-[auth]
-jwt_secret = "<auto-generated>"
-access_token_ttl_secs = 900       # 15 minutes
-refresh_token_ttl_secs = 604800   # 7 days
+### Storage and delivery
 
-[cache]
-enabled = true
-backend = "memory"       # "memory" or "redis"
-redis_url = ""
-default_ttl = 3600
+- blob deduplication with SHA-256 + reference counting
+- local storage and S3-compatible storage policies
+- user default policy + folder override
+- streaming upload/download paths to avoid full-buffer transfers
 
-[logging]
-level = "info"
-format = "text"          # "text" or "json"
-file = ""                # empty = stdout only
-```
+### Collaboration and access
 
-All values can be overridden via environment variables with the `ASTER__` prefix:
+- HttpOnly cookie auth and Bearer JWT support
+- public share pages at `/s/:token`
+- password-protected and expiring shares
+- WebDAV accounts with independent passwords and root-folder restriction
 
-```bash
-ASTER__SERVER__PORT=8080
-ASTER__DATABASE__URL="postgres://user:pass@localhost/asterdrive"
-ASTER__AUTH__JWT_SECRET="your-secret-here"
-```
+### Operations
 
-## API Endpoints
+- health endpoints: `/health`, `/health/ready`
+- runtime config stored in `system_config`
+- audit logs for key actions
+- hourly cleanup tasks for uploads, trash, locks, and audit log retention
 
-All API routes are under `/api/v1`.
+## Documentation map
 
-### Auth
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/auth/register` | Register (first user = admin) |
-| `POST` | `/auth/login` | Login, sets HttpOnly cookies |
-| `POST` | `/auth/refresh` | Refresh access token |
-| `POST` | `/auth/logout` | Clear auth cookies |
-| `GET` | `/auth/me` | Get current user info |
-
-### Files (authenticated)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/files/upload?folder_id=` | Upload file (multipart) |
-| `GET` | `/files/{id}` | Get file metadata |
-| `GET` | `/files/{id}/download` | Download file content |
-| `PATCH` | `/files/{id}` | Rename / move file |
-| `DELETE` | `/files/{id}` | Delete file |
-
-### Folders (authenticated)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/folders` | List root folder contents |
-| `POST` | `/folders` | Create folder |
-| `GET` | `/folders/{id}` | List folder contents |
-| `PATCH` | `/folders/{id}` | Rename / move / change policy |
-| `DELETE` | `/folders/{id}` | Delete folder |
-
-### Admin (admin only)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/admin/policies` | List storage policies |
-| `POST` | `/admin/policies` | Create storage policy |
-| `GET` | `/admin/policies/{id}` | Get policy details |
-| `DELETE` | `/admin/policies/{id}` | Delete policy |
-
-### Health
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/health` | Liveness check |
-| `GET` | `/health/ready` | Readiness check (includes DB ping) |
-
-Full OpenAPI documentation available at `/swagger-ui` when the server is running.
-
-## Project Structure
-
-```
-src/
-├── api/                HTTP routes + middleware + response types
-│   ├── error_code.rs   ErrorCode enum (numeric, grouped by domain)
-│   ├── routes/         Route modules (auth, files, folders, admin, health)
-│   └── middleware/     JwtAuth, CORS, RequestID
-├── config/             Config loading (config.toml + ASTER__ env vars)
-├── db/                 Database connection + repository pattern
-├── entities/           Sea-ORM entities (DeriveEntityModel)
-├── errors.rs           AsterError enum (internal string codes E001-E040)
-├── services/           Business logic layer
-├── storage/            StorageDriver trait + LocalDriver + S3Driver + DriverRegistry
-├── types.rs            Type-safe enums (UserRole, UserStatus, DriverType, TokenType)
-├── runtime/            Startup, shutdown, logging, panic hook
-└── utils/              Hash, ID utilities
-
-migration/              Sea-ORM database migrations
-frontend-panel/         React frontend (Vite + shadcn/ui + zustand)
-docs/                   Architecture documentation
-```
+- [Getting started](docs/guide/getting-started.md)
+- [Installation and deployment](docs/guide/installation.md)
+- [Architecture](docs/architecture.md)
+- [Docker deployment](docs/deployment/docker.md)
+- [API overview](docs/api/index.md)
+- [User guide](docs/guide/user-guide.md)
 
 ## Development
 
-### Prerequisites
+### Requirements
 
-- Rust 1.91.1+
-- bun (for frontend)
+- Rust `1.91.1+`
+- Bun
+- Node.js `24+` for the current Docker frontend build stage
 
-### Commands
+### Common commands
 
 ```bash
 # Backend
-cargo run                          # Start server
-cargo check                        # Type check
-cargo test --test api_integration  # Integration tests
-cargo test --test generate_openapi # Generate OpenAPI spec
+cargo run
+cargo check
+cargo test
+cargo test --test generate_openapi
 
 # Frontend
 cd frontend-panel
 bun install
-bun run dev                        # Dev server (proxy to :3000)
-bun run build                      # Production build (tsgo + vite)
-bun run check                      # Lint (biome)
+bun run dev
+bun run build
+bun run check
 ```
 
-### Frontend Notes
+### Notes
 
-- Type checking: `tsgo` (native-preview), not `tsc`
-- Linting: `biome`, not ESLint
-- `erasableSyntaxOnly: true` - no TS enums, use `as const` objects
-- `verbatimModuleSyntax: true` - type imports must use `import type`
-- Component library: shadcn/ui (Base UI), uses `render` prop pattern
+- Type checking uses `tsgo`, not `tsc`
+- Linting uses `biome`, not ESLint
+- TypeScript `enum` is not allowed; use `as const` objects
+- Type-only imports must use `import type`
 
-## Docker
+## Configuration
+
+Static configuration is loaded with this priority:
+
+```text
+Environment variables > config.toml > built-in defaults
+```
+
+Examples:
 
 ```bash
-# Build
-docker build -t asterdrive .
-
-# Run
-docker run -d \
-  -p 3000:3000 \
-  -v asterdrive-data:/app/data \
-  asterdrive
-
-# Or with docker compose
-docker compose up -d
+ASTER__SERVER__HOST=0.0.0.0
+ASTER__SERVER__PORT=3000
+ASTER__DATABASE__URL="postgres://aster:secret@127.0.0.1:5432/asterdrive"
+ASTER__WEBDAV__PREFIX="/webdav"
 ```
 
-See [docker-compose.yml](docker-compose.yml) for a complete example with volume mounts.
+Runtime configuration is stored in the database and can be updated from the admin API / admin panel.
 
-## Contributing
+## Project structure
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+```text
+src/                    Rust backend
+migration/              Sea-ORM migrations
+frontend-panel/         React admin/file panel
+docs/                   Architecture, deployment, API, and user docs
+tests/                  Integration tests
+```
 
 ## License
 

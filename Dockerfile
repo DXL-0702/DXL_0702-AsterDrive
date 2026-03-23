@@ -10,13 +10,10 @@ RUN bun install --frozen-lockfile
 COPY frontend-panel/ ./
 RUN bun run build
 
-# Stage 2: Build Rust binary (static musl)
-FROM rust:1-slim AS builder
+# Stage 2: Build Rust binary
+FROM rust:1-alpine AS builder
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends musl-tools musl-dev && \
-    rm -rf /var/lib/apt/lists/* && \
-    rustup target add x86_64-unknown-linux-musl
+RUN apk add --no-cache build-base pkgconfig sqlite-dev curl
 
 WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
@@ -24,7 +21,7 @@ COPY migration/ migration/
 
 # Pre-build dependencies (cache layer)
 RUN mkdir src && echo 'fn main() {}' > src/main.rs && \
-    cargo build --release --target x86_64-unknown-linux-musl 2>/dev/null || true && \
+    cargo build --release 2>/dev/null || true && \
     rm -rf src
 
 COPY src/ src/
@@ -32,12 +29,14 @@ COPY build.rs ./
 COPY --from=frontend /build/frontend-panel/dist/ frontend-panel/dist/
 
 ARG CARGO_FEATURES="server"
-ENV RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-s"
+ENV RUSTFLAGS="-C link-arg=-s"
 
-RUN cargo build --release --target x86_64-unknown-linux-musl --features "${CARGO_FEATURES}"
+RUN cargo build --release --features "${CARGO_FEATURES}"
 
-# Stage 3: scratch
-FROM scratch
+# Stage 3: Alpine runtime
+FROM alpine:3.22
+
+RUN apk add --no-cache ca-certificates sqlite-libs
 
 LABEL maintainer="AptS:1547 <apts-1547@esaps.net>"
 LABEL org.opencontainers.image.title="AsterDrive"
@@ -45,7 +44,7 @@ LABEL org.opencontainers.image.description="Self-hosted cloud storage system bui
 LABEL org.opencontainers.image.source="https://github.com/AptS-1547/AsterDrive"
 LABEL org.opencontainers.image.license="MIT"
 
-COPY --from=builder /build/target/x86_64-unknown-linux-musl/release/aster_drive /aster_drive
+COPY --from=builder /build/target/release/aster_drive /aster_drive
 
 VOLUME ["/data"]
 EXPOSE 3000

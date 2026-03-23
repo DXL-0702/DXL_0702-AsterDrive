@@ -3,8 +3,8 @@
 当前仓库的 `Dockerfile` 是三阶段构建：
 
 1. 构建前端
-2. 构建静态链接 Rust 二进制
-3. 打包到 `scratch` 镜像
+2. 构建 Rust 二进制
+3. 打包到 Alpine 运行镜像
 
 ## 当前镜像的重要事实
 
@@ -14,13 +14,15 @@
 /aster_drive
 ```
 
-并且当前 `Dockerfile` 没有设置 `WORKDIR`，因此进程默认在 `/` 目录启动。这会直接影响默认路径：
+当前 `Dockerfile` 仍然没有设置 `WORKDIR`，因此进程默认在 `/` 目录启动。这会直接影响默认路径：
 
 - 配置文件：`/config.toml`
 - 默认 SQLite：`/asterdrive.db`
 - 默认本地存储目录：`/data/uploads`
 
 ## 推荐做法
+
+容器第一次成功启动时，仍会自动执行 migration、自动创建默认本地存储策略，并在数据库中补齐默认 `system_config`。因此镜像本身不需要额外的初始化脚本，但你必须先把数据库和存储目录挂成持久化卷。
 
 如果你用默认本地存储，建议显式把数据库也放到 `/data` 下，这样一个卷就能持久化数据库和上传内容：
 
@@ -68,6 +70,9 @@ volumes:
 
 当前程序没有 `--print-config` 之类的参数。常见做法有两种：
 
+- 在容器外先准备好 `config.toml`，再只读挂载进去
+- 或先让服务在持久化工作目录里启动一次，利用自动生成逻辑产出默认配置，再回头修改
+
 - 参考仓库根目录的 `config.example.toml`
 - 先在本地运行一次二进制，让它自动生成 `config.toml`
 
@@ -85,4 +90,4 @@ docker build --build-arg CARGO_FEATURES="server" -t asterdrive .
 
 ## Swagger 说明
 
-发布镜像是 `release` 构建，因此默认不会暴露 `/swagger-ui`。这是构建行为，不是镜像或代理配置问题。
+发布镜像是 `release` 构建，因此默认不会暴露 `/swagger-ui`。这是构建行为，不是 Alpine 运行镜像或代理配置问题。

@@ -24,6 +24,11 @@
 
 代理层要先取消自己的 body 限制，例如在 Nginx 里：
 
+注意三种上传模式对代理层的压力不同：
+
+- `direct` / `chunked`：上传流量直接经过 AsterDrive 与代理层
+- `presigned`：浏览器会直接把文件 `PUT` 到对象存储，代理层和 AsterDrive 只参与协商与完成阶段
+
 ```nginx
 client_max_body_size 0;
 ```

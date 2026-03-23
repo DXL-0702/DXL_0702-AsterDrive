@@ -36,6 +36,11 @@
 - 数据库正常：`200`
 - 数据库不可用：`503`
 
+部署建议：
+
+- 用 `/health` 做 liveness / 基础探活
+- 用 `/health/ready` 做 readiness / 上线前探针
+
 ## `GET /health/memory`
 
 返回当前堆分配量与峰值，单位是 MB 字符串。
@@ -43,3 +48,5 @@
 ## `GET /health/metrics`
 
 只有在编译时启用了 `metrics` feature 才会注册，输出格式为 Prometheus text exposition。
+
+这个接口更适合 Prometheus 等监控系统抓取，不建议直接暴露给公网。
