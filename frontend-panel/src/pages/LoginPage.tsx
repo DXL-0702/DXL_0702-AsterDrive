@@ -1,9 +1,10 @@
-import { ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { z } from "zod/v4";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -18,273 +19,310 @@ import { handleApiError } from "@/hooks/useApiError";
 import { authService } from "@/services/authService";
 import { useAuthStore } from "@/stores/authStore";
 
-type Step = "identifier" | "login" | "register" | "setup";
+// ── Zod schemas ─────────────────────────────────────────────
+
+const identifierSchema = z.string().min(1, "required");
+const usernameSchema = z.string().min(2, "min_2_chars").max(32, "max_32_chars");
+const emailSchema = z.string().email("invalid_email");
+const passwordSchema = z.string().min(6, "min_6_chars");
+
+// ── Types ───────────────────────────────────────────────────
+
+type AuthMode = "idle" | "login" | "register" | "setup";
+
+interface FieldError {
+	identifier?: string;
+	username?: string;
+	email?: string;
+	password?: string;
+}
+
+// ── Component ───────────────────────────────────────────────
 
 export default function LoginPage() {
 	const { t } = useTranslation("auth");
 	const navigate = useNavigate();
 	const login = useAuthStore((s) => s.login);
 
-	const [step, setStep] = useState<Step>("identifier");
+	// Form state
 	const [identifier, setIdentifier] = useState("");
 	const [username, setUsername] = useState("");
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [showPassword, setShowPassword] = useState(false);
-	const [loading, setLoading] = useState(false);
 
-	// Step 1: Check identifier
-	const handleCheck = async (e: FormEvent) => {
-		e.preventDefault();
-		if (!identifier.trim()) return;
-		setLoading(true);
+	// Auth mode (determined by check)
+	const [mode, setMode] = useState<AuthMode>("idle");
+	const [checking, setChecking] = useState(false);
+	const [submitting, setSubmitting] = useState(false);
+	const [errors, setErrors] = useState<FieldError>({});
+
+	// Debounce timer for auto-check
+	const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const lastChecked = useRef("");
+
+	// ── Auto check on identifier change (debounced) ──
+
+	const runCheck = useCallback(async (value: string) => {
+		const trimmed = value.trim();
+		if (trimmed.length < 2 || trimmed === lastChecked.current) return;
+
+		lastChecked.current = trimmed;
+		setChecking(true);
 		try {
-			const result = await authService.check(identifier.trim());
+			const result = await authService.check(trimmed);
 			if (!result.has_users) {
-				// 首次设置 — 自动用输入的值填充
-				if (identifier.includes("@")) {
-					setEmail(identifier.trim());
+				// First-time setup
+				if (trimmed.includes("@")) {
+					setEmail(trimmed);
+					setUsername("");
 				} else {
-					setUsername(identifier.trim());
+					setUsername(trimmed);
+					setEmail("");
 				}
-				setStep("setup");
+				setMode("setup");
 			} else if (result.exists) {
-				setStep("login");
+				setMode("login");
 			} else {
-				// 用户不存在但系统已有用户 → 注册
-				if (identifier.includes("@")) {
-					setEmail(identifier.trim());
+				// New user registration
+				if (trimmed.includes("@")) {
+					setEmail(trimmed);
+					setUsername("");
 				} else {
-					setUsername(identifier.trim());
+					setUsername(trimmed);
+					setEmail("");
 				}
-				setStep("register");
+				setMode("register");
+			}
+		} catch {
+			// Silently fail — user can still type
+		} finally {
+			setChecking(false);
+		}
+	}, []);
+
+	useEffect(() => {
+		if (checkTimer.current) clearTimeout(checkTimer.current);
+		if (identifier.trim().length >= 2) {
+			checkTimer.current = setTimeout(() => runCheck(identifier), 500);
+		} else {
+			setMode("idle");
+			lastChecked.current = "";
+		}
+		return () => {
+			if (checkTimer.current) clearTimeout(checkTimer.current);
+		};
+	}, [identifier, runCheck]);
+
+	// ── Validation ──
+
+	const validate = (): boolean => {
+		const errs: FieldError = {};
+
+		const idResult = identifierSchema.safeParse(identifier.trim());
+		if (!idResult.success) errs.identifier = idResult.error.issues[0]?.message;
+
+		if (mode === "register" || mode === "setup") {
+			if (!username && !identifier.includes("@")) {
+				// username was auto-filled from identifier
+			} else if (mode === "register" && !identifier.includes("@")) {
+				// username is identifier, check email
+				const emailResult = emailSchema.safeParse(email);
+				if (!emailResult.success) errs.email = emailResult.error.issues[0]?.message;
+			} else if (mode === "register" && identifier.includes("@")) {
+				const unResult = usernameSchema.safeParse(username);
+				if (!unResult.success) errs.username = unResult.error.issues[0]?.message;
+			}
+
+			if (mode === "setup") {
+				const unResult = usernameSchema.safeParse(username || identifier);
+				if (!unResult.success && !username) errs.username = unResult.error.issues[0]?.message;
+				const emResult = emailSchema.safeParse(email || (identifier.includes("@") ? identifier : ""));
+				if (!emResult.success && !email) errs.email = emResult.error.issues[0]?.message;
+			}
+		}
+
+		const pwResult = passwordSchema.safeParse(password);
+		if (!pwResult.success) errs.password = pwResult.error.issues[0]?.message;
+
+		setErrors(errs);
+		return Object.keys(errs).length === 0;
+	};
+
+	// ── Submit ──
+
+	const handleSubmit = async (e: FormEvent) => {
+		e.preventDefault();
+		if (!validate()) return;
+		if (mode === "idle") {
+			// Force check if not yet checked
+			await runCheck(identifier);
+			return;
+		}
+
+		setSubmitting(true);
+		try {
+			if (mode === "login") {
+				await login(identifier.trim(), password);
+				navigate("/", { replace: true });
+			} else if (mode === "register") {
+				const un = identifier.includes("@") ? username : identifier.trim();
+				const em = identifier.includes("@") ? identifier.trim() : email;
+				await authService.register(un, em, password);
+				toast.success(t("register_success"));
+				await login(identifier.trim(), password);
+				navigate("/", { replace: true });
+			} else if (mode === "setup") {
+				const un = username || identifier.trim();
+				const em = email || identifier.trim();
+				await authService.setup(un, em, password);
+				toast.success(t("setup_complete"));
+				await login(em.includes("@") ? em : un, password);
+				navigate("/", { replace: true });
 			}
 		} catch (error) {
 			handleApiError(error);
 		} finally {
-			setLoading(false);
+			setSubmitting(false);
 		}
 	};
 
-	// Step 2a: Login
-	const handleLogin = async (e: FormEvent) => {
-		e.preventDefault();
-		setLoading(true);
-		try {
-			await login(identifier.trim(), password);
-			navigate("/", { replace: true });
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setLoading(false);
+	// ── Derived state ──
+
+	const isEmail = identifier.includes("@");
+
+	const submitLabel = () => {
+		if (submitting) {
+			if (mode === "login") return t("signing_in");
+			return t("creating_account");
 		}
+		if (mode === "setup") return t("create_admin");
+		if (mode === "register") return t("sign_up");
+		if (mode === "login") return t("sign_in");
+		return t("continue");
 	};
 
-	// Step 2b: Register
-	const handleRegister = async (e: FormEvent) => {
-		e.preventDefault();
-		setLoading(true);
-		try {
-			await authService.register(username, email, password);
-			toast.success(t("register_success"));
-			await login(identifier.trim(), password);
-			navigate("/", { replace: true });
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setLoading(false);
-		}
+	const description = () => {
+		if (mode === "setup") return t("setup_desc");
+		if (mode === "register") return t("create_new_account");
+		if (mode === "login") return t("enter_password");
+		return t("sign_in_to_account");
 	};
-
-	// Step 2c: First-time setup
-	const handleSetup = async (e: FormEvent) => {
-		e.preventDefault();
-		setLoading(true);
-		try {
-			await authService.setup(username, email, password);
-			toast.success(t("setup_complete"));
-			await login(email || username, password);
-			navigate("/", { replace: true });
-		} catch (error) {
-			handleApiError(error);
-		} finally {
-			setLoading(false);
-		}
-	};
-
-	const goBack = () => {
-		setPassword("");
-		setShowPassword(false);
-		setStep("identifier");
-	};
-
-	const passwordField = (
-		<div className="relative">
-			<Input
-				type={showPassword ? "text" : "password"}
-				placeholder={t("password")}
-				value={password}
-				onChange={(e) => setPassword(e.target.value)}
-				required
-				autoFocus={step !== "identifier"}
-				className="pr-10"
-			/>
-			<button
-				type="button"
-				className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-				onClick={() => setShowPassword(!showPassword)}
-				tabIndex={-1}
-				aria-label={
-					showPassword ? t("common:hide_password") : t("common:show_password")
-				}
-			>
-				{showPassword ? (
-					<EyeOff className="h-4 w-4" />
-				) : (
-					<Eye className="h-4 w-4" />
-				)}
-			</button>
-		</div>
-	);
 
 	return (
 		<div className="min-h-screen flex items-center justify-center bg-background p-4">
 			<Card className="w-full max-w-sm">
 				<CardHeader>
 					<CardTitle className="text-2xl text-center">
-						{step === "setup" ? t("welcome_setup") : t("common:app_name")}
+						{mode === "setup" ? t("welcome_setup") : t("common:app_name")}
 					</CardTitle>
 					<CardDescription className="text-center">
-						{step === "identifier" && t("sign_in_to_account")}
-						{step === "login" && t("enter_password")}
-						{step === "register" && t("create_new_account")}
-						{step === "setup" && t("setup_desc")}
+						{description()}
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
-					{/* Step 1: Identifier */}
-					{step === "identifier" && (
-						<form onSubmit={handleCheck} className="space-y-4">
-							<Input
-								placeholder={t("email_or_username")}
-								value={identifier}
-								onChange={(e) => setIdentifier(e.target.value)}
-								required
-								autoFocus
-							/>
-							<Button type="submit" className="w-full" disabled={loading}>
-								{loading ? (
-									<Loader2 className="h-4 w-4 animate-spin" />
-								) : (
-									t("continue")
+					<form onSubmit={handleSubmit} className="space-y-3">
+						{/* Identifier — always visible */}
+						<div className="space-y-1">
+							<div className="relative">
+								<Input
+									placeholder={t("email_or_username")}
+									value={identifier}
+									onChange={(e) => setIdentifier(e.target.value)}
+									required
+									autoFocus
+									className={errors.identifier ? "border-destructive" : ""}
+								/>
+								{checking && (
+									<Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
 								)}
-							</Button>
-						</form>
-					)}
+							</div>
+							{errors.identifier && (
+								<p className="text-xs text-destructive">{errors.identifier}</p>
+							)}
+						</div>
 
-					{/* Step 2a: Login */}
-					{step === "login" && (
-						<form onSubmit={handleLogin} className="space-y-4">
-							<div className="flex items-center justify-between">
-								<span className="text-sm font-medium">{identifier}</span>
+						{/* Username — shown when registering with email, or setup */}
+						{(mode === "setup" || (mode === "register" && isEmail)) && (
+							<div className="space-y-1">
+								<Label className="text-xs">{t("username")}</Label>
+								<Input
+									placeholder={t("choose_username")}
+									value={username}
+									onChange={(e) => setUsername(e.target.value)}
+									required
+									className={errors.username ? "border-destructive" : ""}
+								/>
+								{errors.username && (
+									<p className="text-xs text-destructive">{errors.username}</p>
+								)}
+							</div>
+						)}
+
+						{/* Email — shown when registering with username, or setup */}
+						{(mode === "setup" && !isEmail) || (mode === "register" && !isEmail) ? (
+							<div className="space-y-1">
+								<Label className="text-xs">{t("email")}</Label>
+								<Input
+									type="email"
+									placeholder={t("email")}
+									value={email}
+									onChange={(e) => setEmail(e.target.value)}
+									required
+									className={errors.email ? "border-destructive" : ""}
+								/>
+								{errors.email && (
+									<p className="text-xs text-destructive">{errors.email}</p>
+								)}
+							</div>
+						) : null}
+
+						{/* Password — always visible */}
+						<div className="space-y-1">
+							<div className="relative">
+								<Input
+									type={showPassword ? "text" : "password"}
+									placeholder={t("password")}
+									value={password}
+									onChange={(e) => setPassword(e.target.value)}
+									required
+									className={`pr-10 ${errors.password ? "border-destructive" : ""}`}
+								/>
 								<button
 									type="button"
-									className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-									onClick={goBack}
+									className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+									onClick={() => setShowPassword(!showPassword)}
+									tabIndex={-1}
+									aria-label={
+										showPassword
+											? t("common:hide_password")
+											: t("common:show_password")
+									}
 								>
-									<ArrowLeft className="h-3 w-3" />
-									{t("not_you")}
+									{showPassword ? (
+										<EyeOff className="h-4 w-4" />
+									) : (
+										<Eye className="h-4 w-4" />
+									)}
 								</button>
 							</div>
-							{passwordField}
-							<Button type="submit" className="w-full" disabled={loading}>
-								{loading ? t("signing_in") : t("sign_in")}
-							</Button>
-						</form>
-					)}
+							{errors.password && (
+								<p className="text-xs text-destructive">{errors.password}</p>
+							)}
+						</div>
 
-					{/* Step 2b: Register */}
-					{step === "register" && (
-						<form onSubmit={handleRegister} className="space-y-4">
-							<div className="flex items-center justify-between">
-								<span className="text-sm text-muted-foreground">
-									{identifier}
-								</span>
-								<button
-									type="button"
-									className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
-									onClick={goBack}
-								>
-									<ArrowLeft className="h-3 w-3" />
-									{t("common:back")}
-								</button>
-							</div>
-							{!username && (
-								<div className="space-y-1.5">
-									<Label>{t("username")}</Label>
-									<Input
-										placeholder={t("choose_username")}
-										value={username}
-										onChange={(e) => setUsername(e.target.value)}
-										required
-										autoFocus
-									/>
-								</div>
-							)}
-							{!email && (
-								<div className="space-y-1.5">
-									<Label>{t("email")}</Label>
-									<Input
-										type="email"
-										placeholder={t("email")}
-										value={email}
-										onChange={(e) => setEmail(e.target.value)}
-										required
-										autoFocus={!!username}
-									/>
-								</div>
-							)}
-							{passwordField}
-							<Button type="submit" className="w-full" disabled={loading}>
-								{loading ? t("creating_account") : t("sign_up")}
-							</Button>
-						</form>
-					)}
-
-					{/* Step 2c: First-time setup */}
-					{step === "setup" && (
-						<form onSubmit={handleSetup} className="space-y-4">
-							{!username && (
-								<div className="space-y-1.5">
-									<Label>{t("username")}</Label>
-									<Input
-										placeholder={t("choose_username")}
-										value={username}
-										onChange={(e) => setUsername(e.target.value)}
-										required
-										autoFocus
-									/>
-								</div>
-							)}
-							{!email && (
-								<div className="space-y-1.5">
-									<Label>{t("email")}</Label>
-									<Input
-										type="email"
-										placeholder={t("email")}
-										value={email}
-										onChange={(e) => setEmail(e.target.value)}
-										required
-										autoFocus={!!username}
-									/>
-								</div>
-							)}
-							{passwordField}
-							<Button type="submit" className="w-full" disabled={loading}>
-								{loading ? t("creating_account") : t("create_admin")}
-							</Button>
-						</form>
-					)}
+						{/* Submit */}
+						<Button
+							type="submit"
+							className="w-full"
+							disabled={submitting || checking}
+						>
+							{submitting ? (
+								<Loader2 className="h-4 w-4 animate-spin mr-2" />
+							) : null}
+							{submitLabel()}
+						</Button>
+					</form>
 				</CardContent>
 			</Card>
 		</div>
