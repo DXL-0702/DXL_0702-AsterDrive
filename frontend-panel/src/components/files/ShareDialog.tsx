@@ -1,4 +1,3 @@
-import { Check, Copy, Link } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -8,6 +7,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -90,7 +90,7 @@ export function ShareDialog({
 			<DialogContent className="max-w-md">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
-						<Link className="h-4 w-4" />
+						<Icon name="Link" className="h-4 w-4" />
 						Share "{name}"
 					</DialogTitle>
 				</DialogHeader>
@@ -101,9 +101,9 @@ export function ShareDialog({
 							<Input value={shareUrl} readOnly className="text-sm" />
 							<Button variant="outline" size="icon" onClick={handleCopy}>
 								{copied ? (
-									<Check className="h-4 w-4 text-green-500" />
+									<Icon name="Check" className="h-4 w-4 text-green-500" />
 								) : (
-									<Copy className="h-4 w-4" />
+									<Icon name="Copy" className="h-4 w-4" />
 								)}
 							</Button>
 						</div>

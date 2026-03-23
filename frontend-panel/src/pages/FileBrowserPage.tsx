@@ -1,6 +1,6 @@
-import { FolderOpen } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { BatchActionBar } from "@/components/common/BatchActionBar";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -14,26 +14,56 @@ import { ShareDialog } from "@/components/files/ShareDialog";
 import { UploadArea } from "@/components/files/UploadArea";
 import { VersionHistoryDialog } from "@/components/files/VersionHistoryDialog";
 import { AppLayout } from "@/components/layout/AppLayout";
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbList,
+	BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import {
+	ContextMenu,
+	ContextMenuContent,
+	ContextMenuItem,
+	ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { handleApiError } from "@/hooks/useApiError";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { fileService } from "@/services/fileService";
+import { api } from "@/services/http";
 import { useFileStore } from "@/stores/fileStore";
 import type { FileInfo } from "@/types/api";
-import { api } from "@/services/http";
 
 export default function FileBrowserPage() {
 	const { t } = useTranslation("files");
+	const navigate = useNavigate();
+	const params = useParams<{ folderId?: string }>();
+	const [searchParams] = useSearchParams();
+	const folderId = params.folderId ? Number(params.folderId) : null;
+	const folderName = searchParams.get("name") ?? undefined;
+
 	const navigateTo = useFileStore((s) => s.navigateTo);
 	const refresh = useFileStore((s) => s.refresh);
+	const breadcrumb = useFileStore((s) => s.breadcrumb);
 	const folders = useFileStore((s) => s.folders);
 	const files = useFileStore((s) => s.files);
 	const loading = useFileStore((s) => s.loading);
 	const viewMode = useFileStore((s) => s.viewMode);
 	const setViewMode = useFileStore((s) => s.setViewMode);
+	const searchQuery = useFileStore((s) => s.searchQuery);
+	const searchFolders = useFileStore((s) => s.searchFolders);
+	const searchFiles = useFileStore((s) => s.searchFiles);
+	const error = useFileStore((s) => s.error);
+
+	const isSearching = searchQuery !== null;
+	const displayFolders = isSearching ? searchFolders : folders;
+	const displayFiles = isSearching ? searchFiles : files;
 
 	useKeyboardShortcuts();
 
+	const [createFolderOpen, setCreateFolderOpen] = useState(false);
 	const [previewFile, setPreviewFile] = useState<FileInfo | null>(null);
 	const [shareTarget, setShareTarget] = useState<{
 		fileId?: number;
@@ -43,8 +73,8 @@ export default function FileBrowserPage() {
 	const [versionFileId, setVersionFileId] = useState<number | null>(null);
 
 	useEffect(() => {
-		navigateTo(null).catch(handleApiError);
-	}, [navigateTo]);
+		navigateTo(folderId, folderName).catch(handleApiError);
+	}, [folderId, folderName, navigateTo]);
 
 	const handleDownload = useCallback(
 		async (fileId: number, fileName: string) => {
@@ -107,9 +137,10 @@ export default function FileBrowserPage() {
 	);
 
 	const sharedProps = {
-		folders,
-		files,
-		onFolderOpen: (id: number, name: string) => navigateTo(id, name),
+		folders: displayFolders,
+		files: displayFiles,
+		onFolderOpen: (id: number, name: string) =>
+			navigate(`/folder/${id}?name=${encodeURIComponent(name)}`),
 		onFileClick: (file: FileInfo) => setPreviewFile(file),
 		onShare: setShareTarget,
 		onDownload: handleDownload,
@@ -119,34 +150,85 @@ export default function FileBrowserPage() {
 		onVersions: (fileId: number) => setVersionFileId(fileId),
 	};
 
-	const isEmpty = !loading && folders.length === 0 && files.length === 0;
+	const isEmpty =
+		!loading && displayFolders.length === 0 && displayFiles.length === 0;
 
 	return (
-		<AppLayout
-			actions={
-				<>
-					<ViewToggle value={viewMode} onChange={setViewMode} />
-					<CreateFolderDialog />
-				</>
-			}
-		>
+		<AppLayout actions={<ViewToggle value={viewMode} onChange={setViewMode} />}>
 			<UploadArea>
-				<ScrollArea className="flex-1">
-					{loading ? (
-						<LoadingSpinner />
-					) : isEmpty ? (
-						<EmptyState
-							icon={<FolderOpen className="h-12 w-12" />}
-							title={t("folder_empty")}
-							description={t("folder_empty_desc")}
-						/>
-					) : viewMode === "grid" ? (
-						<FileGrid {...sharedProps} />
+				{/* Breadcrumb / search indicator */}
+				<div className="px-4 pt-3 pb-1">
+					{isSearching ? (
+						<span className="text-sm text-muted-foreground">
+							{t("common:search")}: &quot;{searchQuery}&quot;
+						</span>
 					) : (
-						<FileTable {...sharedProps} />
+						<Breadcrumb>
+							<BreadcrumbList>
+								{breadcrumb.map((item, i) => (
+									<Fragment key={item.id ?? "root"}>
+										{i > 0 && <BreadcrumbSeparator />}
+										<BreadcrumbItem>
+											{i < breadcrumb.length - 1 ? (
+												<BreadcrumbLink
+													className="cursor-pointer"
+													onClick={() =>
+														navigate(
+															item.id === null
+																? "/"
+																: `/folder/${item.id}?name=${encodeURIComponent(item.name)}`,
+														)
+													}
+												>
+													{item.name}
+												</BreadcrumbLink>
+											) : (
+												<span className="font-medium">{item.name}</span>
+											)}
+										</BreadcrumbItem>
+									</Fragment>
+								))}
+							</BreadcrumbList>
+						</Breadcrumb>
 					)}
-				</ScrollArea>
+				</div>
+				<ContextMenu>
+					<ContextMenuTrigger className="flex-1 flex flex-col">
+						<ScrollArea className="flex-1">
+							{loading ? (
+								<LoadingSpinner />
+							) : error ? (
+								<EmptyState
+									icon={<Icon name="Warning" className="h-12 w-12" />}
+									title={t("common:error")}
+									description={error}
+								/>
+							) : isEmpty ? (
+								<EmptyState
+									icon={<Icon name="FolderOpen" className="h-12 w-12" />}
+									title={t("folder_empty")}
+									description={t("folder_empty_desc")}
+								/>
+							) : viewMode === "grid" ? (
+								<FileGrid {...sharedProps} />
+							) : (
+								<FileTable {...sharedProps} />
+							)}
+						</ScrollArea>
+					</ContextMenuTrigger>
+					<ContextMenuContent>
+						<ContextMenuItem onClick={() => setCreateFolderOpen(true)}>
+							<Icon name="FolderPlus" className="h-4 w-4 mr-2" />
+							{t("new_folder")}
+						</ContextMenuItem>
+					</ContextMenuContent>
+				</ContextMenu>
 			</UploadArea>
+
+			<CreateFolderDialog
+				open={createFolderOpen}
+				onOpenChange={setCreateFolderOpen}
+			/>
 
 			<BatchActionBar />
 

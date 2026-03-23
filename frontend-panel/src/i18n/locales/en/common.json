@@ -84,5 +84,6 @@
 	"mode": "Mode",
 	"color": "Color",
 	"file_browser": "File Browser",
-	"file_browser_desc": "Default view mode for the file browser."
+	"file_browser_desc": "Default view mode for the file browser.",
+	"search_placeholder": "Search files..."
 }

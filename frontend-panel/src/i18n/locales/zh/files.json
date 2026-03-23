@@ -30,5 +30,8 @@
 	"confirm_delete_desc": "此操作将移至回收站。",
 	"root": "根目录",
 	"storage_used": "已使用 {{used}}",
-	"storage_quota": "{{used}} / {{quota}}"
+	"storage_quota": "{{used}} / {{quota}}",
+	"folders_section": "文件夹",
+	"files_section": "文件",
+	"storage_space": "存储空间"
 }

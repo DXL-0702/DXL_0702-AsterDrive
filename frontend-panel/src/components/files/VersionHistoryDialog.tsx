@@ -1,4 +1,3 @@
-import { History, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -9,6 +8,7 @@ import {
 	DialogTitle,
 	DialogTrigger,
 } from "@/components/ui/dialog";
+import { Icon } from "@/components/ui/icon";
 import {
 	Table,
 	TableBody,
@@ -85,7 +85,7 @@ export function VersionHistoryDialog({
 			<DialogTrigger
 				render={<Button variant="ghost" size="icon" className="h-8 w-8" />}
 			>
-				<History className="h-4 w-4" />
+				<Icon name="Clock" className="h-4 w-4" />
 			</DialogTrigger>
 			<DialogContent className="max-w-lg">
 				<DialogHeader>
@@ -130,7 +130,10 @@ export function VersionHistoryDialog({
 												title="Restore"
 												onClick={() => handleRestore(v.id)}
 											>
-												<RotateCcw className="h-3.5 w-3.5" />
+												<Icon
+													name="ArrowCounterClockwise"
+													className="h-3.5 w-3.5"
+												/>
 											</Button>
 											<Button
 												variant="ghost"
@@ -139,7 +142,7 @@ export function VersionHistoryDialog({
 												title="Delete"
 												onClick={() => handleDelete(v.id)}
 											>
-												<Trash2 className="h-3.5 w-3.5" />
+												<Icon name="Trash" className="h-3.5 w-3.5" />
 											</Button>
 										</div>
 									</TableCell>

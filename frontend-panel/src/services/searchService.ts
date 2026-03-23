@@ -1,5 +1,5 @@
-import type { SearchResults } from "@/types/api";
 import { api } from "@/services/http";
+import type { SearchResults } from "@/types/api";
 
 interface SearchQuery {
 	q?: string;

@@ -1,16 +1,16 @@
-import { Cloud, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { z } from "zod/v4";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { handleApiError } from "@/hooks/useApiError";
+import { cn } from "@/lib/utils";
 import { authService } from "@/services/authService";
 import { useAuthStore } from "@/stores/authStore";
-import { cn } from "@/lib/utils";
 
 // ── Zod schemas ─────────────────────────────────────────────
 
@@ -298,7 +298,7 @@ export default function LoginPage() {
 					<div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full bg-amber-500 blur-3xl" />
 				</div>
 				<div className="relative text-center px-12 max-w-md">
-					<Cloud className="h-16 w-16 text-white/80 mx-auto mb-6" />
+					<Icon name="Cloud" className="h-16 w-16 text-white/80 mx-auto mb-6" />
 					<h1 className="text-4xl font-bold text-white tracking-tight mb-3">
 						AsterDrive
 					</h1>
@@ -313,7 +313,10 @@ export default function LoginPage() {
 				<div className="w-full max-w-sm">
 					{/* Mobile logo */}
 					<div className="lg:hidden text-center mb-8">
-						<Cloud className="h-10 w-10 text-foreground mx-auto mb-3" />
+						<Icon
+							name="Cloud"
+							className="h-10 w-10 text-foreground mx-auto mb-3"
+						/>
 						<h1 className="text-2xl font-bold tracking-tight">AsterDrive</h1>
 					</div>
 
@@ -348,7 +351,10 @@ export default function LoginPage() {
 								</Label>
 								<div className="flex items-center gap-2">
 									{checking && (
-										<Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+										<Icon
+											name="Spinner"
+											className="h-3 w-3 animate-spin text-muted-foreground"
+										/>
 									)}
 									{mode !== "idle" && !checking && (
 										<span className="text-xs text-muted-foreground/70">
@@ -468,9 +474,9 @@ export default function LoginPage() {
 									}
 								>
 									{showPassword ? (
-										<EyeOff className="h-4 w-4" />
+										<Icon name="EyeSlash" className="h-4 w-4" />
 									) : (
-										<Eye className="h-4 w-4" />
+										<Icon name="Eye" className="h-4 w-4" />
 									)}
 								</button>
 							</div>
@@ -484,7 +490,9 @@ export default function LoginPage() {
 							className="w-full h-10 mt-4"
 							disabled={submitting || checking}
 						>
-							{submitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+							{submitting && (
+								<Icon name="Spinner" className="h-4 w-4 animate-spin mr-2" />
+							)}
 							{submitLabel()}
 						</Button>
 					</form>

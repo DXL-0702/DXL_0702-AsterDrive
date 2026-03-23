@@ -84,5 +84,6 @@
 	"mode": "模式",
 	"color": "颜色",
 	"file_browser": "文件浏览器",
-	"file_browser_desc": "文件浏览器的默认视图模式。"
+	"file_browser_desc": "文件浏览器的默认视图模式。",
+	"search_placeholder": "搜索文件..."
 }

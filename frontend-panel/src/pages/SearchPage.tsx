@@ -1,10 +1,10 @@
-import { FileIcon, Folder, Search } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -60,7 +60,7 @@ export default function SearchPage() {
 	}, [query, searchType]);
 
 	return (
-		<AppLayout title={t("search")}>
+		<AppLayout>
 			<div className="p-4 space-y-4">
 				<div className="flex gap-2">
 					<Input
@@ -86,7 +86,7 @@ export default function SearchPage() {
 						</SelectContent>
 					</Select>
 					<Button onClick={doSearch} disabled={loading || !query.trim()}>
-						<Search className="h-4 w-4 mr-1" />
+						<Icon name="MagnifyingGlass" className="h-4 w-4 mr-1" />
 						{t("search")}
 					</Button>
 				</div>
@@ -119,7 +119,7 @@ export default function SearchPage() {
 									{folders.map((f) => (
 										<TableRow key={`folder-${f.id}`}>
 											<TableCell>
-												<Folder className="h-4 w-4 text-blue-500" />
+												<Icon name="Folder" className="h-4 w-4 text-blue-500" />
 											</TableCell>
 											<TableCell className="font-medium">{f.name}</TableCell>
 											<TableCell className="text-muted-foreground">
@@ -134,7 +134,10 @@ export default function SearchPage() {
 									{files.map((f) => (
 										<TableRow key={`file-${f.id}`}>
 											<TableCell>
-												<FileIcon className="h-4 w-4 text-muted-foreground" />
+												<Icon
+													name="File"
+													className="h-4 w-4 text-muted-foreground"
+												/>
 											</TableCell>
 											<TableCell className="font-medium">{f.name}</TableCell>
 											<TableCell className="text-muted-foreground">
@@ -153,7 +156,7 @@ export default function SearchPage() {
 						)}
 						{searched && folders.length === 0 && files.length === 0 && (
 							<EmptyState
-								icon={<Search className="h-10 w-10" />}
+								icon={<Icon name="MagnifyingGlass" className="h-10 w-10" />}
 								title={t("search:no_results")}
 								description={t("search:no_results_desc")}
 							/>

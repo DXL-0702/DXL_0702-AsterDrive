@@ -1,4 +1,3 @@
-import { FileIcon, Folder, RotateCcw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -7,6 +6,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import {
 	Table,
 	TableBody,
@@ -83,7 +83,6 @@ export default function TrashPage() {
 
 	return (
 		<AppLayout
-			title={t("trash")}
 			actions={
 				!isEmpty && !loading ? (
 					<Button
@@ -91,7 +90,7 @@ export default function TrashPage() {
 						size="sm"
 						onClick={() => setPurgeAllOpen(true)}
 					>
-						<Trash2 className="h-4 w-4 mr-1" />
+						<Icon name="Trash" className="h-4 w-4 mr-1" />
 						{t("admin:empty_trash")}
 					</Button>
 				) : undefined
@@ -102,7 +101,7 @@ export default function TrashPage() {
 					<LoadingSpinner text={t("loading")} />
 				) : isEmpty ? (
 					<EmptyState
-						icon={<Trash2 className="h-10 w-10" />}
+						icon={<Icon name="Trash" className="h-10 w-10" />}
 						title={t("admin:trash_empty")}
 						description={t("admin:trash_empty_desc")}
 					/>
@@ -119,7 +118,7 @@ export default function TrashPage() {
 							{folders.map((f) => (
 								<TableRow key={`folder-${f.id}`}>
 									<TableCell className="flex items-center gap-2">
-										<Folder className="h-4 w-4 text-blue-500" />
+										<Icon name="Folder" className="h-4 w-4 text-blue-500" />
 										{f.name}
 									</TableCell>
 									<TableCell className="text-muted-foreground">
@@ -134,7 +133,10 @@ export default function TrashPage() {
 												title={t("admin:restore")}
 												onClick={() => handleRestore("folder", f.id)}
 											>
-												<RotateCcw className="h-4 w-4" />
+												<Icon
+													name="ArrowCounterClockwise"
+													className="h-4 w-4"
+												/>
 											</Button>
 											<Button
 												variant="ghost"
@@ -148,7 +150,7 @@ export default function TrashPage() {
 													})
 												}
 											>
-												<Trash2 className="h-4 w-4" />
+												<Icon name="Trash" className="h-4 w-4" />
 											</Button>
 										</div>
 									</TableCell>
@@ -157,7 +159,10 @@ export default function TrashPage() {
 							{files.map((f) => (
 								<TableRow key={`file-${f.id}`}>
 									<TableCell className="flex items-center gap-2">
-										<FileIcon className="h-4 w-4 text-muted-foreground" />
+										<Icon
+											name="File"
+											className="h-4 w-4 text-muted-foreground"
+										/>
 										{f.name}
 									</TableCell>
 									<TableCell className="text-muted-foreground">
@@ -172,7 +177,10 @@ export default function TrashPage() {
 												title={t("admin:restore")}
 												onClick={() => handleRestore("file", f.id)}
 											>
-												<RotateCcw className="h-4 w-4" />
+												<Icon
+													name="ArrowCounterClockwise"
+													className="h-4 w-4"
+												/>
 											</Button>
 											<Button
 												variant="ghost"
@@ -186,7 +194,7 @@ export default function TrashPage() {
 													})
 												}
 											>
-												<Trash2 className="h-4 w-4" />
+												<Icon name="Trash" className="h-4 w-4" />
 											</Button>
 										</div>
 									</TableCell>

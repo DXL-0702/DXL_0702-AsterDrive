@@ -12,7 +12,6 @@ const AdminLocksPage = lazy(() => import("@/pages/admin/AdminLocksPage"));
 const ShareViewPage = lazy(() => import("@/pages/ShareViewPage"));
 const WebdavAccountsPage = lazy(() => import("@/pages/WebdavAccountsPage"));
 const TrashPage = lazy(() => import("@/pages/TrashPage"));
-const SearchPage = lazy(() => import("@/pages/SearchPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const AdminAuditPage = lazy(() => import("@/pages/admin/AdminAuditPage"));
 
@@ -30,9 +29,11 @@ function ProtectedRoute() {
 	if (isChecking) return <Loading />;
 	if (!isAuthenticated) return <Navigate to="/login" replace />;
 	return (
-		<Suspense fallback={<Loading />}>
-			<Outlet />
-		</Suspense>
+		<div className="animate-in fade-in duration-300">
+			<Suspense fallback={<Loading />}>
+				<Outlet />
+			</Suspense>
+		</div>
 	);
 }
 
@@ -71,9 +72,9 @@ export const router = createBrowserRouter([
 		element: <ProtectedRoute />,
 		children: [
 			{ path: "/", element: <FileBrowserPage /> },
+			{ path: "/folder/:folderId", element: <FileBrowserPage /> },
 			{ path: "/settings/webdav", element: <WebdavAccountsPage /> },
 			{ path: "/trash", element: <TrashPage /> },
-			{ path: "/search", element: <SearchPage /> },
 			{ path: "/settings", element: <SettingsPage /> },
 		],
 	},

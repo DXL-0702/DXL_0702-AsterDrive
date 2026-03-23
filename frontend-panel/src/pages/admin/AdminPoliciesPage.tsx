@@ -1,4 +1,3 @@
-import { Check, Loader2, Pencil, Plus, Trash2, Wifi } from "lucide-react";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,6 +14,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -123,11 +123,14 @@ function TestConnectionButton({
 			onClick={handleTest}
 		>
 			{testing ? (
-				<Loader2 className="h-4 w-4 mr-1 animate-spin" />
+				<Icon name="Spinner" className="h-4 w-4 mr-1 animate-spin" />
 			) : result === true ? (
-				<Check className="h-4 w-4 mr-1 text-green-600 dark:text-green-400" />
+				<Icon
+					name="Check"
+					className="h-4 w-4 mr-1 text-green-600 dark:text-green-400"
+				/>
 			) : (
-				<Wifi className="h-4 w-4 mr-1" />
+				<Icon name="WifiHigh" className="h-4 w-4 mr-1" />
 			)}
 			{t("test_connection")}
 		</Button>
@@ -262,7 +265,7 @@ export default function AdminPoliciesPage() {
 				<div className="flex items-center justify-between">
 					<h2 className="text-lg font-semibold">{t("policies")}</h2>
 					<Button size="sm" onClick={openCreate}>
-						<Plus className="h-4 w-4 mr-1" />
+						<Icon name="Plus" className="h-4 w-4 mr-1" />
 						{t("new_policy")}
 					</Button>
 				</div>
@@ -321,7 +324,7 @@ export default function AdminPoliciesPage() {
 													className="h-8 w-8"
 													onClick={() => openEdit(p)}
 												>
-													<Pencil className="h-3.5 w-3.5" />
+													<Icon name="PencilSimple" className="h-3.5 w-3.5" />
 												</Button>
 												<Button
 													variant="ghost"
@@ -329,7 +332,7 @@ export default function AdminPoliciesPage() {
 													className="h-8 w-8 text-destructive"
 													onClick={() => setDeleteId(p.id)}
 												>
-													<Trash2 className="h-3.5 w-3.5" />
+													<Icon name="Trash" className="h-3.5 w-3.5" />
 												</Button>
 											</div>
 										</TableCell>

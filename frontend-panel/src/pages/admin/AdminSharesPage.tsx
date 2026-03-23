@@ -1,4 +1,3 @@
-import { ExternalLink, Link2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -8,6 +7,7 @@ import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Table,
@@ -72,7 +72,7 @@ export default function AdminSharesPage() {
 					<LoadingSpinner text={t("common:loading")} />
 				) : shares.length === 0 ? (
 					<EmptyState
-						icon={<Link2 className="h-10 w-10" />}
+						icon={<Icon name="LinkSimple" className="h-10 w-10" />}
 						title={t("no_shares")}
 						description={t("no_shares_desc")}
 					/>
@@ -103,7 +103,7 @@ export default function AdminSharesPage() {
 												className="font-mono text-xs text-primary hover:underline inline-flex items-center gap-1"
 											>
 												{s.token}
-												<ExternalLink className="h-3 w-3" />
+												<Icon name="ArrowSquareOut" className="h-3 w-3" />
 											</a>
 										</TableCell>
 										<TableCell className="text-xs">#{s.user_id}</TableCell>
@@ -152,7 +152,7 @@ export default function AdminSharesPage() {
 												className="h-8 w-8 text-destructive"
 												onClick={() => setDeleteId(s.id)}
 											>
-												<Trash2 className="h-3.5 w-3.5" />
+												<Icon name="Trash" className="h-3.5 w-3.5" />
 											</Button>
 										</TableCell>
 									</TableRow>

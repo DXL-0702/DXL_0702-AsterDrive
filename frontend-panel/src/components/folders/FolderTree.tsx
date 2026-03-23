@@ -1,6 +1,7 @@
-import { ChevronDown, ChevronRight, Folder, FolderOpen } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation, useNavigate } from "react-router-dom";
+import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import { useFileStore } from "@/stores/fileStore";
@@ -45,9 +46,9 @@ function TreeNode({
 					{node.loading ? (
 						<div className="h-3 w-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
 					) : node.expanded ? (
-						<ChevronDown className="h-3 w-3 text-muted-foreground" />
+						<Icon name="CaretDown" className="h-3 w-3 text-muted-foreground" />
 					) : (
-						<ChevronRight className="h-3 w-3 text-muted-foreground" />
+						<Icon name="CaretRight" className="h-3 w-3 text-muted-foreground" />
 					)}
 				</button>
 				<button
@@ -56,9 +57,15 @@ function TreeNode({
 					onClick={() => onNavigate(node.folder.id, node.folder.name)}
 				>
 					{node.expanded ? (
-						<FolderOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+						<Icon
+							name="FolderOpen"
+							className="h-4 w-4 text-muted-foreground shrink-0"
+						/>
 					) : (
-						<Folder className="h-4 w-4 text-muted-foreground shrink-0" />
+						<Icon
+							name="Folder"
+							className="h-4 w-4 text-muted-foreground shrink-0"
+						/>
 					)}
 					<span className="truncate">{node.folder.name}</span>
 				</button>
@@ -102,7 +109,6 @@ function updateNode(
 export function FolderTree() {
 	const { t } = useTranslation("files");
 	const currentFolderId = useFileStore((s) => s.currentFolderId);
-	const navigateTo = useFileStore((s) => s.navigateTo);
 	const storeFolders = useFileStore((s) => s.folders);
 	const storeCurrentFolderId = useFileStore((s) => s.currentFolderId);
 	const [nodes, setNodes] = useState<TreeNodeData[]>([]);
@@ -190,11 +196,14 @@ export function FolderTree() {
 		}
 	}, []);
 
+	const navigate = useNavigate();
+	const location = useLocation();
+
 	const handleNavigate = useCallback(
 		(id: number, name: string) => {
-			navigateTo(id, name);
+			navigate(`/folder/${id}?name=${encodeURIComponent(name)}`);
 		},
-		[navigateTo],
+		[navigate],
 	);
 
 	return (
@@ -204,11 +213,14 @@ export function FolderTree() {
 				type="button"
 				className={cn(
 					"w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-accent transition-colors text-left",
-					currentFolderId === null && "bg-accent font-medium",
+					currentFolderId === null &&
+						(location.pathname === "/" ||
+							location.pathname.startsWith("/folder")) &&
+						"bg-accent font-medium",
 				)}
-				onClick={() => navigateTo(null)}
+				onClick={() => navigate("/")}
 			>
-				<Folder className="h-4 w-4 text-muted-foreground" />
+				<Icon name="Folder" className="h-4 w-4 text-muted-foreground" />
 				{t("root")}
 			</button>
 

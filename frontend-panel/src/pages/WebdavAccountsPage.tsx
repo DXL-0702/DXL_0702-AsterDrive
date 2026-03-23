@@ -1,13 +1,3 @@
-import {
-	Check,
-	Copy,
-	FolderOpen,
-	Loader2,
-	Plus,
-	Power,
-	Trash2,
-	Wifi,
-} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -16,6 +6,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -155,7 +146,7 @@ export default function WebdavAccountsPage() {
 	};
 
 	return (
-		<AppLayout title={t("webdav")}>
+		<AppLayout>
 			<div className="flex-1 overflow-auto p-6 space-y-6">
 				{/* Create form */}
 				<div className="border rounded-lg p-4 space-y-4 max-w-lg">
@@ -214,7 +205,7 @@ export default function WebdavAccountsPage() {
 						</Select>
 					</div>
 					<Button onClick={handleCreate} disabled={creating}>
-						<Plus className="h-4 w-4 mr-1" />
+						<Icon name="Plus" className="h-4 w-4 mr-1" />
 						{t("create")}
 					</Button>
 				</div>
@@ -234,7 +225,7 @@ export default function WebdavAccountsPage() {
 								size="icon"
 								onClick={() => copyToClipboard(showPassword.password)}
 							>
-								<Copy className="h-4 w-4" />
+								<Icon name="Copy" className="h-4 w-4" />
 							</Button>
 						</div>
 						<div className="flex items-center gap-2 mt-2">
@@ -245,11 +236,14 @@ export default function WebdavAccountsPage() {
 								onClick={handleTest}
 							>
 								{testing ? (
-									<Loader2 className="h-4 w-4 mr-1 animate-spin" />
+									<Icon name="Spinner" className="h-4 w-4 mr-1 animate-spin" />
 								) : testResult === true ? (
-									<Check className="h-4 w-4 mr-1 text-green-600 dark:text-green-400" />
+									<Icon
+										name="Check"
+										className="h-4 w-4 mr-1 text-green-600 dark:text-green-400"
+									/>
 								) : (
-									<Wifi className="h-4 w-4 mr-1" />
+									<Icon name="WifiHigh" className="h-4 w-4 mr-1" />
 								)}
 								{t("admin:test_connection")}
 							</Button>
@@ -290,7 +284,10 @@ export default function WebdavAccountsPage() {
 									<TableCell>
 										{acc.root_folder_path ? (
 											<span className="flex items-center gap-1 text-sm">
-												<FolderOpen className="h-3.5 w-3.5 text-blue-500" />
+												<Icon
+													name="FolderOpen"
+													className="h-3.5 w-3.5 text-blue-500"
+												/>
 												{acc.root_folder_path}
 											</span>
 										) : (
@@ -324,7 +321,7 @@ export default function WebdavAccountsPage() {
 													acc.is_active ? t("disabled_status") : t("active")
 												}
 											>
-												<Power className="h-4 w-4" />
+												<Icon name="Power" className="h-4 w-4" />
 											</Button>
 											<Button
 												variant="ghost"
@@ -332,7 +329,7 @@ export default function WebdavAccountsPage() {
 												className="h-8 w-8 text-destructive"
 												onClick={() => setDeleteId(acc.id)}
 											>
-												<Trash2 className="h-4 w-4" />
+												<Icon name="Trash" className="h-4 w-4" />
 											</Button>
 										</div>
 									</TableCell>

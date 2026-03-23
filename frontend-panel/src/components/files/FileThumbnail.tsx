@@ -1,8 +1,8 @@
-import { FileIcon } from "lucide-react";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import type { FileInfo } from "@/types/api";
+import { FileTypeIcon } from "./FileTypeIcon";
 
 interface FileThumbnailProps {
 	file: FileInfo;
@@ -18,11 +18,9 @@ export function FileThumbnail({ file, size = "sm" }: FileThumbnailProps) {
 
 	if (!isImage || error || !blobUrl) {
 		return (
-			<FileIcon
-				className={cn(
-					"text-muted-foreground",
-					size === "sm" ? "h-4 w-4" : "h-10 w-10",
-				)}
+			<FileTypeIcon
+				mimeType={file.mime_type}
+				className={cn(size === "sm" ? "h-4 w-4" : "h-12 w-12")}
 			/>
 		);
 	}

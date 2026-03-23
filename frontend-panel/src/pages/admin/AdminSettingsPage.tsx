@@ -1,4 +1,3 @@
-import { AlertTriangle, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -15,6 +14,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -222,7 +222,10 @@ export default function AdminSettingsPage() {
 							<TooltipProvider>
 								<Tooltip>
 									<TooltipTrigger>
-										<AlertTriangle className="h-3.5 w-3.5 text-yellow-600 dark:text-yellow-400" />
+										<Icon
+											name="Warning"
+											className="h-3.5 w-3.5 text-yellow-600 dark:text-yellow-400"
+										/>
 									</TooltipTrigger>
 									<TooltipContent>{t("requires_restart")}</TooltipContent>
 								</Tooltip>
@@ -250,7 +253,7 @@ export default function AdminSettingsPage() {
 								className="h-8 w-8"
 								onClick={() => openEdit(c)}
 							>
-								<Pencil className="h-3.5 w-3.5" />
+								<Icon name="PencilSimple" className="h-3.5 w-3.5" />
 							</Button>
 						)}
 						{isSystem && isModified && (
@@ -266,7 +269,10 @@ export default function AdminSettingsPage() {
 											/>
 										}
 									>
-										<RotateCcw className="h-3.5 w-3.5" />
+										<Icon
+											name="ArrowCounterClockwise"
+											className="h-3.5 w-3.5"
+										/>
 									</TooltipTrigger>
 									<TooltipContent>
 										{t("reset_to_default", {
@@ -283,7 +289,7 @@ export default function AdminSettingsPage() {
 								className="h-8 w-8 text-destructive"
 								onClick={() => setDeleteKey(c.key)}
 							>
-								<Trash2 className="h-3.5 w-3.5" />
+								<Icon name="Trash" className="h-3.5 w-3.5" />
 							</Button>
 						)}
 					</div>
@@ -315,7 +321,7 @@ export default function AdminSettingsPage() {
 				<div className="flex items-center justify-between">
 					<h2 className="text-lg font-semibold">{t("system_settings")}</h2>
 					<Button size="sm" onClick={openCreate}>
-						<Plus className="h-4 w-4 mr-1" />
+						<Icon name="Plus" className="h-4 w-4 mr-1" />
 						{t("add_custom_config")}
 					</Button>
 				</div>

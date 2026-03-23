@@ -1,18 +1,14 @@
-import {
-	ChevronLeft,
-	ChevronRight,
-	HardDrive,
-	Search,
-	Settings,
-	Trash2,
-} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "react-router-dom";
 import { FolderTree } from "@/components/folders/FolderTree";
 import { Button } from "@/components/ui/button";
+import { Icon, type IconName } from "@/components/ui/icon";
+import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/stores/authStore";
 
 interface SidebarProps {
 	collapsed: boolean;
@@ -29,12 +25,12 @@ export function Sidebar({
 }: SidebarProps) {
 	const { t } = useTranslation();
 	const location = useLocation();
+	const user = useAuthStore((s) => s.user);
 
-	const navLinks = [
-		{ to: "/trash", icon: Trash2, label: t("trash") },
-		{ to: "/settings/webdav", icon: HardDrive, label: t("webdav") },
-		{ to: "/search", icon: Search, label: t("search") },
-		{ to: "/settings", icon: Settings, label: t("settings") },
+	const navLinks: { to: string; icon: IconName; label: string }[] = [
+		{ to: "/trash", icon: "Trash", label: t("trash") },
+		{ to: "/settings/webdav", icon: "HardDrive", label: t("webdav") },
+		{ to: "/settings", icon: "Gear", label: t("settings") },
 	];
 
 	const sidebarContent = (
@@ -53,9 +49,9 @@ export function Sidebar({
 					onClick={onToggle}
 				>
 					{collapsed ? (
-						<ChevronRight className="h-4 w-4" />
+						<Icon name="CaretRight" className="h-4 w-4" />
 					) : (
-						<ChevronLeft className="h-4 w-4" />
+						<Icon name="CaretLeft" className="h-4 w-4" />
 					)}
 				</Button>
 			</div>
@@ -81,11 +77,44 @@ export function Sidebar({
 								: "text-muted-foreground hover:text-foreground hover:bg-accent/50",
 						)}
 					>
-						<link.icon className="h-4 w-4 shrink-0" />
+						<Icon name={link.icon} className="h-4 w-4 shrink-0" />
 						{!collapsed && link.label}
 					</Link>
 				))}
 			</div>
+
+			{/* Storage usage */}
+			{!collapsed && user && (
+				<>
+					<Separator />
+					<div className="p-3 space-y-1.5">
+						<p className="text-xs font-medium text-muted-foreground">
+							{t("files:storage_space")}
+						</p>
+						<Progress
+							value={
+								user.storage_quota > 0
+									? Math.min(
+											(user.storage_used / user.storage_quota) * 100,
+											100,
+										)
+									: 0
+							}
+							className="h-1.5"
+						/>
+						<p className="text-xs text-muted-foreground">
+							{user.storage_quota > 0
+								? t("files:storage_quota", {
+										used: formatBytes(user.storage_used),
+										quota: formatBytes(user.storage_quota),
+									})
+								: t("files:storage_used", {
+										used: formatBytes(user.storage_used),
+									})}
+						</p>
+					</div>
+				</>
+			)}
 		</div>
 	);
 

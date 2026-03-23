@@ -1,5 +1,5 @@
-import type { AuditLogPage } from "@/types/api";
 import { api } from "@/services/http";
+import type { AuditLogPage } from "@/types/api";
 
 interface AuditLogQuery {
 	user_id?: number;

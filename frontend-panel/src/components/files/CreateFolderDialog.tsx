@@ -1,4 +1,3 @@
-import { FolderPlus } from "lucide-react";
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -9,17 +8,23 @@ import {
 	DialogContent,
 	DialogHeader,
 	DialogTitle,
-	DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { handleApiError } from "@/hooks/useApiError";
 import { useFileStore } from "@/stores/fileStore";
 
-export function CreateFolderDialog() {
+interface CreateFolderDialogProps {
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+}
+
+export function CreateFolderDialog({
+	open,
+	onOpenChange,
+}: CreateFolderDialogProps) {
 	const { t } = useTranslation("files");
 	const createFolder = useFileStore((s) => s.createFolder);
 	const [name, setName] = useState("");
-	const [open, setOpen] = useState(false);
 
 	const handleSubmit = async (e: FormEvent) => {
 		e.preventDefault();
@@ -28,18 +33,14 @@ export function CreateFolderDialog() {
 			await createFolder(name.trim());
 			toast.success(t("create_folder"));
 			setName("");
-			setOpen(false);
+			onOpenChange(false);
 		} catch (error) {
 			handleApiError(error);
 		}
 	};
 
 	return (
-		<Dialog open={open} onOpenChange={setOpen}>
-			<DialogTrigger render={<Button variant="outline" size="sm" />}>
-				<FolderPlus className="h-4 w-4 mr-1" />
-				{t("new_folder")}
-			</DialogTrigger>
+		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent>
 				<DialogHeader>
 					<DialogTitle>{t("create_folder")}</DialogTitle>

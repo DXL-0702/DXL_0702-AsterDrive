@@ -1,6 +1,6 @@
-import { Grid3x3, List } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import {
 	Tooltip,
 	TooltipContent,
@@ -32,7 +32,7 @@ export function ViewToggle({ value, onChange }: ViewToggleProps) {
 						/>
 					}
 				>
-					<List className="h-4 w-4" />
+					<Icon name="ListBullets" className="h-4 w-4" />
 				</TooltipTrigger>
 				<TooltipContent>{t("list_view")}</TooltipContent>
 			</Tooltip>
@@ -50,7 +50,7 @@ export function ViewToggle({ value, onChange }: ViewToggleProps) {
 						/>
 					}
 				>
-					<Grid3x3 className="h-4 w-4" />
+					<Icon name="Grid" className="h-4 w-4" />
 				</TooltipTrigger>
 				<TooltipContent>{t("grid_view")}</TooltipContent>
 			</Tooltip>

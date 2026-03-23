@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { STORAGE_KEYS } from "@/config/app";
 import { fileService } from "@/services/fileService";
+import { searchService } from "@/services/searchService";
 import type { FileInfo, FolderInfo } from "@/types/api";
 
 interface BreadcrumbItem {
@@ -26,6 +27,12 @@ interface FileState {
 	folders: FolderInfo[];
 	files: FileInfo[];
 	loading: boolean;
+	error: string | null;
+
+	// Search
+	searchQuery: string | null;
+	searchFolders: FolderInfo[];
+	searchFiles: FileInfo[];
 
 	// View preferences (persisted)
 	viewMode: ViewMode;
@@ -52,6 +59,10 @@ interface FileState {
 	clearSelection: () => void;
 	selectionCount: () => number;
 
+	// Search actions
+	search: (query: string) => Promise<void>;
+	clearSearch: () => void;
+
 	// CRUD actions
 	createFolder: (name: string) => Promise<void>;
 	deleteFile: (id: number) => Promise<void>;
@@ -66,10 +77,15 @@ export const useFileStore = create<FileState>((set, get) => ({
 	files: [],
 	breadcrumb: [{ id: null, name: "Root" }],
 	loading: false,
+	error: null,
 
 	viewMode: getStored(STORAGE_KEYS.viewMode, "list"),
 	sortBy: getStored(STORAGE_KEYS.sortBy, "name"),
 	sortOrder: getStored(STORAGE_KEYS.sortOrder, "asc"),
+
+	searchQuery: null,
+	searchFolders: [],
+	searchFiles: [],
 
 	selectedFileIds: new Set(),
 	selectedFolderIds: new Set(),
@@ -77,6 +93,10 @@ export const useFileStore = create<FileState>((set, get) => ({
 	navigateTo: async (folderId, folderName) => {
 		set({
 			loading: true,
+			error: null,
+			searchQuery: null,
+			searchFiles: [],
+			searchFolders: [],
 			selectedFileIds: new Set(),
 			selectedFolderIds: new Set(),
 		});
@@ -115,9 +135,14 @@ export const useFileStore = create<FileState>((set, get) => ({
 				files: contents.files,
 				breadcrumb: newBreadcrumb,
 				loading: false,
+				error: null,
 			});
 		} catch (error) {
-			set({ loading: false });
+			const msg =
+				error && typeof error === "object" && "message" in error
+					? (error as { message: string }).message
+					: "Failed to load folder";
+			set({ loading: false, error: msg });
 			throw error;
 		}
 	},
@@ -192,6 +217,31 @@ export const useFileStore = create<FileState>((set, get) => ({
 	selectionCount: () => {
 		const { selectedFileIds, selectedFolderIds } = get();
 		return selectedFileIds.size + selectedFolderIds.size;
+	},
+
+	search: async (query) => {
+		set({ loading: true, searchQuery: query });
+		try {
+			const results = await searchService.search({ q: query, limit: 100 });
+			set({
+				searchFiles: results.files as FileInfo[],
+				searchFolders: results.folders,
+				loading: false,
+				selectedFileIds: new Set(),
+				selectedFolderIds: new Set(),
+			});
+		} catch (error) {
+			set({ loading: false });
+			throw error;
+		}
+	},
+
+	clearSearch: () => {
+		set({
+			searchQuery: null,
+			searchFiles: [],
+			searchFolders: [],
+		});
 	},
 
 	createFolder: async (name) => {

@@ -1,6 +1,5 @@
-import { Folder } from "lucide-react";
 import { FileThumbnail } from "@/components/files/FileThumbnail";
-import { formatDate } from "@/lib/format";
+import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import type { FileInfo, FolderInfo } from "@/types/api";
 
@@ -63,22 +62,20 @@ export function FileCard({
 			</div>
 
 			{/* Icon / Thumbnail */}
-			<div className="h-16 w-16 flex items-center justify-center mb-2">
+			<div className="h-20 w-full flex items-center justify-center mb-2 rounded-lg bg-muted/40">
 				{isFolder ? (
-					<Folder className="h-10 w-10 text-primary/70" />
+					<Icon name="Folder" className="h-12 w-12 text-amber-500" />
 				) : (
 					<FileThumbnail file={item as FileInfo} size="lg" />
 				)}
 			</div>
 
 			{/* Name */}
-			<span className="text-sm text-center truncate w-full" title={item.name}>
+			<span
+				className="text-sm text-center w-full line-clamp-2 leading-tight"
+				title={item.name}
+			>
 				{item.name}
-			</span>
-
-			{/* Date */}
-			<span className="text-xs text-muted-foreground mt-0.5">
-				{formatDate(item.updated_at)}
 			</span>
 		</div>
 	);

@@ -1,10 +1,10 @@
 import { Uppy } from "@uppy/core";
 import XHRUpload from "@uppy/xhr-upload";
-import { RefreshCw, Upload, X } from "lucide-react";
 import type { DragEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { config } from "@/config/app";
 import { useChunkedUpload } from "@/hooks/useChunkedUpload";
@@ -223,7 +223,7 @@ export function UploadArea({ children }: UploadAreaProps) {
 					</p>
 					<div className="flex gap-2">
 						<Button size="sm" className="flex-1" onClick={handleResume}>
-							<RefreshCw className="h-3.5 w-3.5 mr-1" />
+							<Icon name="ArrowsClockwise" className="h-3.5 w-3.5 mr-1" />
 							Resume
 						</Button>
 						<Button size="sm" variant="outline" onClick={reset}>
@@ -246,7 +246,7 @@ export function UploadArea({ children }: UploadAreaProps) {
 							className="h-6 w-6 shrink-0"
 							onClick={cancelUpload}
 						>
-							<X className="h-3.5 w-3.5" />
+							<Icon name="X" className="h-3.5 w-3.5" />
 						</Button>
 					</div>
 					<Progress value={chunkedState.progress} className="h-2" />
@@ -270,7 +270,7 @@ export function UploadArea({ children }: UploadAreaProps) {
 								className="flex-1"
 								onClick={handleResume}
 							>
-								<RefreshCw className="h-3.5 w-3.5 mr-1" />
+								<Icon name="ArrowsClockwise" className="h-3.5 w-3.5 mr-1" />
 								Retry
 							</Button>
 							<Button size="sm" variant="outline" onClick={reset}>
@@ -294,7 +294,7 @@ export function UploadArea({ children }: UploadAreaProps) {
 							className="h-6 w-6 shrink-0"
 							onClick={presignedCancel}
 						>
-							<X className="h-3.5 w-3.5" />
+							<Icon name="X" className="h-3.5 w-3.5" />
 						</Button>
 					</div>
 					<Progress value={presignedState.progress} className="h-2" />
@@ -344,7 +344,7 @@ export function UploadArea({ children }: UploadAreaProps) {
 						"bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary rounded-lg",
 					)}
 				>
-					<Upload className="h-10 w-10 text-primary mb-3" />
+					<Icon name="Upload" className="h-10 w-10 text-primary mb-3" />
 					<p className="text-lg font-medium text-primary">
 						Drop files to upload
 					</p>

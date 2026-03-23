@@ -1,4 +1,3 @@
-import { HardDrive, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -13,6 +12,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
@@ -261,7 +261,7 @@ function UserPolicyDialog({
 												className="h-8 w-8 text-destructive"
 												onClick={() => handleRemove(a.id)}
 											>
-												<Trash2 className="h-3.5 w-3.5" />
+												<Icon name="Trash" className="h-3.5 w-3.5" />
 											</Button>
 										</div>
 									</div>
@@ -273,7 +273,7 @@ function UserPolicyDialog({
 						{availablePolicies.length > 0 && (
 							<div className="border-t pt-4 space-y-3">
 								<Label className="text-sm font-medium">
-									<Plus className="h-3.5 w-3.5 inline mr-1" />
+									<Icon name="Plus" className="h-3.5 w-3.5 inline mr-1" />
 									{t("assign_policy")}
 								</Label>
 								<Select
@@ -471,7 +471,7 @@ export default function AdminUsersPage() {
 												className="h-8"
 												onClick={() => setPolicyDialogUserId(user.id)}
 											>
-												<HardDrive className="h-3.5 w-3.5 mr-1" />
+												<Icon name="HardDrive" className="h-3.5 w-3.5 mr-1" />
 												{t("common:manage")}
 											</Button>
 										</TableCell>

@@ -1,7 +1,7 @@
-import { Pencil, Save, Undo2, X } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
 import { useBlobUrl } from "@/hooks/useBlobUrl";
 import { fileService } from "@/services/fileService";
@@ -47,7 +47,7 @@ export function FilePreview({
 				<div className="flex items-center justify-between p-3 bg-background/90 rounded-t-lg">
 					<span className="text-sm font-medium truncate">{file.name}</span>
 					<Button variant="ghost" size="icon" onClick={onClose}>
-						<X className="h-4 w-4" />
+						<Icon name="X" className="h-4 w-4" />
 					</Button>
 				</div>
 				<div className="flex-1 overflow-auto bg-background/50 rounded-b-lg p-2">
@@ -186,7 +186,7 @@ function TextPreview({
 			<div className="flex items-center gap-2 px-4 py-2 border-b">
 				{!editing ? (
 					<Button variant="outline" size="sm" onClick={handleEdit}>
-						<Pencil className="h-3.5 w-3.5 mr-1" />
+						<Icon name="PencilSimple" className="h-3.5 w-3.5 mr-1" />
 						Edit
 					</Button>
 				) : (
@@ -197,11 +197,11 @@ function TextPreview({
 							onClick={handleSave}
 							disabled={saving}
 						>
-							<Save className="h-3.5 w-3.5 mr-1" />
+							<Icon name="FloppyDisk" className="h-3.5 w-3.5 mr-1" />
 							{saving ? "Saving..." : "Save"}
 						</Button>
 						<Button variant="outline" size="sm" onClick={handleCancel}>
-							<Undo2 className="h-3.5 w-3.5 mr-1" />
+							<Icon name="Undo" className="h-3.5 w-3.5 mr-1" />
 							Cancel
 						</Button>
 					</>

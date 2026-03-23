@@ -1,7 +1,7 @@
-import { Copy, Move, Trash2, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
 import { batchService } from "@/services/batchService";
 import { useFileStore } from "@/stores/fileStore";
@@ -74,20 +74,20 @@ export function BatchActionBar() {
 			</span>
 			<div className="flex items-center gap-1">
 				<Button size="sm" variant="destructive" onClick={handleDelete}>
-					<Trash2 className="h-3.5 w-3.5 mr-1" />
+					<Icon name="Trash" className="h-3.5 w-3.5 mr-1" />
 					{t("common:delete")}
 				</Button>
 				<Button size="sm" variant="outline" onClick={handleMove}>
-					<Move className="h-3.5 w-3.5 mr-1" />
+					<Icon name="ArrowsOutCardinal" className="h-3.5 w-3.5 mr-1" />
 					{t("move")}
 				</Button>
 				<Button size="sm" variant="outline" onClick={handleCopy}>
-					<Copy className="h-3.5 w-3.5 mr-1" />
+					<Icon name="Copy" className="h-3.5 w-3.5 mr-1" />
 					{t("copy")}
 				</Button>
 			</div>
 			<Button size="sm" variant="ghost" onClick={clearSelection}>
-				<X className="h-3.5 w-3.5" />
+				<Icon name="X" className="h-3.5 w-3.5" />
 			</Button>
 		</div>
 	);

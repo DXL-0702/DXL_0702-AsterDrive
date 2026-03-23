@@ -1,4 +1,4 @@
-import { Check } from "lucide-react";
+import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
 import { useThemeStore } from "@/stores/themeStore";
 
@@ -25,7 +25,9 @@ export function ColorPresetPicker() {
 							"ring-2 ring-offset-2 ring-offset-background ring-foreground scale-110",
 					)}
 				>
-					{colorPreset === p.id && <Check className="h-3 w-3 text-white" />}
+					{colorPreset === p.id && (
+						<Icon name="Check" className="h-3 w-3 text-white" />
+					)}
 				</button>
 			))}
 		</div>

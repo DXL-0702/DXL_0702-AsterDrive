@@ -1,0 +1,199 @@
+import type { ComponentType } from "react";
+import {
+	PiArrowCounterClockwise,
+	PiArrowDown,
+	PiArrowLeft,
+	PiArrowSquareOut,
+	PiArrowsClockwise,
+	PiArrowsOutCardinal,
+	PiArrowUp,
+	PiArrowUUpLeft,
+	PiBracketsCurly,
+	PiCaretDown,
+	PiCaretLeft,
+	PiCaretRight,
+	PiCaretUp,
+	PiCheck,
+	PiClipboardText,
+	PiClockCounterClockwise,
+	PiCloud,
+	PiCopy,
+	PiDotsThree,
+	PiDownloadSimple,
+	PiEye,
+	PiEyeSlash,
+	PiFile,
+	PiFileAudio,
+	PiFileCode,
+	PiFileText,
+	PiFileVideo,
+	PiFileZip,
+	PiFloppyDisk,
+	PiFolder,
+	PiFolderOpen,
+	PiFolderPlus,
+	PiGear,
+	PiGlobe,
+	PiGridFour,
+	PiHardDrive,
+	PiLink,
+	PiLinkSimple,
+	PiList,
+	PiListBullets,
+	PiLock,
+	PiLockOpen,
+	PiMagnifyingGlass,
+	PiMonitor,
+	PiMoon,
+	PiPencilSimple,
+	PiPlus,
+	PiPower,
+	PiPresentation,
+	PiScroll,
+	PiShield,
+	PiSignOut,
+	PiSpinner,
+	PiSun,
+	PiTable,
+	PiTrash,
+	PiUploadSimple,
+	PiWarning,
+	PiWifiHigh,
+	PiX,
+} from "react-icons/pi";
+
+export type IconName =
+	| "ArrowCounterClockwise"
+	| "ArrowDown"
+	| "ArrowLeft"
+	| "ArrowSquareOut"
+	| "ArrowUp"
+	| "ArrowsClockwise"
+	| "ArrowsOutCardinal"
+	| "BracketsCurly"
+	| "CaretDown"
+	| "CaretLeft"
+	| "CaretRight"
+	| "CaretUp"
+	| "Check"
+	| "ClipboardText"
+	| "Clock"
+	| "Cloud"
+	| "Copy"
+	| "DotsThree"
+	| "Download"
+	| "Eye"
+	| "EyeSlash"
+	| "File"
+	| "FileAudio"
+	| "FileCode"
+	| "FileText"
+	| "FileVideo"
+	| "FileZip"
+	| "FloppyDisk"
+	| "Folder"
+	| "FolderOpen"
+	| "FolderPlus"
+	| "Gear"
+	| "Globe"
+	| "Grid"
+	| "HardDrive"
+	| "Link"
+	| "LinkSimple"
+	| "List"
+	| "ListBullets"
+	| "Lock"
+	| "LockOpen"
+	| "MagnifyingGlass"
+	| "Monitor"
+	| "Moon"
+	| "PencilSimple"
+	| "Plus"
+	| "Power"
+	| "Presentation"
+	| "Scroll"
+	| "Shield"
+	| "SignOut"
+	| "Spinner"
+	| "Sun"
+	| "Table"
+	| "Trash"
+	| "Undo"
+	| "Upload"
+	| "Warning"
+	| "WifiHigh"
+	| "X";
+
+const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
+	ArrowCounterClockwise: PiArrowCounterClockwise,
+	ArrowDown: PiArrowDown,
+	ArrowLeft: PiArrowLeft,
+	ArrowSquareOut: PiArrowSquareOut,
+	ArrowUp: PiArrowUp,
+	ArrowsClockwise: PiArrowsClockwise,
+	ArrowsOutCardinal: PiArrowsOutCardinal,
+	BracketsCurly: PiBracketsCurly,
+	CaretDown: PiCaretDown,
+	CaretLeft: PiCaretLeft,
+	CaretRight: PiCaretRight,
+	CaretUp: PiCaretUp,
+	Check: PiCheck,
+	ClipboardText: PiClipboardText,
+	Clock: PiClockCounterClockwise,
+	Cloud: PiCloud,
+	Copy: PiCopy,
+	DotsThree: PiDotsThree,
+	Download: PiDownloadSimple,
+	Eye: PiEye,
+	EyeSlash: PiEyeSlash,
+	File: PiFile,
+	FileAudio: PiFileAudio,
+	FileCode: PiFileCode,
+	FileText: PiFileText,
+	FileVideo: PiFileVideo,
+	FileZip: PiFileZip,
+	FloppyDisk: PiFloppyDisk,
+	Folder: PiFolder,
+	FolderOpen: PiFolderOpen,
+	FolderPlus: PiFolderPlus,
+	Gear: PiGear,
+	Globe: PiGlobe,
+	Grid: PiGridFour,
+	HardDrive: PiHardDrive,
+	Link: PiLink,
+	LinkSimple: PiLinkSimple,
+	List: PiList,
+	ListBullets: PiListBullets,
+	Lock: PiLock,
+	LockOpen: PiLockOpen,
+	MagnifyingGlass: PiMagnifyingGlass,
+	Monitor: PiMonitor,
+	Moon: PiMoon,
+	PencilSimple: PiPencilSimple,
+	Plus: PiPlus,
+	Power: PiPower,
+	Presentation: PiPresentation,
+	Scroll: PiScroll,
+	Shield: PiShield,
+	SignOut: PiSignOut,
+	Spinner: PiSpinner,
+	Sun: PiSun,
+	Table: PiTable,
+	Trash: PiTrash,
+	Undo: PiArrowUUpLeft,
+	Upload: PiUploadSimple,
+	Warning: PiWarning,
+	WifiHigh: PiWifiHigh,
+	X: PiX,
+};
+
+export interface IconProps {
+	name: IconName;
+	className?: string;
+}
+
+export function Icon({ name, className }: IconProps) {
+	const IconComponent = iconMap[name];
+	if (!IconComponent) return null;
+	return <IconComponent className={className} />;
+}

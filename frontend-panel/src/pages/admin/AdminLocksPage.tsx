@@ -1,4 +1,3 @@
-import { Lock, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
@@ -8,6 +7,7 @@ import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Table,
@@ -93,7 +93,7 @@ export default function AdminLocksPage() {
 					<LoadingSpinner text={t("common:loading")} />
 				) : locks.length === 0 ? (
 					<EmptyState
-						icon={<Lock className="h-10 w-10" />}
+						icon={<Icon name="Lock" className="h-10 w-10" />}
 						title={t("no_active_locks")}
 						description={t("no_active_locks_desc")}
 					/>
@@ -156,7 +156,7 @@ export default function AdminLocksPage() {
 												className="h-8 w-8 text-destructive"
 												onClick={() => setUnlockId(l.id)}
 											>
-												<Trash2 className="h-3.5 w-3.5" />
+												<Icon name="Trash" className="h-3.5 w-3.5" />
 											</Button>
 										</TableCell>
 									</TableRow>

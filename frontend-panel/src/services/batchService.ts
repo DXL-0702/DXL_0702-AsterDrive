@@ -1,5 +1,5 @@
-import type { BatchResult } from "@/types/api";
 import { api } from "@/services/http";
+import type { BatchResult } from "@/types/api";
 
 export const batchService = {
 	batchDelete: (fileIds: number[], folderIds: number[]) =>

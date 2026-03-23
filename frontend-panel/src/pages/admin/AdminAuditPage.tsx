@@ -1,10 +1,10 @@
-import { ChevronLeft, ChevronRight, ScrollText } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { LoadingSpinner } from "@/components/common/LoadingSpinner";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -99,7 +99,7 @@ export default function AdminAuditPage() {
 					<LoadingSpinner text={t("common:loading")} />
 				) : items.length === 0 ? (
 					<EmptyState
-						icon={<ScrollText className="h-10 w-10" />}
+						icon={<Icon name="Scroll" className="h-10 w-10" />}
 						title={t("no_audit_logs")}
 					/>
 				) : (
@@ -157,7 +157,7 @@ export default function AdminAuditPage() {
 								disabled={offset === 0}
 								onClick={() => setOffset(Math.max(0, offset - limit))}
 							>
-								<ChevronLeft className="h-4 w-4" />
+								<Icon name="CaretLeft" className="h-4 w-4" />
 							</Button>
 							<Button
 								variant="outline"
@@ -165,7 +165,7 @@ export default function AdminAuditPage() {
 								disabled={offset + limit >= total}
 								onClick={() => setOffset(offset + limit)}
 							>
-								<ChevronRight className="h-4 w-4" />
+								<Icon name="CaretRight" className="h-4 w-4" />
 							</Button>
 						</div>
 					</div>

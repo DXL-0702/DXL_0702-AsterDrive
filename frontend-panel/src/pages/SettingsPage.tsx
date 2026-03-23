@@ -1,4 +1,3 @@
-import { Grid3x3, List, Monitor, Moon, Sun } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ColorPresetPicker } from "@/components/common/ColorPresetPicker";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -10,6 +9,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -23,13 +23,13 @@ export default function SettingsPage() {
 	const setViewMode = useFileStore((s) => s.setViewMode);
 
 	const themeOptions = [
-		{ value: "light", label: t("theme_light"), icon: Sun },
-		{ value: "dark", label: t("theme_dark"), icon: Moon },
-		{ value: "system", label: t("theme_system"), icon: Monitor },
+		{ value: "light", label: t("theme_light"), icon: "Sun" },
+		{ value: "dark", label: t("theme_dark"), icon: "Moon" },
+		{ value: "system", label: t("theme_system"), icon: "Monitor" },
 	] as const;
 
 	return (
-		<AppLayout title={t("settings")}>
+		<AppLayout>
 			<div className="p-6 max-w-2xl space-y-6">
 				{/* Appearance */}
 				<Card>
@@ -51,7 +51,7 @@ export default function SettingsPage() {
 										)}
 										onClick={() => setMode(opt.value)}
 									>
-										<opt.icon className="h-4 w-4 mr-1.5" />
+										<Icon name={opt.icon} className="h-4 w-4 mr-1.5" />
 										{opt.label}
 									</Button>
 								))}
@@ -112,7 +112,7 @@ export default function SettingsPage() {
 								)}
 								onClick={() => setViewMode("list")}
 							>
-								<List className="h-4 w-4 mr-1.5" />
+								<Icon name="ListBullets" className="h-4 w-4 mr-1.5" />
 								{t("files:list_view")}
 							</Button>
 							<Button
@@ -123,7 +123,7 @@ export default function SettingsPage() {
 								)}
 								onClick={() => setViewMode("grid")}
 							>
-								<Grid3x3 className="h-4 w-4 mr-1.5" />
+								<Icon name="Grid" className="h-4 w-4 mr-1.5" />
 								{t("files:grid_view")}
 							</Button>
 						</div>

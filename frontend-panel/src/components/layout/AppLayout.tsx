@@ -6,7 +6,6 @@ import { STORAGE_KEYS } from "@/config/app";
 
 interface AppLayoutProps {
 	children: ReactNode;
-	title?: string;
 	actions?: ReactNode;
 }
 
@@ -15,7 +14,7 @@ function getInitialCollapsed(): boolean {
 	return localStorage.getItem(STORAGE_KEYS.sidebarCollapsed) === "true";
 }
 
-export function AppLayout({ children, title, actions }: AppLayoutProps) {
+export function AppLayout({ children, actions }: AppLayoutProps) {
 	const [collapsed, setCollapsed] = useState(getInitialCollapsed);
 	const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -36,12 +35,8 @@ export function AppLayout({ children, title, actions }: AppLayoutProps) {
 	}, []);
 
 	return (
-		<div className="h-screen flex flex-col animate-in fade-in duration-300">
-			<TopBar
-				onSidebarToggle={handleMobileToggle}
-				title={title}
-				actions={actions}
-			/>
+		<div className="h-screen flex flex-col">
+			<TopBar onSidebarToggle={handleMobileToggle} actions={actions} />
 			<div className="flex flex-1 overflow-hidden">
 				<Sidebar
 					collapsed={collapsed}

@@ -1,4 +1,3 @@
-import { AlertTriangle, Download, FileIcon, Folder, Lock } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
@@ -12,6 +11,7 @@ import {
 	CardHeader,
 	CardTitle,
 } from "@/components/ui/card";
+import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { handleApiError } from "@/hooks/useApiError";
 import { ApiError } from "@/services/http";
@@ -104,7 +104,10 @@ export default function ShareViewPage() {
 			<div className="min-h-screen flex items-center justify-center bg-background">
 				<Card className="w-full max-w-sm">
 					<CardHeader className="text-center">
-						<AlertTriangle className="h-10 w-10 text-destructive mx-auto mb-2" />
+						<Icon
+							name="Warning"
+							className="h-10 w-10 text-destructive mx-auto mb-2"
+						/>
 						<CardTitle>{t("unavailable")}</CardTitle>
 						<CardDescription>{error}</CardDescription>
 					</CardHeader>
@@ -121,7 +124,10 @@ export default function ShareViewPage() {
 			<div className="min-h-screen flex items-center justify-center bg-background">
 				<Card className="w-full max-w-sm">
 					<CardHeader className="text-center">
-						<Lock className="h-10 w-10 text-muted-foreground mx-auto mb-2" />
+						<Icon
+							name="Lock"
+							className="h-10 w-10 text-muted-foreground mx-auto mb-2"
+						/>
 						<CardTitle>{info.name}</CardTitle>
 						<CardDescription>{t("password_protected")}</CardDescription>
 					</CardHeader>
@@ -150,7 +156,10 @@ export default function ShareViewPage() {
 			<div className="min-h-screen flex items-center justify-center bg-background">
 				<Card className="w-full max-w-sm">
 					<CardHeader className="text-center">
-						<FileIcon className="h-10 w-10 text-muted-foreground mx-auto mb-2" />
+						<Icon
+							name="File"
+							className="h-10 w-10 text-muted-foreground mx-auto mb-2"
+						/>
 						<CardTitle>{info.name}</CardTitle>
 						<CardDescription>
 							{info.max_downloads > 0
@@ -167,7 +176,7 @@ export default function ShareViewPage() {
 					</CardHeader>
 					<CardContent>
 						<Button className="w-full" onClick={handleDownload}>
-							<Download className="h-4 w-4 mr-2" />
+							<Icon name="Download" className="h-4 w-4 mr-2" />
 							{t("files:download")}
 						</Button>
 					</CardContent>
@@ -182,7 +191,7 @@ export default function ShareViewPage() {
 			<Card className="w-full max-w-lg">
 				<CardHeader>
 					<div className="flex items-center gap-2">
-						<Folder className="h-5 w-5 text-blue-500" />
+						<Icon name="Folder" className="h-5 w-5 text-blue-500" />
 						<CardTitle>{info.name}</CardTitle>
 					</div>
 					<CardDescription>
@@ -199,7 +208,7 @@ export default function ShareViewPage() {
 									key={`folder-${f.id}`}
 									className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-muted-foreground"
 								>
-									<Folder className="h-4 w-4 text-blue-500" />
+									<Icon name="Folder" className="h-4 w-4 text-blue-500" />
 									{f.name}
 								</div>
 							))}
@@ -208,7 +217,7 @@ export default function ShareViewPage() {
 									key={`file-${f.id}`}
 									className="flex items-center gap-2 px-3 py-2 rounded-md text-sm"
 								>
-									<FileIcon className="h-4 w-4 text-muted-foreground" />
+									<Icon name="File" className="h-4 w-4 text-muted-foreground" />
 									{f.name}
 								</div>
 							))}

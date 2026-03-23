@@ -1,13 +1,3 @@
-import {
-	Copy,
-	Download,
-	History,
-	Link,
-	Lock,
-	Pencil,
-	Trash2,
-	Unlock,
-} from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -17,6 +7,7 @@ import {
 	ContextMenuSeparator,
 	ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Icon } from "@/components/ui/icon";
 
 interface FileContextMenuProps {
 	children: ReactNode;
@@ -51,27 +42,27 @@ export function FileContextMenu({
 			<ContextMenuContent>
 				{!isFolder && onDownload && (
 					<ContextMenuItem onClick={onDownload}>
-						<Download className="h-4 w-4 mr-2" />
+						<Icon name="Download" className="h-4 w-4 mr-2" />
 						{t("download")}
 					</ContextMenuItem>
 				)}
 				<ContextMenuItem onClick={onShare}>
-					<Link className="h-4 w-4 mr-2" />
+					<Icon name="Link" className="h-4 w-4 mr-2" />
 					{t("share")}
 				</ContextMenuItem>
 				<ContextMenuItem onClick={onCopy}>
-					<Copy className="h-4 w-4 mr-2" />
+					<Icon name="Copy" className="h-4 w-4 mr-2" />
 					{t("copy")}
 				</ContextMenuItem>
 				{onRename && (
 					<ContextMenuItem onClick={onRename}>
-						<Pencil className="h-4 w-4 mr-2" />
+						<Icon name="PencilSimple" className="h-4 w-4 mr-2" />
 						{t("rename")}
 					</ContextMenuItem>
 				)}
 				{!isFolder && onVersions && (
 					<ContextMenuItem onClick={onVersions}>
-						<History className="h-4 w-4 mr-2" />
+						<Icon name="Clock" className="h-4 w-4 mr-2" />
 						{t("versions")}
 					</ContextMenuItem>
 				)}
@@ -79,12 +70,12 @@ export function FileContextMenu({
 				<ContextMenuItem onClick={onToggleLock}>
 					{isLocked ? (
 						<>
-							<Unlock className="h-4 w-4 mr-2" />
+							<Icon name="LockOpen" className="h-4 w-4 mr-2" />
 							{t("unlock")}
 						</>
 					) : (
 						<>
-							<Lock className="h-4 w-4 mr-2" />
+							<Icon name="Lock" className="h-4 w-4 mr-2" />
 							{t("lock")}
 						</>
 					)}
@@ -94,7 +85,7 @@ export function FileContextMenu({
 					disabled={isLocked}
 					className="text-destructive"
 				>
-					<Trash2 className="h-4 w-4 mr-2" />
+					<Icon name="Trash" className="h-4 w-4 mr-2" />
 					{t("common:delete")}
 				</ContextMenuItem>
 			</ContextMenuContent>

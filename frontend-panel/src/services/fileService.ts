@@ -1,5 +1,9 @@
-import type { FileInfo, FolderContents, FolderInfo } from "@/types/api";
-import type { ErrorCode } from "@/types/api";
+import type {
+	ErrorCode,
+	FileInfo,
+	FolderContents,
+	FolderInfo,
+} from "@/types/api";
 import { ApiError, api } from "./http";
 
 export const fileService = {

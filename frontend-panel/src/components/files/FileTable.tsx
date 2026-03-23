@@ -1,7 +1,7 @@
-import { ArrowDown, ArrowUp, Folder } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { FileContextMenu } from "@/components/files/FileContextMenu";
 import { FileThumbnail } from "@/components/files/FileThumbnail";
+import { Icon } from "@/components/ui/icon";
 import {
 	Table,
 	TableBody,
@@ -44,9 +44,9 @@ function SortIcon({
 }) {
 	if (column !== current) return null;
 	return order === "asc" ? (
-		<ArrowUp className="h-3 w-3 ml-1" />
+		<Icon name="ArrowUp" className="h-3 w-3 ml-1" />
 	) : (
-		<ArrowDown className="h-3 w-3 ml-1" />
+		<Icon name="ArrowDown" className="h-3 w-3 ml-1" />
 	);
 }
 
@@ -143,7 +143,6 @@ export function FileTable({
 							<SortIcon column="date" current={sortBy} order={sortOrder} />
 						</div>
 					</TableHead>
-					<TableHead className="w-[100px]">{t("common:type")}</TableHead>
 				</TableRow>
 			</TableHeader>
 			<TableBody>
@@ -199,14 +198,16 @@ export function FileTable({
 							</TableCell>
 							<TableCell>
 								<div className="flex items-center gap-2">
-									<Folder className="h-4 w-4 text-primary/70 shrink-0" />
+									<Icon
+										name="Folder"
+										className="h-4 w-4 text-amber-500 shrink-0"
+									/>
 									<span className="truncate">{folder.name}</span>
 								</div>
 							</TableCell>
 							<TableCell className="text-muted-foreground">
 								{formatDate(folder.updated_at)}
 							</TableCell>
-							<TableCell className="text-muted-foreground">Folder</TableCell>
 						</TableRow>
 					</FileContextMenu>
 				))}
@@ -265,9 +266,6 @@ export function FileTable({
 							</TableCell>
 							<TableCell className="text-muted-foreground">
 								{formatDate(file.updated_at)}
-							</TableCell>
-							<TableCell className="text-muted-foreground text-xs">
-								{file.mime_type}
 							</TableCell>
 						</TableRow>
 					</FileContextMenu>
