@@ -5,6 +5,85 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.3] - 2026-03-24
+
+### Release Highlights
+
+**预览、上传与认证体验全面升级！** 从文件预览、登录流程到上传任务面板，这一版把前后端体验一起往前拽了一大截。
+
+- **认证流程重构** — 支持用户名 / 邮箱统一登录，并新增首次初始化管理员引导
+- **统一文件预览系统** — 支持 Markdown、JSON、XML、CSV/TSV、媒体与代码预览
+- **分享能力增强** — 公开文件可直接预览，文件夹分享支持下载其中的文件
+- **上传体验升级** — 新增上传任务面板、并发上传、分片重试与状态追踪
+- **版本恢复重构** — 回退时裁剪后续历史版本，并完善 blob 清理与回归测试
+- **前端体验优化** — 登录页、文件浏览器、TopBar、提示通知与国际化整体打磨
+
+### Added
+
+- **认证与初始化流程**
+  - 新增 `/api/v1/auth/check`，根据输入自动判断登录 / 注册 / 首次初始化路径
+  - 新增 `/api/v1/auth/setup`，支持系统首次启动时创建管理员账号
+  - 登录支持邮箱或用户名作为统一标识符
+- **新文件预览体系**
+  - 统一 `FilePreviewDialog` 作为预览入口
+  - 新增 Markdown、JSON、XML、CSV/TSV、文本代码等多种预览器
+  - 支持 Open With 模式切换、能力判断与未保存修改离开确认
+- **分享增强**
+  - 公开分享文件页支持直接预览
+  - 文件夹分享新增子文件公开下载能力
+  - 分享元信息补充 `mime_type` 与 `size`
+- **上传任务面板**
+  - 新增 `UploadPanel` / `UploadTaskItem`
+  - direct / chunked / presigned 三种上传模式统一进任务列表
+  - 支持并发上传、分片重试、状态跟踪与完成后保留任务
+- **文件尺寸冗余字段**
+  - `files` 表新增 `size` 字段
+  - migration 回填历史数据，为列表展示和接口返回提供稳定大小信息
+- **骨架屏与品牌资源优化**
+  - 新增文件网格 / 表格 / 树等骨架组件
+  - 重构 logo SVG 结构并优化登录页、TopBar 的品牌展示
+
+### Changed
+
+- **登录页**
+  - 重构为双栏品牌布局 + 多步骤认证交互
+  - 支持自动检查账号状态、动态切换登录 / 注册 / 初始化模式
+  - 优化表单校验、过渡动画与退出动画
+- **文件浏览器**
+  - 批量移动 / 复制改为目标目录选择对话框
+  - 批量操作结果改为更友好的详细提示
+  - 版本历史弹窗改为受控模式，并补全恢复 / 删除确认交互
+- **通知与国际化**
+  - Toast 改为右下角出现，支持右滑关闭
+  - 批量操作、错误提示、版本历史等文案统一接入中英文翻译
+- **版本恢复语义**
+  - 恢复到某个版本时，删除该版本及之后的历史版本
+  - 恢复逻辑改为事务化处理，并在提交后做 blob 引用清理
+- **后台周期任务**
+  - 上传清理、回收站清理、锁清理、审计日志清理统一纳入 `runtime/tasks.rs`
+  - 周期任务增加 panic-safe 包装，避免单个任务异常打死整个循环
+- **错误处理**
+  - 引入 `MapAsterErr`，统一错误上下文映射，减少重复样板
+
+### Fixed
+
+- 修复公开分享页被登录态检查误伤并跳转到 `/login` 的问题
+- 修复 token 刷新失败后的前端会话状态清理逻辑
+- 修复版本恢复后历史列表与 blob 清理不一致的问题
+- 修复文件大小信息在多个链路中的不一致问题
+- 修复上传任务列表状态互相覆盖、不可滚动、完成即消失等体验问题
+- 修复文件树拖拽到根目录时缺少操作反馈的问题
+
+### Breaking Changes
+
+- **API**: `/api/v1/auth/login` 请求字段由 `username` 调整为 `identifier`
+
+---
+
+**统计数据**：
+- 139 files changed, 7,915 insertions(+), 1,786 deletions(-)
+- 11 commits
+
 ## [v0.0.1-alpha.2] - 2026-03-23
 
 ### Release Highlights
@@ -219,5 +298,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
+[v0.0.1-alpha.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.2...v0.0.1-alpha.3
 [v0.0.1-alpha.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.1...v0.0.1-alpha.2
 [v0.0.1-alpha.1]: https://github.com/AptS-1547/AsterDrive/releases/tag/v0.0.1-alpha.1
