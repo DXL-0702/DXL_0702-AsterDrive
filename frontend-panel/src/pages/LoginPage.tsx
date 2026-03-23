@@ -1,41 +1,108 @@
-import { Eye, EyeOff, Loader2 } from "lucide-react";
-import type { FormEvent } from "react";
+import { Cloud, Eye, EyeOff, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { z } from "zod/v4";
 import { Button } from "@/components/ui/button";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { handleApiError } from "@/hooks/useApiError";
 import { authService } from "@/services/authService";
 import { useAuthStore } from "@/stores/authStore";
+import { cn } from "@/lib/utils";
 
 // ── Zod schemas ─────────────────────────────────────────────
 
-const identifierSchema = z.string().min(1, "required");
-const usernameSchema = z.string().min(2, "min_2_chars").max(32, "max_32_chars");
-const emailSchema = z.string().email("invalid_email");
-const passwordSchema = z.string().min(6, "min_6_chars");
+const usernameSchema = z
+	.string()
+	.min(4, "Username must be 4-16 characters")
+	.max(16, "Username must be 4-16 characters")
+	.regex(/^[a-zA-Z0-9_-]+$/, "Only letters, numbers, _ and -");
+const emailSchema = z
+	.string()
+	.max(254, "Email is too long")
+	.regex(/^[^@]+@[^@]+\.[^@]+$/, "Invalid email format");
+const passwordSchema = z
+	.string()
+	.min(6, "Password must be at least 6 characters")
+	.max(128, "Password must be at most 128 characters");
+
+// ── Animated height ─────────────────────────────────────────
+
+function AnimateHeight({
+	show,
+	children,
+}: { show: boolean; children: React.ReactNode }) {
+	const [render, setRender] = useState(show);
+	const [visible, setVisible] = useState(show);
+
+	useEffect(() => {
+		if (show) {
+			setRender(true);
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => setVisible(true));
+			});
+		} else {
+			setVisible(false);
+		}
+	}, [show]);
+
+	const handleTransitionEnd = () => {
+		if (!show) setRender(false);
+	};
+
+	if (!render) return null;
+
+	return (
+		<div
+			className="grid transition-[grid-template-rows,opacity] duration-300 ease-out"
+			style={{
+				gridTemplateRows: visible ? "1fr" : "0fr",
+				opacity: visible ? 1 : 0,
+			}}
+			onTransitionEnd={handleTransitionEnd}
+		>
+			<div className="overflow-hidden">{children}</div>
+		</div>
+	);
+}
+
+// ── Animated text ───────────────────────────────────────────
+
+function AnimateText({
+	text,
+	className,
+}: { text: string; className?: string }) {
+	const [displayed, setDisplayed] = useState(text);
+	const [animating, setAnimating] = useState(false);
+
+	useEffect(() => {
+		if (text === displayed) return;
+		setAnimating(true);
+		const timer = setTimeout(() => {
+			setDisplayed(text);
+			setAnimating(false);
+		}, 150);
+		return () => clearTimeout(timer);
+	}, [text, displayed]);
+
+	return (
+		<span
+			className={cn(
+				"inline-block transition-all duration-150",
+				animating ? "opacity-0 -translate-y-1" : "opacity-100 translate-y-0",
+				className,
+			)}
+		>
+			{displayed}
+		</span>
+	);
+}
 
 // ── Types ───────────────────────────────────────────────────
 
 type AuthMode = "idle" | "login" | "register" | "setup";
-
-interface FieldError {
-	identifier?: string;
-	username?: string;
-	email?: string;
-	password?: string;
-}
 
 // ── Component ───────────────────────────────────────────────
 
@@ -44,24 +111,31 @@ export default function LoginPage() {
 	const navigate = useNavigate();
 	const login = useAuthStore((s) => s.login);
 
-	// Form state
+	// The first field is always visible — it doubles as username or email
 	const [identifier, setIdentifier] = useState("");
-	const [username, setUsername] = useState("");
-	const [email, setEmail] = useState("");
+	// The extra field only shows for register/setup — it's whatever identifier is NOT
+	const [extraField, setExtraField] = useState("");
 	const [password, setPassword] = useState("");
 	const [showPassword, setShowPassword] = useState(false);
 
-	// Auth mode (determined by check)
 	const [mode, setMode] = useState<AuthMode>("idle");
 	const [checking, setChecking] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
-	const [errors, setErrors] = useState<FieldError>({});
+	const [errors, setErrors] = useState<Record<string, string>>({});
 
-	// Debounce timer for auto-check
 	const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const lastChecked = useRef("");
 
-	// ── Auto check on identifier change (debounced) ──
+	// Is the identifier an email address?
+	const isEmail = identifier.includes("@");
+
+	// In register/setup: identifier is one field, extraField is the other
+	// If identifier is email → extraField is username (and vice versa)
+	const identifierLabel = isEmail ? t("email") : t("username");
+	const extraLabel = isEmail ? t("username") : t("email");
+	const extraPlaceholder = isEmail ? t("choose_username") : "you@example.com";
+
+	// ── Auto check ──
 
 	const runCheck = useCallback(async (value: string) => {
 		const trimmed = value.trim();
@@ -72,30 +146,14 @@ export default function LoginPage() {
 		try {
 			const result = await authService.check(trimmed);
 			if (!result.has_users) {
-				// First-time setup
-				if (trimmed.includes("@")) {
-					setEmail(trimmed);
-					setUsername("");
-				} else {
-					setUsername(trimmed);
-					setEmail("");
-				}
 				setMode("setup");
 			} else if (result.exists) {
 				setMode("login");
 			} else {
-				// New user registration
-				if (trimmed.includes("@")) {
-					setEmail(trimmed);
-					setUsername("");
-				} else {
-					setUsername(trimmed);
-					setEmail("");
-				}
 				setMode("register");
 			}
 		} catch {
-			// Silently fail — user can still type
+			// Silently fail
 		} finally {
 			setChecking(false);
 		}
@@ -114,36 +172,43 @@ export default function LoginPage() {
 		};
 	}, [identifier, runCheck]);
 
-	// ── Validation ──
+	// ── Live validation ──
+
+	const validateSingle = (
+		field: string,
+		value: string,
+		schema: z.ZodType,
+	) => {
+		const result = schema.safeParse(value);
+		setErrors((prev) => {
+			if (result.success) {
+				const next = { ...prev };
+				delete next[field];
+				return next;
+			}
+			return { ...prev, [field]: result.error.issues[0]?.message ?? "" };
+		});
+	};
+
+	// ── Submit validation ──
 
 	const validate = (): boolean => {
-		const errs: FieldError = {};
+		const errs: Record<string, string> = {};
 
-		const idResult = identifierSchema.safeParse(identifier.trim());
-		if (!idResult.success) errs.identifier = idResult.error.issues[0]?.message;
+		// Validate identifier as username or email
+		const idSchema = isEmail ? emailSchema : usernameSchema;
+		const idResult = idSchema.safeParse(identifier.trim());
+		if (!idResult.success) errs.identifier = idResult.error.issues[0]?.message ?? "";
 
+		// Validate extra field for register/setup
 		if (mode === "register" || mode === "setup") {
-			if (!username && !identifier.includes("@")) {
-				// username was auto-filled from identifier
-			} else if (mode === "register" && !identifier.includes("@")) {
-				// username is identifier, check email
-				const emailResult = emailSchema.safeParse(email);
-				if (!emailResult.success) errs.email = emailResult.error.issues[0]?.message;
-			} else if (mode === "register" && identifier.includes("@")) {
-				const unResult = usernameSchema.safeParse(username);
-				if (!unResult.success) errs.username = unResult.error.issues[0]?.message;
-			}
-
-			if (mode === "setup") {
-				const unResult = usernameSchema.safeParse(username || identifier);
-				if (!unResult.success && !username) errs.username = unResult.error.issues[0]?.message;
-				const emResult = emailSchema.safeParse(email || (identifier.includes("@") ? identifier : ""));
-				if (!emResult.success && !email) errs.email = emResult.error.issues[0]?.message;
-			}
+			const extraSchema = isEmail ? usernameSchema : emailSchema;
+			const extraResult = extraSchema.safeParse(extraField.trim());
+			if (!extraResult.success) errs.extra = extraResult.error.issues[0]?.message ?? "";
 		}
 
 		const pwResult = passwordSchema.safeParse(password);
-		if (!pwResult.success) errs.password = pwResult.error.issues[0]?.message;
+		if (!pwResult.success) errs.password = pwResult.error.issues[0]?.message ?? "";
 
 		setErrors(errs);
 		return Object.keys(errs).length === 0;
@@ -151,33 +216,35 @@ export default function LoginPage() {
 
 	// ── Submit ──
 
-	const handleSubmit = async (e: FormEvent) => {
+	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		if (!validate()) return;
 		if (mode === "idle") {
-			// Force check if not yet checked
 			await runCheck(identifier);
 			return;
 		}
 
 		setSubmitting(true);
 		try {
+			const id = identifier.trim();
+			const extra = extraField.trim();
+
 			if (mode === "login") {
-				await login(identifier.trim(), password);
+				await login(id, password);
 				navigate("/", { replace: true });
-			} else if (mode === "register") {
-				const un = identifier.includes("@") ? username : identifier.trim();
-				const em = identifier.includes("@") ? identifier.trim() : email;
-				await authService.register(un, em, password);
-				toast.success(t("register_success"));
-				await login(identifier.trim(), password);
-				navigate("/", { replace: true });
-			} else if (mode === "setup") {
-				const un = username || identifier.trim();
-				const em = email || identifier.trim();
-				await authService.setup(un, em, password);
-				toast.success(t("setup_complete"));
-				await login(em.includes("@") ? em : un, password);
+			} else {
+				// register or setup: figure out which is username, which is email
+				const un = isEmail ? extra : id;
+				const em = isEmail ? id : extra;
+
+				if (mode === "setup") {
+					await authService.setup(un, em, password);
+					toast.success(t("setup_complete"));
+				} else {
+					await authService.register(un, em, password);
+					toast.success(t("register_success"));
+				}
+				await login(em, password);
 				navigate("/", { replace: true });
 			}
 		} catch (error) {
@@ -187,14 +254,11 @@ export default function LoginPage() {
 		}
 	};
 
-	// ── Derived state ──
-
-	const isEmail = identifier.includes("@");
+	// ── Labels ──
 
 	const submitLabel = () => {
 		if (submitting) {
-			if (mode === "login") return t("signing_in");
-			return t("creating_account");
+			return mode === "login" ? t("signing_in") : t("creating_account");
 		}
 		if (mode === "setup") return t("create_admin");
 		if (mode === "register") return t("sign_up");
@@ -210,83 +274,158 @@ export default function LoginPage() {
 	};
 
 	return (
-		<div className="min-h-screen flex items-center justify-center bg-background p-4">
-			<Card className="w-full max-w-sm">
-				<CardHeader>
-					<CardTitle className="text-2xl text-center">
-						{mode === "setup" ? t("welcome_setup") : t("common:app_name")}
-					</CardTitle>
-					<CardDescription className="text-center">
-						{description()}
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<form onSubmit={handleSubmit} className="space-y-3">
-						{/* Identifier — always visible */}
-						<div className="space-y-1">
-							<div className="relative">
-								<Input
-									placeholder={t("email_or_username")}
-									value={identifier}
-									onChange={(e) => setIdentifier(e.target.value)}
-									required
-									autoFocus
-									className={errors.identifier ? "border-destructive" : ""}
-								/>
-								{checking && (
-									<Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-muted-foreground" />
-								)}
+		<div className="min-h-screen flex">
+			{/* Left — brand panel */}
+			<div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-900 items-center justify-center relative overflow-hidden">
+				<div className="absolute inset-0 opacity-[0.03]">
+					<div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full bg-emerald-500 blur-3xl" />
+					<div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full bg-amber-500 blur-3xl" />
+				</div>
+				<div className="relative text-center px-12 max-w-md">
+					<Cloud className="h-16 w-16 text-white/80 mx-auto mb-6" />
+					<h1 className="text-4xl font-bold text-white tracking-tight mb-3">
+						AsterDrive
+					</h1>
+					<p className="text-lg text-white/50 leading-relaxed">
+						Your files, your server, your rules.
+					</p>
+				</div>
+			</div>
+
+			{/* Right — form */}
+			<div className="flex-1 flex items-center justify-center bg-background p-6">
+				<div className="w-full max-w-sm">
+					{/* Mobile logo */}
+					<div className="lg:hidden text-center mb-8">
+						<Cloud className="h-10 w-10 text-foreground mx-auto mb-3" />
+						<h1 className="text-2xl font-bold tracking-tight">AsterDrive</h1>
+					</div>
+
+					{/* Header */}
+					<div className="mb-6 overflow-hidden">
+						<h2 className="text-xl font-semibold tracking-tight">
+							<AnimateText
+								text={mode === "setup" ? t("welcome_setup") : t("sign_in_to_account")}
+							/>
+						</h2>
+						<p className="text-sm text-muted-foreground mt-1">
+							<AnimateText text={description()} />
+						</p>
+					</div>
+
+					<form onSubmit={handleSubmit}>
+						{/* Field 1: identifier (email or username) — always visible */}
+						<div className="space-y-1.5">
+							<div className="flex items-center justify-between">
+								<Label htmlFor="identifier" className="text-sm">
+									<AnimateText
+										text={
+											mode === "register" || mode === "setup"
+												? identifierLabel
+												: t("email_or_username")
+										}
+									/>
+								</Label>
+								<div className="flex items-center gap-2">
+									{checking && (
+										<Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+									)}
+									{mode !== "idle" && !checking && (
+										<span className="text-xs text-muted-foreground/70">
+											{mode === "login"
+												? t("sign_in")
+												: mode === "register"
+													? t("sign_up")
+													: t("create_admin")}
+										</span>
+									)}
+								</div>
 							</div>
+							<Input
+								id="identifier"
+								placeholder="you@example.com"
+								value={identifier}
+								onChange={(e) => {
+									const v = e.target.value;
+									setIdentifier(v);
+									// Live validate as username if not email
+									if (v.length > 0 && !v.includes("@")) {
+										validateSingle("identifier", v, usernameSchema);
+									} else if (v.includes("@") && v.length > 3) {
+										validateSingle("identifier", v, emailSchema);
+									} else {
+										setErrors((prev) => {
+											const next = { ...prev };
+											delete next.identifier;
+											return next;
+										});
+									}
+								}}
+								required
+								autoFocus
+								autoComplete="username"
+								className={cn(
+									"h-10",
+									errors.identifier && "border-destructive focus-visible:ring-destructive",
+								)}
+							/>
 							{errors.identifier && (
 								<p className="text-xs text-destructive">{errors.identifier}</p>
 							)}
 						</div>
 
-						{/* Username — shown when registering with email, or setup */}
-						{(mode === "setup" || (mode === "register" && isEmail)) && (
-							<div className="space-y-1">
-								<Label className="text-xs">{t("username")}</Label>
+						{/* Field 2: extra field — only for register/setup */}
+						<AnimateHeight show={mode === "register" || mode === "setup"}>
+							<div className="space-y-1.5 mt-4">
+								<Label htmlFor="extra" className="text-sm">
+									<AnimateText text={extraLabel} />
+								</Label>
 								<Input
-									placeholder={t("choose_username")}
-									value={username}
-									onChange={(e) => setUsername(e.target.value)}
-									required
-									className={errors.username ? "border-destructive" : ""}
+									id="extra"
+									placeholder={extraPlaceholder}
+									value={extraField}
+									onChange={(e) => {
+										const v = e.target.value;
+										setExtraField(v);
+										const schema = isEmail ? usernameSchema : emailSchema;
+										validateSingle("extra", v, schema);
+									}}
+									required={mode === "register" || mode === "setup"}
+									autoComplete={isEmail ? "off" : "email"}
+									className={cn(
+										"h-10",
+										errors.extra && "border-destructive focus-visible:ring-destructive",
+									)}
 								/>
-								{errors.username && (
-									<p className="text-xs text-destructive">{errors.username}</p>
+								{errors.extra && (
+									<p className="text-xs text-destructive">{errors.extra}</p>
 								)}
 							</div>
-						)}
+						</AnimateHeight>
 
-						{/* Email — shown when registering with username, or setup */}
-						{(mode === "setup" && !isEmail) || (mode === "register" && !isEmail) ? (
-							<div className="space-y-1">
-								<Label className="text-xs">{t("email")}</Label>
-								<Input
-									type="email"
-									placeholder={t("email")}
-									value={email}
-									onChange={(e) => setEmail(e.target.value)}
-									required
-									className={errors.email ? "border-destructive" : ""}
-								/>
-								{errors.email && (
-									<p className="text-xs text-destructive">{errors.email}</p>
-								)}
-							</div>
-						) : null}
-
-						{/* Password — always visible */}
-						<div className="space-y-1">
+						{/* Field 3: password — always visible */}
+						<div className="space-y-1.5 mt-4">
+							<Label htmlFor="password" className="text-sm">
+								{t("password")}
+							</Label>
 							<div className="relative">
 								<Input
+									id="password"
 									type={showPassword ? "text" : "password"}
 									placeholder={t("password")}
 									value={password}
-									onChange={(e) => setPassword(e.target.value)}
+									onChange={(e) => {
+										setPassword(e.target.value);
+										if (mode !== "login") {
+											validateSingle("password", e.target.value, passwordSchema);
+										}
+									}}
 									required
-									className={`pr-10 ${errors.password ? "border-destructive" : ""}`}
+									autoComplete={mode === "login" ? "current-password" : "new-password"}
+									className={cn(
+										"h-10 pr-10",
+										errors.password && "border-destructive focus-visible:ring-destructive",
+									)}
 								/>
 								<button
 									type="button"
@@ -294,16 +433,10 @@ export default function LoginPage() {
 									onClick={() => setShowPassword(!showPassword)}
 									tabIndex={-1}
 									aria-label={
-										showPassword
-											? t("common:hide_password")
-											: t("common:show_password")
+										showPassword ? t("common:hide_password") : t("common:show_password")
 									}
 								>
-									{showPassword ? (
-										<EyeOff className="h-4 w-4" />
-									) : (
-										<Eye className="h-4 w-4" />
-									)}
+									{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
 								</button>
 							</div>
 							{errors.password && (
@@ -311,20 +444,21 @@ export default function LoginPage() {
 							)}
 						</div>
 
-						{/* Submit */}
 						<Button
 							type="submit"
-							className="w-full"
+							className="w-full h-10 mt-4"
 							disabled={submitting || checking}
 						>
-							{submitting ? (
-								<Loader2 className="h-4 w-4 animate-spin mr-2" />
-							) : null}
+							{submitting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
 							{submitLabel()}
 						</Button>
 					</form>
-				</CardContent>
-			</Card>
+
+					<p className="mt-8 text-center text-xs text-muted-foreground/50">
+						Self-hosted cloud storage
+					</p>
+				</div>
+			</div>
 		</div>
 	);
 }
