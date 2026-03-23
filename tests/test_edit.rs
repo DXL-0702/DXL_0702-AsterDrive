@@ -137,7 +137,10 @@ async fn test_restore_single_history_version_recovers_original_content() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     let versions = body["data"].as_array().unwrap();
-    assert!(versions.is_empty(), "history should be empty after restoring v1");
+    assert!(
+        versions.is_empty(),
+        "history should be empty after restoring v1"
+    );
 }
 
 // ── ETag 乐观锁：正确 ETag 通过 ────────────────────────────

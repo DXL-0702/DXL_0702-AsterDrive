@@ -392,21 +392,20 @@ async fn test_version_restore_truncates_future_versions_without_deleting_target_
     let versions = aster_drive::services::version_service::list_versions(&state, file.id, user.id)
         .await
         .unwrap();
-    assert_eq!(versions.iter().map(|v| v.version).collect::<Vec<_>>(), vec![3, 2, 1]);
+    assert_eq!(
+        versions.iter().map(|v| v.version).collect::<Vec<_>>(),
+        vec![3, 2, 1]
+    );
 
     let v3 = versions.iter().find(|v| v.version == 3).unwrap().clone();
     let v2 = versions.iter().find(|v| v.version == 2).unwrap().clone();
     let v1 = versions.iter().find(|v| v.version == 1).unwrap().clone();
     let old_current_blob_id = latest.blob_id;
 
-    let restored = aster_drive::services::version_service::restore_version(
-        &state,
-        file.id,
-        v2.id,
-        user.id,
-    )
-    .await
-    .unwrap();
+    let restored =
+        aster_drive::services::version_service::restore_version(&state, file.id, v2.id, user.id)
+            .await
+            .unwrap();
 
     assert_eq!(restored.blob_id, v2.blob_id);
 
@@ -417,18 +416,26 @@ async fn test_version_restore_truncates_future_versions_without_deleting_target_
     assert_eq!(versions[0].version, 1);
     assert_eq!(versions[0].blob_id, v1.blob_id);
 
-    assert!(aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, v1.blob_id)
-        .await
-        .is_ok());
-    assert!(aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, v2.blob_id)
-        .await
-        .is_ok());
-    assert!(aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, v3.blob_id)
-        .await
-        .is_err());
-    assert!(aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, old_current_blob_id)
-        .await
-        .is_err());
+    assert!(
+        aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, v1.blob_id)
+            .await
+            .is_ok()
+    );
+    assert!(
+        aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, v2.blob_id)
+            .await
+            .is_ok()
+    );
+    assert!(
+        aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, v3.blob_id)
+            .await
+            .is_err()
+    );
+    assert!(
+        aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, old_current_blob_id)
+            .await
+            .is_err()
+    );
 
     let temp5 = format!("{}/v5.txt", temp_dir);
     std::fs::write(&temp5, "version 5").unwrap();
@@ -448,7 +455,10 @@ async fn test_version_restore_truncates_future_versions_without_deleting_target_
     let versions = aster_drive::services::version_service::list_versions(&state, file.id, user.id)
         .await
         .unwrap();
-    assert_eq!(versions.iter().map(|v| v.version).collect::<Vec<_>>(), vec![2, 1]);
+    assert_eq!(
+        versions.iter().map(|v| v.version).collect::<Vec<_>>(),
+        vec![2, 1]
+    );
 }
 
 // ─── Copy Naming ──────────────────────────────────────────────────

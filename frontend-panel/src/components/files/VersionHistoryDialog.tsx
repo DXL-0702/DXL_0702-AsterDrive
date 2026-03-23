@@ -119,138 +119,140 @@ export function VersionHistoryDialog({
 		<>
 			<Dialog open={open} onOpenChange={onOpenChange}>
 				<DialogContent className="max-w-lg">
-				<DialogHeader>
-					<div className="flex items-start gap-3 pr-8">
-						{mimeType ? (
-							<FileTypeIcon
-								mimeType={mimeType}
-								fileName={fileName}
-								className="mt-0.5 h-5 w-5 shrink-0"
-							/>
-						) : null}
-						<div className="min-w-0">
-							<DialogTitle>
-								{t("version_history_title", { name: fileName })}
-							</DialogTitle>
-							{(mimeType || currentSize !== undefined) && (
-								<div className="mt-1 text-xs text-muted-foreground">
-									{mimeType ?? t("common:file")}
-									{currentSize !== undefined
-										? ` · ${formatSize(currentSize)}`
-										: ""}
+					<DialogHeader>
+						<div className="flex items-start gap-3 pr-8">
+							{mimeType ? (
+								<FileTypeIcon
+									mimeType={mimeType}
+									fileName={fileName}
+									className="mt-0.5 h-5 w-5 shrink-0"
+								/>
+							) : null}
+							<div className="min-w-0">
+								<DialogTitle>
+									{t("version_history_title", { name: fileName })}
+								</DialogTitle>
+								{(mimeType || currentSize !== undefined) && (
+									<div className="mt-1 text-xs text-muted-foreground">
+										{mimeType ?? t("common:file")}
+										{currentSize !== undefined
+											? ` · ${formatSize(currentSize)}`
+											: ""}
+									</div>
+								)}
+							</div>
+						</div>
+					</DialogHeader>
+					<div className="mb-4 rounded-lg border bg-muted/20 p-3">
+						<div className="flex items-center gap-3">
+							{mimeType ? (
+								<FileTypeIcon
+									mimeType={mimeType}
+									fileName={fileName}
+									className="h-5 w-5 shrink-0"
+								/>
+							) : null}
+							<div className="min-w-0 flex-1">
+								<div className="text-sm font-medium text-foreground">
+									{t("version_current")}
 								</div>
-							)}
-						</div>
-					</div>
-				</DialogHeader>
-				<div className="mb-4 rounded-lg border bg-muted/20 p-3">
-					<div className="flex items-center gap-3">
-						{mimeType ? (
-							<FileTypeIcon
-								mimeType={mimeType}
-								fileName={fileName}
-								className="h-5 w-5 shrink-0"
-							/>
-						) : null}
-						<div className="min-w-0 flex-1">
-							<div className="text-sm font-medium text-foreground">
-								{t("version_current")}
+								<div className="mt-1 text-xs text-muted-foreground">
+									{currentSize !== undefined
+										? formatSize(currentSize)
+										: t("common:file")}
+									{mimeType ? ` · ${mimeType}` : ""}
+								</div>
 							</div>
-							<div className="mt-1 text-xs text-muted-foreground">
-								{currentSize !== undefined
-									? formatSize(currentSize)
-									: t("common:file")}
-								{mimeType ? ` · ${mimeType}` : ""}
+							<div className="text-xs text-muted-foreground">
+								{t("version_history_count", { count: versions.length })}
 							</div>
 						</div>
-						<div className="text-xs text-muted-foreground">
-							{t("version_history_count", { count: versions.length })}
-						</div>
 					</div>
-				</div>
-				{loading ? (
-					<p className="text-muted-foreground text-sm py-4 text-center">
-						{t("loading_preview")}
-					</p>
-				) : versions.length === 0 ? (
-					<p className="text-muted-foreground text-sm py-4 text-center">
-						{t("version_empty")}
-					</p>
-				) : (
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead>{t("version_column")}</TableHead>
-								<TableHead>{t("version_size")}</TableHead>
-								<TableHead>{t("version_date")}</TableHead>
-								<TableHead className="w-20">{t("version_actions")}</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{versions.map((v) => (
-								<TableRow key={v.id}>
-									<TableCell className="font-mono text-sm">
-										v{v.version}
-									</TableCell>
-									<TableCell className="text-sm">
-										{formatSize(v.size)}
-									</TableCell>
-									<TableCell className="text-muted-foreground text-xs">
-										{new Date(v.created_at).toLocaleString()}
-									</TableCell>
-									<TableCell>
-										<div className="flex gap-1">
-											<Button
-												variant="ghost"
-												size="icon"
-												className="h-7 w-7"
-												title={
-													restoringVersionId === v.id
-														? t("version_restoring")
-														: t("version_restore")
-												}
-												disabled={
-													restoringVersionId !== null || deletingVersionId !== null
-												}
-												onClick={() => setConfirmRestoreVersion(v)}
-											>
-												<Icon
-													name={
-														restoringVersionId === v.id
-															? "Spinner"
-															: "ArrowCounterClockwise"
-													}
-													className={`h-3.5 w-3.5 ${restoringVersionId === v.id ? "animate-spin" : ""}`}
-												/>
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon"
-												className="h-7 w-7 text-destructive"
-												title={
-													deletingVersionId === v.id
-														? t("version_deleting")
-														: t("version_delete")
-												}
-												disabled={
-													restoringVersionId !== null || deletingVersionId !== null
-												}
-												onClick={() => setConfirmDeleteVersion(v)}
-											>
-												<Icon
-													name={
-														deletingVersionId === v.id ? "Spinner" : "Trash"
-													}
-													className={`h-3.5 w-3.5 ${deletingVersionId === v.id ? "animate-spin" : ""}`}
-												/>
-											</Button>
-										</div>
-									</TableCell>
+					{loading ? (
+						<p className="text-muted-foreground text-sm py-4 text-center">
+							{t("loading_preview")}
+						</p>
+					) : versions.length === 0 ? (
+						<p className="text-muted-foreground text-sm py-4 text-center">
+							{t("version_empty")}
+						</p>
+					) : (
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>{t("version_column")}</TableHead>
+									<TableHead>{t("version_size")}</TableHead>
+									<TableHead>{t("version_date")}</TableHead>
+									<TableHead className="w-20">{t("version_actions")}</TableHead>
 								</TableRow>
-							))}
-						</TableBody>
-					</Table>
-				)}
+							</TableHeader>
+							<TableBody>
+								{versions.map((v) => (
+									<TableRow key={v.id}>
+										<TableCell className="font-mono text-sm">
+											v{v.version}
+										</TableCell>
+										<TableCell className="text-sm">
+											{formatSize(v.size)}
+										</TableCell>
+										<TableCell className="text-muted-foreground text-xs">
+											{new Date(v.created_at).toLocaleString()}
+										</TableCell>
+										<TableCell>
+											<div className="flex gap-1">
+												<Button
+													variant="ghost"
+													size="icon"
+													className="h-7 w-7"
+													title={
+														restoringVersionId === v.id
+															? t("version_restoring")
+															: t("version_restore")
+													}
+													disabled={
+														restoringVersionId !== null ||
+														deletingVersionId !== null
+													}
+													onClick={() => setConfirmRestoreVersion(v)}
+												>
+													<Icon
+														name={
+															restoringVersionId === v.id
+																? "Spinner"
+																: "ArrowCounterClockwise"
+														}
+														className={`h-3.5 w-3.5 ${restoringVersionId === v.id ? "animate-spin" : ""}`}
+													/>
+												</Button>
+												<Button
+													variant="ghost"
+													size="icon"
+													className="h-7 w-7 text-destructive"
+													title={
+														deletingVersionId === v.id
+															? t("version_deleting")
+															: t("version_delete")
+													}
+													disabled={
+														restoringVersionId !== null ||
+														deletingVersionId !== null
+													}
+													onClick={() => setConfirmDeleteVersion(v)}
+												>
+													<Icon
+														name={
+															deletingVersionId === v.id ? "Spinner" : "Trash"
+														}
+														className={`h-3.5 w-3.5 ${deletingVersionId === v.id ? "animate-spin" : ""}`}
+													/>
+												</Button>
+											</div>
+										</TableCell>
+									</TableRow>
+								))}
+							</TableBody>
+						</Table>
+					)}
 				</DialogContent>
 			</Dialog>
 			<ConfirmDialog
