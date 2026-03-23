@@ -48,11 +48,11 @@ async fn test_auth_service_register_login() {
 async fn test_auth_service_verify_token() {
     let state = common::setup().await;
 
-    aster_drive::services::auth_service::register(&state, "bob", "bob@example.com", "pass123")
+    aster_drive::services::auth_service::register(&state, "bobb", "bob@example.com", "pass123")
         .await
         .unwrap();
 
-    let (access, _) = aster_drive::services::auth_service::login(&state, "bob", "pass123")
+    let (access, _) = aster_drive::services::auth_service::login(&state, "bobb", "pass123")
         .await
         .unwrap();
 
@@ -77,7 +77,7 @@ async fn test_file_service_get_info() {
     let state = common::setup().await;
 
     let user =
-        aster_drive::services::auth_service::register(&state, "user1", "u1@example.com", "pass")
+        aster_drive::services::auth_service::register(&state, "user1", "u1@example.com", "pass123")
             .await
             .unwrap();
 
@@ -109,7 +109,7 @@ async fn test_file_service_get_info() {
 
     // 别人的文件
     let user2 =
-        aster_drive::services::auth_service::register(&state, "user2", "u2@example.com", "pass")
+        aster_drive::services::auth_service::register(&state, "user2", "u2@example.com", "pass123")
             .await
             .unwrap();
     let err = aster_drive::services::file_service::get_info(&state, file.id, user2.id).await;
@@ -126,7 +126,7 @@ async fn test_lock_service_lock_unlock() {
         &state,
         "locker",
         "locker@example.com",
-        "pass",
+        "pass123",
     )
     .await
     .unwrap();
@@ -202,7 +202,7 @@ async fn test_lock_service_force_unlock() {
         &state,
         "admin1",
         "admin1@example.com",
-        "pass",
+        "pass123",
     )
     .await
     .unwrap();
@@ -239,10 +239,14 @@ async fn test_lock_service_force_unlock() {
 async fn test_version_service_list_delete() {
     let state = common::setup().await;
 
-    let user =
-        aster_drive::services::auth_service::register(&state, "veruser", "ver@example.com", "pass")
-            .await
-            .unwrap();
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "veruser",
+        "ver@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
 
     // 上传 v1
     let temp_dir = format!("/tmp/asterdrive-ver-test-{}", uuid::Uuid::new_v4());
@@ -319,7 +323,7 @@ async fn test_copy_file_naming() {
         &state,
         "copier",
         "copier@example.com",
-        "pass",
+        "pass123",
     )
     .await
     .unwrap();
@@ -355,7 +359,7 @@ async fn test_folder_service_cycle_detection() {
     let state = common::setup().await;
 
     let user =
-        aster_drive::services::auth_service::register(&state, "cyc", "cyc@example.com", "pass")
+        aster_drive::services::auth_service::register(&state, "cycl", "cyc@example.com", "pass123")
             .await
             .unwrap();
 
@@ -400,10 +404,14 @@ async fn test_folder_service_cycle_detection() {
 async fn test_property_service_dav_readonly() {
     let state = common::setup().await;
 
-    let user =
-        aster_drive::services::auth_service::register(&state, "prop", "prop@example.com", "pass")
-            .await
-            .unwrap();
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "prop",
+        "prop@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
 
     let folder = aster_drive::services::folder_service::create(&state, user.id, "PropTest", None)
         .await

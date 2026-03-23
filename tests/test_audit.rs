@@ -58,7 +58,7 @@ async fn test_audit_log_admin_only() {
         .uri("/api/v1/auth/login")
         .peer_addr("127.0.0.1:12345".parse().unwrap())
         .set_json(serde_json::json!({
-            "username": "user2",
+            "identifier": "user2",
             "password": "password123"
         }))
         .to_request();

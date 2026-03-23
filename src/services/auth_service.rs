@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::repository::{config_repo, policy_repo, user_repo};
 use crate::entities::user;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::types::{TokenType, UserRole, UserStatus};
 use crate::utils::hash;
@@ -19,6 +19,61 @@ pub struct Claims {
     pub exp: usize,
 }
 
+// ── 输入校验 ──────────────────────────────────────────────────
+
+fn validate_username(username: &str) -> Result<()> {
+    let len = username.len();
+    if len < 4 {
+        return Err(AsterError::validation_error(
+            "username must be at least 4 characters",
+        ));
+    }
+    if len > 16 {
+        return Err(AsterError::validation_error(
+            "username must be at most 16 characters",
+        ));
+    }
+    // 只允许字母、数字、下划线、连字符
+    if !username
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err(AsterError::validation_error(
+            "username may only contain letters, numbers, underscores and hyphens",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_email(email: &str) -> Result<()> {
+    if email.len() > 254 {
+        return Err(AsterError::validation_error("email is too long"));
+    }
+    // 基础格式校验：有且仅有一个 @，@ 前后非空，@ 后有点
+    let parts: Vec<&str> = email.splitn(2, '@').collect();
+    if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
+        return Err(AsterError::validation_error("invalid email format"));
+    }
+    if !parts[1].contains('.') {
+        return Err(AsterError::validation_error("invalid email format"));
+    }
+    Ok(())
+}
+
+fn validate_password(password: &str) -> Result<()> {
+    if password.len() < 6 {
+        return Err(AsterError::validation_error(
+            "password must be at least 6 characters",
+        ));
+    }
+    if password.len() > 128 {
+        return Err(AsterError::validation_error(
+            "password must be at most 128 characters",
+        ));
+    }
+    Ok(())
+}
+
 /// 注册用户，返回用户信息（不含密码）
 pub async fn register(
     state: &AppState,
@@ -27,6 +82,11 @@ pub async fn register(
     password: &str,
 ) -> Result<user::Model> {
     let db = &state.db;
+
+    // ── 输入校验 ──
+    validate_username(username)?;
+    validate_email(email)?;
+    validate_password(password)?;
 
     if user_repo::find_by_username(db, username).await?.is_some() {
         return Err(AsterError::validation_error("username already exists"));
@@ -203,7 +263,7 @@ fn create_token(
         &claims,
         &EncodingKey::from_secret(secret.as_bytes()),
     )
-    .map_err(|e| AsterError::internal_error(e.to_string()))
+    .map_aster_err(AsterError::internal_error)
 }
 
 pub fn verify_token(token: &str, secret: &str) -> Result<Claims> {

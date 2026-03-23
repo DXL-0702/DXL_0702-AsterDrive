@@ -167,3 +167,30 @@ impl actix_web::ResponseError for AsterError {
 }
 
 pub type Result<T> = std::result::Result<T, AsterError>;
+
+/// Extension trait to reduce `.map_err(|e| AsterError::xxx(e.to_string()))` boilerplate.
+pub trait MapAsterErr<T> {
+    /// Map any `Display` error to an `AsterError` variant via its constructor.
+    ///
+    /// ```ignore
+    /// io_op().map_aster_err(AsterError::storage_driver_error)?;
+    /// ```
+    fn map_aster_err(self, f: impl FnOnce(String) -> AsterError) -> Result<T>;
+
+    /// Like `map_aster_err` but prepends a static context string.
+    ///
+    /// ```ignore
+    /// s3_op().map_aster_err_ctx("S3 put failed", AsterError::storage_driver_error)?;
+    /// ```
+    fn map_aster_err_ctx(self, ctx: &str, f: impl FnOnce(String) -> AsterError) -> Result<T>;
+}
+
+impl<T, E: std::fmt::Display> MapAsterErr<T> for std::result::Result<T, E> {
+    fn map_aster_err(self, f: impl FnOnce(String) -> AsterError) -> Result<T> {
+        self.map_err(|e| f(e.to_string()))
+    }
+
+    fn map_aster_err_ctx(self, ctx: &str, f: impl FnOnce(String) -> AsterError) -> Result<T> {
+        self.map_err(|e| f(format!("{ctx}: {e}")))
+    }
+}

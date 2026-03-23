@@ -4,7 +4,7 @@ use image::ImageFormat;
 
 use crate::db::repository::policy_repo;
 use crate::entities::file_blob;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 
 const THUMB_MAX_DIM: u32 = 200;
@@ -69,14 +69,14 @@ pub async fn delete_thumbnail(state: &AppState, blob: &file_blob::Model) -> Resu
 /// 解码图片 → 缩放 → 编码为 WebP
 fn generate_thumbnail(data: &[u8]) -> Result<Vec<u8>> {
     let img = image::load_from_memory(data)
-        .map_err(|e| AsterError::thumbnail_generation_failed(format!("decode: {e}")))?;
+        .map_aster_err_ctx("decode", AsterError::thumbnail_generation_failed)?;
 
     let thumb = img.thumbnail(THUMB_MAX_DIM, THUMB_MAX_DIM);
 
     let mut buf = Cursor::new(Vec::new());
     thumb
         .write_to(&mut buf, ImageFormat::WebP)
-        .map_err(|e| AsterError::thumbnail_generation_failed(format!("encode webp: {e}")))?;
+        .map_aster_err_ctx("encode webp", AsterError::thumbnail_generation_failed)?;
 
     Ok(buf.into_inner())
 }

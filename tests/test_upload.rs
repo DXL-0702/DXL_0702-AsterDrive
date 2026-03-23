@@ -282,6 +282,10 @@ async fn test_presigned_upload_s3_e2e() {
         .await
         .unwrap();
     use aster_drive::db::repository::policy_repo;
+    // 清除 register 自动分配的 local default，确保 S3 策略成为唯一 default
+    policy_repo::clear_user_default(&state.db, user.id)
+        .await
+        .unwrap();
     let _ = policy_repo::create_user_policy(
         &state.db,
         aster_drive::entities::user_storage_policy::ActiveModel {

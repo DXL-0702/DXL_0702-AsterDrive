@@ -8,7 +8,7 @@ use tokio::io::AsyncWriteExt;
 use crate::cache::CacheExt;
 use crate::db::repository::{file_repo, policy_repo, user_repo};
 use crate::entities::{file, file_blob, user_storage_policy};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 
 const HASH_BUF_SIZE: usize = 65536; // 64KB
@@ -46,13 +46,13 @@ pub async fn store_from_temp(
         let mut hasher = Sha256::new();
         let mut reader = tokio::fs::File::open(temp_path)
             .await
-            .map_err(|e| AsterError::file_upload_failed(format!("open temp: {e}")))?;
+            .map_aster_err_ctx("open temp", AsterError::file_upload_failed)?;
         let mut buf = vec![0u8; HASH_BUF_SIZE];
         loop {
             let n = reader
                 .read(&mut buf)
                 .await
-                .map_err(|e| AsterError::file_upload_failed(format!("read temp: {e}")))?;
+                .map_aster_err_ctx("read temp", AsterError::file_upload_failed)?;
             if n == 0 {
                 break;
             }
@@ -224,15 +224,15 @@ pub async fn upload(
     let temp_path = format!("{}/{}", crate::utils::TEMP_DIR, uuid::Uuid::new_v4());
     tokio::fs::create_dir_all(crate::utils::TEMP_DIR)
         .await
-        .map_err(|e| AsterError::file_upload_failed(format!("create temp dir: {e}")))?;
+        .map_aster_err_ctx("create temp dir", AsterError::file_upload_failed)?;
 
     let mut temp_file = tokio::fs::File::create(&temp_path)
         .await
-        .map_err(|e| AsterError::file_upload_failed(format!("create temp: {e}")))?;
+        .map_aster_err_ctx("create temp", AsterError::file_upload_failed)?;
     let mut size: i64 = 0;
 
     while let Some(field) = payload.next().await {
-        let mut field = field.map_err(|e| AsterError::file_upload_failed(e.to_string()))?;
+        let mut field = field.map_aster_err(AsterError::file_upload_failed)?;
         let is_file = field
             .content_disposition()
             .and_then(|cd| cd.get_filename().map(|n| n.to_string()));
@@ -240,11 +240,11 @@ pub async fn upload(
         if let Some(name) = is_file {
             filename = name;
             while let Some(chunk) = field.next().await {
-                let chunk = chunk.map_err(|e| AsterError::file_upload_failed(e.to_string()))?;
+                let chunk = chunk.map_aster_err(AsterError::file_upload_failed)?;
                 temp_file
                     .write_all(&chunk)
                     .await
-                    .map_err(|e| AsterError::file_upload_failed(format!("write temp: {e}")))?;
+                    .map_aster_err_ctx("write temp", AsterError::file_upload_failed)?;
                 size += chunk.len() as i64;
             }
         }
@@ -253,7 +253,7 @@ pub async fn upload(
     temp_file
         .flush()
         .await
-        .map_err(|e| AsterError::file_upload_failed(format!("flush temp: {e}")))?;
+        .map_aster_err_ctx("flush temp", AsterError::file_upload_failed)?;
     drop(temp_file);
 
     if size == 0 {
@@ -652,10 +652,10 @@ pub async fn update_content(
     let temp_path = format!("{}/{}", crate::utils::TEMP_DIR, uuid::Uuid::new_v4());
     tokio::fs::create_dir_all(crate::utils::TEMP_DIR)
         .await
-        .map_err(|e| AsterError::storage_driver_error(e.to_string()))?;
+        .map_aster_err(AsterError::storage_driver_error)?;
     tokio::fs::write(&temp_path, &body)
         .await
-        .map_err(|e| AsterError::storage_driver_error(e.to_string()))?;
+        .map_aster_err(AsterError::storage_driver_error)?;
 
     let size = body.len() as i64;
 

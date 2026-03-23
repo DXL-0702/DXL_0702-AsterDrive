@@ -1,4 +1,4 @@
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use argon2::{
     Argon2,
     password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng},
@@ -11,12 +11,12 @@ pub fn hash_password(password: &str) -> Result<String> {
     Argon2::default()
         .hash_password(password.as_bytes(), &salt)
         .map(|h| h.to_string())
-        .map_err(|e| AsterError::internal_error(e.to_string()))
+        .map_aster_err(AsterError::internal_error)
 }
 
 /// 验证密码
 pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
-    let parsed = PasswordHash::new(hash).map_err(|e| AsterError::internal_error(e.to_string()))?;
+    let parsed = PasswordHash::new(hash).map_aster_err(AsterError::internal_error)?;
     Ok(Argon2::default()
         .verify_password(password.as_bytes(), &parsed)
         .is_ok())

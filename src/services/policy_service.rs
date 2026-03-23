@@ -3,7 +3,7 @@ use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 
 use crate::db::repository::policy_repo;
 use crate::entities::{storage_policy, user_storage_policy};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::types::DriverType;
 
@@ -186,7 +186,7 @@ pub async fn test_connection(state: &AppState, id: i64) -> Result<()> {
     driver
         .put(test_path, b"ok")
         .await
-        .map_err(|e| AsterError::storage_driver_error(format!("write test failed: {e}")))?;
+        .map_aster_err_ctx("write test failed", AsterError::storage_driver_error)?;
     let _ = driver.delete(test_path).await;
 
     Ok(())
@@ -233,7 +233,7 @@ pub async fn test_connection_params(
     driver
         .put(test_path, b"ok")
         .await
-        .map_err(|e| AsterError::storage_driver_error(format!("connection test failed: {e}")))?;
+        .map_aster_err_ctx("connection test failed", AsterError::storage_driver_error)?;
     let _ = driver.delete(test_path).await;
 
     Ok(())

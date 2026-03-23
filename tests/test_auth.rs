@@ -45,7 +45,7 @@ async fn test_register_and_login() {
         .uri("/api/v1/auth/login")
         .peer_addr("127.0.0.1:12345".parse().unwrap())
         .set_json(serde_json::json!({
-            "username": "alice",
+            "identifier": "alice",
             "password": "secret123"
         }))
         .to_request();
@@ -60,7 +60,7 @@ async fn test_register_and_login() {
         .uri("/api/v1/auth/login")
         .peer_addr("127.0.0.1:12345".parse().unwrap())
         .set_json(serde_json::json!({
-            "username": "alice",
+            "identifier": "alice",
             "password": "wrongpassword"
         }))
         .to_request();

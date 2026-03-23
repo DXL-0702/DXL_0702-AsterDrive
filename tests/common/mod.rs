@@ -123,7 +123,7 @@ macro_rules! register_and_login {
             .uri("/api/v1/auth/login")
             .peer_addr("127.0.0.1:12345".parse().unwrap())
             .set_json(serde_json::json!({
-                "username": "testuser",
+                "identifier": "testuser",
                 "password": "password123"
             }))
             .to_request();

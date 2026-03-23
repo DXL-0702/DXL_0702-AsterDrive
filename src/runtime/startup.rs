@@ -1,7 +1,7 @@
 use super::AppState;
 use crate::config;
 use crate::db;
-use crate::errors::Result;
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::DriverRegistry;
 use migration::{Migrator, MigratorTrait};
 use std::sync::Arc;
@@ -16,7 +16,7 @@ pub async fn prepare() -> Result<AppState> {
     // 2. 运行迁移
     Migrator::up(&database, None)
         .await
-        .map_err(|e| crate::errors::AsterError::database_operation(e.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
 
     // 3. 确保默认存储策略存在
     ensure_default_policy(&database).await?;

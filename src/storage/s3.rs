@@ -1,6 +1,6 @@
 use super::driver::{BlobMetadata, StorageDriver};
 use crate::entities::storage_policy;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use async_trait::async_trait;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::Client;
@@ -79,7 +79,7 @@ impl StorageDriver for S3Driver {
             .body(ByteStream::from(data.to_vec()))
             .send()
             .await
-            .map_err(|e| AsterError::storage_driver_error(format!("S3 put failed: {e}")))?;
+            .map_aster_err_ctx("S3 put failed", AsterError::storage_driver_error)?;
         Ok(path.to_string())
     }
 
@@ -92,13 +92,13 @@ impl StorageDriver for S3Driver {
             .key(&key)
             .send()
             .await
-            .map_err(|e| AsterError::storage_driver_error(format!("S3 get failed: {e}")))?;
+            .map_aster_err_ctx("S3 get failed", AsterError::storage_driver_error)?;
 
         let bytes = resp
             .body
             .collect()
             .await
-            .map_err(|e| AsterError::storage_driver_error(format!("S3 read body failed: {e}")))?
+            .map_aster_err_ctx("S3 read body failed", AsterError::storage_driver_error)?
             .into_bytes();
 
         Ok(bytes.to_vec())
@@ -113,7 +113,7 @@ impl StorageDriver for S3Driver {
             .key(&key)
             .send()
             .await
-            .map_err(|e| AsterError::storage_driver_error(format!("S3 get_stream failed: {e}")))?;
+            .map_aster_err_ctx("S3 get_stream failed", AsterError::storage_driver_error)?;
 
         Ok(Box::new(resp.body.into_async_read()))
     }
@@ -126,7 +126,7 @@ impl StorageDriver for S3Driver {
             .key(&key)
             .send()
             .await
-            .map_err(|e| AsterError::storage_driver_error(format!("S3 delete failed: {e}")))?;
+            .map_aster_err_ctx("S3 delete failed", AsterError::storage_driver_error)?;
         Ok(())
     }
 
@@ -163,7 +163,7 @@ impl StorageDriver for S3Driver {
             .key(&key)
             .send()
             .await
-            .map_err(|e| AsterError::storage_driver_error(format!("S3 head failed: {e}")))?;
+            .map_aster_err_ctx("S3 head failed", AsterError::storage_driver_error)?;
 
         Ok(BlobMetadata {
             size: resp.content_length.unwrap_or(0) as u64,
@@ -175,7 +175,7 @@ impl StorageDriver for S3Driver {
         let key = self.full_key(storage_path);
         let body = ByteStream::from_path(local_path)
             .await
-            .map_err(|e| AsterError::storage_driver_error(format!("S3 read file: {e}")))?;
+            .map_aster_err_ctx("S3 read file", AsterError::storage_driver_error)?;
         self.client
             .put_object()
             .bucket(&self.bucket)
@@ -183,7 +183,7 @@ impl StorageDriver for S3Driver {
             .body(body)
             .send()
             .await
-            .map_err(|e| AsterError::storage_driver_error(format!("S3 put_file failed: {e}")))?;
+            .map_aster_err_ctx("S3 put_file failed", AsterError::storage_driver_error)?;
         Ok(storage_path.to_string())
     }
 
@@ -192,7 +192,7 @@ impl StorageDriver for S3Driver {
         let presign_config = PresigningConfig::builder()
             .expires_in(expires)
             .build()
-            .map_err(|e| AsterError::storage_driver_error(format!("presign config: {e}")))?;
+            .map_aster_err_ctx("presign config", AsterError::storage_driver_error)?;
 
         let url = self
             .client
@@ -201,9 +201,7 @@ impl StorageDriver for S3Driver {
             .key(&key)
             .presigned(presign_config)
             .await
-            .map_err(|e| {
-                AsterError::storage_driver_error(format!("S3 presigned URL failed: {e}"))
-            })?;
+            .map_aster_err_ctx("S3 presigned URL failed", AsterError::storage_driver_error)?;
 
         Ok(Some(url.uri().to_string()))
     }
@@ -213,7 +211,7 @@ impl StorageDriver for S3Driver {
         let presign_config = PresigningConfig::builder()
             .expires_in(expires)
             .build()
-            .map_err(|e| AsterError::storage_driver_error(format!("presign config: {e}")))?;
+            .map_aster_err_ctx("presign config", AsterError::storage_driver_error)?;
 
         let url = self
             .client
@@ -222,9 +220,7 @@ impl StorageDriver for S3Driver {
             .key(&key)
             .presigned(presign_config)
             .await
-            .map_err(|e| {
-                AsterError::storage_driver_error(format!("S3 presigned PUT failed: {e}"))
-            })?;
+            .map_aster_err_ctx("S3 presigned PUT failed", AsterError::storage_driver_error)?;
 
         Ok(Some(url.uri().to_string()))
     }
@@ -241,7 +237,7 @@ impl StorageDriver for S3Driver {
             .key(&dest_key)
             .send()
             .await
-            .map_err(|e| AsterError::storage_driver_error(format!("S3 copy_object failed: {e}")))?;
+            .map_aster_err_ctx("S3 copy_object failed", AsterError::storage_driver_error)?;
 
         Ok(dest_path.to_string())
     }

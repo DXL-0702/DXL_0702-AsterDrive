@@ -2,6 +2,7 @@ pub mod logging;
 pub mod panic;
 pub mod shutdown;
 pub mod startup;
+pub mod tasks;
 
 use crate::cache::CacheBackend;
 use crate::config::Config;

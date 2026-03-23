@@ -47,11 +47,8 @@ async fn main() -> std::io::Result<()> {
 
     let db = state.db.clone();
     let state = web::Data::new(state);
-    let cleanup_state = state.clone();
-    let trash_state = state.clone();
-    let lock_cleanup_state = state.clone();
-    let audit_cleanup_state = state.clone();
 
+    let value = state.clone();
     let server = HttpServer::new(move || {
         let db = db.clone();
         App::new()
@@ -73,57 +70,8 @@ async fn main() -> std::io::Result<()> {
 
     let server_handle = server.handle();
 
-    // 后台清理：过期上传 session（每小时）
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
-        loop {
-            interval.tick().await;
-            if let Err(e) =
-                aster_drive::services::upload_service::cleanup_expired(&cleanup_state).await
-            {
-                tracing::warn!("upload cleanup failed: {e}");
-            }
-        }
-    });
-
-    // 后台清理：过期回收站条目（每小时）
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
-        loop {
-            interval.tick().await;
-            if let Err(e) =
-                aster_drive::services::trash_service::cleanup_expired(&trash_state).await
-            {
-                tracing::warn!("trash cleanup failed: {e}");
-            }
-        }
-    });
-
-    // 后台清理：过期资源锁（每小时）
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
-        loop {
-            interval.tick().await;
-            match aster_drive::services::lock_service::cleanup_expired(&lock_cleanup_state).await {
-                Ok(n) if n > 0 => tracing::info!("cleaned up {n} expired locks"),
-                Err(e) => tracing::warn!("lock cleanup failed: {e}"),
-                _ => {}
-            }
-        }
-    });
-
-    // 后台清理：过期审计日志（每小时）
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
-        loop {
-            interval.tick().await;
-            if let Err(e) =
-                aster_drive::services::audit_service::cleanup_expired(&audit_cleanup_state).await
-            {
-                tracing::warn!("audit log cleanup failed: {e}");
-            }
-        }
-    });
+    // 后台清理任务（panic-safe，自动重启）
+    aster_drive::runtime::tasks::spawn_background_tasks(value);
 
     // 优雅关闭监听
     tokio::spawn(async move {

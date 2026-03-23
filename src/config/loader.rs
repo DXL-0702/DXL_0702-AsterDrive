@@ -1,5 +1,5 @@
 use super::schema::Config;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use config::{Config as RawConfig, Environment, File, FileFormat};
 use std::path::Path;
 
@@ -20,11 +20,11 @@ pub fn load() -> Result<Config> {
                 .try_parsing(true),
         )
         .build()
-        .map_err(|e| AsterError::config_error(e.to_string()))?;
+        .map_aster_err(AsterError::config_error)?;
 
     let cfg = raw
         .try_deserialize::<Config>()
-        .map_err(|e| AsterError::config_error(e.to_string()))?;
+        .map_aster_err(AsterError::config_error)?;
 
     eprintln!("[INFO] Configuration loaded from: {CONFIG_PATH}");
     Ok(cfg)
@@ -32,8 +32,7 @@ pub fn load() -> Result<Config> {
 
 fn create_default_config() -> Result<()> {
     let default = Config::default();
-    let toml_str =
-        toml::to_string_pretty(&default).map_err(|e| AsterError::config_error(e.to_string()))?;
+    let toml_str = toml::to_string_pretty(&default).map_aster_err(AsterError::config_error)?;
 
     let content = format!(
         "# AsterDrive 配置文件\n\

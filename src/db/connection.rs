@@ -1,5 +1,5 @@
 use crate::config::DatabaseConfig;
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection};
 
 pub async fn connect(cfg: &DatabaseConfig) -> Result<DatabaseConnection> {
@@ -11,7 +11,7 @@ pub async fn connect(cfg: &DatabaseConfig) -> Result<DatabaseConnection> {
 
     let db = Database::connect(opt)
         .await
-        .map_err(|e| AsterError::database_operation(e.to_string()))?;
+        .map_aster_err(AsterError::database_operation)?;
 
     let backend = db.get_database_backend();
     tracing::info!(backend = ?backend, "database connected");
@@ -20,16 +20,16 @@ pub async fn connect(cfg: &DatabaseConfig) -> Result<DatabaseConnection> {
         tracing::info!("applying SQLite PRAGMA optimizations");
         db.execute_unprepared("PRAGMA journal_mode=WAL;")
             .await
-            .map_err(|e| AsterError::database_operation(e.to_string()))?;
+            .map_aster_err(AsterError::database_operation)?;
         db.execute_unprepared("PRAGMA busy_timeout=5000;")
             .await
-            .map_err(|e| AsterError::database_operation(e.to_string()))?;
+            .map_aster_err(AsterError::database_operation)?;
         db.execute_unprepared("PRAGMA synchronous=NORMAL;")
             .await
-            .map_err(|e| AsterError::database_operation(e.to_string()))?;
+            .map_aster_err(AsterError::database_operation)?;
         db.execute_unprepared("PRAGMA foreign_keys=ON;")
             .await
-            .map_err(|e| AsterError::database_operation(e.to_string()))?;
+            .map_aster_err(AsterError::database_operation)?;
     }
 
     Ok(db)

@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 use crate::db::repository::{file_repo, policy_repo, upload_session_repo, user_repo};
 use crate::entities::{file, file_blob, upload_session};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::file_service;
 use crate::types::{DriverType, UploadMode, UploadSessionStatus};
@@ -150,7 +150,7 @@ pub async fn init_upload(
     let temp_dir = format!("data/.uploads/{upload_id}");
     tokio::fs::create_dir_all(&temp_dir)
         .await
-        .map_err(|e| AsterError::chunk_upload_failed(format!("create temp dir: {e}")))?;
+        .map_aster_err_ctx("create temp dir", AsterError::chunk_upload_failed)?;
 
     let session = upload_session::ActiveModel {
         id: Set(upload_id.clone()),
@@ -221,7 +221,7 @@ pub async fn upload_chunk(
         Ok(mut file) => {
             file.write_all(data)
                 .await
-                .map_err(|e| AsterError::chunk_upload_failed(format!("write chunk: {e}")))?;
+                .map_aster_err_ctx("write chunk", AsterError::chunk_upload_failed)?;
         }
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             // 幂等：分片已上传过，直接返回当前进度
@@ -301,7 +301,7 @@ pub async fn complete_upload(
     let assembled_path = format!("data/.uploads/{upload_id}/_assembled");
     let mut out_file = tokio::fs::File::create(&assembled_path)
         .await
-        .map_err(|e| AsterError::upload_assembly_failed(format!("create assembled file: {e}")))?;
+        .map_aster_err_ctx("create assembled file", AsterError::upload_assembly_failed)?;
     let mut hasher = Sha256::new();
     let mut size: i64 = 0;
 
@@ -315,12 +315,12 @@ pub async fn complete_upload(
         out_file
             .write_all(&chunk_data)
             .await
-            .map_err(|e| AsterError::upload_assembly_failed(format!("write assembled: {e}")))?;
+            .map_aster_err_ctx("write assembled", AsterError::upload_assembly_failed)?;
     }
     out_file
         .flush()
         .await
-        .map_err(|e| AsterError::upload_assembly_failed(format!("flush assembled: {e}")))?;
+        .map_aster_err_ctx("flush assembled", AsterError::upload_assembly_failed)?;
     drop(out_file);
 
     let file_hash = format!("{:x}", hasher.finalize());
@@ -470,7 +470,7 @@ async fn complete_presigned_upload(
             let n = stream
                 .read(&mut buf)
                 .await
-                .map_err(|e| AsterError::upload_assembly_failed(format!("read S3 stream: {e}")))?;
+                .map_aster_err_ctx("read S3 stream", AsterError::upload_assembly_failed)?;
             if n == 0 {
                 break;
             }
