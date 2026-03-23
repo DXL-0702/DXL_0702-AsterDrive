@@ -6,12 +6,22 @@
       font-weight: 800;
       letter-spacing: -0.75px;
       fill: #0f172a;
+      stroke: rgba(248, 250, 252, 0.72);
+      stroke-width: 1.2px;
+      paint-order: stroke fill;
+      stroke-linejoin: round;
     }
     .blue-dot {
       fill: #3b82f6;
     }
     @media (prefers-color-scheme: dark) {
-      .logo-text { fill: #f8fafc; }
+      .logo-text {
+        fill: #f8fafc;
+        stroke: rgba(15, 23, 42, 0.72);
+      }
+      .blue-dot {
+        stroke: #93c5fd;
+      }
     }
   </style>
 
