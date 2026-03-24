@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileTypeIcon } from "@/components/files/FileTypeIcon";
 import { Button } from "@/components/ui/button";
@@ -14,21 +14,45 @@ import { formatBytes } from "@/lib/format";
 import { fileService } from "@/services/fileService";
 import type { FileInfo } from "@/types/api";
 import { BlobMediaPreview } from "./BlobMediaPreview";
-import { CsvTablePreview } from "./CsvTablePreview";
 import { detectFilePreviewProfile } from "./file-capabilities";
-import { JsonPreview } from "./JsonPreview";
-import { MarkdownPreview } from "./MarkdownPreview";
 import {
 	getStoredOpenWithPreference,
 	setStoredOpenWithPreference,
 } from "./open-with-preferences";
-import { PdfPreview } from "./PdfPreview";
 import { PreviewModeSwitch } from "./PreviewModeSwitch";
 import { PreviewUnavailable } from "./PreviewUnavailable";
-import { TextCodePreview } from "./TextCodePreview";
 import type { OpenWithMode } from "./types";
 import { UnsavedChangesGuard } from "./UnsavedChangesGuard";
-import { XmlPreview } from "./XmlPreview";
+
+const PdfPreview = lazy(async () => {
+	const module = await import("./PdfPreview");
+	return { default: module.PdfPreview };
+});
+
+const MarkdownPreview = lazy(async () => {
+	const module = await import("./MarkdownPreview");
+	return { default: module.MarkdownPreview };
+});
+
+const CsvTablePreview = lazy(async () => {
+	const module = await import("./CsvTablePreview");
+	return { default: module.CsvTablePreview };
+});
+
+const JsonPreview = lazy(async () => {
+	const module = await import("./JsonPreview");
+	return { default: module.JsonPreview };
+});
+
+const XmlPreview = lazy(async () => {
+	const module = await import("./XmlPreview");
+	return { default: module.XmlPreview };
+});
+
+const TextCodePreview = lazy(async () => {
+	const module = await import("./TextCodePreview");
+	return { default: module.TextCodePreview };
+});
 
 interface FilePreviewDialogProps {
 	file: FileInfo;
@@ -62,6 +86,11 @@ export function FilePreviewDialog({
 	const usesInnerScroll = activeMode === "pdf";
 	const resolvedDownloadPath =
 		downloadPath ?? fileService.downloadPath(file.id);
+	const previewLoadingState = (
+		<div className="p-6 text-sm text-muted-foreground">
+			{t("files:loading_preview")}
+		</div>
+	);
 
 	const closeWithGuard = useCallback(() => {
 		if (isDirty) {
@@ -101,7 +130,11 @@ export function FilePreviewDialog({
 	const body = (() => {
 		if (!activeMode) return <PreviewUnavailable />;
 		if (activeMode === "pdf") {
-			return <PdfPreview path={resolvedDownloadPath} fileName={file.name} />;
+			return (
+				<Suspense fallback={previewLoadingState}>
+					<PdfPreview path={resolvedDownloadPath} fileName={file.name} />
+				</Suspense>
+			);
 		}
 		if (
 			activeMode === "image" ||
@@ -117,31 +150,47 @@ export function FilePreviewDialog({
 			);
 		}
 		if (activeMode === "markdown") {
-			return <MarkdownPreview path={resolvedDownloadPath} />;
+			return (
+				<Suspense fallback={previewLoadingState}>
+					<MarkdownPreview path={resolvedDownloadPath} />
+				</Suspense>
+			);
 		}
 		if (activeMode === "table") {
 			return (
-				<CsvTablePreview
-					path={resolvedDownloadPath}
-					delimiter={profile.category === "tsv" ? "\t" : ","}
-				/>
+				<Suspense fallback={previewLoadingState}>
+					<CsvTablePreview
+						path={resolvedDownloadPath}
+						delimiter={profile.category === "tsv" ? "\t" : ","}
+					/>
+				</Suspense>
 			);
 		}
 		if (activeMode === "formatted" && profile.category === "json") {
-			return <JsonPreview path={resolvedDownloadPath} />;
+			return (
+				<Suspense fallback={previewLoadingState}>
+					<JsonPreview path={resolvedDownloadPath} />
+				</Suspense>
+			);
 		}
 		if (activeMode === "formatted" && profile.category === "xml") {
-			return <XmlPreview path={resolvedDownloadPath} mode="formatted" />;
+			return (
+				<Suspense fallback={previewLoadingState}>
+					<XmlPreview path={resolvedDownloadPath} mode="formatted" />
+				</Suspense>
+			);
 		}
 		if (activeMode === "code") {
 			return (
-				<TextCodePreview
-					file={file}
-					path={resolvedDownloadPath}
-					onFileUpdated={onFileUpdated}
-					onDirtyChange={setIsDirty}
-					editable={editable}
-				/>
+				<Suspense fallback={previewLoadingState}>
+					<TextCodePreview
+						file={file}
+						path={resolvedDownloadPath}
+						onFileUpdated={onFileUpdated}
+						onDirtyChange={setIsDirty}
+						editable={editable}
+					/>
+				</Suspense>
 			);
 		}
 		return <PreviewUnavailable />;
