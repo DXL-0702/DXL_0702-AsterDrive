@@ -156,5 +156,10 @@
 	"upload_target_location": "目标位置",
 	"upload_target_current": "当前目录",
 	"upload_target_folder": "文件夹 #{{id}}",
-	"upload_group_stats": "{{total}} 个 · {{success}} 成功 · {{failed}} 失败 · {{active}} 进行中"
+	"upload_group_stats": "{{total}} 个 · {{success}} 成功 · {{failed}} 失败 · {{active}} 进行中",
+	"upload_pending_file": "等待选择文件",
+	"upload_resume_select": "选择文件以继续上传",
+	"upload_resume_mismatch": "文件不匹配（期望 {{name}}，{{size}}）",
+	"upload_resume_found": "发现 {{count}} 个可恢复的上传",
+	"upload_resume_expired": "上传会话已过期"
 }

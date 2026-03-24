@@ -156,5 +156,10 @@
 	"upload_target_location": "Target",
 	"upload_target_current": "Current folder",
 	"upload_target_folder": "Folder #{{id}}",
-	"upload_group_stats": "{{total}} items · {{success}} succeeded · {{failed}} failed · {{active}} active"
+	"upload_group_stats": "{{total}} items · {{success}} succeeded · {{failed}} failed · {{active}} active",
+	"upload_pending_file": "Waiting for file",
+	"upload_resume_select": "Select file to resume",
+	"upload_resume_mismatch": "File does not match (expected {{name}}, {{size}})",
+	"upload_resume_found": "Found {{count}} resumable upload(s)",
+	"upload_resume_expired": "Upload session expired"
 }

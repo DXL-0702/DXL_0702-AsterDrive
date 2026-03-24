@@ -5,7 +5,7 @@ import { Progress } from "@/components/ui/progress";
 
 interface UploadTaskAction {
 	label: string;
-	icon: "X" | "ArrowsClockwise";
+	icon: "X" | "ArrowsClockwise" | "Upload";
 	onClick: () => void;
 	variant?: "outline" | "ghost";
 }

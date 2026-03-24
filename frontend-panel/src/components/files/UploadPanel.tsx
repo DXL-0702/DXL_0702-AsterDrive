@@ -25,7 +25,7 @@ export interface UploadTaskView {
 	completed?: boolean;
 	actions?: {
 		label: string;
-		icon: "X" | "ArrowsClockwise";
+		icon: "X" | "ArrowsClockwise" | "Upload";
 		onClick: () => void;
 		variant?: "outline" | "ghost";
 	}[];

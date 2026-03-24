@@ -13,6 +13,12 @@ import {
 	type UploadTaskView,
 } from "@/components/files/UploadPanel";
 import { Icon } from "@/components/ui/icon";
+import { formatBytes } from "@/lib/format";
+import {
+	loadSessions,
+	removeSession,
+	saveSession,
+} from "@/lib/uploadPersistence";
 import { cn } from "@/lib/utils";
 import { api } from "@/services/http";
 import {
@@ -38,6 +44,7 @@ export interface UploadAreaHandle {
 
 type UploadMode = "direct" | "chunked" | "presigned";
 type UploadStatus =
+	| "pending_file"
 	| "queued"
 	| "initializing"
 	| "uploading"
@@ -48,7 +55,7 @@ type UploadStatus =
 
 interface UploadTask {
 	id: string;
-	file: File;
+	file: File | null;
 	relativePath: string | null;
 	baseFolderId: number | null;
 	baseFolderName: string;
@@ -88,6 +95,8 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 		const refreshTimeoutRef = useRef<number | null>(null);
 		const fileInputRef = useRef<HTMLInputElement | null>(null);
 		const folderInputRef = useRef<HTMLInputElement | null>(null);
+		const resumeFileInputRef = useRef<HTMLInputElement | null>(null);
+		const resumeTaskIdRef = useRef<string | null>(null);
 
 		useImperativeHandle(
 			ref,
@@ -173,6 +182,93 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			setTasks((prev) => prev.filter((task) => task.status !== "completed"));
 		}, []);
 
+		// ── 断点续传：mount 时恢复未完成 session ──
+		useEffect(() => {
+			const sessions = loadSessions();
+			if (sessions.length === 0) return;
+
+			const ghostTasks: UploadTask[] = [];
+
+			const verify = async () => {
+				for (const session of sessions) {
+					try {
+						await uploadService.getProgress(session.uploadId);
+						ghostTasks.push({
+							id: createTaskId(),
+							file: null,
+							relativePath: session.relativePath,
+							baseFolderId: session.baseFolderId,
+							baseFolderName: session.baseFolderName,
+							mode: "chunked",
+							status: "pending_file",
+							progress: 0,
+							error: null,
+							uploadId: session.uploadId,
+							totalChunks: session.totalChunks,
+							completedChunks: 0,
+						});
+					} catch {
+						removeSession(session.uploadId);
+					}
+				}
+				if (ghostTasks.length > 0) {
+					setTasks((prev) => [...ghostTasks, ...prev]);
+					setUploadPanelOpen(true);
+				}
+			};
+			void verify();
+			// eslint-disable-next-line react-hooks/exhaustive-deps
+		}, []);
+
+		/** 用户为 pending_file task 选好文件后注入 File → 转为 queued */
+		const attachFileToTask = useCallback(
+			(taskId: string, file: File) => {
+				const task = tasksRef.current.find((item) => item.id === taskId);
+				if (!task || task.status !== "pending_file") return;
+
+				// 校验 name + size 匹配
+				const sessions = loadSessions();
+				const session = sessions.find((s) => s.uploadId === task.uploadId);
+				if (
+					session &&
+					(file.name !== session.filename || file.size !== session.totalSize)
+				) {
+					patchTask(taskId, {
+						error: t("files:upload_resume_mismatch", {
+							name: session.filename,
+							size: formatBytes(session.totalSize),
+						}),
+					});
+					return;
+				}
+
+				patchTask(taskId, {
+					file,
+					status: "queued",
+					error: null,
+					progress: 0,
+				});
+			},
+			[patchTask, t],
+		);
+
+		const handleResumeFileChange = useCallback(
+			(event: React.ChangeEvent<HTMLInputElement>) => {
+				const files = event.target.files;
+				const taskId = resumeTaskIdRef.current;
+				if (!files?.[0] || !taskId) return;
+				attachFileToTask(taskId, files[0]);
+				event.target.value = "";
+				resumeTaskIdRef.current = null;
+			},
+			[attachFileToTask],
+		);
+
+		const triggerResumeFilePicker = useCallback((taskId: string) => {
+			resumeTaskIdRef.current = taskId;
+			resumeFileInputRef.current?.click();
+		}, []);
+
 		const markTaskFailed = useCallback(
 			(taskId: string, message: string) => {
 				patchTask(taskId, {
@@ -208,7 +304,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 				try {
 					const formData = new FormData();
-					formData.append("file", task.file);
+					formData.append("file", task.file!);
 					await api.client.post(buildDirectUploadPath(task), formData, {
 						headers: { "Content-Type": "multipart/form-data" },
 						signal: controller.signal,
@@ -280,8 +376,8 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						const chunkNumber = queue.shift();
 						if (chunkNumber === undefined) return;
 						const start = chunkNumber * chunkSize;
-						const end = Math.min(start + chunkSize, task.file.size);
-						const blob = task.file.slice(start, end);
+						const end = Math.min(start + chunkSize, task.file!.size);
+						const blob = task.file!.slice(start, end);
 
 						let lastError: Error | null = null;
 						for (let attempt = 0; attempt < CHUNK_MAX_RETRIES; attempt++) {
@@ -323,6 +419,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 					patchTask(task.id, { status: "processing", progress: 95 });
 					await uploadService.completeUpload(uploadId);
+					removeSession(uploadId);
 					patchTask(task.id, {
 						status: "completed",
 						progress: 100,
@@ -360,7 +457,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				try {
 					await uploadService.presignedUpload(
 						presignedUrl,
-						task.file,
+						task.file!,
 						(loaded, total) => {
 							patchTask(task.id, {
 								progress: Math.round((loaded / total) * 90),
@@ -399,7 +496,8 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 		const runTask = useCallback(
 			async (taskId: string) => {
 				const task = tasksRef.current.find((item) => item.id === taskId);
-				if (!task || task.status !== "queued") return;
+				if (!task || task.status !== "queued" || !task.file) return;
+				const file = task.file;
 
 				patchTask(taskId, { status: "initializing", error: null, progress: 0 });
 				try {
@@ -409,7 +507,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							const resumedInit: InitUploadResponse = {
 								mode: "chunked",
 								upload_id: task.uploadId,
-								chunk_size: Math.ceil(task.file.size / progress.total_chunks),
+								chunk_size: Math.ceil(file.size / progress.total_chunks),
 								total_chunks: progress.total_chunks,
 							};
 							await runChunkedUpload(
@@ -429,11 +527,25 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					}
 
 					const init = await uploadService.initUpload({
-						filename: task.file.name,
-						total_size: task.file.size,
+						filename: file.name,
+						total_size: file.size,
 						folder_id: task.baseFolderId,
 						relative_path: task.relativePath ?? undefined,
 					});
+					// 持久化 chunked session（刷新后可恢复）
+					if (init.mode === "chunked" && init.upload_id) {
+						saveSession({
+							uploadId: init.upload_id,
+							filename: file.name,
+							totalSize: file.size,
+							totalChunks: init.total_chunks ?? 0,
+							chunkSize: init.chunk_size ?? 0,
+							baseFolderId: task.baseFolderId,
+							baseFolderName: task.baseFolderName,
+							relativePath: task.relativePath,
+							savedAt: Date.now(),
+						});
+					}
 					if (init.mode === "chunked") {
 						await runChunkedUpload(task, init);
 					} else if (init.mode === "presigned") {
@@ -498,6 +610,13 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					return;
 				}
 
+				// pending_file 取消：只需移除持久化 + task
+				if (task.status === "pending_file") {
+					if (task.uploadId) removeSession(task.uploadId);
+					setTasks((prev) => prev.filter((item) => item.id !== taskId));
+					return;
+				}
+
 				abortFlagsRef.current.set(taskId, true);
 				if (task.uploadId) {
 					try {
@@ -505,6 +624,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					} catch {
 						// ignore
 					}
+					removeSession(task.uploadId);
 				}
 				patchTask(taskId, { status: "cancelled", error: null });
 			},
@@ -643,6 +763,19 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					);
 
 		const uploadTasks: UploadTaskView[] = tasks.map((task) => {
+			const isPendingFile = task.status === "pending_file";
+
+			// 从 localStorage 获取 pending_file 任务的文件名
+			const taskTitle = task.file
+				? task.file.name
+				: (() => {
+						const sessions = loadSessions();
+						return (
+							sessions.find((s) => s.uploadId === task.uploadId)?.filename ??
+							"?"
+						);
+					})();
+
 			const modeLabel =
 				task.mode === "chunked"
 					? "Chunked"
@@ -652,8 +785,9 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							? "Direct"
 							: "Pending";
 
-			const statusLabel =
-				task.status === "queued"
+			const statusLabel = isPendingFile
+				? t("files:upload_pending_file")
+				: task.status === "queued"
 					? t("files:processing")
 					: task.status === "initializing"
 						? t("files:processing")
@@ -667,8 +801,13 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 										? t("files:upload_dismiss")
 										: t("files:upload_failed");
 
-			const detail =
-				task.status === "failed"
+			const detail = isPendingFile
+				? (task.error ??
+					t("files:upload_chunk_status", {
+						current: task.completedChunks ?? 0,
+						total: task.totalChunks ?? 0,
+					}))
+				: task.status === "failed"
 					? (task.error ?? t("files:upload_failed"))
 					: task.mode === "chunked" && task.status === "uploading"
 						? t("files:upload_chunk_status", {
@@ -677,8 +816,21 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							})
 						: task.relativePath || statusLabel;
 
-			const actions =
-				task.status === "failed"
+			const actions = isPendingFile
+				? [
+						{
+							label: t("files:upload_resume_select"),
+							icon: "Upload" as const,
+							onClick: () => triggerResumeFilePicker(task.id),
+							variant: "outline" as const,
+						},
+						{
+							label: t("files:upload_dismiss"),
+							icon: "X" as const,
+							onClick: () => void cancelTask(task.id),
+						},
+					]
+				: task.status === "failed"
 					? [
 							{
 								label: t("files:upload_retry"),
@@ -705,7 +857,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 			return {
 				id: task.id,
-				title: task.file.name,
+				title: taskTitle,
 				status: statusLabel,
 				mode: modeLabel,
 				progress: task.progress,
@@ -735,6 +887,12 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					webkitdirectory=""
 					onChange={handleFolderInputChange}
 				/>
+				<input
+					ref={resumeFileInputRef}
+					type="file"
+					className="hidden"
+					onChange={handleResumeFileChange}
+				/>
 				{/* biome-ignore lint/a11y/noStaticElementInteractions: drop zone */}
 				<div
 					className="relative flex flex-1 flex-col overflow-hidden"
@@ -752,7 +910,12 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							open={uploadPanelOpen}
 							onToggle={() => setUploadPanelOpen((prev) => !prev)}
 							title={t("files:upload")}
-							summary={`${totalCount} 个项目 · ${successCount} 成功 · ${failedCount} 失败 · ${activeCount} 进行中`}
+							summary={t("files:upload_summary", {
+								total: totalCount,
+								success: successCount,
+								failed: failedCount,
+								active: activeCount,
+							})}
 							tasks={uploadTasks}
 							emptyText={t("common:no_data")}
 							totalCount={totalCount}
