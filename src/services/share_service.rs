@@ -144,6 +144,7 @@ pub async fn verify_password(state: &AppState, token: &str, password: &str) -> R
 pub async fn download_shared_file(
     state: &AppState,
     token: &str,
+    if_none_match: Option<&str>,
 ) -> Result<actix_web::HttpResponse> {
     let share = share_repo::find_by_token(&state.db, token)
         .await?
@@ -155,17 +156,22 @@ pub async fn download_shared_file(
         .file_id
         .ok_or_else(|| AsterError::validation_error("this share is for a folder, not a file"))?;
 
-    // increment download count
-    let _ = share_repo::increment_download_count(&state.db, share.id).await;
-
     // reuse existing download logic (bypass user ownership check)
-    file_service::download_raw(state, file_id).await
+    let response = file_service::download_raw(state, file_id, if_none_match).await?;
+
+    // only count actual downloads, not 304 cache hits
+    if response.status() != actix_web::http::StatusCode::NOT_MODIFIED {
+        let _ = share_repo::increment_download_count(&state.db, share.id).await;
+    }
+
+    Ok(response)
 }
 
 pub async fn download_shared_folder_file(
     state: &AppState,
     token: &str,
     file_id: i64,
+    if_none_match: Option<&str>,
 ) -> Result<actix_web::HttpResponse> {
     let share = share_repo::find_by_token(&state.db, token)
         .await?
@@ -201,8 +207,13 @@ pub async fn download_shared_folder_file(
         ));
     }
 
-    let _ = share_repo::increment_download_count(&state.db, share.id).await;
-    file_service::download_raw(state, file_id).await
+    let response = file_service::download_raw(state, file_id, if_none_match).await?;
+
+    if response.status() != actix_web::http::StatusCode::NOT_MODIFIED {
+        let _ = share_repo::increment_download_count(&state.db, share.id).await;
+    }
+
+    Ok(response)
 }
 
 pub async fn list_shared_folder(

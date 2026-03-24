@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
@@ -13,7 +13,10 @@ import { FileGrid } from "@/components/files/FileGrid";
 import { FilePreview } from "@/components/files/FilePreview";
 import { FileTable } from "@/components/files/FileTable";
 import { ShareDialog } from "@/components/files/ShareDialog";
-import { UploadArea } from "@/components/files/UploadArea";
+import {
+	UploadArea,
+	type UploadAreaHandle,
+} from "@/components/files/UploadArea";
 import { VersionHistoryDialog } from "@/components/files/VersionHistoryDialog";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
@@ -67,6 +70,7 @@ export default function FileBrowserPage() {
 
 	useKeyboardShortcuts();
 
+	const uploadAreaRef = useRef<UploadAreaHandle | null>(null);
 	const [createFolderOpen, setCreateFolderOpen] = useState(false);
 	const [fadingFileIds, setFadingFileIds] = useState<Set<number>>(new Set());
 	const [fadingFolderIds, setFadingFolderIds] = useState<Set<number>>(
@@ -253,7 +257,7 @@ export default function FileBrowserPage() {
 
 	return (
 		<AppLayout actions={<ViewToggle value={viewMode} onChange={setViewMode} />}>
-			<UploadArea>
+			<UploadArea ref={uploadAreaRef}>
 				{/* Breadcrumb / search indicator */}
 				<div className="px-4 pt-3 pb-1">
 					{isSearching ? (
@@ -319,6 +323,18 @@ export default function FileBrowserPage() {
 						</ScrollArea>
 					</ContextMenuTrigger>
 					<ContextMenuContent>
+						<ContextMenuItem
+							onClick={() => uploadAreaRef.current?.triggerFileUpload()}
+						>
+							<Icon name="Upload" className="h-4 w-4 mr-2" />
+							{t("upload_file")}
+						</ContextMenuItem>
+						<ContextMenuItem
+							onClick={() => uploadAreaRef.current?.triggerFolderUpload()}
+						>
+							<Icon name="FolderOpen" className="h-4 w-4 mr-2" />
+							{t("upload_folder")}
+						</ContextMenuItem>
 						<ContextMenuItem onClick={() => setCreateFolderOpen(true)}>
 							<Icon name="FolderPlus" className="h-4 w-4 mr-2" />
 							{t("new_folder")}

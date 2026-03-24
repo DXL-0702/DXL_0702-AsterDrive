@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::Set;
+use sea_orm::{ConnectionTrait, Set, TransactionTrait};
 use serde::Serialize;
 
 use crate::db::repository::{file_repo, folder_repo};
@@ -20,6 +20,11 @@ pub async fn create(
     parent_id: Option<i64>,
 ) -> Result<folder::Model> {
     crate::utils::validate_name(name)?;
+
+    // 校验 parent_id 归属
+    if let Some(pid) = parent_id {
+        verify_folder_access(state, user_id, pid).await?;
+    }
 
     // 检查同名文件夹
     if folder_repo::find_by_name_in_parent(&state.db, user_id, parent_id, name)
@@ -43,6 +48,105 @@ pub async fn create(
         ..Default::default()
     };
     folder_repo::create(&state.db, model).await
+}
+
+async fn ensure_folder_in_parent<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    parent_id: Option<i64>,
+    name: &str,
+) -> Result<folder::Model> {
+    crate::utils::validate_name(name)?;
+
+    if let Some(existing) =
+        folder_repo::find_by_name_in_parent(db, user_id, parent_id, name).await?
+    {
+        return Ok(existing);
+    }
+
+    let now = Utc::now();
+    let model = folder::ActiveModel {
+        name: Set(name.to_string()),
+        parent_id: Set(parent_id),
+        user_id: Set(user_id),
+        policy_id: Set(None),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+
+    match folder_repo::create(db, model).await {
+        Ok(created) => Ok(created),
+        Err(err) => {
+            if let Some(existing) =
+                folder_repo::find_by_name_in_parent(db, user_id, parent_id, name).await?
+            {
+                Ok(existing)
+            } else {
+                Err(err)
+            }
+        }
+    }
+}
+
+/// 校验目标文件夹存在、归属当前用户且未被删除
+pub async fn verify_folder_access(state: &AppState, user_id: i64, folder_id: i64) -> Result<()> {
+    let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
+    crate::utils::verify_owner(folder.user_id, user_id, "folder")?;
+    if folder.deleted_at.is_some() {
+        return Err(AsterError::file_not_found(format!(
+            "folder #{folder_id} is in trash"
+        )));
+    }
+    Ok(())
+}
+
+pub async fn resolve_upload_path(
+    state: &AppState,
+    user_id: i64,
+    base_folder_id: Option<i64>,
+    relative_path: &str,
+) -> Result<(Option<i64>, String)> {
+    // 校验 base_folder_id 归属
+    if let Some(fid) = base_folder_id {
+        verify_folder_access(state, user_id, fid).await?;
+    }
+
+    let normalized = relative_path.replace('\\', "/");
+    let trimmed = normalized.trim_matches('/');
+
+    if trimmed.is_empty() {
+        return Err(AsterError::validation_error(
+            "relative_path cannot be empty",
+        ));
+    }
+
+    let segments: Vec<&str> = trimmed.split('/').collect();
+    if segments.iter().any(|segment| segment.is_empty()) {
+        return Err(AsterError::validation_error(
+            "relative_path contains empty path segment",
+        ));
+    }
+
+    let filename = segments
+        .last()
+        .ok_or_else(|| AsterError::validation_error("relative_path cannot be empty"))?;
+    crate::utils::validate_name(filename)?;
+
+    if segments.len() == 1 {
+        return Ok((base_folder_id, (*filename).to_string()));
+    }
+
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let mut current_parent = base_folder_id;
+
+    for segment in &segments[..segments.len() - 1] {
+        let folder = ensure_folder_in_parent(&txn, user_id, current_parent, segment).await?;
+        current_parent = Some(folder.id);
+    }
+
+    txn.commit().await.map_err(AsterError::from)?;
+    Ok((current_parent, (*filename).to_string()))
 }
 
 pub async fn list(

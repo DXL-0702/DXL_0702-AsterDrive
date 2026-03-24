@@ -29,6 +29,7 @@ export const uploadService = {
 		filename: string;
 		total_size: number;
 		folder_id?: number | null;
+		relative_path?: string;
 	}) => api.post<InitUploadResponse>("/files/upload/init", data),
 
 	uploadChunk: (

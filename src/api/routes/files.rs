@@ -53,6 +53,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
 #[derive(Deserialize, IntoParams, ToSchema)]
 pub struct FileQuery {
     pub folder_id: Option<i64>,
+    pub relative_path: Option<String>,
 }
 
 #[utoipa::path(
@@ -75,7 +76,14 @@ pub async fn upload(
     query: web::Query<FileQuery>,
     mut payload: actix_multipart::Multipart,
 ) -> Result<HttpResponse> {
-    let file = file_service::upload(&state, claims.user_id, &mut payload, query.folder_id).await?;
+    let file = file_service::upload(
+        &state,
+        claims.user_id,
+        &mut payload,
+        query.folder_id,
+        query.relative_path.as_deref(),
+    )
+    .await?;
     let ctx = AuditContext::from_request(&req, &claims);
     audit_service::log(
         &state,
@@ -132,7 +140,11 @@ pub async fn download(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     let file_id = *path;
-    let response = file_service::download(&state, file_id, claims.user_id).await?;
+    let if_none_match = req
+        .headers()
+        .get("If-None-Match")
+        .and_then(|v| v.to_str().ok());
+    let response = file_service::download(&state, file_id, claims.user_id, if_none_match).await?;
     let ctx = AuditContext::from_request(&req, &claims);
     audit_service::log(
         &state,
@@ -275,6 +287,7 @@ pub struct InitUploadReq {
     pub filename: String,
     pub total_size: i64,
     pub folder_id: Option<i64>,
+    pub relative_path: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -311,6 +324,7 @@ pub async fn init_chunked_upload(
         &body.filename,
         body.total_size,
         body.folder_id,
+        body.relative_path.as_deref(),
     )
     .await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(resp)))

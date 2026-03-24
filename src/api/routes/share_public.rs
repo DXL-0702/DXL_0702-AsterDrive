@@ -97,7 +97,14 @@ pub async fn download_shared(
 ) -> Result<HttpResponse> {
     check_share_password_cookie(&state, &path, &req).await?;
 
-    share_service::download_shared_file(&state, &path).await
+    share_service::download_shared_file(
+        &state,
+        &path,
+        req.headers()
+            .get("If-None-Match")
+            .and_then(|v| v.to_str().ok()),
+    )
+    .await
 }
 
 #[utoipa::path(
@@ -123,7 +130,15 @@ pub async fn download_shared_folder_file(
     let (token, file_id) = path.into_inner();
     check_share_password_cookie(&state, &token, &req).await?;
 
-    share_service::download_shared_folder_file(&state, &token, file_id).await
+    share_service::download_shared_folder_file(
+        &state,
+        &token,
+        file_id,
+        req.headers()
+            .get("If-None-Match")
+            .and_then(|v| v.to_str().ok()),
+    )
+    .await
 }
 
 #[utoipa::path(

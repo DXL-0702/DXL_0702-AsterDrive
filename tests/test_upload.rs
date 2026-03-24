@@ -5,6 +5,7 @@ mod common;
 
 use actix_web::test;
 use serde_json::Value;
+use tokio::task::JoinSet;
 
 #[actix_web::test]
 async fn test_chunked_upload_flow() {
@@ -69,6 +70,48 @@ async fn test_chunked_upload_flow() {
 }
 
 #[actix_web::test]
+async fn test_update_storage_used_is_atomic_under_concurrency() {
+    use aster_drive::db::repository::user_repo;
+    use aster_drive::services::auth_service;
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "quotauser", "quota@test.com", "password123")
+        .await
+        .unwrap();
+
+    let mut tasks = JoinSet::new();
+    for _ in 0..32 {
+        let db = state.db.clone();
+        let user_id = user.id;
+        tasks.spawn(async move { user_repo::update_storage_used(&db, user_id, 1).await });
+    }
+
+    while let Some(result) = tasks.join_next().await {
+        result.unwrap().unwrap();
+    }
+
+    let updated = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    assert_eq!(updated.storage_used, 32);
+
+    let mut tasks = JoinSet::new();
+    for _ in 0..40 {
+        let db = state.db.clone();
+        let user_id = user.id;
+        tasks.spawn(async move { user_repo::update_storage_used(&db, user_id, -1).await });
+    }
+
+    while let Some(result) = tasks.join_next().await {
+        result.unwrap().unwrap();
+    }
+
+    let updated = user_repo::find_by_id(&state.db, user.id).await.unwrap();
+    assert_eq!(
+        updated.storage_used, 0,
+        "storage_used should not go below zero"
+    );
+}
+
+#[actix_web::test]
 async fn test_chunked_upload_streaming_assembly_preserves_content() {
     use aster_drive::db::repository::file_repo;
     use aster_drive::services::{auth_service, upload_service};
@@ -78,7 +121,7 @@ async fn test_chunked_upload_streaming_assembly_preserves_content() {
         .await
         .unwrap();
 
-    let init = upload_service::init_upload(&state, user.id, "streamed.txt", 10_485_760, None)
+    let init = upload_service::init_upload(&state, user.id, "streamed.txt", 10_485_760, None, None)
         .await
         .unwrap();
     assert_eq!(init.mode, aster_drive::types::UploadMode::Chunked);
@@ -151,6 +194,7 @@ async fn test_direct_and_chunked_upload_produce_same_blob_for_same_content() {
         user.id,
         "same-chunked.txt",
         content.len() as i64,
+        None,
         None,
     )
     .await
@@ -421,9 +465,10 @@ async fn test_presigned_upload_s3_e2e() {
 
     // 1. init_upload → 应返回 presigned 模式
     let data = b"hello presigned world!";
-    let init = upload_service::init_upload(&state, user.id, "hello.txt", data.len() as i64, None)
-        .await
-        .unwrap();
+    let init =
+        upload_service::init_upload(&state, user.id, "hello.txt", data.len() as i64, None, None)
+            .await
+            .unwrap();
     assert_eq!(init.mode, aster_drive::types::UploadMode::Presigned);
     assert!(init.presigned_url.is_some());
     assert!(init.upload_id.is_some());
@@ -464,9 +509,10 @@ async fn test_presigned_upload_s3_e2e() {
     assert_eq!(got, data);
 
     // 5. 上传相同内容 → 应该 dedup（ref_count 增加，不新建 blob）
-    let init2 = upload_service::init_upload(&state, user.id, "hello2.txt", data.len() as i64, None)
-        .await
-        .unwrap();
+    let init2 =
+        upload_service::init_upload(&state, user.id, "hello2.txt", data.len() as i64, None, None)
+            .await
+            .unwrap();
     let url2 = init2.presigned_url.unwrap();
     let id2 = init2.upload_id.unwrap();
     client

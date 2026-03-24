@@ -1,7 +1,8 @@
 use crate::entities::user::{self, Entity as User};
 use crate::errors::{AsterError, Result};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
+    sea_query::Expr,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<user::Model> {
@@ -44,10 +45,25 @@ pub async fn create<C: ConnectionTrait>(db: &C, model: user::ActiveModel) -> Res
 }
 
 pub async fn update_storage_used<C: ConnectionTrait>(db: &C, id: i64, delta: i64) -> Result<()> {
-    let user = find_by_id(db, id).await?;
-    let new_used = (user.storage_used + delta).max(0);
-    let mut active: user::ActiveModel = user.into();
-    active.storage_used = Set(new_used);
-    active.update(db).await.map_err(AsterError::from)?;
+    let expr = if delta >= 0 {
+        Expr::cust_with_values("storage_used + ?", [delta])
+    } else {
+        Expr::cust_with_values(
+            "CASE WHEN storage_used < ? THEN 0 ELSE storage_used - ? END",
+            [-delta, -delta],
+        )
+    };
+
+    let result = User::update_many()
+        .col_expr(user::Column::StorageUsed, expr)
+        .filter(user::Column::Id.eq(id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    if result.rows_affected == 0 {
+        return Err(AsterError::record_not_found(format!("user #{id}")));
+    }
+
     Ok(())
 }

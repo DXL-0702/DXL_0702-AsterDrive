@@ -1,7 +1,128 @@
 import { useEffect, useState } from "react";
 import { api } from "@/services/http";
 
-/** 通过 axios 加载文件 blob，走拦截器支持 token refresh */
+interface BlobCacheEntry {
+	objectUrl?: string;
+	etag?: string | null;
+	promise?: Promise<string>;
+	refCount: number;
+	revokeTimer?: ReturnType<typeof setTimeout>;
+}
+
+const BLOB_URL_REVOKE_DELAY = 30_000;
+const blobUrlCache = new Map<string, BlobCacheEntry>();
+
+function revokeEntry(path: string, entry: BlobCacheEntry) {
+	if (entry.revokeTimer) {
+		clearTimeout(entry.revokeTimer);
+		entry.revokeTimer = undefined;
+	}
+	if (entry.objectUrl) {
+		URL.revokeObjectURL(entry.objectUrl);
+	}
+	blobUrlCache.delete(path);
+}
+
+async function acquireBlobUrl(path: string): Promise<string> {
+	const cached = blobUrlCache.get(path);
+	if (cached?.revokeTimer) {
+		clearTimeout(cached.revokeTimer);
+		cached.revokeTimer = undefined;
+	}
+	if (cached?.objectUrl && cached.refCount > 0) {
+		cached.refCount += 1;
+		return cached.objectUrl;
+	}
+	if (cached?.promise) {
+		cached.refCount += 1;
+		return cached.promise;
+	}
+
+	const entry: BlobCacheEntry = cached ?? { refCount: 0 };
+	entry.refCount += 1;
+	const previousObjectUrl = entry.objectUrl;
+	const previousEtag = entry.etag ?? null;
+	const headers: Record<string, string> = {};
+	if (previousObjectUrl && previousEtag) {
+		headers["If-None-Match"] = previousEtag;
+	}
+
+	const promise = api.client
+		.get(path, {
+			headers,
+			responseType: "blob",
+			validateStatus: (status) => status === 200 || status === 304,
+		})
+		.then((response) => {
+			const current = blobUrlCache.get(path);
+			if (!current) {
+				if (response.status === 200) {
+					return URL.createObjectURL(response.data);
+				}
+				return previousObjectUrl ?? "";
+			}
+
+			if (response.status === 304 && previousObjectUrl) {
+				current.objectUrl = previousObjectUrl;
+				current.etag = previousEtag;
+				current.promise = undefined;
+				return previousObjectUrl;
+			}
+
+			const objectUrl = URL.createObjectURL(response.data);
+			current.objectUrl = objectUrl;
+			current.etag = response.headers.etag ?? null;
+			current.promise = undefined;
+			if (previousObjectUrl && previousObjectUrl !== objectUrl) {
+				URL.revokeObjectURL(previousObjectUrl);
+			}
+			return objectUrl;
+		})
+		.catch((error: unknown) => {
+			const current = blobUrlCache.get(path);
+			if (current) {
+				current.promise = undefined;
+				current.objectUrl = previousObjectUrl;
+				current.etag = previousEtag;
+				if (!current.objectUrl && current.refCount <= 0) {
+					blobUrlCache.delete(path);
+				}
+			}
+			throw error;
+		});
+	entry.promise = promise;
+	blobUrlCache.set(path, entry);
+	return promise;
+}
+
+function releaseBlobUrl(path: string) {
+	const cached = blobUrlCache.get(path);
+	if (!cached) return;
+	cached.refCount = Math.max(0, cached.refCount - 1);
+	if (cached.refCount > 0) return;
+	if (cached.revokeTimer) clearTimeout(cached.revokeTimer);
+	cached.revokeTimer = setTimeout(() => {
+		const current = blobUrlCache.get(path);
+		if (!current || current.refCount > 0) return;
+		revokeEntry(path, current);
+	}, BLOB_URL_REVOKE_DELAY);
+}
+
+export function invalidateBlobUrl(path?: string) {
+	if (path) {
+		const cached = blobUrlCache.get(path);
+		if (cached) revokeEntry(path, cached);
+		return;
+	}
+	for (const [cachePath, entry] of blobUrlCache.entries()) {
+		revokeEntry(cachePath, entry);
+	}
+}
+
+export function clearBlobUrlCache() {
+	invalidateBlobUrl();
+}
+
 export function useBlobUrl(path: string | null) {
 	const [blobUrl, setBlobUrl] = useState<string | null>(null);
 	const [error, setError] = useState(false);
@@ -14,19 +135,32 @@ export function useBlobUrl(path: string | null) {
 			setLoading(false);
 			return;
 		}
-		let revoke: string | null = null;
-		setLoading(true);
-		api.client
-			.get(path, { responseType: "blob" })
-			.then((r) => {
-				const objectUrl = URL.createObjectURL(r.data);
-				revoke = objectUrl;
-				setBlobUrl(objectUrl);
+
+		const cached = blobUrlCache.get(path);
+		if (cached?.objectUrl) {
+			setBlobUrl(cached.objectUrl);
+			setLoading(false);
+		}
+
+		let cancelled = false;
+		setLoading(cached?.objectUrl === undefined);
+		acquireBlobUrl(path)
+			.then((nextBlobUrl) => {
+				if (cancelled) return;
+				setBlobUrl(nextBlobUrl || null);
 			})
-			.catch(() => setError(true))
-			.finally(() => setLoading(false));
+			.catch(() => {
+				if (cancelled) return;
+				setError(true);
+			})
+			.finally(() => {
+				if (cancelled) return;
+				setLoading(false);
+			});
+
 		return () => {
-			if (revoke) URL.revokeObjectURL(revoke);
+			cancelled = true;
+			releaseBlobUrl(path);
 		};
 	}, [path]);
 

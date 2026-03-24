@@ -3,8 +3,11 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use sea_orm::{ConnectOptions, ConnectionTrait, Database, DatabaseConnection};
 
 pub async fn connect(cfg: &DatabaseConfig) -> Result<DatabaseConnection> {
+    let is_sqlite = cfg.url.contains("sqlite");
+    let max_connections = if is_sqlite { 1 } else { cfg.pool_size };
+
     let mut opt = ConnectOptions::new(&cfg.url);
-    opt.max_connections(cfg.pool_size)
+    opt.max_connections(max_connections)
         .min_connections(1)
         .sqlx_logging(false)
         .test_before_acquire(true);
@@ -16,12 +19,12 @@ pub async fn connect(cfg: &DatabaseConfig) -> Result<DatabaseConnection> {
     let backend = db.get_database_backend();
     tracing::info!(backend = ?backend, "database connected");
 
-    if cfg.url.contains("sqlite") {
-        tracing::info!("applying SQLite PRAGMA optimizations");
+    if is_sqlite {
+        tracing::info!(max_connections, "applying SQLite PRAGMA optimizations");
         db.execute_unprepared("PRAGMA journal_mode=WAL;")
             .await
             .map_aster_err(AsterError::database_operation)?;
-        db.execute_unprepared("PRAGMA busy_timeout=5000;")
+        db.execute_unprepared("PRAGMA busy_timeout=15000;")
             .await
             .map_aster_err(AsterError::database_operation)?;
         db.execute_unprepared("PRAGMA synchronous=NORMAL;")

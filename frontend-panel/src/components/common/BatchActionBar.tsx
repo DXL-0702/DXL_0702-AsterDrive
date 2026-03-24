@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
 import { formatBatchToast } from "@/lib/formatBatchToast";
 import { batchService } from "@/services/batchService";
+import { useAuthStore } from "@/stores/authStore";
 import type { BreadcrumbItem } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
 
@@ -44,7 +45,7 @@ export function BatchActionBar() {
 				});
 			}
 			clearSelection();
-			await refresh();
+			await Promise.all([refresh(), useAuthStore.getState().refreshUser()]);
 		} catch (err) {
 			handleApiError(err);
 		}

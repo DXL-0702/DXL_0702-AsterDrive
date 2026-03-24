@@ -146,6 +146,44 @@ async fn test_restore_single_history_version_recovers_original_content() {
 // ── ETag 乐观锁：正确 ETag 通过 ────────────────────────────
 
 #[actix_web::test]
+async fn test_download_if_none_match_returns_304() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/download"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let etag = resp
+        .headers()
+        .get("ETag")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/download"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("If-None-Match", etag.as_str()))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        304,
+        "matching If-None-Match should return 304"
+    );
+    assert_eq!(
+        resp.headers().get("ETag").and_then(|v| v.to_str().ok()),
+        Some(etag.as_str())
+    );
+}
+
+#[actix_web::test]
 async fn test_update_content_etag_match() {
     let state = common::setup().await;
     let app = create_test_app!(state);

@@ -72,10 +72,10 @@ impl FrontendService {
     }
 
     pub async fn handle_favicon(_req: HttpRequest) -> HttpResponse {
-        match Self::load_file("favicon.ico").await {
-            Some(data) => HttpResponse::Ok().content_type("image/x-icon").body(data),
+        match Self::load_file("favicon.svg").await {
+            Some(data) => HttpResponse::Ok().content_type("image/svg+xml").body(data),
             None => HttpResponse::Ok()
-                .content_type("image/x-icon")
+                .content_type("image/svg+xml")
                 .body(Vec::new()),
         }
     }
@@ -116,7 +116,7 @@ pub fn routes() -> actix_web::Scope {
             web::get().to(FrontendService::handle_static),
         )
         .route(
-            "/favicon.ico",
+            "/favicon.svg",
             web::get().to(FrontendService::handle_favicon),
         )
         // SPA fallback（最后）

@@ -3,6 +3,7 @@ import { STORAGE_KEYS } from "@/config/app";
 import { batchService } from "@/services/batchService";
 import { fileService } from "@/services/fileService";
 import { searchService } from "@/services/searchService";
+import { useAuthStore } from "@/stores/authStore";
 import type { BatchResult, FileInfo, FolderInfo } from "@/types/api";
 
 interface BreadcrumbItem {
@@ -262,7 +263,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 		const next = new Set(get().selectedFileIds);
 		next.delete(id);
 		set({ selectedFileIds: next });
-		await get().refresh();
+		await Promise.all([get().refresh(), useAuthStore.getState().refreshUser()]);
 	},
 
 	deleteFolder: async (id) => {
@@ -270,7 +271,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 		const next = new Set(get().selectedFolderIds);
 		next.delete(id);
 		set({ selectedFolderIds: next });
-		await get().refresh();
+		await Promise.all([get().refresh(), useAuthStore.getState().refreshUser()]);
 	},
 
 	moveToFolder: async (fileIds, folderIds, targetFolderId) => {

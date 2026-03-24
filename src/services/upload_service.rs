@@ -7,7 +7,7 @@ use crate::db::repository::{file_repo, policy_repo, upload_session_repo, user_re
 use crate::entities::{file, file_blob, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
-use crate::services::file_service;
+use crate::services::{file_service, folder_service};
 use crate::types::{DriverType, UploadMode, UploadSessionStatus};
 use crate::utils::id;
 
@@ -60,11 +60,23 @@ pub async fn init_upload(
     filename: &str,
     total_size: i64,
     folder_id: Option<i64>,
+    relative_path: Option<&str>,
 ) -> Result<InitUploadResponse> {
     let db = &state.db;
 
+    let (resolved_folder_id, resolved_filename) = match relative_path {
+        Some(path) => folder_service::resolve_upload_path(state, user_id, folder_id, path).await?,
+        None => {
+            crate::utils::validate_name(filename)?;
+            if let Some(fid) = folder_id {
+                folder_service::verify_folder_access(state, user_id, fid).await?;
+            }
+            (folder_id, filename.to_string())
+        }
+    };
+
     // 确定存储策略
-    let policy = file_service::resolve_policy(state, user_id, folder_id).await?;
+    let policy = file_service::resolve_policy(state, user_id, resolved_folder_id).await?;
 
     // 检查文件大小限制
     if policy.max_file_size > 0 && total_size > policy.max_file_size {
@@ -104,12 +116,12 @@ pub async fn init_upload(
             let session = upload_session::ActiveModel {
                 id: Set(upload_id.clone()),
                 user_id: Set(user_id),
-                filename: Set(filename.to_string()),
+                filename: Set(resolved_filename.clone()),
                 total_size: Set(total_size),
                 chunk_size: Set(0),
                 total_chunks: Set(0),
                 received_count: Set(0),
-                folder_id: Set(folder_id),
+                folder_id: Set(resolved_folder_id),
                 policy_id: Set(policy.id),
                 status: Set(UploadSessionStatus::Presigned),
                 s3_temp_key: Set(Some(temp_key)),
@@ -155,12 +167,12 @@ pub async fn init_upload(
     let session = upload_session::ActiveModel {
         id: Set(upload_id.clone()),
         user_id: Set(user_id),
-        filename: Set(filename.to_string()),
+        filename: Set(resolved_filename.clone()),
         total_size: Set(total_size),
         chunk_size: Set(chunk_size),
         total_chunks: Set(total_chunks),
         received_count: Set(0),
-        folder_id: Set(folder_id),
+        folder_id: Set(resolved_folder_id),
         policy_id: Set(policy.id),
         status: Set(UploadSessionStatus::Uploading),
         s3_temp_key: Set(None),
@@ -383,29 +395,20 @@ pub async fn complete_upload(
         }
     };
 
-    // 检查同名文件（事务内检查保证一致性）
-    if file_repo::find_by_name_in_folder(
-        &txn,
-        session.user_id,
-        session.folder_id,
-        &session.filename,
-    )
-    .await?
-    .is_some()
+    let mut final_name = session.filename.clone();
+    while file_repo::find_by_name_in_folder(&txn, session.user_id, session.folder_id, &final_name)
+        .await?
+        .is_some()
     {
-        // txn drop 自动 rollback
-        return Err(AsterError::validation_error(format!(
-            "file '{}' already exists in this folder",
-            session.filename
-        )));
+        final_name = crate::utils::next_copy_name(&final_name);
     }
 
-    let mime = mime_guess::from_path(&session.filename)
+    let mime = mime_guess::from_path(&final_name)
         .first_or_octet_stream()
         .to_string();
 
     let file_model = file::ActiveModel {
-        name: Set(session.filename.clone()),
+        name: Set(final_name),
         folder_id: Set(session.folder_id),
         blob_id: Set(blob.id),
         size: Set(blob.size),
@@ -533,29 +536,20 @@ async fn complete_presigned_upload(
         }
     };
 
-    // 检查同名文件（事务内检查保证一致性）
-    if file_repo::find_by_name_in_folder(
-        &txn,
-        session.user_id,
-        session.folder_id,
-        &session.filename,
-    )
-    .await?
-    .is_some()
+    let mut final_name = session.filename.clone();
+    while file_repo::find_by_name_in_folder(&txn, session.user_id, session.folder_id, &final_name)
+        .await?
+        .is_some()
     {
-        // txn drop 自动 rollback
-        return Err(AsterError::validation_error(format!(
-            "file '{}' already exists in this folder",
-            session.filename
-        )));
+        final_name = crate::utils::next_copy_name(&final_name);
     }
 
-    let mime = mime_guess::from_path(&session.filename)
+    let mime = mime_guess::from_path(&final_name)
         .first_or_octet_stream()
         .to_string();
 
     let file_model = file::ActiveModel {
-        name: Set(session.filename.clone()),
+        name: Set(final_name),
         folder_id: Set(session.folder_id),
         blob_id: Set(blob.id),
         size: Set(blob.size),

@@ -175,20 +175,16 @@ pub async fn store_from_temp(
         updated
     } else {
         // 新建文件
-        // 检查同名文件（事务内检查保证一致性）
-        if file_repo::find_by_name_in_folder(&txn, user_id, folder_id, filename)
+        let mut final_name = filename.to_string();
+        while file_repo::find_by_name_in_folder(&txn, user_id, folder_id, &final_name)
             .await?
             .is_some()
         {
-            // txn drop 自动 rollback
-            return Err(AsterError::validation_error(format!(
-                "file '{}' already exists in this folder",
-                filename
-            )));
+            final_name = crate::utils::next_copy_name(&final_name);
         }
 
         let file_model = file::ActiveModel {
-            name: Set(filename.to_string()),
+            name: Set(final_name),
             folder_id: Set(folder_id),
             blob_id: Set(blob.id),
             size: Set(blob.size),
@@ -220,7 +216,21 @@ pub async fn upload(
     user_id: i64,
     payload: &mut Multipart,
     folder_id: Option<i64>,
+    relative_path: Option<&str>,
 ) -> Result<file::Model> {
+    let (resolved_folder_id, resolved_filename) = match relative_path {
+        Some(path) => {
+            crate::services::folder_service::resolve_upload_path(state, user_id, folder_id, path)
+                .await?
+        }
+        None => {
+            if let Some(fid) = folder_id {
+                crate::services::folder_service::verify_folder_access(state, user_id, fid).await?;
+            }
+            (folder_id, String::new())
+        }
+    };
+
     // 流式写入临时文件（不在内存中缓冲整个文件）
     let mut filename = String::from("unnamed");
     let temp_path = format!("{}/{}", crate::utils::TEMP_DIR, uuid::Uuid::new_v4());
@@ -240,7 +250,11 @@ pub async fn upload(
             .and_then(|cd| cd.get_filename().map(|n| n.to_string()));
 
         if let Some(name) = is_file {
-            filename = name;
+            filename = if relative_path.is_some() {
+                resolved_filename.clone()
+            } else {
+                name
+            };
             while let Some(chunk) = field.next().await {
                 let chunk = chunk.map_aster_err(AsterError::file_upload_failed)?;
                 temp_file
@@ -264,7 +278,18 @@ pub async fn upload(
     }
 
     let result = store_from_temp(
-        state, user_id, folder_id, &filename, &temp_path, size, None, false,
+        state,
+        user_id,
+        if relative_path.is_some() {
+            resolved_folder_id
+        } else {
+            folder_id
+        },
+        &filename,
+        &temp_path,
+        size,
+        None,
+        false,
     )
     .await;
 
@@ -287,7 +312,12 @@ pub async fn get_info(state: &AppState, id: i64, user_id: i64) -> Result<file::M
 }
 
 /// 下载文件（流式，不全量缓冲）
-pub async fn download(state: &AppState, id: i64, user_id: i64) -> Result<HttpResponse> {
+pub async fn download(
+    state: &AppState,
+    id: i64,
+    user_id: i64,
+    if_none_match: Option<&str>,
+) -> Result<HttpResponse> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
     crate::utils::verify_owner(f.user_id, user_id, "file")?;
@@ -298,15 +328,26 @@ pub async fn download(state: &AppState, id: i64, user_id: i64) -> Result<HttpRes
     }
 
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
-    build_stream_response(state, &f, &blob).await
+    build_stream_response(state, &f, &blob, if_none_match).await
 }
 
 /// 下载文件（无用户校验，用于分享链接，流式）
-pub async fn download_raw(state: &AppState, id: i64) -> Result<HttpResponse> {
+pub async fn download_raw(
+    state: &AppState,
+    id: i64,
+    if_none_match: Option<&str>,
+) -> Result<HttpResponse> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
-    build_stream_response(state, &f, &blob).await
+    build_stream_response(state, &f, &blob, if_none_match).await
+}
+
+fn if_none_match_matches(if_none_match: &str, blob_hash: &str) -> bool {
+    if_none_match.split(',').any(|value| {
+        let candidate = value.trim();
+        candidate == "*" || candidate.trim_matches('"').eq_ignore_ascii_case(blob_hash)
+    })
 }
 
 /// 构建流式下载响应
@@ -314,7 +355,18 @@ async fn build_stream_response(
     state: &AppState,
     f: &file::Model,
     blob: &file_blob::Model,
+    if_none_match: Option<&str>,
 ) -> Result<HttpResponse> {
+    let etag = format!("\"{}\"", blob.hash);
+    if let Some(if_none_match) = if_none_match
+        && if_none_match_matches(if_none_match, &blob.hash)
+    {
+        return Ok(HttpResponse::NotModified()
+            .insert_header(("ETag", etag))
+            .insert_header(("Cache-Control", "private, max-age=0, must-revalidate"))
+            .finish());
+    }
+
     let policy = policy_repo::find_by_id(&state.db, blob.policy_id).await?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let stream = driver.get_stream(&blob.storage_path).await?;
@@ -328,7 +380,8 @@ async fn build_stream_response(
             "Content-Disposition",
             format!("attachment; filename=\"{}\"", f.name),
         ))
-        .insert_header(("ETag", format!("\"{}\"", blob.hash)))
+        .insert_header(("ETag", etag))
+        .insert_header(("Cache-Control", "private, max-age=0, must-revalidate"))
         .streaming(reader_stream))
 }
 

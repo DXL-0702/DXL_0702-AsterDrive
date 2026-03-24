@@ -9,6 +9,7 @@ interface AuthState {
 	login: (identifier: string, password: string) => Promise<void>;
 	logout: () => Promise<void>;
 	checkAuth: () => Promise<void>;
+	refreshUser: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -38,6 +39,15 @@ export const useAuthStore = create<AuthState>((set) => ({
 			set({ isAuthenticated: true, isChecking: false, user });
 		} catch {
 			set({ isAuthenticated: false, isChecking: false, user: null });
+		}
+	},
+
+	refreshUser: async () => {
+		try {
+			const user = await authService.me();
+			set({ user, isAuthenticated: true });
+		} catch {
+			// ignore refresh failure; auth interceptors may recover separately
 		}
 	},
 }));

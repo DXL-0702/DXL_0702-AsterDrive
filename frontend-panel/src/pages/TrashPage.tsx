@@ -18,6 +18,7 @@ import {
 import { handleApiError } from "@/hooks/useApiError";
 import { formatDate } from "@/lib/format";
 import { trashService } from "@/services/trashService";
+import { useAuthStore } from "@/stores/authStore";
 import type { FileInfo, FolderInfo } from "@/types/api";
 
 export default function TrashPage() {
@@ -52,7 +53,7 @@ export default function TrashPage() {
 			if (type === "file") await trashService.restoreFile(id);
 			else await trashService.restoreFolder(id);
 			toast.success(t("restored"));
-			load();
+			await Promise.all([load(), useAuthStore.getState().refreshUser()]);
 		} catch (err) {
 			handleApiError(err);
 		}
@@ -63,7 +64,7 @@ export default function TrashPage() {
 			if (type === "file") await trashService.purgeFile(id);
 			else await trashService.purgeFolder(id);
 			toast.success(t("permanently_deleted"));
-			load();
+			await Promise.all([load(), useAuthStore.getState().refreshUser()]);
 		} catch (err) {
 			handleApiError(err);
 		}
@@ -74,7 +75,7 @@ export default function TrashPage() {
 			setPurgeAllOpen(false);
 			await trashService.purgeAll();
 			toast.success(t("trash_emptied"));
-			load();
+			await Promise.all([load(), useAuthStore.getState().refreshUser()]);
 		} catch (err) {
 			handleApiError(err);
 		}
