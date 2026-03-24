@@ -89,36 +89,75 @@ pub async fn init_upload(
     // 检查用户配额
     user_repo::check_quota(db, user_id, total_size).await?;
 
-    // S3 presigned 直传：策略开启 + S3 驱动 + 文件 ≤ 5GiB
-    const S3_SINGLE_PUT_LIMIT: i64 = 5 * 1024 * 1024 * 1024; // 5 GiB
-    if policy.driver_type == DriverType::S3 && total_size <= S3_SINGLE_PUT_LIMIT {
+    // S3 presigned 直传：策略开启 + S3 驱动
+    if policy.driver_type == DriverType::S3 {
         let opts = parse_policy_options(&policy.options);
         if opts.presigned_upload {
             let driver = state.driver_registry.get_driver(&policy)?;
             let upload_id = id::new_uuid();
             let temp_key = format!("_tmp/{upload_id}");
-            let presigned_url = driver
-                .presigned_put_url(&temp_key, std::time::Duration::from_secs(3600))
-                .await?
-                .ok_or_else(|| {
-                    AsterError::storage_driver_error("presigned PUT not supported by driver")
-                })?;
+
+            // chunk_size == 0 → 禁用分片；文件 ≤ chunk_size → 单次 presigned PUT
+            if policy.chunk_size == 0 || total_size <= policy.chunk_size {
+                let presigned_url = driver
+                    .presigned_put_url(&temp_key, std::time::Duration::from_secs(3600))
+                    .await?
+                    .ok_or_else(|| {
+                        AsterError::storage_driver_error("presigned PUT not supported by driver")
+                    })?;
+
+                let now = Utc::now();
+                let expires_at = now + chrono::Duration::hours(1);
+
+                let session = upload_session::ActiveModel {
+                    id: Set(upload_id.clone()),
+                    user_id: Set(user_id),
+                    filename: Set(resolved_filename.clone()),
+                    total_size: Set(total_size),
+                    chunk_size: Set(0),
+                    total_chunks: Set(0),
+                    received_count: Set(0),
+                    folder_id: Set(resolved_folder_id),
+                    policy_id: Set(policy.id),
+                    status: Set(UploadSessionStatus::Presigned),
+                    s3_temp_key: Set(Some(temp_key)),
+                    s3_multipart_id: Set(None),
+                    created_at: Set(now),
+                    expires_at: Set(expires_at),
+                    updated_at: Set(now),
+                };
+                upload_session_repo::create(db, session).await?;
+
+                return Ok(InitUploadResponse {
+                    mode: UploadMode::Presigned,
+                    upload_id: Some(upload_id),
+                    chunk_size: None,
+                    total_chunks: None,
+                    presigned_url: Some(presigned_url),
+                });
+            }
+
+            // 大文件 → S3 multipart presigned 直传
+            let s3_upload_id = driver.create_multipart_upload(&temp_key).await?;
+            let chunk_size = policy.chunk_size;
+            let total_chunks = ((total_size + chunk_size - 1) / chunk_size) as i32;
 
             let now = Utc::now();
-            let expires_at = now + chrono::Duration::hours(1);
+            let expires_at = now + chrono::Duration::hours(24);
 
             let session = upload_session::ActiveModel {
                 id: Set(upload_id.clone()),
                 user_id: Set(user_id),
                 filename: Set(resolved_filename.clone()),
                 total_size: Set(total_size),
-                chunk_size: Set(0),
-                total_chunks: Set(0),
+                chunk_size: Set(chunk_size),
+                total_chunks: Set(total_chunks),
                 received_count: Set(0),
                 folder_id: Set(resolved_folder_id),
                 policy_id: Set(policy.id),
                 status: Set(UploadSessionStatus::Presigned),
                 s3_temp_key: Set(Some(temp_key)),
+                s3_multipart_id: Set(Some(s3_upload_id)),
                 created_at: Set(now),
                 expires_at: Set(expires_at),
                 updated_at: Set(now),
@@ -126,11 +165,11 @@ pub async fn init_upload(
             upload_session_repo::create(db, session).await?;
 
             return Ok(InitUploadResponse {
-                mode: UploadMode::Presigned,
+                mode: UploadMode::PresignedMultipart,
                 upload_id: Some(upload_id),
-                chunk_size: None,
-                total_chunks: None,
-                presigned_url: Some(presigned_url),
+                chunk_size: Some(chunk_size),
+                total_chunks: Some(total_chunks),
+                presigned_url: None,
             });
         }
     }
@@ -170,6 +209,7 @@ pub async fn init_upload(
         policy_id: Set(policy.id),
         status: Set(UploadSessionStatus::Uploading),
         s3_temp_key: Set(None),
+        s3_multipart_id: Set(None),
         created_at: Set(now),
         expires_at: Set(expires_at),
         updated_at: Set(now),
@@ -270,6 +310,7 @@ pub async fn complete_upload(
     state: &AppState,
     upload_id: &str,
     user_id: i64,
+    parts: Option<Vec<(i32, String)>>,
 ) -> Result<file::Model> {
     let db = &state.db;
     let session = upload_session_repo::find_by_id(db, upload_id).await?;
@@ -277,6 +318,12 @@ pub async fn complete_upload(
     crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
     // Presigned 模式走独立流程
     if session.status == UploadSessionStatus::Presigned {
+        if session.s3_multipart_id.is_some() {
+            let parts = parts.ok_or_else(|| {
+                AsterError::validation_error("parts required for multipart upload completion")
+            })?;
+            return complete_s3_multipart(state, session, parts).await;
+        }
         return complete_presigned_upload(state, session).await;
     }
 
@@ -482,6 +529,117 @@ async fn complete_presigned_upload(
     Ok(created)
 }
 
+/// 完成 S3 multipart presigned 上传：complete multipart → hash → 去重 → copy → 建文件记录
+async fn complete_s3_multipart(
+    state: &AppState,
+    session: upload_session::Model,
+    mut parts: Vec<(i32, String)>,
+) -> Result<file::Model> {
+    let db = &state.db;
+    let temp_key = session
+        .s3_temp_key
+        .as_deref()
+        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_temp_key"))?
+        .to_string();
+    let multipart_id = session
+        .s3_multipart_id
+        .as_deref()
+        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_multipart_id"))?
+        .to_string();
+
+    let policy = policy_repo::find_by_id(db, session.policy_id).await?;
+    let driver = state.driver_registry.get_driver(&policy)?;
+
+    // ── 原子状态转换 presigned → assembling（防止并发 complete 双重触发） ──
+    let upload_id = &session.id;
+    let transitioned = upload_session_repo::try_transition_status(
+        db,
+        upload_id,
+        UploadSessionStatus::Presigned,
+        UploadSessionStatus::Assembling,
+    )
+    .await?;
+    if !transitioned {
+        return Err(AsterError::upload_assembly_failed(format!(
+            "session status is '{:?}', expected 'presigned'",
+            session.status
+        )));
+    }
+
+    // ── 完成 S3 multipart upload（parts 按 part_number 排序） ──
+    parts.sort_by_key(|(num, _)| *num);
+    driver
+        .complete_multipart_upload(&temp_key, &multipart_id, parts)
+        .await?;
+
+    // ── 验证文件大小 ──
+    let meta = driver.metadata(&temp_key).await.map_err(|_| {
+        AsterError::upload_assembly_failed(
+            "S3 object not found after multipart complete - assembly may have failed",
+        )
+    })?;
+    let actual_size = meta.size as i64;
+
+    if actual_size != session.total_size {
+        if let Err(e) = driver.delete(&temp_key).await {
+            tracing::warn!("failed to delete S3 temp object: {e}");
+        }
+        return Err(AsterError::upload_assembly_failed(format!(
+            "size mismatch: declared {} but uploaded {}",
+            session.total_size, actual_size
+        )));
+    }
+
+    // ── 流式 SHA256（从 S3 读，64KB buffer） ──
+    let file_hash = {
+        use sha2::{Digest, Sha256};
+        use tokio::io::AsyncReadExt;
+        let mut hasher = Sha256::new();
+        let mut stream = driver.get_stream(&temp_key).await?;
+        let mut buf = vec![0u8; 65536];
+        loop {
+            let n = stream
+                .read(&mut buf)
+                .await
+                .map_aster_err_ctx("read S3 stream", AsterError::upload_assembly_failed)?;
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        format!("{:x}", hasher.finalize())
+    };
+
+    let now = Utc::now();
+
+    // ── copy_object（仅新 blob 时需要） ──
+    let storage_path = crate::utils::storage_path_from_hash(&file_hash);
+    let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
+        .await?
+        .is_some();
+    if !blob_pre_exists {
+        driver.copy_object(&temp_key, &storage_path).await?;
+    }
+
+    let created = finalize_upload_session(
+        state,
+        &session,
+        &file_hash,
+        actual_size,
+        policy.id,
+        &storage_path,
+        now,
+    )
+    .await?;
+
+    // ── S3 临时对象清理（best-effort） ──
+    if let Err(e) = driver.delete(&temp_key).await {
+        tracing::warn!("failed to delete S3 temp object: {e}");
+    }
+
+    Ok(created)
+}
+
 /// 上传完成的事务内共用逻辑：blob 去重 → 文件记录 → 配额 → session 状态
 async fn finalize_upload_session(
     state: &AppState,
@@ -542,13 +700,17 @@ pub async fn cancel_upload(state: &AppState, upload_id: &str, user_id: i64) -> R
     let session = upload_session_repo::find_by_id(&state.db, upload_id).await?;
     crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
 
-    // 清理 S3 临时对象
+    // 清理 S3 临时对象 / multipart upload
     if let Some(ref temp_key) = session.s3_temp_key {
         let policy = policy_repo::find_by_id(&state.db, session.policy_id).await?;
-        if let Ok(driver) = state.driver_registry.get_driver(&policy)
-            && let Err(e) = driver.delete(temp_key).await
-        {
-            tracing::warn!("failed to delete S3 temp object: {e}");
+        if let Ok(driver) = state.driver_registry.get_driver(&policy) {
+            if let Some(ref multipart_id) = session.s3_multipart_id {
+                if let Err(e) = driver.abort_multipart_upload(temp_key, multipart_id).await {
+                    tracing::warn!("failed to abort S3 multipart upload: {e}");
+                }
+            } else if let Err(e) = driver.delete(temp_key).await {
+                tracing::warn!("failed to delete S3 temp object: {e}");
+            }
         }
     }
 
@@ -566,8 +728,16 @@ pub async fn get_progress(
     let session = upload_session_repo::find_by_id(&state.db, upload_id).await?;
     crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
 
-    // 扫磁盘获取具体哪些 chunk 存在（用于断点续传判断缺哪些）
-    let chunks_on_disk = scan_received_chunks(&session.id).await;
+    // S3 multipart → 从 S3 查询已上传 parts；本地分片 → 扫磁盘
+    let chunks_on_disk = if let (Some(temp_key), Some(multipart_id)) =
+        (&session.s3_temp_key, &session.s3_multipart_id)
+    {
+        let policy = policy_repo::find_by_id(&state.db, session.policy_id).await?;
+        let driver = state.driver_registry.get_driver(&policy)?;
+        driver.list_uploaded_parts(temp_key, multipart_id).await?
+    } else {
+        scan_received_chunks(&session.id).await
+    };
 
     Ok(UploadProgressResponse {
         upload_id: session.id,
@@ -577,6 +747,47 @@ pub async fn get_progress(
         total_chunks: session.total_chunks,
         filename: session.filename,
     })
+}
+
+/// 为 S3 multipart presigned 上传批量生成 per-part presigned PUT URL
+pub async fn presign_parts(
+    state: &AppState,
+    upload_id: &str,
+    user_id: i64,
+    part_numbers: Vec<i32>,
+) -> Result<std::collections::HashMap<i32, String>> {
+    let db = &state.db;
+    let session = upload_session_repo::find_by_id(db, upload_id).await?;
+    crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
+
+    if session.status != UploadSessionStatus::Presigned {
+        return Err(AsterError::validation_error(format!(
+            "session status is '{:?}', expected 'presigned'",
+            session.status
+        )));
+    }
+
+    let multipart_id = session
+        .s3_multipart_id
+        .as_deref()
+        .ok_or_else(|| AsterError::validation_error("not a multipart upload session"))?;
+    let temp_key = session
+        .s3_temp_key
+        .as_deref()
+        .ok_or_else(|| AsterError::validation_error("missing s3_temp_key"))?;
+
+    let policy = policy_repo::find_by_id(db, session.policy_id).await?;
+    let driver = state.driver_registry.get_driver(&policy)?;
+
+    let expires = std::time::Duration::from_secs(3600);
+    let mut urls = std::collections::HashMap::new();
+    for part_num in part_numbers {
+        let url = driver
+            .presigned_upload_part_url(temp_key, multipart_id, part_num, expires)
+            .await?;
+        urls.insert(part_num, url);
+    }
+    Ok(urls)
 }
 
 /// 扫描临时目录中实际存在的 chunk 文件，返回排序后的 chunk 编号列表
@@ -604,13 +815,18 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
     let expired = upload_session_repo::find_expired(&state.db).await?;
     let count = expired.len() as u32;
     for session in expired {
-        // 清理 S3 临时对象
+        // 清理 S3 临时对象 / multipart upload
         if let Some(ref temp_key) = session.s3_temp_key
             && let Ok(policy) = policy_repo::find_by_id(&state.db, session.policy_id).await
             && let Ok(driver) = state.driver_registry.get_driver(&policy)
-            && let Err(e) = driver.delete(temp_key).await
         {
-            tracing::warn!("failed to delete S3 temp object: {e}");
+            if let Some(ref multipart_id) = session.s3_multipart_id {
+                if let Err(e) = driver.abort_multipart_upload(temp_key, multipart_id).await {
+                    tracing::warn!("failed to abort expired S3 multipart upload: {e}");
+                }
+            } else if let Err(e) = driver.delete(temp_key).await {
+                tracing::warn!("failed to delete S3 temp object: {e}");
+            }
         }
         let temp_dir = format!("data/.uploads/{}", session.id);
         crate::utils::cleanup_temp_dir(&temp_dir).await;

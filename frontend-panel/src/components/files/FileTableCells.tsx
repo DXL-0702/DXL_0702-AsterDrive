@@ -4,11 +4,17 @@ import { TableCell } from "@/components/ui/table";
 import { formatBytes, formatDate } from "@/lib/format";
 import type { FileInfo, FolderInfo } from "@/types/api";
 
-export function FileNameCell({ file }: { file: FileInfo }) {
+export function FileNameCell({
+	file,
+	thumbnailPath,
+}: {
+	file: FileInfo;
+	thumbnailPath?: string;
+}) {
 	return (
 		<TableCell className="pl-1 pr-2">
 			<div className="flex min-w-0 items-center gap-2.5">
-				<FileThumbnail file={file} size="sm" />
+				<FileThumbnail file={file} size="sm" thumbnailPath={thumbnailPath} />
 				<span className="min-w-0 truncate" title={file.name}>
 					{file.name}
 				</span>

@@ -20,6 +20,7 @@ pub struct Model {
     pub policy_id: i64,
     pub status: UploadSessionStatus,
     pub s3_temp_key: Option<String>,
+    pub s3_multipart_id: Option<String>,
     #[schema(value_type = String)]
     pub created_at: DateTimeUtc,
     #[schema(value_type = String)]

@@ -1,10 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { SkeletonCard } from "@/components/common/SkeletonCard";
 import { FilePreview } from "@/components/files/FilePreview";
 import { ReadOnlyFileCollection } from "@/components/files/ReadOnlyFileCollection";
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbList,
+	BreadcrumbPage,
+	BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
 import {
 	Card,
@@ -21,6 +29,11 @@ import { shareService } from "@/services/shareService";
 import type { FileInfo, FolderContents, SharePublicInfo } from "@/types/api";
 import { ErrorCode } from "@/types/api";
 
+interface ShareBreadcrumbItem {
+	id: number | null;
+	name: string;
+}
+
 export default function ShareViewPage() {
 	const { t } = useTranslation();
 	const { token } = useParams<{ token: string }>();
@@ -35,6 +48,8 @@ export default function ShareViewPage() {
 	);
 	const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 	const [previewFile, setPreviewFile] = useState<FileInfo | null>(null);
+	const [breadcrumb, setBreadcrumb] = useState<ShareBreadcrumbItem[]>([]);
+	const [navigating, setNavigating] = useState(false);
 
 	const loadInfo = useCallback(async () => {
 		if (!token) return;
@@ -47,6 +62,7 @@ export default function ShareViewPage() {
 			if (data.share_type === "folder" && !data.has_password) {
 				const contents = await shareService.listContent(token);
 				setFolderContents(contents);
+				setBreadcrumb([{ id: null, name: data.name }]);
 			}
 		} catch (e) {
 			if (e instanceof ApiError) {
@@ -71,6 +87,36 @@ export default function ShareViewPage() {
 		loadInfo();
 	}, [loadInfo]);
 
+	const navigateToFolder = useCallback(
+		async (folderId: number | null, folderName?: string) => {
+			if (!token) return;
+			setNavigating(true);
+			try {
+				const contents =
+					folderId === null
+						? await shareService.listContent(token)
+						: await shareService.listSubfolderContent(token, folderId);
+				setFolderContents(contents);
+
+				setBreadcrumb((prev) => {
+					if (folderId === null) {
+						return [prev[0]];
+					}
+					const existingIndex = prev.findIndex((b) => b.id === folderId);
+					if (existingIndex >= 0) {
+						return prev.slice(0, existingIndex + 1);
+					}
+					return [...prev, { id: folderId, name: folderName ?? "" }];
+				});
+			} catch (e) {
+				handleApiError(e);
+			} finally {
+				setNavigating(false);
+			}
+		},
+		[token],
+	);
+
 	const handleVerifyPassword = async (e: React.FormEvent) => {
 		e.preventDefault();
 		if (!token) return;
@@ -83,6 +129,7 @@ export default function ShareViewPage() {
 			if (info?.share_type === "folder") {
 				const contents = await shareService.listContent(token);
 				setFolderContents(contents);
+				setBreadcrumb([{ id: null, name: info.name }]);
 			}
 		} catch (e) {
 			handleApiError(e);
@@ -260,7 +307,33 @@ export default function ShareViewPage() {
 					</CardHeader>
 				</Card>
 
-				{folderContents ? (
+				{breadcrumb.length > 1 && (
+					<Breadcrumb>
+						<BreadcrumbList>
+							{breadcrumb.map((item, i) => (
+								<Fragment key={item.id ?? "root"}>
+									{i > 0 && <BreadcrumbSeparator />}
+									<BreadcrumbItem>
+										{i < breadcrumb.length - 1 ? (
+											<BreadcrumbLink
+												className="cursor-pointer"
+												onClick={() => navigateToFolder(item.id, item.name)}
+											>
+												{item.name}
+											</BreadcrumbLink>
+										) : (
+											<BreadcrumbPage>{item.name}</BreadcrumbPage>
+										)}
+									</BreadcrumbItem>
+								</Fragment>
+							))}
+						</BreadcrumbList>
+					</Breadcrumb>
+				)}
+
+				{navigating ? (
+					<SkeletonCard />
+				) : folderContents ? (
 					<ReadOnlyFileCollection
 						folders={folderContents.folders}
 						files={folderContents.files}
@@ -268,6 +341,10 @@ export default function ShareViewPage() {
 						onViewModeChange={setViewMode}
 						onFileClick={setPreviewFile}
 						onFileDownload={handleFolderFileDownload}
+						onFolderClick={(folder) => navigateToFolder(folder.id, folder.name)}
+						getThumbnailPath={(file) =>
+							`/s/${token}/files/${file.id}/thumbnail`
+						}
 						emptyTitle={t("empty_folder")}
 						emptyDescription={t("folder_empty_desc")}
 					/>

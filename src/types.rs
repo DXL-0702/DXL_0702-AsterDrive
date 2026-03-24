@@ -74,11 +74,12 @@ pub enum UploadSessionStatus {
 
 /// 上传模式（不存 DB，仅 API 响应用）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum UploadMode {
     Direct,
     Chunked,
     Presigned,
+    PresignedMultipart,
 }
 
 /// 实体类型（文件/文件夹）

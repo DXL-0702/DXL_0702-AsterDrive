@@ -190,22 +190,11 @@ pub async fn download_shared_folder_file(
         )));
     }
 
-    let mut current_folder_id = file.folder_id;
-    let mut allowed = false;
-    while let Some(folder_id) = current_folder_id {
-        if folder_id == root_folder_id {
-            allowed = true;
-            break;
-        }
-        let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
-        current_folder_id = folder.parent_id;
-    }
-
-    if !allowed {
-        return Err(AsterError::auth_forbidden(
-            "file is outside shared folder scope",
-        ));
-    }
+    // 校验文件所在文件夹在分享范围内
+    let file_folder_id = file
+        .folder_id
+        .ok_or_else(|| AsterError::auth_forbidden("file is outside shared folder scope"))?;
+    verify_folder_in_share_scope(&state.db, file_folder_id, root_folder_id).await?;
 
     let response = file_service::download_raw(state, file_id, if_none_match).await?;
 
@@ -276,7 +265,99 @@ pub async fn get_shared_thumbnail(state: &AppState, token: &str) -> Result<Vec<u
     crate::services::thumbnail_service::get_or_generate(state, &blob).await
 }
 
+/// 获取分享文件夹内子文件的缩略图（公开访问）
+pub async fn get_shared_folder_file_thumbnail(
+    state: &AppState,
+    token: &str,
+    file_id: i64,
+) -> Result<Vec<u8>> {
+    let share = share_repo::find_by_token(&state.db, token)
+        .await?
+        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+
+    validate_share(&share)?;
+
+    let root_folder_id = share
+        .folder_id
+        .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
+
+    let f = file_repo::find_by_id(&state.db, file_id).await?;
+    if f.deleted_at.is_some() {
+        return Err(AsterError::file_not_found(format!(
+            "file #{file_id} is in trash"
+        )));
+    }
+
+    // 校验文件在分享范围内
+    let file_folder_id = f
+        .folder_id
+        .ok_or_else(|| AsterError::auth_forbidden("file is outside shared folder scope"))?;
+    verify_folder_in_share_scope(&state.db, file_folder_id, root_folder_id).await?;
+
+    if !crate::services::thumbnail_service::is_supported_mime(&f.mime_type) {
+        return Err(AsterError::thumbnail_generation_failed(
+            "unsupported image type",
+        ));
+    }
+
+    let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
+    crate::services::thumbnail_service::get_or_generate(state, &blob).await
+}
+
+pub async fn list_shared_subfolder(
+    state: &AppState,
+    token: &str,
+    folder_id: i64,
+) -> Result<folder_service::FolderContents> {
+    let share = share_repo::find_by_token(&state.db, token)
+        .await?
+        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+
+    validate_share(&share)?;
+
+    let root_folder_id = share
+        .folder_id
+        .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
+
+    // 检查目标文件夹未删除
+    let target = folder_repo::find_by_id(&state.db, folder_id).await?;
+    if target.deleted_at.is_some() {
+        return Err(AsterError::folder_not_found(format!(
+            "folder #{folder_id} is in trash"
+        )));
+    }
+
+    // 校验目标文件夹在分享范围内
+    verify_folder_in_share_scope(&state.db, folder_id, root_folder_id).await?;
+
+    folder_service::list_shared(state, folder_id).await
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
+
+/// 校验 folder_id 是 root_folder_id 自身或其子孙
+async fn verify_folder_in_share_scope(
+    db: &DatabaseConnection,
+    folder_id: i64,
+    root_folder_id: i64,
+) -> Result<()> {
+    if folder_id == root_folder_id {
+        return Ok(());
+    }
+    let mut current_id = folder_id;
+    loop {
+        let folder = folder_repo::find_by_id(db, current_id).await?;
+        match folder.parent_id {
+            Some(pid) if pid == root_folder_id => return Ok(()),
+            Some(pid) => current_id = pid,
+            None => {
+                return Err(AsterError::auth_forbidden(
+                    "folder is outside shared folder scope",
+                ));
+            }
+        }
+    }
+}
 
 fn validate_share(share: &share::Model) -> Result<()> {
     // 检查过期

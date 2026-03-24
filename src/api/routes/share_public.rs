@@ -16,7 +16,15 @@ pub fn routes() -> actix_web::Scope {
             web::get().to(download_shared_folder_file),
         )
         .route("/{token}/content", web::get().to(list_shared_content))
+        .route(
+            "/{token}/folders/{folder_id}/content",
+            web::get().to(list_shared_subfolder_content),
+        )
         .route("/{token}/thumbnail", web::get().to(shared_thumbnail))
+        .route(
+            "/{token}/files/{file_id}/thumbnail",
+            web::get().to(shared_folder_file_thumbnail),
+        )
 }
 
 #[utoipa::path(
@@ -166,6 +174,33 @@ pub async fn list_shared_content(
 
 #[utoipa::path(
     get,
+    path = "/api/v1/s/{token}/folders/{folder_id}/content",
+    tag = "shares",
+    operation_id = "list_shared_subfolder_content",
+    params(
+        ("token" = String, Path, description = "Share token"),
+        ("folder_id" = i64, Path, description = "Subfolder ID inside shared folder")
+    ),
+    responses(
+        (status = 200, description = "Subfolder contents", body = inline(ApiResponse<crate::api::response::FolderContentsResponse>)),
+        (status = 403, description = "Password required or folder outside shared scope"),
+        (status = 404, description = "Share or folder not found"),
+    )
+)]
+pub async fn list_shared_subfolder_content(
+    state: web::Data<AppState>,
+    path: web::Path<(String, i64)>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse> {
+    let (token, folder_id) = path.into_inner();
+    check_share_password_cookie(&state, &token, &req).await?;
+
+    let contents = share_service::list_shared_subfolder(&state, &token, folder_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
+}
+
+#[utoipa::path(
+    get,
     path = "/api/v1/s/{token}/thumbnail",
     tag = "shares",
     operation_id = "shared_thumbnail",
@@ -184,6 +219,37 @@ pub async fn shared_thumbnail(
     check_share_password_cookie(&state, &path, &req).await?;
 
     let data = share_service::get_shared_thumbnail(&state, &path).await?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("image/webp")
+        .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
+        .body(data))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/s/{token}/files/{file_id}/thumbnail",
+    tag = "shares",
+    operation_id = "shared_folder_file_thumbnail",
+    params(
+        ("token" = String, Path, description = "Share token"),
+        ("file_id" = i64, Path, description = "File ID inside shared folder")
+    ),
+    responses(
+        (status = 200, description = "Thumbnail image (WebP)"),
+        (status = 403, description = "Password required or file outside shared scope"),
+        (status = 404, description = "Not found or not an image"),
+    )
+)]
+pub async fn shared_folder_file_thumbnail(
+    state: web::Data<AppState>,
+    path: web::Path<(String, i64)>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse> {
+    let (token, file_id) = path.into_inner();
+    check_share_password_cookie(&state, &token, &req).await?;
+
+    let data = share_service::get_shared_folder_file_thumbnail(&state, &token, file_id).await?;
 
     Ok(HttpResponse::Ok()
         .content_type("image/webp")

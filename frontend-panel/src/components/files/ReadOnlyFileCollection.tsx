@@ -13,6 +13,7 @@ interface ReadOnlyFileCollectionProps {
 	onFolderClick?: (folder: FolderInfo) => void;
 	onFileClick?: (file: FileInfo) => void;
 	onFileDownload?: (file: FileInfo) => void;
+	getThumbnailPath?: (file: FileInfo) => string;
 	emptyTitle: string;
 	emptyDescription: string;
 }
@@ -25,6 +26,7 @@ export function ReadOnlyFileCollection({
 	onFolderClick,
 	onFileClick,
 	onFileDownload,
+	getThumbnailPath,
 	emptyTitle,
 	emptyDescription,
 }: ReadOnlyFileCollectionProps) {
@@ -49,6 +51,7 @@ export function ReadOnlyFileCollection({
 						onFolderClick={onFolderClick}
 						onFileClick={onFileClick}
 						onFileDownload={onFileDownload}
+						getThumbnailPath={getThumbnailPath}
 					/>
 				) : (
 					<ReadOnlyFileTable
@@ -57,6 +60,7 @@ export function ReadOnlyFileCollection({
 						onFolderClick={onFolderClick}
 						onFileClick={onFileClick}
 						onFileDownload={onFileDownload}
+						getThumbnailPath={getThumbnailPath}
 					/>
 				)}
 			</div>

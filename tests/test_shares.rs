@@ -279,3 +279,100 @@ async fn test_share_forged_cookie_rejected() {
         resp.status()
     );
 }
+
+#[actix_web::test]
+async fn test_share_folder_subfolder_navigation() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // 创建根文件夹
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Shared Root" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let root_id = body["data"]["id"].as_i64().unwrap();
+
+    // 创建子文件夹
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Subfolder", "parent_id": root_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let sub_id = body["data"]["id"].as_i64().unwrap();
+
+    // 上传文件到子文件夹
+    let _file_id = upload_test_file_to_folder!(app, token, sub_id);
+
+    // 分享根文件夹
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "folder_id": root_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    // 根目录内容应包��� Subfolder
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/content"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let folders = body["data"]["folders"].as_array().unwrap();
+    assert_eq!(folders.len(), 1);
+    assert_eq!(folders[0]["name"], "Subfolder");
+
+    // 子文件夹内容应包含文件
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/folders/{sub_id}/content"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(files.len(), 1);
+
+    // root 自身也能通过子文件夹接口访问
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/s/{share_token}/folders/{root_id}/content"
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // 创建不相关文件夹 — 越权访问应被拒绝
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Outside" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let outside_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/s/{share_token}/folders/{outside_id}/content"
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        403,
+        "accessing folder outside share scope should return 403, got {}",
+        resp.status()
+    );
+}

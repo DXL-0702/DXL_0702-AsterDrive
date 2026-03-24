@@ -27,6 +27,7 @@ use utoipa::OpenApi;
         crate::api::routes::files::init_chunked_upload,
         crate::api::routes::files::upload_chunk,
         crate::api::routes::files::complete_upload,
+        crate::api::routes::files::presign_parts,
         crate::api::routes::files::get_upload_progress,
         crate::api::routes::files::cancel_upload,
         crate::api::routes::files::set_lock,
@@ -98,7 +99,9 @@ use utoipa::OpenApi;
         crate::api::routes::share_public::download_shared,
         crate::api::routes::share_public::download_shared_folder_file,
         crate::api::routes::share_public::list_shared_content,
+        crate::api::routes::share_public::list_shared_subfolder_content,
         crate::api::routes::share_public::shared_thumbnail,
+        crate::api::routes::share_public::shared_folder_file_thumbnail,
     ),
     components(
         schemas(
@@ -142,6 +145,9 @@ use utoipa::OpenApi;
             crate::api::routes::shares::CreateShareReq,
             crate::api::routes::share_public::VerifyPasswordReq,
             crate::api::routes::files::InitUploadReq,
+            crate::api::routes::files::CompleteUploadReq,
+            crate::api::routes::files::CompletedPartReq,
+            crate::api::routes::files::PresignPartsReq,
             crate::entities::upload_session::Model,
             crate::services::upload_service::InitUploadResponse,
             crate::services::upload_service::ChunkUploadResponse,

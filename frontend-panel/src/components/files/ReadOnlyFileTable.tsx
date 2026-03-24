@@ -24,6 +24,7 @@ interface ReadOnlyFileTableProps {
 	onFolderClick?: (folder: FolderInfo) => void;
 	onFileClick?: (file: FileInfo) => void;
 	onFileDownload?: (file: FileInfo) => void;
+	getThumbnailPath?: (file: FileInfo) => string;
 }
 
 export function ReadOnlyFileTable({
@@ -32,6 +33,7 @@ export function ReadOnlyFileTable({
 	onFolderClick,
 	onFileClick,
 	onFileDownload,
+	getThumbnailPath,
 }: ReadOnlyFileTableProps) {
 	const { t } = useTranslation(["files", "common"]);
 
@@ -64,7 +66,10 @@ export function ReadOnlyFileTable({
 						className="cursor-pointer"
 						onClick={() => onFileClick?.(file)}
 					>
-						<FileNameCell file={file} />
+						<FileNameCell
+							file={file}
+							thumbnailPath={getThumbnailPath?.(file)}
+						/>
 						<FileSizeCell size={file.size} />
 						<UpdatedAtCell updatedAt={file.updated_at} />
 						<TableCell className="pr-2 text-right">

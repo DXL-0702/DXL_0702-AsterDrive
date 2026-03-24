@@ -26,4 +26,7 @@ export const shareService = {
 
 	listContent: (token: string) =>
 		api.get<FolderContents>(`/s/${token}/content`),
+
+	listSubfolderContent: (token: string, folderId: number) =>
+		api.get<FolderContents>(`/s/${token}/folders/${folderId}/content`),
 };

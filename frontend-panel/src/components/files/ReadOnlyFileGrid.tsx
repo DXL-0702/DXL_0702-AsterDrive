@@ -9,6 +9,7 @@ interface ReadOnlyFileGridProps {
 	onFolderClick?: (folder: FolderInfo) => void;
 	onFileClick?: (file: FileInfo) => void;
 	onFileDownload?: (file: FileInfo) => void;
+	getThumbnailPath?: (file: FileInfo) => string;
 }
 
 const GRID_CLASSES =
@@ -20,6 +21,7 @@ export function ReadOnlyFileGrid({
 	onFolderClick,
 	onFileClick,
 	onFileDownload,
+	getThumbnailPath,
 }: ReadOnlyFileGridProps) {
 	const { t } = useTranslation("files");
 	const hasBoth = folders.length > 0 && files.length > 0;
@@ -66,6 +68,7 @@ export function ReadOnlyFileGrid({
 									onSelect={() => {}}
 									onClick={() => onFileClick?.(file)}
 									draggable={false}
+									thumbnailPath={getThumbnailPath?.(file)}
 								/>
 								{onFileDownload && (
 									<button

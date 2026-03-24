@@ -500,6 +500,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/files/upload/{upload_id}/presign-parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["presign_upload_parts"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/files/upload/{upload_id}/{chunk_number}": {
         parameters: {
             query?: never;
@@ -796,6 +812,38 @@ export interface paths {
             cookie?: never;
         };
         get: operations["download_shared_folder_file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/s/{token}/files/{file_id}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["shared_folder_file_thumbnail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/s/{token}/folders/{folder_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_shared_subfolder_content"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1112,6 +1160,14 @@ export interface components {
             /** Format: int32 */
             total_chunks: number;
         };
+        CompleteUploadReq: {
+            parts?: components["schemas"]["CompletedPartReq"][] | null;
+        };
+        CompletedPartReq: {
+            etag: string;
+            /** Format: int32 */
+            part_number: number;
+        };
         CopyFileReq: {
             /** Format: int64 */
             folder_id?: number | null;
@@ -1202,6 +1258,7 @@ export interface components {
         FileQuery: {
             /** Format: int64 */
             folder_id?: number | null;
+            relative_path?: string | null;
         };
         /** @description Search result file item (includes blob size from JOIN) */
         FileSearchItem: {
@@ -1262,6 +1319,7 @@ export interface components {
             filename: string;
             /** Format: int64 */
             folder_id?: number | null;
+            relative_path?: string | null;
             /** Format: int64 */
             total_size: number;
         };
@@ -1315,6 +1373,9 @@ export interface components {
             status?: null | components["schemas"]["UserStatus"];
             /** Format: int64 */
             storage_quota?: number | null;
+        };
+        PresignPartsReq: {
+            part_numbers: number[];
         };
         RefreshResponse: {
             access_token: string;
@@ -1509,7 +1570,7 @@ export interface components {
          * @description 上传模式（不存 DB，仅 API 响应用）
          * @enum {string}
          */
-        UploadMode: "direct" | "chunked" | "presigned";
+        UploadMode: "direct" | "chunked" | "presigned" | "presigned_multipart";
         UploadProgressResponse: {
             chunks_on_disk: number[];
             filename: string;
@@ -1533,6 +1594,7 @@ export interface components {
             policy_id: number;
             /** Format: int32 */
             received_count: number;
+            s3_multipart_id?: string | null;
             s3_temp_key?: string | null;
             status: components["schemas"]["UploadSessionStatus"];
             /** Format: int32 */
@@ -3377,6 +3439,7 @@ export interface operations {
         parameters: {
             query?: {
                 folder_id?: number | null;
+                relative_path?: string | null;
             };
             header?: never;
             path?: never;
@@ -3567,7 +3630,12 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        /** @description Multipart completion data (optional, only for presigned_multipart mode) */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteUploadReq"];
+            };
+        };
         responses: {
             /** @description File created */
             201: {
@@ -3594,6 +3662,53 @@ export interface operations {
                             updated_at: string;
                             /** Format: int64 */
                             user_id: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Session not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    presign_upload_parts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Upload session ID */
+                upload_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PresignPartsReq"];
+            };
+        };
+        responses: {
+            /** @description Presigned URLs for each part */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            [key: string]: string;
                         };
                         msg: string;
                     };
@@ -4827,6 +4942,89 @@ export interface operations {
                 content?: never;
             };
             /** @description Share or file not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    shared_folder_file_thumbnail: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share token */
+                token: string;
+                /** @description File ID inside shared folder */
+                file_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Thumbnail image (WebP) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Password required or file outside shared scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not found or not an image */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_shared_subfolder_content: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share token */
+                token: string;
+                /** @description Subfolder ID inside shared folder */
+                folder_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Subfolder contents */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            files: components["schemas"]["FileInfo"][];
+                            folders: components["schemas"]["FolderInfo"][];
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Password required or folder outside shared scope */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Share or folder not found */
             404: {
                 headers: {
                     [name: string]: unknown;

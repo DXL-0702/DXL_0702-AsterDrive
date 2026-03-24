@@ -28,6 +28,10 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
             "/upload/{upload_id}/complete",
             web::post().to(complete_upload),
         )
+        .route(
+            "/upload/{upload_id}/presign-parts",
+            web::post().to(presign_parts),
+        )
         .route("/upload/{upload_id}", web::get().to(get_upload_progress))
         .route("/upload/{upload_id}", web::delete().to(cancel_upload))
         // standard file routes
@@ -364,12 +368,24 @@ pub async fn upload_chunk(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct CompleteUploadReq {
+    pub parts: Option<Vec<CompletedPartReq>>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct CompletedPartReq {
+    pub part_number: i32,
+    pub etag: String,
+}
+
 #[utoipa::path(
     post,
     path = "/api/v1/files/upload/{upload_id}/complete",
     tag = "files",
     operation_id = "complete_chunked_upload",
     params(("upload_id" = String, Path, description = "Upload session ID")),
+    request_body(content = CompleteUploadReq, description = "Multipart completion data (optional, only for presigned_multipart mode)", content_type = "application/json"),
     responses(
         (status = 201, description = "File created", body = inline(ApiResponse<crate::entities::file::Model>)),
         (status = 401, description = "Unauthorized"),
@@ -381,8 +397,13 @@ pub async fn complete_upload(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<UploadIdPath>,
+    body: Option<web::Json<CompleteUploadReq>>,
 ) -> Result<HttpResponse> {
-    let file = upload_service::complete_upload(&state, &path.upload_id, claims.user_id).await?;
+    let parts = body
+        .and_then(|b| b.into_inner().parts)
+        .map(|parts| parts.into_iter().map(|p| (p.part_number, p.etag)).collect());
+    let file =
+        upload_service::complete_upload(&state, &path.upload_id, claims.user_id, parts).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
 }
 
@@ -428,6 +449,43 @@ pub async fn cancel_upload(
 ) -> Result<HttpResponse> {
     upload_service::cancel_upload(&state, &path.upload_id, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+// ── Presign Parts (S3 Multipart) ────────────────────────────────────
+
+#[derive(Deserialize, ToSchema)]
+pub struct PresignPartsReq {
+    pub part_numbers: Vec<i32>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/files/upload/{upload_id}/presign-parts",
+    tag = "files",
+    operation_id = "presign_upload_parts",
+    params(("upload_id" = String, Path, description = "Upload session ID")),
+    request_body = PresignPartsReq,
+    responses(
+        (status = 200, description = "Presigned URLs for each part", body = inline(ApiResponse<std::collections::HashMap<i32, String>>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Session not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn presign_parts(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<UploadIdPath>,
+    body: web::Json<PresignPartsReq>,
+) -> Result<HttpResponse> {
+    let urls = upload_service::presign_parts(
+        &state,
+        &path.upload_id,
+        claims.user_id,
+        body.into_inner().part_numbers,
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(urls)))
 }
 
 // ── Content (Edit) ──────────────────────────────────────────────────

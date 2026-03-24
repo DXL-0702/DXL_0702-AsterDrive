@@ -21,6 +21,7 @@ interface FileCardProps {
 	) => void;
 	fading?: boolean;
 	draggable?: boolean;
+	thumbnailPath?: string;
 }
 
 export function FileCard({
@@ -33,6 +34,7 @@ export function FileCard({
 	onDrop,
 	fading,
 	draggable = true,
+	thumbnailPath,
 }: FileCardProps) {
 	const [dragOver, setDragOver] = useState(false);
 
@@ -104,7 +106,11 @@ export function FileCard({
 				{isFolder ? (
 					<Icon name="Folder" className="h-12 w-12 text-amber-500" />
 				) : (
-					<FileThumbnail file={item as FileInfo} size="lg" />
+					<FileThumbnail
+						file={item as FileInfo}
+						size="lg"
+						thumbnailPath={thumbnailPath}
+					/>
 				)}
 			</div>
 

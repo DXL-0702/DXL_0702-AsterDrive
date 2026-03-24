@@ -241,4 +241,145 @@ impl StorageDriver for S3Driver {
 
         Ok(dest_path.to_string())
     }
+
+    // ── S3 Multipart Upload ──────────────────────────────────────────
+
+    async fn create_multipart_upload(&self, path: &str) -> Result<String> {
+        let key = self.full_key(path);
+        let resp = self
+            .client
+            .create_multipart_upload()
+            .bucket(&self.bucket)
+            .key(&key)
+            .send()
+            .await
+            .map_aster_err_ctx(
+                "S3 create_multipart_upload failed",
+                AsterError::storage_driver_error,
+            )?;
+
+        resp.upload_id().map(|s| s.to_string()).ok_or_else(|| {
+            AsterError::storage_driver_error("S3 multipart upload: missing upload_id")
+        })
+    }
+
+    async fn presigned_upload_part_url(
+        &self,
+        path: &str,
+        upload_id: &str,
+        part_number: i32,
+        expires: Duration,
+    ) -> Result<String> {
+        let key = self.full_key(path);
+        let presign_config = PresigningConfig::builder()
+            .expires_in(expires)
+            .build()
+            .map_aster_err_ctx("presign config", AsterError::storage_driver_error)?;
+
+        let url = self
+            .client
+            .upload_part()
+            .bucket(&self.bucket)
+            .key(&key)
+            .upload_id(upload_id)
+            .part_number(part_number)
+            .presigned(presign_config)
+            .await
+            .map_aster_err_ctx(
+                "S3 presigned upload_part failed",
+                AsterError::storage_driver_error,
+            )?;
+
+        Ok(url.uri().to_string())
+    }
+
+    async fn complete_multipart_upload(
+        &self,
+        path: &str,
+        upload_id: &str,
+        parts: Vec<(i32, String)>,
+    ) -> Result<()> {
+        use aws_sdk_s3::types::{CompletedMultipartUpload, CompletedPart};
+
+        let completed_parts: Vec<CompletedPart> = parts
+            .into_iter()
+            .map(|(num, etag)| {
+                CompletedPart::builder()
+                    .part_number(num)
+                    .e_tag(etag)
+                    .build()
+            })
+            .collect();
+
+        let key = self.full_key(path);
+        self.client
+            .complete_multipart_upload()
+            .bucket(&self.bucket)
+            .key(&key)
+            .upload_id(upload_id)
+            .multipart_upload(
+                CompletedMultipartUpload::builder()
+                    .set_parts(Some(completed_parts))
+                    .build(),
+            )
+            .send()
+            .await
+            .map_aster_err_ctx(
+                "S3 complete_multipart_upload failed",
+                AsterError::storage_driver_error,
+            )?;
+
+        Ok(())
+    }
+
+    async fn abort_multipart_upload(&self, path: &str, upload_id: &str) -> Result<()> {
+        let key = self.full_key(path);
+        self.client
+            .abort_multipart_upload()
+            .bucket(&self.bucket)
+            .key(&key)
+            .upload_id(upload_id)
+            .send()
+            .await
+            .map_aster_err_ctx(
+                "S3 abort_multipart_upload failed",
+                AsterError::storage_driver_error,
+            )?;
+        Ok(())
+    }
+
+    async fn list_uploaded_parts(&self, path: &str, upload_id: &str) -> Result<Vec<i32>> {
+        let key = self.full_key(path);
+        let mut part_numbers = Vec::new();
+        let mut part_marker: Option<String> = None;
+
+        loop {
+            let mut req = self
+                .client
+                .list_parts()
+                .bucket(&self.bucket)
+                .key(&key)
+                .upload_id(upload_id);
+            if let Some(marker) = &part_marker {
+                req = req.part_number_marker(marker.as_str());
+            }
+
+            let resp = req
+                .send()
+                .await
+                .map_aster_err_ctx("S3 list_parts failed", AsterError::storage_driver_error)?;
+
+            for part in resp.parts() {
+                part_numbers.push(part.part_number.unwrap_or(0));
+            }
+
+            if resp.is_truncated() == Some(true) {
+                part_marker = resp.next_part_number_marker().map(|s| s.to_string());
+            } else {
+                break;
+            }
+        }
+
+        Ok(part_numbers)
+    }
 }

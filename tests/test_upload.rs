@@ -139,7 +139,7 @@ async fn test_chunked_upload_streaming_assembly_preserves_content() {
         .unwrap();
     assert_eq!(resp1.received_count, 2);
 
-    let file = upload_service::complete_upload(&state, &upload_id, user.id)
+    let file = upload_service::complete_upload(&state, &upload_id, user.id, None)
         .await
         .unwrap();
     assert_eq!(file.name, "streamed.txt");
@@ -212,7 +212,7 @@ async fn test_direct_and_chunked_upload_produce_same_blob_for_same_content() {
             .await
             .unwrap();
     }
-    let chunked_file = upload_service::complete_upload(&state, &upload_id, user.id)
+    let chunked_file = upload_service::complete_upload(&state, &upload_id, user.id, None)
         .await
         .unwrap();
 
@@ -492,7 +492,7 @@ async fn test_presigned_upload_s3_e2e() {
     );
 
     // 3. complete → 服务端 hash + dedup + 建记录
-    let file = upload_service::complete_upload(&state, &upload_id, user.id)
+    let file = upload_service::complete_upload(&state, &upload_id, user.id, None)
         .await
         .unwrap();
     assert_eq!(file.name, "hello.txt");
@@ -523,7 +523,7 @@ async fn test_presigned_upload_s3_e2e() {
         .await
         .unwrap();
     // 同名文件会冲突，用不同文件名
-    let file2 = upload_service::complete_upload(&state, &id2, user.id)
+    let file2 = upload_service::complete_upload(&state, &id2, user.id, None)
         .await
         .unwrap();
     assert_eq!(

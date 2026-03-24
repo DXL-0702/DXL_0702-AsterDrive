@@ -6,13 +6,18 @@ import { FileTypeIcon } from "./FileTypeIcon";
 interface FileThumbnailProps {
 	file: FileInfo;
 	size?: "sm" | "lg";
+	thumbnailPath?: string;
 }
 
-export function FileThumbnail({ file, size = "sm" }: FileThumbnailProps) {
+export function FileThumbnail({
+	file,
+	size = "sm",
+	thumbnailPath,
+}: FileThumbnailProps) {
 	const isImage =
 		file.mime_type.startsWith("image/") && file.mime_type !== "image/svg+xml";
 	const { blobUrl, error } = useBlobUrl(
-		isImage ? fileService.thumbnailPath(file.id) : null,
+		isImage ? (thumbnailPath ?? fileService.thumbnailPath(file.id)) : null,
 	);
 
 	if (size === "sm") {
