@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.4] - 2026-03-25
+
+### Release Highlights
+
+- 支持 S3 分片直传（presigned_multipart）及断点续传，提升大文件上传性能和稳定性
+- 重构回收站页面及功能，新增批量操作与拖拽删除功能
+- 文件预览新增内嵌 PDF 预览，支持分页、缩放、旋转及下载
+- 重构 WebDAV 账号管理页面，升级 UI 并完善国际化文案
+- 优化文件夹树缓存与交互，提高初始加载和操作响应速度
+- 设置页面改为响应式卡片布局，增强国际化支持
+- 大幅重构用户文档站点组织，迁移 API 与架构文档至 developer-docs
+- 多项安全加固，包括 Cookie Secure 标志、上传权限校验及并发更新防护
+- 性能优化和 bug 修复，包括上传流程、文件树交互及前端状态管理  
+
+### Added
+
+- presigned_multipart 上传模式批量预取签名、上传和状态持久化
+- 拖拽、快捷键、批量选择至回收站功能
+- react-pdf集成，内置 PDF 预览窗口和工具栏
+- 目录上传支持，前端拖拽/选择目录解析及后端相对路径递归创建
+- 审计日志清理及多项后台任务panic-safe封装
+- upload panel 进度条及分组显示  
+
+### Changed
+
+- 文档站重构，聚焦用户视角，优化导航和结构
+- 文件浏览器视图初始加载性能优化
+- 重写上传相关 hooks，移除冗余代码与无用接口
+- 将 iframe sandbox 限制提升安全性，限制脚本执行
+
+### Fixed
+
+- 修复 token 刷新失败后前端清理登录状态问题
+- 修正文件大小信息多处不一致与版本回归错误
+- 修复重名文件自动后缀问题
+- 修复上传状态互相覆盖与可能的并发冲突
+- 修正回收站路径过滤及回收站详情与同步问题  
+
+### Breaking Changes
+
+- API /api/v1/auth/login 请求字段由 username 调整为 identifier
+
+
 ## [v0.0.1-alpha.3] - 2026-03-24
 
 ### Release Highlights
@@ -298,6 +341,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
+[v0.0.1-alpha.4]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.3...v0.0.1-alpha.4
 [v0.0.1-alpha.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.2...v0.0.1-alpha.3
 [v0.0.1-alpha.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.1...v0.0.1-alpha.2
 [v0.0.1-alpha.1]: https://github.com/AptS-1547/AsterDrive/releases/tag/v0.0.1-alpha.1
