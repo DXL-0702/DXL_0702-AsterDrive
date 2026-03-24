@@ -87,7 +87,7 @@ impl FrontendService {
     fn get_content_type(path: &str) -> &'static str {
         match path.rsplit('.').next() {
             Some("css") => "text/css",
-            Some("js") => "application/javascript",
+            Some("js" | "mjs") => "application/javascript",
             Some("json") => "application/json",
             Some("webmanifest") => "application/manifest+json",
             Some("png") => "image/png",

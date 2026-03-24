@@ -4,7 +4,7 @@ import type { PreviewableFileLike } from "./types";
 
 interface BlobMediaPreviewProps {
 	file: PreviewableFileLike;
-	mode: "image" | "video" | "audio" | "pdf";
+	mode: "image" | "video" | "audio";
 	path: string;
 }
 
@@ -54,11 +54,5 @@ export function BlobMediaPreview({ file, mode, path }: BlobMediaPreviewProps) {
 		);
 	}
 
-	return (
-		<iframe
-			src={blobUrl}
-			title={file.name}
-			className="h-full w-full min-h-[70vh] rounded-lg"
-		/>
-	);
+	return null;
 }

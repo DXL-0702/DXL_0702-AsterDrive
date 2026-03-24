@@ -22,6 +22,7 @@ import {
 	getStoredOpenWithPreference,
 	setStoredOpenWithPreference,
 } from "./open-with-preferences";
+import { PdfPreview } from "./PdfPreview";
 import { PreviewModeSwitch } from "./PreviewModeSwitch";
 import { PreviewUnavailable } from "./PreviewUnavailable";
 import { TextCodePreview } from "./TextCodePreview";
@@ -58,6 +59,7 @@ export function FilePreviewDialog({
 	const [confirmOpen, setConfirmOpen] = useState(false);
 	const [pendingMode, setPendingMode] = useState<OpenWithMode | null>(null);
 	const activeMode = mode ?? preferredMode;
+	const usesInnerScroll = activeMode === "pdf";
 	const resolvedDownloadPath =
 		downloadPath ?? fileService.downloadPath(file.id);
 
@@ -98,11 +100,13 @@ export function FilePreviewDialog({
 
 	const body = (() => {
 		if (!activeMode) return <PreviewUnavailable />;
+		if (activeMode === "pdf") {
+			return <PdfPreview path={resolvedDownloadPath} fileName={file.name} />;
+		}
 		if (
 			activeMode === "image" ||
 			activeMode === "video" ||
-			activeMode === "audio" ||
-			activeMode === "pdf"
+			activeMode === "audio"
 		) {
 			return (
 				<BlobMediaPreview
@@ -189,9 +193,13 @@ export function FilePreviewDialog({
 							</span>
 						</div>
 					</div>
-					<ScrollArea className="min-h-0 flex-1 bg-muted/20">
-						<div className="h-full min-h-full w-full p-3">{body}</div>
-					</ScrollArea>
+					{usesInnerScroll ? (
+						<div className="min-h-0 flex-1 bg-muted/20 p-3">{body}</div>
+					) : (
+						<ScrollArea className="min-h-0 flex-1 bg-muted/20">
+							<div className="h-full min-h-full w-full p-3">{body}</div>
+						</ScrollArea>
+					)}
 				</DialogContent>
 			</Dialog>
 			<UnsavedChangesGuard
