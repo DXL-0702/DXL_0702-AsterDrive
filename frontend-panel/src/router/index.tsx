@@ -1,5 +1,6 @@
 import { lazy, Suspense } from "react";
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
+import ErrorPage from "@/pages/ErrorPage";
 import { useAuthStore } from "@/stores/authStore";
 
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
@@ -66,10 +67,12 @@ function LoginGuard() {
 export const router = createBrowserRouter([
 	{
 		element: <LoginGuard />,
+		errorElement: <ErrorPage />,
 		children: [{ path: "/login", element: <LoginPage /> }],
 	},
 	{
 		element: <ProtectedRoute />,
+		errorElement: <ErrorPage />,
 		children: [
 			{ path: "/", element: <FileBrowserPage /> },
 			{ path: "/folder/:folderId", element: <FileBrowserPage /> },
@@ -81,6 +84,7 @@ export const router = createBrowserRouter([
 	{
 		// Public share page — no auth required
 		path: "/s/:token",
+		errorElement: <ErrorPage />,
 		element: (
 			<Suspense fallback={<Loading />}>
 				<ShareViewPage />
@@ -89,6 +93,7 @@ export const router = createBrowserRouter([
 	},
 	{
 		element: <AdminRoute />,
+		errorElement: <ErrorPage />,
 		children: [
 			{ path: "/admin", element: <Navigate to="/admin/users" replace /> },
 			{ path: "/admin/users", element: <AdminUsersPage /> },
@@ -99,4 +104,5 @@ export const router = createBrowserRouter([
 			{ path: "/admin/audit", element: <AdminAuditPage /> },
 		],
 	},
+	{ path: "*", element: <ErrorPage /> },
 ]);

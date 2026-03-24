@@ -36,6 +36,7 @@ import {
 	PiGlobe,
 	PiGridFour,
 	PiHardDrive,
+	PiHouse,
 	PiLink,
 	PiLinkSimple,
 	PiList,
@@ -58,6 +59,7 @@ import {
 	PiTrash,
 	PiUploadSimple,
 	PiWarning,
+	PiWarningCircle,
 	PiWifiHigh,
 	PiX,
 } from "react-icons/pi";
@@ -76,6 +78,7 @@ export type IconName =
 	| "CaretRight"
 	| "CaretUp"
 	| "Check"
+	| "CircleAlert"
 	| "ClipboardText"
 	| "Clock"
 	| "Cloud"
@@ -98,6 +101,7 @@ export type IconName =
 	| "Globe"
 	| "Grid"
 	| "HardDrive"
+	| "House"
 	| "Link"
 	| "LinkSimple"
 	| "List"
@@ -138,6 +142,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	CaretRight: PiCaretRight,
 	CaretUp: PiCaretUp,
 	Check: PiCheck,
+	CircleAlert: PiWarningCircle,
 	ClipboardText: PiClipboardText,
 	Clock: PiClockCounterClockwise,
 	Cloud: PiCloud,
@@ -160,6 +165,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	Globe: PiGlobe,
 	Grid: PiGridFour,
 	HardDrive: PiHardDrive,
+	House: PiHouse,
 	Link: PiLink,
 	LinkSimple: PiLinkSimple,
 	List: PiList,

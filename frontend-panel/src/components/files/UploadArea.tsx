@@ -15,6 +15,7 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { formatBytes } from "@/lib/format";
 import {
+	appendCompletedPart,
 	loadSessions,
 	removeSession,
 	saveSession,
@@ -22,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { api } from "@/services/http";
 import {
+	type CompletedPart,
 	type InitUploadResponse,
 	uploadService,
 } from "@/services/uploadService";
@@ -42,7 +44,7 @@ export interface UploadAreaHandle {
 	triggerFolderUpload: () => void;
 }
 
-type UploadMode = "direct" | "chunked" | "presigned";
+type UploadMode = "direct" | "chunked" | "presigned" | "presigned_multipart";
 type UploadStatus =
 	| "pending_file"
 	| "queued"
@@ -199,7 +201,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							relativePath: session.relativePath,
 							baseFolderId: session.baseFolderId,
 							baseFolderName: session.baseFolderName,
-							mode: "chunked",
+							mode: (session.mode ?? "chunked") as UploadMode,
 							status: "pending_file",
 							progress: 0,
 							error: null,
@@ -493,6 +495,140 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			[finalizeTaskRefresh, markTaskFailed, patchTask, t],
 		);
 
+		const runMultipartUpload = useCallback(
+			async (
+				task: UploadTask,
+				init: InitUploadResponse,
+				alreadyCompleted: CompletedPart[] = [],
+			) => {
+				const uploadId = init.upload_id as string;
+				const chunkSize = init.chunk_size as number;
+				const totalChunks = init.total_chunks as number;
+				abortFlagsRef.current.set(task.id, false);
+
+				const collectedParts: CompletedPart[] = [...alreadyCompleted];
+				const completedSet = new Set(
+					alreadyCompleted.map((p) => p.part_number),
+				);
+
+				patchTask(task.id, {
+					mode: "presigned_multipart" as UploadMode,
+					status: "uploading",
+					uploadId,
+					totalChunks,
+					completedChunks: completedSet.size,
+					progress: Math.round((completedSet.size / totalChunks) * 90),
+				});
+
+				// S3 multipart parts are 1-indexed
+				const queue = Array.from(
+					{ length: totalChunks },
+					(_, i) => i + 1,
+				).filter((n) => !completedSet.has(n));
+
+				// 分批请求 presigned URLs（每批最多 50 个）
+				const BATCH_SIZE = 50;
+				let urlCache: Record<number, string> = {};
+
+				const getPartUrl = async (partNum: number): Promise<string> => {
+					if (urlCache[partNum]) return urlCache[partNum];
+					// 预取当前 part 后面的一批
+					const idx = queue.indexOf(partNum);
+					const batch =
+						idx >= 0 ? queue.slice(idx, idx + BATCH_SIZE) : [partNum];
+					const urls = await uploadService.presignParts(uploadId, batch);
+					urlCache = { ...urlCache, ...urls };
+					return urlCache[partNum];
+				};
+
+				let completed = completedSet.size;
+
+				const uploadOnePart = async () => {
+					while (queue.length > 0) {
+						if (abortFlagsRef.current.get(task.id)) return;
+						const partNum = queue.shift();
+						if (partNum === undefined) return;
+
+						const start = (partNum - 1) * chunkSize;
+						const end = Math.min(start + chunkSize, task.file!.size);
+						const blob = task.file!.slice(start, end);
+
+						let lastError: Error | null = null;
+						for (let attempt = 0; attempt < CHUNK_MAX_RETRIES; attempt++) {
+							try {
+								const url = await getPartUrl(partNum);
+								const etag = await uploadService.presignedUpload(url, blob);
+								const part: CompletedPart = {
+									part_number: partNum,
+									etag: etag.replace(/"/g, ""),
+								};
+								collectedParts.push(part);
+								appendCompletedPart(uploadId, part);
+								lastError = null;
+								break;
+							} catch (error) {
+								lastError =
+									error instanceof Error ? error : new Error(String(error));
+								// URL 可能过期，清缓存重新获取
+								delete urlCache[partNum];
+								if (attempt < CHUNK_MAX_RETRIES - 1) {
+									await new Promise((resolve) =>
+										setTimeout(resolve, 1000 * 2 ** attempt),
+									);
+								}
+							}
+						}
+
+						if (lastError) throw lastError;
+						completed += 1;
+						patchTask(task.id, {
+							completedChunks: completed,
+							progress: Math.round((completed / totalChunks) * 90),
+						});
+					}
+				};
+
+				try {
+					const workers = Array.from(
+						{ length: Math.min(CHUNK_CONCURRENT, queue.length || 1) },
+						() => uploadOnePart(),
+					);
+					await Promise.all(workers);
+
+					if (abortFlagsRef.current.get(task.id)) {
+						patchTask(task.id, { status: "cancelled", error: null });
+						return;
+					}
+
+					patchTask(task.id, { status: "processing", progress: 90 });
+
+					// 按 part_number 排序后发送
+					collectedParts.sort((a, b) => a.part_number - b.part_number);
+					await uploadService.completeUpload(uploadId, collectedParts);
+					removeSession(uploadId);
+					patchTask(task.id, {
+						status: "completed",
+						progress: 100,
+						error: null,
+					});
+					finalizeTaskRefresh(task);
+				} catch (error) {
+					if (abortFlagsRef.current.get(task.id)) {
+						patchTask(task.id, { status: "cancelled", error: null });
+						return;
+					}
+					const message =
+						error instanceof Error
+							? error.message
+							: t("common:unexpected_error");
+					markTaskFailed(task.id, message);
+				} finally {
+					abortFlagsRef.current.delete(task.id);
+				}
+			},
+			[finalizeTaskRefresh, markTaskFailed, patchTask, t],
+		);
+
 		const runTask = useCallback(
 			async (taskId: string) => {
 				const task = tasksRef.current.find((item) => item.id === taskId);
@@ -501,20 +637,43 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 				patchTask(taskId, { status: "initializing", error: null, progress: 0 });
 				try {
-					if (task.mode === "chunked" && task.uploadId) {
+					// ── Resume 路径：chunked 或 presigned_multipart 有 uploadId ──
+					if (
+						task.uploadId &&
+						(task.mode === "chunked" || task.mode === "presigned_multipart")
+					) {
 						try {
 							const progress = await uploadService.getProgress(task.uploadId);
-							const resumedInit: InitUploadResponse = {
-								mode: "chunked",
-								upload_id: task.uploadId,
-								chunk_size: Math.ceil(file.size / progress.total_chunks),
-								total_chunks: progress.total_chunks,
-							};
-							await runChunkedUpload(
-								task,
-								resumedInit,
-								progress.chunks_on_disk,
-							);
+							if (task.mode === "chunked") {
+								const resumedInit: InitUploadResponse = {
+									mode: "chunked",
+									upload_id: task.uploadId,
+									chunk_size: Math.ceil(file.size / progress.total_chunks),
+									total_chunks: progress.total_chunks,
+								};
+								await runChunkedUpload(
+									task,
+									resumedInit,
+									progress.chunks_on_disk,
+								);
+							} else {
+								// presigned_multipart resume — 从 localStorage 读已完成 parts
+								const sessions = loadSessions();
+								const saved = sessions.find(
+									(s) => s.uploadId === task.uploadId,
+								);
+								const resumedInit: InitUploadResponse = {
+									mode: "presigned_multipart",
+									upload_id: task.uploadId,
+									chunk_size: Math.ceil(file.size / progress.total_chunks),
+									total_chunks: progress.total_chunks,
+								};
+								await runMultipartUpload(
+									task,
+									resumedInit,
+									saved?.completedParts ?? [],
+								);
+							}
 							return;
 						} catch {
 							patchTask(taskId, {
@@ -526,14 +685,18 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						}
 					}
 
+					// ── Fresh init 路径 ──
 					const init = await uploadService.initUpload({
 						filename: file.name,
 						total_size: file.size,
 						folder_id: task.baseFolderId,
 						relative_path: task.relativePath ?? undefined,
 					});
-					// 持久化 chunked session（刷新后可恢复）
-					if (init.mode === "chunked" && init.upload_id) {
+					// 持久化可恢复的 session（chunked 和 presigned_multipart）
+					if (
+						(init.mode === "chunked" || init.mode === "presigned_multipart") &&
+						init.upload_id
+					) {
 						saveSession({
 							uploadId: init.upload_id,
 							filename: file.name,
@@ -544,10 +707,16 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							baseFolderName: task.baseFolderName,
 							relativePath: task.relativePath,
 							savedAt: Date.now(),
+							mode:
+								init.mode === "presigned_multipart"
+									? "presigned_multipart"
+									: "chunked",
 						});
 					}
 					if (init.mode === "chunked") {
 						await runChunkedUpload(task, init);
+					} else if (init.mode === "presigned_multipart") {
+						await runMultipartUpload(task, init);
 					} else if (init.mode === "presigned") {
 						await runPresignedUpload(task, init);
 					} else {
@@ -568,6 +737,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				patchTask,
 				runChunkedUpload,
 				runDirectUpload,
+				runMultipartUpload,
 				runPresignedUpload,
 				t,
 			],
@@ -639,7 +809,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					status: "queued",
 					progress: 0,
 					error: null,
-					...(task.mode === "chunked"
+					...(task.mode === "chunked" || task.mode === "presigned_multipart"
 						? {}
 						: {
 								uploadId: null,
@@ -779,7 +949,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			const modeLabel =
 				task.mode === "chunked"
 					? "Chunked"
-					: task.mode === "presigned"
+					: task.mode === "presigned" || task.mode === "presigned_multipart"
 						? "S3"
 						: task.mode === "direct"
 							? "Direct"
@@ -809,7 +979,8 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					}))
 				: task.status === "failed"
 					? (task.error ?? t("files:upload_failed"))
-					: task.mode === "chunked" && task.status === "uploading"
+					: (task.mode === "chunked" || task.mode === "presigned_multipart") &&
+							task.status === "uploading"
 						? t("files:upload_chunk_status", {
 								current: task.completedChunks ?? 0,
 								total: task.totalChunks ?? 0,

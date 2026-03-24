@@ -13,6 +13,10 @@ export interface ResumableSession {
 	baseFolderName: string;
 	relativePath: string | null;
 	savedAt: number;
+	/** "chunked" (本地分片) 或 "presigned_multipart" (S3 分片直传) */
+	mode?: "chunked" | "presigned_multipart";
+	/** S3 multipart: 已上传 part 的 {partNumber, etag} */
+	completedParts?: { part_number: number; etag: string }[];
 }
 
 const STORAGE_KEY = "aster_resumable_uploads";
@@ -47,6 +51,22 @@ export function saveSession(session: ResumableSession): void {
 /** 移除一个 session（complete/cancel/永久删除时调用） */
 export function removeSession(uploadId: string): void {
 	writeAll(readAll().filter((s) => s.uploadId !== uploadId));
+}
+
+/** 追加已完成的 part 到 session（S3 multipart 每上传完一个 part 调用） */
+export function appendCompletedPart(
+	uploadId: string,
+	part: { part_number: number; etag: string },
+): void {
+	const all = readAll();
+	const session = all.find((s) => s.uploadId === uploadId);
+	if (!session) return;
+	const parts = session.completedParts ?? [];
+	if (!parts.some((p) => p.part_number === part.part_number)) {
+		parts.push(part);
+		session.completedParts = parts;
+		writeAll(all);
+	}
 }
 
 /** 加载所有未过期的 session，自动清理过期的 */

@@ -3,7 +3,7 @@ import type { FileInfo } from "@/types/api";
 import { api } from "./http";
 
 export interface InitUploadResponse {
-	mode: "direct" | "chunked" | "presigned";
+	mode: "direct" | "chunked" | "presigned" | "presigned_multipart";
 	upload_id?: string;
 	chunk_size?: number;
 	total_chunks?: number;
@@ -22,6 +22,11 @@ export interface UploadProgressResponse {
 	chunks_on_disk: number[];
 	total_chunks: number;
 	filename: string;
+}
+
+export interface CompletedPart {
+	part_number: number;
+	etag: string;
 }
 
 export const uploadService = {
@@ -70,8 +75,11 @@ export const uploadService = {
 		});
 	},
 
-	completeUpload: (uploadId: string) =>
-		api.post<FileInfo>(`/files/upload/${uploadId}/complete`),
+	completeUpload: (uploadId: string, parts?: CompletedPart[]) =>
+		api.post<FileInfo>(
+			`/files/upload/${uploadId}/complete`,
+			parts ? { parts } : undefined,
+		),
 
 	cancelUpload: (uploadId: string) =>
 		api.delete<void>(`/files/upload/${uploadId}`),
@@ -79,13 +87,22 @@ export const uploadService = {
 	getProgress: (uploadId: string) =>
 		api.get<UploadProgressResponse>(`/files/upload/${uploadId}`),
 
-	/** PUT 直传 S3 presigned URL */
+	/** 批量获取 S3 multipart part presigned URLs */
+	presignParts: (uploadId: string, partNumbers: number[]) =>
+		api.post<Record<number, string>>(
+			`/files/upload/${uploadId}/presign-parts`,
+			{
+				part_numbers: partNumbers,
+			},
+		),
+
+	/** PUT 直传 S3 presigned URL（单次 PUT，用于小文件或单个 part） */
 	presignedUpload: (
 		presignedUrl: string,
-		file: File,
+		file: File | Blob,
 		onProgress?: (loaded: number, total: number) => void,
 		onCreateXhr?: (xhr: XMLHttpRequest) => void,
-	): Promise<void> => {
+	): Promise<string> => {
 		return new Promise((resolve, reject) => {
 			const xhr = new XMLHttpRequest();
 			onCreateXhr?.(xhr);
@@ -100,7 +117,18 @@ export const uploadService = {
 
 			xhr.onload = () => {
 				if (xhr.status >= 200 && xhr.status < 300) {
-					resolve();
+					// S3 returns ETag in response header
+					// CORS must expose ETag: bucket config needs ExposeHeaders: ["ETag"]
+					const etag = xhr.getResponseHeader("ETag") ?? "";
+					if (!etag) {
+						reject(
+							new Error(
+								"S3 did not return ETag header. Check bucket CORS ExposeHeaders configuration.",
+							),
+						);
+						return;
+					}
+					resolve(etag);
 				} else {
 					reject(new Error(`S3 upload failed: ${xhr.status}`));
 				}

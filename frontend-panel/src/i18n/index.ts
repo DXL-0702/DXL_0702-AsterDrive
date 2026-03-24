@@ -41,6 +41,8 @@ i18n
 			caches: ["localStorage"],
 		},
 		interpolation: { escapeValue: false },
+		// 关掉 i18next 的广告
+		showSupportNotice: false,
 	});
 
 export default i18n;
