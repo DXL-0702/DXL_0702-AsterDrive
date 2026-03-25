@@ -75,32 +75,26 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
         user.username
     );
 
-    // 1. 永久删除所有文件（含软删除的）
+    // 1. 永久删除所有文件（批量：一次事务 + 并行物理清理）
     let all_files = file_repo::find_all_by_user(db, target_user_id).await?;
-    for f in &all_files {
-        if let Err(e) = crate::services::file_service::purge(state, f.id, target_user_id).await {
-            tracing::warn!("failed to purge file #{}: {e}", f.id);
-        }
+    let file_count = all_files.len();
+    if let Err(e) =
+        crate::services::file_service::batch_purge(state, all_files, target_user_id).await
+    {
+        tracing::warn!("batch purge files for user #{target_user_id} failed: {e}");
     }
 
-    // 2. 删除所有文件夹（+ 属性）
+    // 2. 删除所有文件夹（批量属性清理 + 批量硬删除）
     let all_folders = folder_repo::find_all_by_user(db, target_user_id).await?;
-    for f in &all_folders {
-        // 清理属性
-        if let Err(e) = crate::db::repository::property_repo::delete_all_for_entity(
-            db,
-            crate::types::EntityType::Folder,
-            f.id,
-        )
-        .await
-        {
-            tracing::warn!("failed to delete properties for folder #{}: {e}", f.id);
-        }
-        // 硬删除
-        if let Err(e) = crate::db::repository::folder_repo::delete(db, f.id).await {
-            tracing::warn!("failed to delete folder #{}: {e}", f.id);
-        }
-    }
+    let folder_count = all_folders.len();
+    let folder_ids: Vec<i64> = all_folders.iter().map(|f| f.id).collect();
+    crate::db::repository::property_repo::delete_all_for_entities(
+        db,
+        crate::types::EntityType::Folder,
+        &folder_ids,
+    )
+    .await?;
+    folder_repo::delete_many(db, &folder_ids).await?;
 
     // 3. 删除所有分享链接
     share_repo::delete_all_by_user(db, target_user_id).await?;
@@ -143,8 +137,8 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
         "force-deleted user #{} ({}) and all associated data ({} files, {} folders)",
         user.id,
         user.username,
-        all_files.len(),
-        all_folders.len(),
+        file_count,
+        folder_count,
     );
 
     Ok(())

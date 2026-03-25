@@ -410,6 +410,23 @@ pub async fn restore<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// 批量恢复：一次 UPDATE 清除多个文件的 deleted_at
+pub async fn restore_many<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    File::update_many()
+        .col_expr(
+            file::Column::DeletedAt,
+            Expr::value(Option::<chrono::DateTime<Utc>>::None),
+        )
+        .filter(file::Column::Id.is_in(ids.to_vec()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
 /// 查询用户回收站中的文件
 pub async fn find_deleted_by_user<C: ConnectionTrait>(
     db: &C,

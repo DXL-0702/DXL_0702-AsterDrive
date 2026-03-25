@@ -226,6 +226,23 @@ pub async fn restore<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// 批量恢复：一次 UPDATE 清除多个文件夹的 deleted_at
+pub async fn restore_many<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    Folder::update_many()
+        .col_expr(
+            folder::Column::DeletedAt,
+            sea_orm::sea_query::Expr::value(Option::<chrono::DateTime<Utc>>::None),
+        )
+        .filter(folder::Column::Id.is_in(ids.to_vec()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
 /// 查询用户回收站中的文件夹（只查顶层被删除的，不含子目录）
 pub async fn find_deleted_by_user<C: ConnectionTrait>(
     db: &C,

@@ -1,3 +1,4 @@
+use sea_orm::TransactionTrait;
 use serde::Serialize;
 use utoipa::ToSchema;
 
@@ -195,24 +196,29 @@ pub async fn restore_folder(state: &AppState, id: i64, user_id: i64) -> Result<(
     recursive_restore(&state.db, user_id, id).await
 }
 
-/// 递归恢复子文件和子文件夹
+/// 批量恢复子文件和子文件夹
+///
+/// 先收集所有子文件和文件夹 ID，再一次事务内批量 restore。
 async fn recursive_restore(
     db: &sea_orm::DatabaseConnection,
     user_id: i64,
     folder_id: i64,
 ) -> Result<()> {
-    // 恢复该文件夹下的已删除文件（精确查询，不查全量）
-    let deleted_files = file_repo::find_deleted_in_folder(db, folder_id).await?;
-    for f in deleted_files {
-        file_repo::restore(db, f.id).await?;
-    }
+    // 收集所有子项（含已删除），restore_many 对未删除项无害
+    let (files, folder_ids) =
+        webdav_service::collect_folder_tree(db, user_id, folder_id, true).await?;
 
-    // 恢复已删除的子文件夹
-    let deleted_folders = folder_repo::find_deleted_children(db, folder_id).await?;
-    for child in deleted_folders {
-        folder_repo::restore(db, child.id).await?;
-        Box::pin(recursive_restore(db, user_id, child.id)).await?;
-    }
+    // 不含当前 folder_id（调用方已单独处理）
+    let child_folder_ids: Vec<i64> = folder_ids
+        .into_iter()
+        .filter(|&id| id != folder_id)
+        .collect();
+    let file_ids: Vec<i64> = files.into_iter().map(|f| f.id).collect();
+
+    let txn = db.begin().await.map_err(AsterError::from)?;
+    file_repo::restore_many(&txn, &file_ids).await?;
+    folder_repo::restore_many(&txn, &child_folder_ids).await?;
+    txn.commit().await.map_err(AsterError::from)?;
 
     Ok(())
 }
