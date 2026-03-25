@@ -333,20 +333,20 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 		<div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
 			<div className="border-b bg-muted/30 px-2.5 py-2">
 				<div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-						<Icon name="FileText" className="h-3.5 w-3.5" />
-						<span>PDF</span>
-						{numPages !== null && (
-							<>
-								<span>·</span>
-								<span className="tabular-nums">
-									{t("pdf_page_count", { count: numPages })}
-								</span>
-								<span>·</span>
-								<span className="tabular-nums">
-									{t("pdf_page_of_total", { page: currentPage, count: numPages })}
-								</span>
-							</>
-						)}
+					<Icon name="FileText" className="h-3.5 w-3.5" />
+					<span>PDF</span>
+					{numPages !== null && (
+						<>
+							<span>·</span>
+							<span className="tabular-nums">
+								{t("pdf_page_count", { count: numPages })}
+							</span>
+							<span>·</span>
+							<span className="tabular-nums">
+								{t("pdf_page_of_total", { page: currentPage, count: numPages })}
+							</span>
+						</>
+					)}
 				</div>
 				<div className="mt-2 flex flex-wrap items-center gap-1.5">
 					<div className="flex items-center gap-1 rounded-lg border bg-background/80 p-0.5">
