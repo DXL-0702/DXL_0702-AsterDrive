@@ -284,23 +284,39 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
     let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days);
     let mut count: u32 = 0;
 
-    // 清理过期文件
+    // 清理过期文件（批量）
     let expired_files = file_repo::find_expired_deleted(&state.db, cutoff).await?;
-    for f in &expired_files {
-        if let Err(e) = file_service::purge(state, f.id, f.user_id).await {
-            tracing::warn!("trash cleanup file {} failed: {e}", f.id);
+    let expired_file_count = expired_files.len() as u32;
+    // 按 user_id 分组批量 purge
+    let mut by_user: std::collections::HashMap<i64, Vec<file::Model>> =
+        std::collections::HashMap::new();
+    for f in expired_files {
+        by_user.entry(f.user_id).or_default().push(f);
+    }
+    for (uid, files) in by_user {
+        if let Err(e) = file_service::batch_purge(state, files, uid).await {
+            tracing::warn!("trash cleanup expired files for user #{uid} failed: {e}");
         }
     }
-    count += expired_files.len() as u32;
+    count += expired_file_count;
 
-    // 清理过期文件夹
+    // 清理过期文件夹——只处理顶层（父文件夹也过期则由父递归处理，避免重复）
     let expired_folders = folder_repo::find_expired_deleted(&state.db, cutoff).await?;
-    for f in &expired_folders {
+    let expired_folder_ids: std::collections::HashSet<i64> =
+        expired_folders.iter().map(|f| f.id).collect();
+    let top_level_folders: Vec<&folder::Model> = expired_folders
+        .iter()
+        .filter(|f| {
+            f.parent_id
+                .map_or(true, |pid| !expired_folder_ids.contains(&pid))
+        })
+        .collect();
+    for f in &top_level_folders {
         if let Err(e) = webdav_service::recursive_purge_folder(state, f.user_id, f.id).await {
             tracing::warn!("trash cleanup folder {} failed: {e}", f.id);
         }
     }
-    count += expired_folders.len() as u32;
+    count += top_level_folders.len() as u32;
 
     if count > 0 {
         tracing::info!("trash cleanup: purged {count} expired items (retention={retention_days}d)");

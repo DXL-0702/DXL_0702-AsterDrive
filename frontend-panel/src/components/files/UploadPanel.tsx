@@ -1,3 +1,5 @@
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { UploadTaskItem } from "@/components/files/UploadTaskItem";
 import { Button } from "@/components/ui/button";
@@ -49,6 +51,23 @@ interface UploadPanelProps {
 	clearCompletedLabel?: string;
 }
 
+type FlatRow =
+	| {
+			type: "group-header";
+			key: string;
+			group: string;
+			targetLabel?: string;
+			batchStatus: string;
+			total: number;
+			success: number;
+			failed: number;
+			active: number;
+	  }
+	| { type: "task"; key: string; task: UploadTaskView };
+
+const ROW_HEIGHT_TASK = 92;
+const ROW_HEIGHT_GROUP = 52;
+
 export function UploadPanel({
 	open,
 	onToggle,
@@ -67,47 +86,65 @@ export function UploadPanel({
 	clearCompletedLabel,
 }: UploadPanelProps) {
 	const { t } = useTranslation("files");
-	const groupedTasks = tasks.reduce<Record<string, UploadTaskView[]>>(
-		(acc, task) => {
-			const key = task.group ?? "";
-			acc[key] ??= [];
-			acc[key].push(task);
-			return acc;
-		},
-		{},
-	);
+	const scrollRef = useRef<HTMLDivElement>(null);
 
-	const groupedEntries = Object.entries(groupedTasks).map(
-		([group, groupTasks]) => {
-			const success = groupTasks.filter((task) => task.completed).length;
-			const failed = groupTasks.filter((task) =>
-				task.actions?.some((action) => action.icon === "ArrowsClockwise"),
-			).length;
-			const active = groupTasks.filter(
-				(task) =>
-					!task.completed &&
-					!task.actions?.some((action) => action.icon === "ArrowsClockwise"),
-			).length;
-			return {
+	// ── 展平分组为虚拟列表行 ──
+	const flatRows = useMemo<FlatRow[]>(() => {
+		const grouped: Record<string, UploadTaskView[]> = {};
+		for (const task of tasks) {
+			const key = task.group ?? "";
+			if (!grouped[key]) grouped[key] = [];
+			grouped[key].push(task);
+		}
+
+		const rows: FlatRow[] = [];
+		for (const [group, groupTasks] of Object.entries(grouped)) {
+			let success = 0;
+			let failed = 0;
+			let active = 0;
+			for (const task of groupTasks) {
+				if (task.completed) success++;
+				else if (task.actions?.some((a) => a.icon === "ArrowsClockwise"))
+					failed++;
+				else active++;
+			}
+			const batchStatus =
+				active > 0 ? "active" : failed > 0 ? "partial_failed" : "done";
+
+			rows.push({
+				type: "group-header",
+				key: `gh-${group || "root"}`,
 				group,
-				groupTasks,
+				targetLabel: groupTasks[0]?.targetLabel,
+				batchStatus,
+				total: groupTasks.length,
 				success,
 				failed,
 				active,
-				total: groupTasks.length,
-				targetLabel: groupTasks[0]?.targetLabel,
-				batchStatus:
-					active > 0 ? "active" : failed > 0 ? "partial_failed" : "done",
-			};
-		},
-	);
+			});
+			for (const task of groupTasks) {
+				rows.push({ type: "task", key: task.id, task });
+			}
+		}
+		return rows;
+	}, [tasks]);
+
+	const virtualizer = useVirtualizer({
+		count: flatRows.length,
+		getScrollElement: () => scrollRef.current,
+		estimateSize: (index) =>
+			flatRows[index].type === "group-header"
+				? ROW_HEIGHT_GROUP
+				: ROW_HEIGHT_TASK,
+		overscan: 5,
+	});
 
 	return (
-		<div className="absolute right-4 bottom-4 z-40 w-[22rem] max-w-[calc(100vw-2rem)]">
+		<div className="absolute right-4 bottom-4 z-40 w-[28rem] max-w-[calc(100vw-2rem)]">
 			<Card
 				size="sm"
 				className={`flex flex-col overflow-hidden shadow-xl backdrop-blur-sm ${
-					open ? "h-[min(32rem,calc(100vh-6rem))]" : ""
+					open ? "h-[min(42rem,calc(100vh-6rem))]" : ""
 				}`}
 			>
 				<CardHeader className="border-b">
@@ -164,62 +201,42 @@ export function UploadPanel({
 							</div>
 						</div>
 						<CardContent className="min-h-0 flex-1 overflow-hidden p-0">
-							<ScrollArea className="h-full">
-								<div className="space-y-2 p-3">
-									{tasks.length === 0 ? (
-										<div className="py-8 text-center text-sm text-muted-foreground">
-											{emptyText}
-										</div>
-									) : (
-										groupedEntries.map(
-											({
-												group,
-												groupTasks,
-												success,
-												failed,
-												active,
-												total,
-												targetLabel,
-												batchStatus,
-											}) => (
-												<div key={group || "root"} className="space-y-2">
-													<div className="space-y-1 px-1 text-[11px] text-muted-foreground">
-														<div className="flex items-center justify-between gap-2">
-															<div className="min-w-0 truncate font-medium">
-																{group || t("root")}
-															</div>
-															<div className="shrink-0">
-																{batchStatus === "active"
-																	? t("upload_batch_active")
-																	: batchStatus === "partial_failed"
-																		? t("upload_batch_partial_failed")
-																		: t("upload_batch_done")}
-															</div>
-														</div>
-														<div className="flex items-center justify-between gap-2">
-															<div className="min-w-0 truncate">
-																{t("upload_target_location")}：
-																{targetLabel ?? t("upload_target_current")}
-															</div>
-															<div className="shrink-0">
-																{t("upload_group_stats", {
-																	total,
-																	success,
-																	failed,
-																	active,
-																})}
-															</div>
-														</div>
-													</div>
-													{groupTasks.map((task) => (
-														<UploadTaskItem key={task.id} {...task} />
-													))}
-												</div>
-											),
-										)
-									)}
+							{tasks.length === 0 ? (
+								<div className="py-8 text-center text-sm text-muted-foreground">
+									{emptyText}
 								</div>
-							</ScrollArea>
+							) : (
+								<ScrollArea ref={scrollRef} className="h-full">
+									<div
+										className="relative px-3"
+										style={{
+											height: virtualizer.getTotalSize(),
+										}}
+									>
+										{virtualizer.getVirtualItems().map((virtualRow) => {
+											const row = flatRows[virtualRow.index];
+											return (
+												<div
+													key={row.key}
+													className="absolute left-3 right-3"
+													style={{
+														height: virtualRow.size,
+														transform: `translateY(${virtualRow.start}px)`,
+													}}
+												>
+													{row.type === "group-header" ? (
+														<GroupHeader row={row} t={t} />
+													) : (
+														<div className="pt-2">
+															<UploadTaskItem {...row.task} />
+														</div>
+													)}
+												</div>
+											);
+										})}
+									</div>
+								</ScrollArea>
+							)}
 						</CardContent>
 						<CardFooter className="shrink-0 justify-end gap-2 border-t">
 							{onRetryFailed && retryFailedLabel && failedCount > 0 && (
@@ -236,6 +253,45 @@ export function UploadPanel({
 					</>
 				)}
 			</Card>
+		</div>
+	);
+}
+
+function GroupHeader({
+	row,
+	t,
+}: {
+	row: Extract<FlatRow, { type: "group-header" }>;
+	t: (key: string, opts?: Record<string, unknown>) => string;
+}) {
+	return (
+		<div className="space-y-1 px-1 pt-3 text-[11px] text-muted-foreground">
+			<div className="flex items-center justify-between gap-2">
+				<div className="min-w-0 truncate font-medium">
+					{row.group || t("root")}
+				</div>
+				<div className="shrink-0">
+					{row.batchStatus === "active"
+						? t("upload_batch_active")
+						: row.batchStatus === "partial_failed"
+							? t("upload_batch_partial_failed")
+							: t("upload_batch_done")}
+				</div>
+			</div>
+			<div className="flex items-center justify-between gap-2">
+				<div className="min-w-0 truncate">
+					{t("upload_target_location")}：
+					{row.targetLabel ?? t("upload_target_current")}
+				</div>
+				<div className="shrink-0">
+					{t("upload_group_stats", {
+						total: row.total,
+						success: row.success,
+						failed: row.failed,
+						active: row.active,
+					})}
+				</div>
+			</div>
 		</div>
 	);
 }

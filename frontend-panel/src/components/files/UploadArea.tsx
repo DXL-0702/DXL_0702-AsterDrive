@@ -60,6 +60,7 @@ type UploadStatus =
 interface UploadTask {
 	id: string;
 	file: File | null;
+	filename: string;
 	relativePath: string | null;
 	baseFolderId: number | null;
 	baseFolderName: string;
@@ -76,7 +77,6 @@ const MAX_FILE_CONCURRENT = 2;
 const CHUNK_CONCURRENT = 3;
 const CHUNK_MAX_RETRIES = 3;
 const PROGRESS_FLUSH_INTERVAL = 500;
-const MAX_FINISHED_TASKS = 50;
 
 /** completeUpload with polling retry when backend is still assembling (3011) */
 async function completeWithRetry(
@@ -275,6 +275,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						ghostTasks.push({
 							id: createTaskId(),
 							file: null,
+							filename: session.filename,
 							relativePath: session.relativePath,
 							baseFolderId: session.baseFolderId,
 							baseFolderName: session.baseFolderName,
@@ -858,40 +859,6 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			});
 		}, [runTask, tasks]);
 
-		// ── 自动清理：已完成/已取消的 task 超过上限时移除最旧的 ──
-		useEffect(() => {
-			const finishedStatuses: UploadStatus[] = ["completed", "cancelled"];
-			const finishedCount = tasks.filter((task) =>
-				finishedStatuses.includes(task.status),
-			).length;
-			if (finishedCount <= MAX_FINISHED_TASKS) return;
-			// tasks 数组中靠后的是先加入的（addFiles 用 prepend）
-			// 从尾部开始移除最旧的已完成 task
-			const toRemove = finishedCount - MAX_FINISHED_TASKS;
-			let removed = 0;
-			const keepSet = new Set<string>();
-			// 从尾部扫描，标记要移除的
-			for (let i = tasks.length - 1; i >= 0 && removed < toRemove; i--) {
-				if (finishedStatuses.includes(tasks[i].status)) {
-					removed++;
-				} else {
-					keepSet.add(tasks[i].id);
-				}
-			}
-			setTasks((prev) => {
-				let r = 0;
-				const result: UploadTask[] = [];
-				for (let i = prev.length - 1; i >= 0; i--) {
-					if (finishedStatuses.includes(prev[i].status) && r < toRemove) {
-						r++;
-					} else {
-						result.push(prev[i]);
-					}
-				}
-				return result.reverse();
-			});
-		}, [tasks]);
-
 		const cancelTask = useCallback(
 			async (taskId: string) => {
 				const task = tasksRef.current.find((item) => item.id === taskId);
@@ -977,6 +944,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				const nextTasks = files.map(({ file, relativePath }) => ({
 					id: createTaskId(),
 					file,
+					filename: file.name,
 					relativePath,
 					baseFolderId,
 					baseFolderName,
@@ -1001,6 +969,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				const nextTasks = Array.from(files).map((file) => ({
 					id: createTaskId(),
 					file,
+					filename: file.name,
 					relativePath: null,
 					baseFolderId,
 					baseFolderName,
@@ -1082,22 +1051,10 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 		const overallProgress =
 			totalCount === 0 ? 0 : Math.round(progressSum / totalCount);
 
-		// ── 只为可见 task 生成 UploadTaskView（活跃的优先，完成的限量展示）──
-		// pending_file 任务需要从 localStorage 获取文件名，预加载一次
-		const hasPendingFile = tasks.some(
-			(task) => task.status === "pending_file" && !task.file,
-		);
-		const sessionCache = hasPendingFile ? loadSessions() : [];
-
 		const uploadTasks: UploadTaskView[] = tasks.map((task) => {
 			const isPendingFile = task.status === "pending_file";
 
-			const taskTitle = task.file
-				? task.file.name
-				: isPendingFile
-					? (sessionCache.find((s) => s.uploadId === task.uploadId)?.filename ??
-						"?")
-					: "?";
+			const taskTitle = task.filename;
 
 			const modeLabel =
 				task.mode === "chunked"
