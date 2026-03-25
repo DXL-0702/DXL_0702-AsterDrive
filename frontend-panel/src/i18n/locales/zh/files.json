@@ -195,5 +195,20 @@
 	"upload_resume_found": "发现 {{count}} 个可恢复的上传",
 	"upload_resume_expired": "上传会话已过期",
 	"clipboard_copied": "已复制 {{count}} 项到剪贴板",
-	"clipboard_cut": "已剪切 {{count}} 项"
+	"clipboard_cut": "已剪切 {{count}} 项",
+	"info": "详细信息",
+	"info_name": "名称",
+	"info_size": "大小",
+	"info_type": "类型",
+	"info_mime": "MIME 类型",
+	"info_created": "创建时间",
+	"info_modified": "修改时间",
+	"info_locked": "锁定状态",
+	"info_locked_yes": "已锁定",
+	"info_locked_no": "未锁定",
+	"info_blob_id": "Blob ID",
+	"info_policy_id": "存储策略 ID",
+	"info_children": "内容",
+	"info_children_count": "{{folders}} 个文件夹，{{files}} 个文件",
+	"info_loading": "加载中..."
 }

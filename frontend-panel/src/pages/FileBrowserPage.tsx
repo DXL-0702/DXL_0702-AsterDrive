@@ -11,6 +11,7 @@ import { BatchTargetFolderDialog } from "@/components/files/BatchTargetFolderDia
 import { CreateFileDialog } from "@/components/files/CreateFileDialog";
 import { CreateFolderDialog } from "@/components/files/CreateFolderDialog";
 import { FileGrid } from "@/components/files/FileGrid";
+import { FileInfoDialog } from "@/components/files/FileInfoDialog";
 import { FilePreview } from "@/components/files/FilePreview";
 import { FileTable } from "@/components/files/FileTable";
 import { RenameDialog } from "@/components/files/RenameDialog";
@@ -45,7 +46,7 @@ import { fileService } from "@/services/fileService";
 import { api } from "@/services/http";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
-import type { FileInfo } from "@/types/api";
+import type { FileInfo, FolderInfo } from "@/types/api";
 
 export default function FileBrowserPage() {
 	const { t } = useTranslation("files");
@@ -133,6 +134,10 @@ export default function FileBrowserPage() {
 		id: number;
 		name: string;
 	} | null>(null);
+	const [infoTarget, setInfoTarget] = useState<{
+		file?: FileInfo;
+		folder?: FolderInfo;
+	} | null>(null);
 
 	useEffect(() => {
 		navigateTo(folderId, folderName).catch(handleApiError);
@@ -148,7 +153,8 @@ export default function FileBrowserPage() {
 			setRenameTarget({ type, id, name });
 		}
 		document.addEventListener("rename-request", onRenameRequest);
-		return () => document.removeEventListener("rename-request", onRenameRequest);
+		return () =>
+			document.removeEventListener("rename-request", onRenameRequest);
 	}, []);
 
 	const handleDownload = useCallback(
@@ -332,6 +338,15 @@ export default function FileBrowserPage() {
 				mimeType: targetFile.mime_type,
 				size: targetFile.size,
 			});
+		},
+		onInfo: (type: "file" | "folder", id: number) => {
+			if (type === "file") {
+				const f = displayFiles.find((f) => f.id === id);
+				if (f) setInfoTarget({ file: f });
+			} else {
+				const folder = displayFolders.find((f) => f.id === id);
+				if (folder) setInfoTarget({ folder });
+			}
 		},
 		onMoveToFolder: handleMoveToFolder,
 		fadingFileIds,
@@ -528,6 +543,14 @@ export default function FileBrowserPage() {
 					currentName={renameTarget.name}
 				/>
 			)}
+			<FileInfoDialog
+				open={infoTarget !== null}
+				onOpenChange={(open) => {
+					if (!open) setInfoTarget(null);
+				}}
+				file={infoTarget?.file}
+				folder={infoTarget?.folder}
+			/>
 		</AppLayout>
 	);
 }

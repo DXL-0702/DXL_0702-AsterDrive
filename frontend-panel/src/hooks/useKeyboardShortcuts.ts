@@ -1,11 +1,11 @@
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import { handleApiError } from "@/hooks/useApiError";
 import {
 	shouldIgnoreKeyboardTarget,
 	useSelectionShortcuts,
 } from "@/hooks/useSelectionShortcuts";
-import { handleApiError } from "@/hooks/useApiError";
 import type { BatchOperation } from "@/lib/formatBatchToast";
 import { formatBatchToast } from "@/lib/formatBatchToast";
 import { useFileStore } from "@/stores/fileStore";
@@ -63,10 +63,10 @@ export function useKeyboardShortcuts() {
 				e.preventDefault();
 				void (async () => {
 					try {
-						const { mode, result } =
-							await useFileStore.getState().clipboardPaste();
-						const operation: BatchOperation =
-							mode === "copy" ? "copy" : "move";
+						const { mode, result } = await useFileStore
+							.getState()
+							.clipboardPaste();
+						const operation: BatchOperation = mode === "copy" ? "copy" : "move";
 						const batchToast = formatBatchToast(t, operation, result);
 						if (batchToast.variant === "error") {
 							toast.error(batchToast.title, {

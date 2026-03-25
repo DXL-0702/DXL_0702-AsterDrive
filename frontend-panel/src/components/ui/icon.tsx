@@ -39,6 +39,7 @@ import {
 	PiGridFour,
 	PiHardDrive,
 	PiHouse,
+	PiInfo,
 	PiLink,
 	PiLinkSimple,
 	PiList,
@@ -107,6 +108,7 @@ export type IconName =
 	| "Grid"
 	| "HardDrive"
 	| "House"
+	| "Info"
 	| "Link"
 	| "LinkSimple"
 	| "List"
@@ -174,6 +176,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	Grid: PiGridFour,
 	HardDrive: PiHardDrive,
 	House: PiHouse,
+	Info: PiInfo,
 	Link: PiLink,
 	LinkSimple: PiLinkSimple,
 	List: PiList,

@@ -46,6 +46,7 @@ interface FileTableProps {
 	onDelete: (type: "file" | "folder", id: number) => void;
 	onRename?: (type: "file" | "folder", id: number, name: string) => void;
 	onVersions?: (fileId: number) => void;
+	onInfo?: (type: "file" | "folder", id: number) => void;
 	onMoveToFolder?: (
 		fileIds: number[],
 		folderIds: number[],
@@ -85,6 +86,7 @@ export function FileTable({
 	onDelete,
 	onRename,
 	onVersions,
+	onInfo,
 	onMoveToFolder,
 	fadingFileIds,
 	fadingFolderIds,
@@ -213,11 +215,16 @@ export function FileTable({
 						}
 						onCopy={() => onCopy("folder", folder.id)}
 						onMove={onMove ? () => onMove("folder", folder.id) : undefined}
-						onRename={onRename ? () => onRename("folder", folder.id, folder.name) : undefined}
+						onRename={
+							onRename
+								? () => onRename("folder", folder.id, folder.name)
+								: undefined
+						}
 						onToggleLock={() =>
 							onToggleLock("folder", folder.id, folder.is_locked ?? false)
 						}
 						onDelete={() => onDelete("folder", folder.id)}
+						onInfo={() => onInfo?.("folder", folder.id)}
 					>
 						<TableRow
 							className={cn(
@@ -259,12 +266,15 @@ export function FileTable({
 						onShare={() => onShare({ fileId: file.id, name: file.name })}
 						onCopy={() => onCopy("file", file.id)}
 						onMove={onMove ? () => onMove("file", file.id) : undefined}
-						onRename={onRename ? () => onRename("file", file.id, file.name) : undefined}
+						onRename={
+							onRename ? () => onRename("file", file.id, file.name) : undefined
+						}
 						onToggleLock={() =>
 							onToggleLock("file", file.id, file.is_locked ?? false)
 						}
 						onDelete={() => onDelete("file", file.id)}
 						onVersions={onVersions ? () => onVersions(file.id) : undefined}
+						onInfo={() => onInfo?.("file", file.id)}
 					>
 						<TableRow
 							className={cn(

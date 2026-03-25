@@ -195,5 +195,20 @@
 	"upload_resume_found": "Found {{count}} resumable upload(s)",
 	"upload_resume_expired": "Upload session expired",
 	"clipboard_copied": "{{count}} item(s) copied to clipboard",
-	"clipboard_cut": "{{count}} item(s) cut to clipboard"
+	"clipboard_cut": "{{count}} item(s) cut to clipboard",
+	"info": "Details",
+	"info_name": "Name",
+	"info_size": "Size",
+	"info_type": "Type",
+	"info_mime": "MIME Type",
+	"info_created": "Created",
+	"info_modified": "Modified",
+	"info_locked": "Lock Status",
+	"info_locked_yes": "Locked",
+	"info_locked_no": "Unlocked",
+	"info_blob_id": "Blob ID",
+	"info_policy_id": "Storage Policy ID",
+	"info_children": "Contents",
+	"info_children_count": "{{folders}} folder(s), {{files}} file(s)",
+	"info_loading": "Loading..."
 }

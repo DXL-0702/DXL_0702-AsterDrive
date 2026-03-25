@@ -20,6 +20,7 @@ interface FileContextMenuProps {
 	onDelete: () => void;
 	onRename?: () => void;
 	onVersions?: () => void;
+	onInfo: () => void;
 	isLocked: boolean;
 	isFolder: boolean;
 	renderTrigger?: boolean;
@@ -35,6 +36,7 @@ export function FileContextMenu({
 	onToggleLock,
 	onDelete,
 	onVersions,
+	onInfo,
 	isLocked,
 	isFolder,
 	renderTrigger = false,
@@ -85,6 +87,10 @@ export function FileContextMenu({
 					</ContextMenuItem>
 				)}
 				<ContextMenuSeparator />
+				<ContextMenuItem onClick={onInfo}>
+					<Icon name="Info" className="h-4 w-4 mr-2" />
+					{t("info")}
+				</ContextMenuItem>
 				<ContextMenuItem onClick={onToggleLock}>
 					{isLocked ? (
 						<>
