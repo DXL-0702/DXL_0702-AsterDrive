@@ -104,6 +104,9 @@ define_errors! {
 
     // ========== E060: 前置条件失败 ==========
     PreconditionFailed("E060", "Precondition Failed"),
+
+    // ========== E061: 上传处理中 ==========
+    UploadAssembling("E061", "Upload Assembling"),
 }
 
 impl AsterError {
@@ -125,8 +128,8 @@ impl AsterError {
 
             Self::PreconditionFailed(_) => StatusCode::PRECONDITION_FAILED,
 
-            Self::RecordNotFound(_)
-            | Self::FileNotFound(_)
+            Self::UploadAssembling(_) => StatusCode::ACCEPTED,
+            Self::FileNotFound(_)
             | Self::StoragePolicyNotFound(_)
             | Self::FolderNotFound(_)
             | Self::ShareNotFound(_)

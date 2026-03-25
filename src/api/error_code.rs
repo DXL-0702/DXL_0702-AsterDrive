@@ -48,6 +48,7 @@ pub enum ErrorCode {
     ThumbnailFailed = 3008,
     ResourceLocked = 3009,
     PreconditionFailed = 3010,
+    UploadAssembling = 3011,
 
     // 存储策略错误 4000-4099
     StoragePolicyNotFound = 4000,
@@ -103,6 +104,7 @@ impl From<&AsterError> for ErrorCode {
             AsterError::UploadSessionExpired(_) => ErrorCode::UploadSessionExpired,
             AsterError::ChunkUploadFailed(_) => ErrorCode::ChunkUploadFailed,
             AsterError::UploadAssemblyFailed(_) => ErrorCode::UploadAssemblyFailed,
+            AsterError::UploadAssembling(_) => ErrorCode::UploadAssembling,
 
             // 缩略图
             AsterError::ThumbnailGenerationFailed(_) => ErrorCode::ThumbnailFailed,

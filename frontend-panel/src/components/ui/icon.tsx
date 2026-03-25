@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import {
 	PiArrowCounterClockwise,
+	PiArrowClockwise,
 	PiArrowDown,
 	PiArrowLeft,
 	PiArrowSquareOut,
@@ -67,6 +68,7 @@ import {
 
 export type IconName =
 	| "ArrowCounterClockwise"
+	| "ArrowClockwise"
 	| "ArrowDown"
 	| "ArrowLeft"
 	| "ArrowSquareOut"
@@ -132,6 +134,7 @@ export type IconName =
 
 const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	ArrowCounterClockwise: PiArrowCounterClockwise,
+	ArrowClockwise: PiArrowClockwise,
 	ArrowDown: PiArrowDown,
 	ArrowLeft: PiArrowLeft,
 	ArrowSquareOut: PiArrowSquareOut,

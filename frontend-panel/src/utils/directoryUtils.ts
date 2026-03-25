@@ -45,6 +45,25 @@ export function extractFilesFromInput(files: FileList): FileWithPath[] {
 	}));
 }
 
+export function hasDirectoryInDropItems(items: DataTransferItemList): boolean {
+	for (const item of Array.from(items)) {
+		if (item.kind !== "file") {
+			continue;
+		}
+
+		const compatItem = item as DataTransferItemWithEntry;
+		const entry =
+			typeof compatItem.webkitGetAsEntry === "function"
+				? compatItem.webkitGetAsEntry()
+				: null;
+		if (entry?.isDirectory) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 function readFileEntry(
 	entry: FileSystemFileEntryCompat,
 ): Promise<FileWithPath[]> {
@@ -98,7 +117,10 @@ async function readEntry(
 export async function extractFilesFromDrop(
 	items: DataTransferItemList,
 ): Promise<FileWithPath[]> {
-	const results: FileWithPath[] = [];
+	// DataTransferItemList 在 drop 事件 handler 返回（或首个 async 边界）后
+	// 会被浏览器清空。必须在 await 之前同步收集所有 entry 和 File。
+	const syncEntries: FileSystemEntryCompat[] = [];
+	const syncFiles: File[] = [];
 
 	for (const item of Array.from(items)) {
 		if (item.kind !== "file") {
@@ -111,14 +133,23 @@ export async function extractFilesFromDrop(
 				? compatItem.webkitGetAsEntry()
 				: null;
 		if (entry) {
-			results.push(...(await readEntry(entry)));
+			syncEntries.push(entry);
 			continue;
 		}
 
 		const file = item.getAsFile();
 		if (file) {
-			results.push({ file, relativePath: file.name });
+			syncFiles.push(file);
 		}
+	}
+
+	// FileSystemEntry 对象在 DataTransfer 清空后仍然有效
+	const results: FileWithPath[] = [];
+	for (const entry of syncEntries) {
+		results.push(...(await readEntry(entry)));
+	}
+	for (const file of syncFiles) {
+		results.push({ file, relativePath: file.name });
 	}
 
 	return results;

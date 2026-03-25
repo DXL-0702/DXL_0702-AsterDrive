@@ -1236,7 +1236,7 @@ export interface components {
          * @example 0
          * @enum {integer}
          */
-        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 2000 | 2001 | 2002 | 2003 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 3010 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
+        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 2000 | 2001 | 2002 | 2003 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 3010 | 3011 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
         FileInfo: {
             /** Format: int64 */
             blob_id: number;
@@ -1609,6 +1609,11 @@ export interface components {
             chunk_size: number;
             created_at: string;
             expires_at: string;
+            /**
+             * Format: int64
+             * @description 上传完成后关联的文件 ID（用于幂等重试）
+             */
+            file_id?: number | null;
             filename: string;
             /** Format: int64 */
             folder_id?: number | null;

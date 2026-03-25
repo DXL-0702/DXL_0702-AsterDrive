@@ -33,7 +33,8 @@ export type UploadMode = components["schemas"]["UploadMode"];
 export type UploadSessionStatus = components["schemas"]["UploadSessionStatus"];
 export type InitUploadResponse = components["schemas"]["InitUploadResponse"];
 export type ChunkUploadResponse = components["schemas"]["ChunkUploadResponse"];
-export type UploadProgressResponse = components["schemas"]["UploadProgressResponse"];
+export type UploadProgressResponse =
+	components["schemas"]["UploadProgressResponse"];
 export type CompletedPart = components["schemas"]["CompletedPartReq"];
 
 // Auth
@@ -78,7 +79,9 @@ export const ErrorCode = {
 	ShareExpired: 6001,
 	SharePasswordRequired: 6002,
 	ShareDownloadLimitReached: 6003,
+	UploadAssemblyFailed: 3007,
 	ThumbnailFailed: 3008,
+	UploadAssembling: 3011,
 } as const satisfies Record<string, ErrorCode>;
 
 // API response wrapper

@@ -26,7 +26,6 @@ const MAX_ZOOM = 250;
 const ZOOM_STEP = 25;
 const VIEWER_HORIZONTAL_PADDING = 24;
 const MIN_PAGE_WIDTH = 240;
-const PROGRAMMATIC_SCROLL_GRACE_MS = 800;
 
 type LoadedDocument = Parameters<
 	NonNullable<ComponentProps<typeof Document>["onLoadSuccess"]>
@@ -58,8 +57,6 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 	const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
 	const scrollContainerRef = useRef<HTMLDivElement | null>(null);
 	const scrollFrameRef = useRef<number | null>(null);
-	const pendingPageRef = useRef<number | null>(null);
-	const pendingPageTimeoutRef = useRef<number | null>(null);
 
 	const clampPageNumber = useCallback(
 		(pageNumber: number) => {
@@ -131,14 +128,6 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 	}, [basePageWidth, clampZoom, renderedPageWidth, zoomPercent]);
 	const viewerLayoutVersion = `${renderedPageWidth}:${rotation}`;
 
-	const clearPendingPageTarget = useCallback(() => {
-		pendingPageRef.current = null;
-		if (pendingPageTimeoutRef.current !== null) {
-			window.clearTimeout(pendingPageTimeoutRef.current);
-			pendingPageTimeoutRef.current = null;
-		}
-	}, []);
-
 	const syncCurrentPageFromScroll = useCallback(() => {
 		const container = scrollContainerRef.current;
 		if (!container || !numPages) return;
@@ -158,18 +147,10 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 			}
 		}
 
-		const pendingPage = pendingPageRef.current;
-		if (pendingPage !== null) {
-			if (closestPage !== pendingPage) {
-				return;
-			}
-			clearPendingPageTarget();
-		}
-
 		setCurrentPage((previousPage) =>
 			previousPage === closestPage ? previousPage : closestPage,
 		);
-	}, [clearPendingPageTarget, numPages]);
+	}, [numPages]);
 
 	const schedulePageSync = useCallback(() => {
 		if (scrollFrameRef.current !== null) return;
@@ -184,20 +165,6 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 			const container = scrollContainerRef.current;
 			const pageElement = pageRefs.current[pageNumber];
 			if (!container || !pageElement) return;
-
-			if (behavior === "smooth") {
-				pendingPageRef.current = pageNumber;
-				if (pendingPageTimeoutRef.current !== null) {
-					window.clearTimeout(pendingPageTimeoutRef.current);
-				}
-				pendingPageTimeoutRef.current = window.setTimeout(() => {
-					clearPendingPageTarget();
-					syncCurrentPageFromScroll();
-				}, PROGRAMMATIC_SCROLL_GRACE_MS);
-			} else {
-				clearPendingPageTarget();
-			}
-
 			container.scrollTo({
 				top: Math.max(pageElement.offsetTop - 8, 0),
 				behavior,
@@ -205,7 +172,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 			setCurrentPage(pageNumber);
 			setPageInputValue(String(pageNumber));
 		},
-		[clearPendingPageTarget, syncCurrentPageFromScroll],
+		[],
 	);
 
 	const commitPageInput = useCallback(() => {
@@ -282,7 +249,6 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 		setRotation(0);
 		setPageSize(null);
 		pageRefs.current = {};
-		clearPendingPageTarget();
 		if (!blobUrl) {
 			setViewerWidth(0);
 			return;
@@ -291,7 +257,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 			setViewerWidth(scrollContainerRef.current.clientWidth);
 			scrollContainerRef.current.scrollTop = 0;
 		}
-	}, [blobUrl, clearPendingPageTarget]);
+	}, [blobUrl]);
 
 	useEffect(() => {
 		if (!numPages) return;
@@ -336,9 +302,8 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 			if (scrollFrameRef.current !== null) {
 				window.cancelAnimationFrame(scrollFrameRef.current);
 			}
-			clearPendingPageTarget();
 		};
-	}, [clearPendingPageTarget]);
+	}, []);
 
 	if (blobLoading) {
 		return (
@@ -368,20 +333,20 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 		<div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
 			<div className="border-b bg-muted/30 px-2.5 py-2">
 				<div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-					<Icon name="FileText" className="h-3.5 w-3.5" />
-					<span>PDF</span>
-					{numPages !== null && (
-						<>
-							<span>·</span>
-							<span className="tabular-nums">
-								{t("pdf_page_count", { count: numPages })}
-							</span>
-							<span>·</span>
-							<span className="tabular-nums">
-								{t("pdf_page_of_total", { page: currentPage, count: numPages })}
-							</span>
-						</>
-					)}
+						<Icon name="FileText" className="h-3.5 w-3.5" />
+						<span>PDF</span>
+						{numPages !== null && (
+							<>
+								<span>·</span>
+								<span className="tabular-nums">
+									{t("pdf_page_count", { count: numPages })}
+								</span>
+								<span>·</span>
+								<span className="tabular-nums">
+									{t("pdf_page_of_total", { page: currentPage, count: numPages })}
+								</span>
+							</>
+						)}
 				</div>
 				<div className="mt-2 flex flex-wrap items-center gap-1.5">
 					<div className="flex items-center gap-1 rounded-lg border bg-background/80 p-0.5">
@@ -482,7 +447,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 							title={t("pdf_rotate_right")}
 							aria-label={t("pdf_rotate_right")}
 						>
-							<Icon name="ArrowsClockwise" className="h-4 w-4" />
+							<Icon name="ArrowClockwise" className="h-4 w-4" />
 						</Button>
 					</div>
 

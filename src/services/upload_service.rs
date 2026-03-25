@@ -122,6 +122,7 @@ pub async fn init_upload(
                     status: Set(UploadSessionStatus::Presigned),
                     s3_temp_key: Set(Some(temp_key)),
                     s3_multipart_id: Set(None),
+                    file_id: Set(None),
                     created_at: Set(now),
                     expires_at: Set(expires_at),
                     updated_at: Set(now),
@@ -158,6 +159,7 @@ pub async fn init_upload(
                 status: Set(UploadSessionStatus::Presigned),
                 s3_temp_key: Set(Some(temp_key)),
                 s3_multipart_id: Set(Some(s3_upload_id)),
+                file_id: Set(None),
                 created_at: Set(now),
                 expires_at: Set(expires_at),
                 updated_at: Set(now),
@@ -210,6 +212,7 @@ pub async fn init_upload(
         status: Set(UploadSessionStatus::Uploading),
         s3_temp_key: Set(None),
         s3_multipart_id: Set(None),
+        file_id: Set(None),
         created_at: Set(now),
         expires_at: Set(expires_at),
         updated_at: Set(now),
@@ -316,6 +319,26 @@ pub async fn complete_upload(
     let session = upload_session_repo::find_by_id(db, upload_id).await?;
 
     crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
+
+    // ── 幂等性处理：如果已完成，返回对应文件 ──
+    if session.status == UploadSessionStatus::Completed {
+        return find_file_by_session(db, &session).await;
+    }
+
+    // ── 如果正在处理中，返回友好提示（前端轮询重试） ──
+    if session.status == UploadSessionStatus::Assembling {
+        return Err(AsterError::upload_assembling(
+            "upload is being processed, please wait and retry in a few seconds",
+        ));
+    }
+
+    // ── 如果 assembly 之前失败过，明确告知（不能再 complete） ──
+    if session.status == UploadSessionStatus::Failed {
+        return Err(AsterError::upload_assembly_failed(
+            "upload assembly failed previously; please start a new upload",
+        ));
+    }
+
     // Presigned 模式走独立流程
     if session.status == UploadSessionStatus::Presigned {
         if session.s3_multipart_id.is_some() {
@@ -349,85 +372,96 @@ pub async fn complete_upload(
         )));
     }
 
-    // ── [事务外] 流式拼接分片 + sha256 ──
-    use sha2::{Digest, Sha256};
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    // ── [事务外] 流式拼接分片 + sha256 → put_file → finalize ──
+    // 任何失败都将 session 标记为 Failed，避免前端无限轮询 Assembling
+    let result = async {
+        use sha2::{Digest, Sha256};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    const ASSEMBLY_BUFFER_SIZE: usize = 64 * 1024;
+        const ASSEMBLY_BUFFER_SIZE: usize = 64 * 1024;
 
-    let assembled_path = format!("data/.uploads/{upload_id}/_assembled");
-    let mut out_file = tokio::fs::File::create(&assembled_path)
-        .await
-        .map_aster_err_ctx("create assembled file", AsterError::upload_assembly_failed)?;
-    let mut hasher = Sha256::new();
-    let mut size: i64 = 0;
-    let mut buffer = vec![0u8; ASSEMBLY_BUFFER_SIZE];
-
-    for i in 0..session.total_chunks {
-        let chunk_path = format!("data/.uploads/{upload_id}/chunk_{i}");
-        let mut chunk_file = tokio::fs::File::open(&chunk_path)
+        let assembled_path = format!("data/.uploads/{upload_id}/_assembled");
+        let mut out_file = tokio::fs::File::create(&assembled_path)
             .await
-            .map_err(|e| AsterError::upload_assembly_failed(format!("open chunk {i}: {e}")))?;
+            .map_aster_err_ctx("create assembled file", AsterError::upload_assembly_failed)?;
+        let mut hasher = Sha256::new();
+        let mut size: i64 = 0;
+        let mut buffer = vec![0u8; ASSEMBLY_BUFFER_SIZE];
 
-        loop {
-            let n = chunk_file
-                .read(&mut buffer)
+        for i in 0..session.total_chunks {
+            let chunk_path = format!("data/.uploads/{upload_id}/chunk_{i}");
+            let mut chunk_file = tokio::fs::File::open(&chunk_path)
                 .await
-                .map_err(|e| AsterError::upload_assembly_failed(format!("read chunk {i}: {e}")))?;
-            if n == 0 {
-                break;
+                .map_err(|e| AsterError::upload_assembly_failed(format!("open chunk {i}: {e}")))?;
+
+            loop {
+                let n = chunk_file.read(&mut buffer).await.map_err(|e| {
+                    AsterError::upload_assembly_failed(format!("read chunk {i}: {e}"))
+                })?;
+                if n == 0 {
+                    break;
+                }
+
+                let data = &buffer[..n];
+                hasher.update(data);
+                size += n as i64;
+                out_file
+                    .write_all(data)
+                    .await
+                    .map_aster_err_ctx("write assembled", AsterError::upload_assembly_failed)?;
             }
+        }
+        out_file
+            .flush()
+            .await
+            .map_aster_err_ctx("flush assembled", AsterError::upload_assembly_failed)?;
+        drop(out_file);
 
-            let data = &buffer[..n];
-            hasher.update(data);
-            size += n as i64;
-            out_file
-                .write_all(data)
-                .await
-                .map_aster_err_ctx("write assembled", AsterError::upload_assembly_failed)?;
+        let file_hash = format!("{:x}", hasher.finalize());
+        let now = Utc::now();
+
+        // ── [事务外] 获取策略 + driver + put_file ──
+        let policy = policy_repo::find_by_id(db, session.policy_id).await?;
+        let driver = state.driver_registry.get_driver(&policy)?;
+
+        let storage_path = crate::utils::storage_path_from_hash(&file_hash);
+        let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
+            .await?
+            .is_some();
+        if blob_pre_exists {
+            // 已有相同内容，不需要再存
+            crate::utils::cleanup_temp_file(&assembled_path).await;
+        } else {
+            // 零拷贝：LocalDriver rename，S3 流式上传，不读进内存
+            driver.put_file(&storage_path, &assembled_path).await?;
+        }
+
+        finalize_upload_session(
+            state,
+            &session,
+            &file_hash,
+            size,
+            policy.id,
+            &storage_path,
+            now,
+        )
+        .await
+    }
+    .await;
+
+    match result {
+        Ok(created) => {
+            // ── [事务外] 清理临时文件 ──
+            let temp_dir = format!("data/.uploads/{upload_id}");
+            crate::utils::cleanup_temp_dir(&temp_dir).await;
+            Ok(created)
+        }
+        Err(e) => {
+            // 将 session 标记为 Failed，防止前端轮询 Assembling 永不退出
+            mark_session_failed(db, upload_id).await;
+            Err(e)
         }
     }
-    out_file
-        .flush()
-        .await
-        .map_aster_err_ctx("flush assembled", AsterError::upload_assembly_failed)?;
-    drop(out_file);
-
-    let file_hash = format!("{:x}", hasher.finalize());
-    let now = Utc::now();
-
-    // ── [事务外] 获取策略 + driver + put_file ──
-    let policy = policy_repo::find_by_id(db, session.policy_id).await?;
-    let driver = state.driver_registry.get_driver(&policy)?;
-
-    let storage_path = crate::utils::storage_path_from_hash(&file_hash);
-    let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
-        .await?
-        .is_some();
-    if blob_pre_exists {
-        // 已有相同内容，不需要再存
-        crate::utils::cleanup_temp_file(&assembled_path).await;
-    } else {
-        // 零拷贝：LocalDriver rename，S3 流式上传，不读进内存
-        driver.put_file(&storage_path, &assembled_path).await?;
-    }
-
-    let created = finalize_upload_session(
-        state,
-        &session,
-        &file_hash,
-        size,
-        policy.id,
-        &storage_path,
-        now,
-    )
-    .await?;
-
-    // ── [事务外] 清理临时文件 ──
-    let temp_dir = format!("data/.uploads/{upload_id}");
-    crate::utils::cleanup_temp_dir(&temp_dir).await;
-
-    Ok(created)
 }
 
 /// 完成 presigned 上传：从 S3 临时 key 读取 → hash → 去重 → copy → 建文件记录
@@ -479,8 +513,8 @@ async fn complete_presigned_upload(
         )));
     }
 
-    // ── [事务外] 流式 SHA256（从 S3 读，64KB buffer） ──
-    let file_hash = {
+    // ── [事务外] 流式 SHA256 → copy → finalize（失败时回滚 session 状态） ──
+    let result = async {
         use sha2::{Digest, Sha256};
         use tokio::io::AsyncReadExt;
         let mut hasher = Sha256::new();
@@ -496,37 +530,42 @@ async fn complete_presigned_upload(
             }
             hasher.update(&buf[..n]);
         }
-        format!("{:x}", hasher.finalize())
-    };
+        let file_hash = format!("{:x}", hasher.finalize());
 
-    let now = Utc::now();
+        let now = Utc::now();
+        let storage_path = crate::utils::storage_path_from_hash(&file_hash);
+        let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
+            .await?
+            .is_some();
+        if !blob_pre_exists {
+            driver.copy_object(&temp_key, &storage_path).await?;
+        }
 
-    // ── [事务外] copy_object（仅新 blob 时需要） ──
-    let storage_path = crate::utils::storage_path_from_hash(&file_hash);
-    let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
-        .await?
-        .is_some();
-    if !blob_pre_exists {
-        driver.copy_object(&temp_key, &storage_path).await?;
+        let created = finalize_upload_session(
+            state,
+            &session,
+            &file_hash,
+            actual_size,
+            policy.id,
+            &storage_path,
+            now,
+        )
+        .await?;
+
+        if let Err(e) = driver.delete(&temp_key).await {
+            tracing::warn!("failed to delete S3 temp object: {e}");
+        }
+        Ok(created)
     }
+    .await;
 
-    let created = finalize_upload_session(
-        state,
-        &session,
-        &file_hash,
-        actual_size,
-        policy.id,
-        &storage_path,
-        now,
-    )
-    .await?;
-
-    // ── [事务外] S3 临时对象清理（best-effort） ──
-    if let Err(e) = driver.delete(&temp_key).await {
-        tracing::warn!("failed to delete S3 temp object: {e}");
+    match result {
+        Ok(f) => Ok(f),
+        Err(e) => {
+            mark_session_failed(db, upload_id).await;
+            Err(e)
+        }
     }
-
-    Ok(created)
 }
 
 /// 完成 S3 multipart presigned 上传：complete multipart → hash → 去重 → copy → 建文件记录
@@ -566,78 +605,98 @@ async fn complete_s3_multipart(
         )));
     }
 
-    // ── 完成 S3 multipart upload（parts 按 part_number 排序） ──
-    parts.sort_by_key(|(num, _)| *num);
-    driver
-        .complete_multipart_upload(&temp_key, &multipart_id, parts)
+    // ── 完成 S3 multipart → hash → finalize（失败时回滚 session 状态） ──
+    let result = async {
+        // 完成 S3 multipart upload（parts 按 part_number 排序）
+        parts.sort_by_key(|(num, _)| *num);
+        driver
+            .complete_multipart_upload(&temp_key, &multipart_id, parts)
+            .await?;
+
+        // 验证文件大小
+        let meta = driver.metadata(&temp_key).await.map_err(|_| {
+            AsterError::upload_assembly_failed(
+                "S3 object not found after multipart complete - assembly may have failed",
+            )
+        })?;
+        let actual_size = meta.size as i64;
+
+        if actual_size != session.total_size {
+            if let Err(e) = driver.delete(&temp_key).await {
+                tracing::warn!("failed to delete S3 temp object: {e}");
+            }
+            return Err(AsterError::upload_assembly_failed(format!(
+                "size mismatch: declared {} but uploaded {}",
+                session.total_size, actual_size
+            )));
+        }
+
+        // 流式 SHA256
+        let file_hash = {
+            use sha2::{Digest, Sha256};
+            use tokio::io::AsyncReadExt;
+            let mut hasher = Sha256::new();
+            let mut stream = driver.get_stream(&temp_key).await?;
+            let mut buf = vec![0u8; 65536];
+            loop {
+                let n = stream
+                    .read(&mut buf)
+                    .await
+                    .map_aster_err_ctx("read S3 stream", AsterError::upload_assembly_failed)?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buf[..n]);
+            }
+            format!("{:x}", hasher.finalize())
+        };
+
+        let now = Utc::now();
+        let storage_path = crate::utils::storage_path_from_hash(&file_hash);
+        let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
+            .await?
+            .is_some();
+        if !blob_pre_exists {
+            driver.copy_object(&temp_key, &storage_path).await?;
+        }
+
+        let created = finalize_upload_session(
+            state,
+            &session,
+            &file_hash,
+            actual_size,
+            policy.id,
+            &storage_path,
+            now,
+        )
         .await?;
 
-    // ── 验证文件大小 ──
-    let meta = driver.metadata(&temp_key).await.map_err(|_| {
-        AsterError::upload_assembly_failed(
-            "S3 object not found after multipart complete - assembly may have failed",
-        )
-    })?;
-    let actual_size = meta.size as i64;
-
-    if actual_size != session.total_size {
         if let Err(e) = driver.delete(&temp_key).await {
             tracing::warn!("failed to delete S3 temp object: {e}");
         }
-        return Err(AsterError::upload_assembly_failed(format!(
-            "size mismatch: declared {} but uploaded {}",
-            session.total_size, actual_size
-        )));
+        Ok(created)
     }
+    .await;
 
-    // ── 流式 SHA256（从 S3 读，64KB buffer） ──
-    let file_hash = {
-        use sha2::{Digest, Sha256};
-        use tokio::io::AsyncReadExt;
-        let mut hasher = Sha256::new();
-        let mut stream = driver.get_stream(&temp_key).await?;
-        let mut buf = vec![0u8; 65536];
-        loop {
-            let n = stream
-                .read(&mut buf)
-                .await
-                .map_aster_err_ctx("read S3 stream", AsterError::upload_assembly_failed)?;
-            if n == 0 {
-                break;
-            }
-            hasher.update(&buf[..n]);
+    match result {
+        Ok(f) => Ok(f),
+        Err(e) => {
+            mark_session_failed(db, upload_id).await;
+            Err(e)
         }
-        format!("{:x}", hasher.finalize())
-    };
-
-    let now = Utc::now();
-
-    // ── copy_object（仅新 blob 时需要） ──
-    let storage_path = crate::utils::storage_path_from_hash(&file_hash);
-    let blob_pre_exists = file_repo::find_blob_by_hash(db, &file_hash, policy.id)
-        .await?
-        .is_some();
-    if !blob_pre_exists {
-        driver.copy_object(&temp_key, &storage_path).await?;
     }
+}
 
-    let created = finalize_upload_session(
-        state,
-        &session,
-        &file_hash,
-        actual_size,
-        policy.id,
-        &storage_path,
-        now,
-    )
-    .await?;
-
-    // ── S3 临时对象清理（best-effort） ──
-    if let Err(e) = driver.delete(&temp_key).await {
-        tracing::warn!("failed to delete S3 temp object: {e}");
+/// 将 session 标记为 Failed（best-effort，失败只记录日志）
+async fn mark_session_failed<C: sea_orm::ConnectionTrait>(db: &C, upload_id: &str) {
+    if let Ok(s) = upload_session_repo::find_by_id(db, upload_id).await {
+        let mut active: upload_session::ActiveModel = s.into();
+        active.status = Set(UploadSessionStatus::Failed);
+        active.updated_at = Set(Utc::now());
+        if let Err(e) = upload_session_repo::update(db, active).await {
+            tracing::warn!("failed to mark session {upload_id} as failed: {e}");
+        }
     }
-
-    Ok(created)
 }
 
 /// 上传完成的事务内共用逻辑：blob 去重 → 文件记录 → 配额 → session 状态
@@ -688,11 +747,25 @@ async fn finalize_upload_session(
     let session_fresh = upload_session_repo::find_by_id(&txn, &session.id).await?;
     let mut active: upload_session::ActiveModel = session_fresh.into();
     active.status = Set(UploadSessionStatus::Completed);
+    active.file_id = Set(Some(created.id));
     active.updated_at = Set(Utc::now());
     upload_session_repo::update(&txn, active).await?;
 
     txn.commit().await.map_err(AsterError::from)?;
     Ok(created)
+}
+
+/// 根据 session 查找已完成的文件（幂等重试用）
+async fn find_file_by_session<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    session: &upload_session::Model,
+) -> Result<file::Model> {
+    let file_id = session.file_id.ok_or_else(|| {
+        AsterError::upload_assembly_failed(
+            "upload already completed but file_id not found; please refresh",
+        )
+    })?;
+    file_repo::find_by_id(db, file_id).await
 }
 
 /// 取消上传

@@ -6,7 +6,10 @@ import type {
 	InitUploadResponse,
 	UploadProgressResponse,
 } from "@/types/api";
+import { ApiError } from "./http";
 import { api } from "./http";
+import type { ApiResponse } from "@/types/api";
+import { ErrorCode } from "@/types/api";
 
 export type {
 	ChunkUploadResponse,
@@ -61,11 +64,20 @@ export const uploadService = {
 		});
 	},
 
-	completeUpload: (uploadId: string, parts?: CompletedPart[]) =>
-		api.post<FileInfo>(
+	completeUpload: async (
+		uploadId: string,
+		parts?: CompletedPart[],
+	): Promise<FileInfo> => {
+		const resp = await api.client.post<ApiResponse<FileInfo>>(
 			`/files/upload/${uploadId}/complete`,
 			parts ? { parts } : undefined,
-		),
+			{ timeout: 0 }, // no timeout — assembly can take a long time for large files
+		);
+		if (resp.data.code !== ErrorCode.Success) {
+			throw new ApiError(resp.data.code, resp.data.msg);
+		}
+		return resp.data.data as FileInfo;
+	},
 
 	cancelUpload: (uploadId: string) =>
 		api.delete<void>(`/files/upload/${uploadId}`),

@@ -21,6 +21,8 @@ pub struct Model {
     pub status: UploadSessionStatus,
     pub s3_temp_key: Option<String>,
     pub s3_multipart_id: Option<String>,
+    /// 上传完成后关联的文件 ID（用于幂等重试）
+    pub file_id: Option<i64>,
     #[schema(value_type = String)]
     pub created_at: DateTimeUtc,
     #[schema(value_type = String)]

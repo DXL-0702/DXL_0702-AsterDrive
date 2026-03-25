@@ -18,6 +18,7 @@ mod m20250322_000002_config_source_namespace;
 mod m20260322_000001_create_audit_logs;
 mod m20260323_000001_add_file_size;
 mod m20260324_000001_s3_multipart_upload;
+mod m20260325_000001_upload_session_file_id;
 
 pub struct Migrator;
 
@@ -43,6 +44,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260322_000001_create_audit_logs::Migration),
             Box::new(m20260323_000001_add_file_size::Migration),
             Box::new(m20260324_000001_s3_multipart_upload::Migration),
+            Box::new(m20260325_000001_upload_session_file_id::Migration),
         ]
     }
 }

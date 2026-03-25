@@ -21,7 +21,8 @@ import {
 	saveSession,
 } from "@/lib/uploadPersistence";
 import { cn } from "@/lib/utils";
-import { api } from "@/services/http";
+import { ApiError, api } from "@/services/http";
+import { ErrorCode } from "@/types/api";
 import {
 	type CompletedPart,
 	type InitUploadResponse,
@@ -33,6 +34,7 @@ import {
 	extractFilesFromDrop,
 	extractFilesFromInput,
 	type FileWithPath,
+	hasDirectoryInDropItems,
 } from "@/utils/directoryUtils";
 
 interface UploadAreaProps {
@@ -73,6 +75,31 @@ interface UploadTask {
 const MAX_FILE_CONCURRENT = 2;
 const CHUNK_CONCURRENT = 3;
 const CHUNK_MAX_RETRIES = 3;
+
+/** completeUpload with polling retry when backend is still assembling (3011) */
+async function completeWithRetry(
+	uploadId: string,
+	parts?: import("@/services/uploadService").CompletedPart[],
+): Promise<import("@/types/api").FileInfo> {
+	const MAX_POLL = 30; // up to ~5 minutes
+	const POLL_INTERVAL_MS = 10_000;
+	for (let i = 0; i < MAX_POLL; i++) {
+		try {
+			return await uploadService.completeUpload(uploadId, parts);
+		} catch (err) {
+			if (
+				err instanceof ApiError &&
+				err.code === ErrorCode.UploadAssembling &&
+				i < MAX_POLL - 1
+			) {
+				await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+				continue;
+			}
+			throw err;
+		}
+	}
+	throw new Error("Upload timed out waiting for assembly");
+}
 
 function createTaskId() {
 	return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -420,7 +447,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					}
 
 					patchTask(task.id, { status: "processing", progress: 95 });
-					await uploadService.completeUpload(uploadId);
+					await completeWithRetry(uploadId);
 					removeSession(uploadId);
 					patchTask(task.id, {
 						status: "completed",
@@ -471,7 +498,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					);
 
 					patchTask(task.id, { status: "processing", progress: 90 });
-					await uploadService.completeUpload(uploadId);
+					await completeWithRetry(uploadId);
 					patchTask(task.id, {
 						status: "completed",
 						progress: 100,
@@ -604,7 +631,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 					// 按 part_number 排序后发送
 					collectedParts.sort((a, b) => a.part_number - b.part_number);
-					await uploadService.completeUpload(uploadId, collectedParts);
+					await completeWithRetry(uploadId, collectedParts);
 					removeSession(uploadId);
 					patchTask(task.id, {
 						status: "completed",
@@ -832,47 +859,53 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			}
 		}, [retryTask]);
 
-		const addFilesWithPath = useCallback((files: FileWithPath[]) => {
-			if (files.length === 0) return;
-			const baseFolderId = currentFolderIdRef.current;
-			const baseFolderName =
-				breadcrumb[breadcrumb.length - 1]?.name ?? t("files:root");
-			const nextTasks = files.map(({ file, relativePath }) => ({
-				id: createTaskId(),
-				file,
-				relativePath,
-				baseFolderId,
-				baseFolderName,
-				mode: null,
-				status: "queued" as UploadStatus,
-				progress: 0,
-				error: null,
-				uploadId: null,
-			}));
-			setTasks((prev) => [...nextTasks, ...prev]);
-			setUploadPanelOpen(true);
-		}, []);
+		const addFilesWithPath = useCallback(
+			(files: FileWithPath[]) => {
+				if (files.length === 0) return;
+				const baseFolderId = currentFolderIdRef.current;
+				const baseFolderName =
+					breadcrumb[breadcrumb.length - 1]?.name ?? t("files:root");
+				const nextTasks = files.map(({ file, relativePath }) => ({
+					id: createTaskId(),
+					file,
+					relativePath,
+					baseFolderId,
+					baseFolderName,
+					mode: null,
+					status: "queued" as UploadStatus,
+					progress: 0,
+					error: null,
+					uploadId: null,
+				}));
+				setTasks((prev) => [...nextTasks, ...prev]);
+				setUploadPanelOpen(true);
+			},
+			[breadcrumb, t],
+		);
 
-		const addFiles = useCallback((files: FileList | null) => {
-			if (!files || files.length === 0) return;
-			const baseFolderId = currentFolderIdRef.current;
-			const baseFolderName =
-				breadcrumb[breadcrumb.length - 1]?.name ?? t("files:root");
-			const nextTasks = Array.from(files).map((file) => ({
-				id: createTaskId(),
-				file,
-				relativePath: null,
-				baseFolderId,
-				baseFolderName,
-				mode: null,
-				status: "queued" as UploadStatus,
-				progress: 0,
-				error: null,
-				uploadId: null,
-			}));
-			setTasks((prev) => [...nextTasks, ...prev]);
-			setUploadPanelOpen(true);
-		}, []);
+		const addFiles = useCallback(
+			(files: FileList | null) => {
+				if (!files || files.length === 0) return;
+				const baseFolderId = currentFolderIdRef.current;
+				const baseFolderName =
+					breadcrumb[breadcrumb.length - 1]?.name ?? t("files:root");
+				const nextTasks = Array.from(files).map((file) => ({
+					id: createTaskId(),
+					file,
+					relativePath: null,
+					baseFolderId,
+					baseFolderName,
+					mode: null,
+					status: "queued" as UploadStatus,
+					progress: 0,
+					error: null,
+					uploadId: null,
+				}));
+				setTasks((prev) => [...nextTasks, ...prev]);
+				setUploadPanelOpen(true);
+			},
+			[breadcrumb, t],
+		);
 
 		const handleFileInputChange = useCallback(
 			(event: React.ChangeEvent<HTMLInputElement>) => {
@@ -907,7 +940,11 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			e.preventDefault();
 			dragCounter.current = 0;
 			setIsDragging(false);
-			if (e.dataTransfer.items?.length) {
+			if (
+				e.dataTransfer.items?.length &&
+				(e.dataTransfer.files.length === 0 ||
+					hasDirectoryInDropItems(e.dataTransfer.items))
+			) {
 				const files = await extractFilesFromDrop(e.dataTransfer.items);
 				addFilesWithPath(files);
 				return;
