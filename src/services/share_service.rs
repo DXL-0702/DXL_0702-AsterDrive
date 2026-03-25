@@ -211,7 +211,7 @@ pub async fn list_shared_folder(
     folder_limit: u64,
     folder_offset: u64,
     file_limit: u64,
-    file_offset: u64,
+    file_cursor: Option<(String, i64)>,
 ) -> Result<folder_service::FolderContents> {
     let share = share_repo::find_by_token(&state.db, token)
         .await?
@@ -230,7 +230,7 @@ pub async fn list_shared_folder(
         folder_limit,
         folder_offset,
         file_limit,
-        file_offset,
+        file_cursor,
     )
     .await
 }
@@ -323,7 +323,7 @@ pub async fn list_shared_subfolder(
     folder_limit: u64,
     folder_offset: u64,
     file_limit: u64,
-    file_offset: u64,
+    file_cursor: Option<(String, i64)>,
 ) -> Result<folder_service::FolderContents> {
     let share = share_repo::find_by_token(&state.db, token)
         .await?
@@ -352,7 +352,7 @@ pub async fn list_shared_subfolder(
         folder_limit,
         folder_offset,
         file_limit,
-        file_offset,
+        file_cursor,
     )
     .await
 }

@@ -74,7 +74,7 @@ export default function TrashPage() {
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
 
 	const items = toTrashItems(contents);
-	const hasMoreFiles = contents.files.length < contents.files_total;
+	const hasMoreFiles = contents.next_file_cursor != null;
 	const hasMoreFolders = contents.folders.length < contents.folders_total;
 	const hasMore = hasMoreFiles || hasMoreFolders;
 	const selectedItems = items.filter((item) =>
@@ -103,24 +103,26 @@ export default function TrashPage() {
 	}, []);
 
 	const loadMore = useCallback(async () => {
-		if (loadingMore) return;
+		if (loadingMore || !contents.next_file_cursor) return;
 		setLoadingMore(true);
 		try {
 			const data = await trashService.list({
 				folder_limit: 0,
 				file_limit: TRASH_PAGE_SIZE,
-				file_offset: contents.files.length,
+				file_after_deleted_at: contents.next_file_cursor.deleted_at,
+				file_after_id: contents.next_file_cursor.id,
 			});
 			setContents((prev) => ({
 				...prev,
 				files: [...prev.files, ...data.files],
+				next_file_cursor: data.next_file_cursor,
 			}));
 		} catch (err) {
 			handleApiError(err);
 		} finally {
 			setLoadingMore(false);
 		}
-	}, [contents.files.length, loadingMore]);
+	}, [contents.next_file_cursor, loadingMore]);
 
 	useEffect(() => {
 		void load();

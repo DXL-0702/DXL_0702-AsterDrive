@@ -9,11 +9,19 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 
 #[derive(Serialize, ToSchema)]
+pub struct FileCursor {
+    pub name: String,
+    pub id: i64,
+}
+
+#[derive(Serialize, ToSchema)]
 pub struct FolderContents {
     pub folders: Vec<folder::Model>,
     pub files: Vec<file::Model>,
     pub folders_total: u64,
     pub files_total: u64,
+    /// 下一页 cursor，None 表示已到最后一页
+    pub next_file_cursor: Option<FileCursor>,
 }
 
 pub async fn create(
@@ -159,7 +167,7 @@ pub async fn list(
     folder_limit: u64,
     folder_offset: u64,
     file_limit: u64,
-    file_offset: u64,
+    file_cursor: Option<(String, i64)>,
 ) -> Result<FolderContents> {
     let (folders, folders_total) = if folder_limit == 0 {
         (
@@ -187,17 +195,17 @@ pub async fn list(
     let (files, files_total) = if file_limit == 0 {
         (
             vec![],
-            file_repo::find_by_folder_paginated(&state.db, user_id, parent_id, 0, 0)
+            file_repo::find_by_folder_cursor(&state.db, user_id, parent_id, 0, None)
                 .await?
                 .1,
         )
     } else {
-        let (raw, total) = file_repo::find_by_folder_paginated(
+        let (raw, total) = file_repo::find_by_folder_cursor(
             &state.db,
             user_id,
             parent_id,
             file_limit,
-            file_offset,
+            file_cursor,
         )
         .await?;
         let filtered: Vec<_> = raw
@@ -207,11 +215,21 @@ pub async fn list(
         (filtered, total)
     };
 
+    let next_file_cursor = if files.len() as u64 == file_limit && file_limit > 0 {
+        files.last().map(|f| FileCursor {
+            name: f.name.clone(),
+            id: f.id,
+        })
+    } else {
+        None
+    };
+
     Ok(FolderContents {
         folders,
         files,
         folders_total,
         files_total,
+        next_file_cursor,
     })
 }
 
@@ -385,7 +403,7 @@ pub async fn list_shared(
     folder_limit: u64,
     folder_offset: u64,
     file_limit: u64,
-    file_offset: u64,
+    file_cursor: Option<(String, i64)>,
 ) -> Result<FolderContents> {
     let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
     let (folders, folders_total) = folder_repo::find_children_paginated(
@@ -396,18 +414,27 @@ pub async fn list_shared(
         folder_offset,
     )
     .await?;
-    let (files, files_total) = file_repo::find_by_folder_paginated(
+    let (files, files_total) = file_repo::find_by_folder_cursor(
         &state.db,
         folder.user_id,
         Some(folder_id),
         file_limit,
-        file_offset,
+        file_cursor,
     )
     .await?;
+    let next_file_cursor = if files.len() as u64 == file_limit && file_limit > 0 {
+        files.last().map(|f| FileCursor {
+            name: f.name.clone(),
+            id: f.id,
+        })
+    } else {
+        None
+    };
     Ok(FolderContents {
         folders,
         files,
         folders_total,
         files_total,
+        next_file_cursor,
     })
 }

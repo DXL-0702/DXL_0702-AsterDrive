@@ -1,6 +1,6 @@
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
-use crate::api::pagination::FolderListQuery;
+use crate::api::pagination::TrashListQuery;
 use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
@@ -36,7 +36,7 @@ pub struct TrashItemPath {
     path = "/api/v1/trash",
     tag = "trash",
     operation_id = "list_trash",
-    params(FolderListQuery),
+    params(TrashListQuery),
     responses(
         (status = 200, description = "Trash contents", body = inline(ApiResponse<trash_service::TrashContents>)),
         (status = 401, description = "Unauthorized"),
@@ -46,7 +46,7 @@ pub struct TrashItemPath {
 pub async fn list_trash(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
-    query: web::Query<FolderListQuery>,
+    query: web::Query<TrashListQuery>,
 ) -> Result<HttpResponse> {
     let contents = trash_service::list_trash(
         &state,
@@ -54,7 +54,7 @@ pub async fn list_trash(
         query.folder_limit(),
         query.folder_offset(),
         query.file_limit(),
-        query.file_offset(),
+        query.file_cursor(),
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))

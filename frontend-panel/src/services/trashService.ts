@@ -1,9 +1,16 @@
 import type { TrashContents } from "@/types/api";
-import type { FolderListParams } from "./fileService";
 import { api } from "./http";
 
+export interface TrashListParams {
+	folder_limit?: number;
+	folder_offset?: number;
+	file_limit?: number;
+	file_after_deleted_at?: string;
+	file_after_id?: number;
+}
+
 export const trashService = {
-	list: (params?: FolderListParams) =>
+	list: (params?: TrashListParams) =>
 		api.get<TrashContents>("/trash", { params }),
 
 	restoreFile: (id: number) => api.post<void>(`/trash/file/${id}/restore`),

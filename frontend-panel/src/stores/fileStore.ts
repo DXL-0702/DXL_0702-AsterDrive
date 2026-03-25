@@ -5,7 +5,12 @@ import type { FolderListParams } from "@/services/fileService";
 import { fileService } from "@/services/fileService";
 import { searchService } from "@/services/searchService";
 import { useAuthStore } from "@/stores/authStore";
-import type { BatchResult, FileInfo, FolderInfo } from "@/types/api";
+import type {
+	BatchResult,
+	FileInfo,
+	FolderContents,
+	FolderInfo,
+} from "@/types/api";
 
 interface BreadcrumbItem {
 	id: number | null;
@@ -45,6 +50,7 @@ interface FileState {
 	filesTotalCount: number;
 	foldersTotalCount: number;
 	loadingMore: boolean;
+	nextFileCursor: FolderContents["next_file_cursor"];
 
 	// Search
 	searchQuery: string | null;
@@ -129,6 +135,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 	filesTotalCount: 0,
 	foldersTotalCount: 0,
 	loadingMore: false,
+	nextFileCursor: null,
 
 	viewMode: getStored(STORAGE_KEYS.viewMode, "list"),
 	sortBy: getStored(STORAGE_KEYS.sortBy, "name"),
@@ -152,6 +159,11 @@ export const useFileStore = create<FileState>((set, get) => ({
 			searchFolders: [],
 			selectedFileIds: new Set(),
 			selectedFolderIds: new Set(),
+			files: [],
+			folders: [],
+			filesTotalCount: 0,
+			foldersTotalCount: 0,
+			nextFileCursor: null,
 		});
 		try {
 			const contents = await fetchFolder(folderId, initialPageParams);
@@ -185,6 +197,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 				files: contents.files,
 				foldersTotalCount: contents.folders_total,
 				filesTotalCount: contents.files_total,
+				nextFileCursor: contents.next_file_cursor ?? null,
 				breadcrumb: newBreadcrumb,
 				loading: false,
 				error: null,
@@ -201,7 +214,14 @@ export const useFileStore = create<FileState>((set, get) => ({
 
 	refresh: async () => {
 		const { currentFolderId } = get();
-		set({ loading: true });
+		set({
+			loading: true,
+			files: [],
+			folders: [],
+			filesTotalCount: 0,
+			foldersTotalCount: 0,
+			nextFileCursor: null,
+		});
 		try {
 			const contents = await fetchFolder(currentFolderId, initialPageParams);
 			set({
@@ -209,6 +229,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 				files: contents.files,
 				foldersTotalCount: contents.folders_total,
 				filesTotalCount: contents.files_total,
+				nextFileCursor: contents.next_file_cursor ?? null,
 				loading: false,
 			});
 		} catch (error) {
@@ -218,18 +239,20 @@ export const useFileStore = create<FileState>((set, get) => ({
 	},
 
 	loadMoreFiles: async () => {
-		const { currentFolderId, files, filesTotalCount, loadingMore } = get();
-		if (loadingMore || files.length >= filesTotalCount) return;
+		const { currentFolderId, nextFileCursor, loadingMore } = get();
+		if (loadingMore || !nextFileCursor) return;
 
 		set({ loadingMore: true });
 		try {
 			const contents = await fetchFolder(currentFolderId, {
 				folder_limit: 0,
 				file_limit: FILE_PAGE_SIZE,
-				file_offset: files.length,
+				file_after_name: nextFileCursor.name,
+				file_after_id: nextFileCursor.id,
 			});
 			set((state) => ({
 				files: [...state.files, ...contents.files],
+				nextFileCursor: contents.next_file_cursor ?? null,
 				loadingMore: false,
 			}));
 		} catch {
@@ -238,8 +261,8 @@ export const useFileStore = create<FileState>((set, get) => ({
 	},
 
 	hasMoreFiles: () => {
-		const { files, filesTotalCount } = get();
-		return files.length < filesTotalCount;
+		const cursor = get().nextFileCursor;
+		return cursor !== null && cursor !== undefined;
 	},
 
 	setViewMode: (mode) => {

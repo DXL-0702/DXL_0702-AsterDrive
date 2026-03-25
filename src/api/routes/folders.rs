@@ -95,7 +95,7 @@ pub async fn list_root(
         query.folder_limit(),
         query.folder_offset(),
         query.file_limit(),
-        query.file_offset(),
+        query.file_cursor(),
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
@@ -127,7 +127,7 @@ pub async fn list_folder(
         query.folder_limit(),
         query.folder_offset(),
         query.file_limit(),
-        query.file_offset(),
+        query.file_cursor(),
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))

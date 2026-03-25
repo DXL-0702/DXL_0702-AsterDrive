@@ -35,13 +35,14 @@ pub async fn find_by_folder<C: ConnectionTrait>(
     q.all(db).await.map_err(AsterError::from)
 }
 
-/// 查询文件夹下的文件（排除已删除，分页）
-pub async fn find_by_folder_paginated<C: ConnectionTrait>(
+/// 查询文件夹下的文件（排除已删除，cursor 分页）
+/// after: 上一页最后一条文件的 (name, id)，None 表示从头开始
+pub async fn find_by_folder_cursor<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
     folder_id: Option<i64>,
     limit: u64,
-    offset: u64,
+    after: Option<(String, i64)>,
 ) -> Result<(Vec<file::Model>, u64)> {
     let mut cond = sea_orm::Condition::all()
         .add(file::Column::UserId.eq(user_id))
@@ -52,29 +53,46 @@ pub async fn find_by_folder_paginated<C: ConnectionTrait>(
     };
 
     let base = File::find().filter(cond);
-
     let total = base.clone().count(db).await.map_err(AsterError::from)?;
+
     if total == 0 || limit == 0 {
         return Ok((vec![], total));
     }
 
-    let items = base
-        .order_by_asc(file::Column::Name)
-        .offset(offset)
-        .limit(limit)
-        .all(db)
-        .await
-        .map_err(AsterError::from)?;
+    let items = if let Some((after_name, after_id)) = after {
+        // (name > after_name) OR (name = after_name AND id > after_id)
+        let cursor_cond = sea_orm::Condition::any()
+            .add(file::Column::Name.gt(after_name.clone()))
+            .add(
+                sea_orm::Condition::all()
+                    .add(file::Column::Name.eq(after_name))
+                    .add(file::Column::Id.gt(after_id)),
+            );
+        base.filter(cursor_cond)
+            .order_by_asc(file::Column::Name)
+            .order_by_asc(file::Column::Id)
+            .limit(limit)
+            .all(db)
+            .await
+            .map_err(AsterError::from)?
+    } else {
+        base.order_by_asc(file::Column::Name)
+            .order_by_asc(file::Column::Id)
+            .limit(limit)
+            .all(db)
+            .await
+            .map_err(AsterError::from)?
+    };
 
     Ok((items, total))
 }
 
-/// 查询顶层已删除文件（分页），用 SQL 过滤而非内存过滤
+/// 查询顶层已删除文件（cursor 分页），cursor = (deleted_at, id) 降序
 pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
     limit: u64,
-    offset: u64,
+    after: Option<(chrono::DateTime<chrono::Utc>, i64)>,
 ) -> Result<(Vec<file::Model>, u64)> {
     use sea_orm::sea_query::{Alias, Expr, Query};
 
@@ -89,7 +107,7 @@ pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
         .and_where(Expr::col((Alias::new("f2"), Alias::new("deleted_at"))).is_not_null())
         .to_owned();
 
-    let cond = sea_orm::Condition::all()
+    let base_cond = sea_orm::Condition::all()
         .add(file::Column::UserId.eq(user_id))
         .add(file::Column::DeletedAt.is_not_null())
         .add(
@@ -98,16 +116,29 @@ pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
                 .add(Expr::exists(folder_deleted_subquery).not()),
         );
 
-    let base = File::find().filter(cond);
+    let base = File::find().filter(base_cond.clone());
 
     let total = base.clone().count(db).await.map_err(AsterError::from)?;
     if total == 0 || limit == 0 {
         return Ok((vec![], total));
     }
 
-    let items = base
+    let mut q = File::find().filter(base_cond);
+    if let Some((after_deleted_at, after_id)) = after {
+        q = q.filter(
+            sea_orm::Condition::any()
+                .add(file::Column::DeletedAt.lt(after_deleted_at))
+                .add(
+                    sea_orm::Condition::all()
+                        .add(file::Column::DeletedAt.eq(after_deleted_at))
+                        .add(file::Column::Id.gt(after_id)),
+                ),
+        );
+    }
+
+    let items = q
         .order_by_desc(file::Column::DeletedAt)
-        .offset(offset)
+        .order_by_asc(file::Column::Id)
         .limit(limit)
         .all(db)
         .await

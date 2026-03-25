@@ -634,6 +634,7 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "urlencoding",
  "utoipa",
  "utoipa-actix-web",
  "utoipa-swagger-ui",

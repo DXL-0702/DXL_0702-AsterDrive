@@ -1236,7 +1236,12 @@ export interface components {
          * @example 0
          * @enum {integer}
          */
-        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 2000 | 2001 | 2002 | 2003 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 3010 | 3011 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
+        ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 1006 | 2000 | 2001 | 2002 | 2003 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 3010 | 3011 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
+        FileCursor: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+        };
         FileInfo: {
             /** Format: int64 */
             blob_id: number;
@@ -1298,6 +1303,7 @@ export interface components {
             folders: components["schemas"]["FolderInfo"][];
             /** Format: int64 */
             folders_total: number;
+            next_file_cursor?: null | components["schemas"]["FileCursor"];
         };
         FolderContentsResponse: {
             files: components["schemas"]["FileInfo"][];
@@ -1576,6 +1582,13 @@ export interface components {
             folders: components["schemas"]["TrashFolderItem"][];
             /** Format: int64 */
             folders_total: number;
+            next_file_cursor?: null | components["schemas"]["TrashFileCursor"];
+        };
+        TrashFileCursor: {
+            /** Format: date-time */
+            deleted_at: string;
+            /** Format: int64 */
+            id: number;
         };
         TrashFileItem: {
             created_at: string;
@@ -4327,8 +4340,10 @@ export interface operations {
                 folder_offset?: number | null;
                 /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
                 file_limit?: number | null;
-                /** @description 文件偏移量（默认 0） */
-                file_offset?: number | null;
+                /** @description cursor 分页：上一页最后一条文件的 name（与 file_after_id 配合使用） */
+                file_after_name?: string | null;
+                /** @description cursor 分页：上一页最后一条文件的 id（与 file_after_name 配合使用） */
+                file_after_id?: number | null;
             };
             header?: never;
             path?: never;
@@ -4351,6 +4366,7 @@ export interface operations {
                             folders: components["schemas"]["FolderInfo"][];
                             /** Format: int64 */
                             folders_total: number;
+                            next_file_cursor?: null | components["schemas"]["FileCursor"];
                         };
                         msg: string;
                     };
@@ -4423,8 +4439,10 @@ export interface operations {
                 folder_offset?: number | null;
                 /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
                 file_limit?: number | null;
-                /** @description 文件偏移量（默认 0） */
-                file_offset?: number | null;
+                /** @description cursor 分页：上一页最后一条文件的 name（与 file_after_id 配合使用） */
+                file_after_name?: string | null;
+                /** @description cursor 分页：上一页最后一条文件的 id（与 file_after_name 配合使用） */
+                file_after_id?: number | null;
             };
             header?: never;
             path: {
@@ -4450,6 +4468,7 @@ export interface operations {
                             folders: components["schemas"]["FolderInfo"][];
                             /** Format: int64 */
                             folders_total: number;
+                            next_file_cursor?: null | components["schemas"]["FileCursor"];
                         };
                         msg: string;
                     };
@@ -4913,8 +4932,10 @@ export interface operations {
                 folder_offset?: number | null;
                 /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
                 file_limit?: number | null;
-                /** @description 文件偏移量（默认 0） */
-                file_offset?: number | null;
+                /** @description cursor 分页：上一页最后一条文件的 name（与 file_after_id 配合使用） */
+                file_after_name?: string | null;
+                /** @description cursor 分页：上一页最后一条文件的 id（与 file_after_name 配合使用） */
+                file_after_id?: number | null;
             };
             header?: never;
             path: {
@@ -4940,6 +4961,7 @@ export interface operations {
                             folders: components["schemas"]["FolderInfo"][];
                             /** Format: int64 */
                             folders_total: number;
+                            next_file_cursor?: null | components["schemas"]["FileCursor"];
                         };
                         msg: string;
                     };
@@ -5079,8 +5101,10 @@ export interface operations {
                 folder_offset?: number | null;
                 /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
                 file_limit?: number | null;
-                /** @description 文件偏移量（默认 0） */
-                file_offset?: number | null;
+                /** @description cursor 分页：上一页最后一条文件的 name（与 file_after_id 配合使用） */
+                file_after_name?: string | null;
+                /** @description cursor 分页：上一页最后一条文件的 id（与 file_after_name 配合使用） */
+                file_after_id?: number | null;
             };
             header?: never;
             path: {
@@ -5108,6 +5132,7 @@ export interface operations {
                             folders: components["schemas"]["FolderInfo"][];
                             /** Format: int64 */
                             folders_total: number;
+                            next_file_cursor?: null | components["schemas"]["FileCursor"];
                         };
                         msg: string;
                     };
@@ -5404,14 +5429,16 @@ export interface operations {
     list_trash: {
         parameters: {
             query?: {
-                /** @description 文件夹最大返回数量（默认 200，最大 1000；传 0 跳过文件夹查询） */
+                /** @description 文件夹最大返回数量（默认 200，最大 1000） */
                 folder_limit?: number | null;
                 /** @description 文件夹偏移量（默认 0） */
                 folder_offset?: number | null;
                 /** @description 文件最大返回数量（默认 100，最大 1000；传 0 跳过文件查询） */
                 file_limit?: number | null;
-                /** @description 文件偏移量（默认 0） */
-                file_offset?: number | null;
+                /** @description cursor 分页：上一页最后一条文件的 deleted_at（RFC3339，与 file_after_id 配合使用） */
+                file_after_deleted_at?: string | null;
+                /** @description cursor 分页：上一页最后一条文件的 id（与 file_after_deleted_at 配合使用） */
+                file_after_id?: number | null;
             };
             header?: never;
             path?: never;
@@ -5434,6 +5461,7 @@ export interface operations {
                             folders: components["schemas"]["TrashFolderItem"][];
                             /** Format: int64 */
                             folders_total: number;
+                            next_file_cursor?: null | components["schemas"]["TrashFileCursor"];
                         };
                         msg: string;
                     };

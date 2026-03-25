@@ -46,6 +46,14 @@ pub struct TrashContents {
     pub files: Vec<TrashFileItem>,
     pub folders_total: u64,
     pub files_total: u64,
+    /// 下一页 cursor，None 表示已到最后一页
+    pub next_file_cursor: Option<TrashFileCursor>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct TrashFileCursor {
+    pub deleted_at: chrono::DateTime<chrono::Utc>,
+    pub id: i64,
 }
 
 /// 列出用户回收站内容（分页）
@@ -55,7 +63,7 @@ pub async fn list_trash(
     folder_limit: u64,
     folder_offset: u64,
     file_limit: u64,
-    file_offset: u64,
+    file_cursor: Option<(chrono::DateTime<chrono::Utc>, i64)>,
 ) -> Result<TrashContents> {
     let (raw_folders, folders_total) = folder_repo::find_top_level_deleted_paginated(
         &state.db,
@@ -70,9 +78,20 @@ pub async fn list_trash(
         folders.push(build_trash_folder_item(&state.db, folder).await?);
     }
 
-    let (raw_files, files_total) =
-        file_repo::find_top_level_deleted_paginated(&state.db, user_id, file_limit, file_offset)
+    let (raw_files, files_total): (Vec<_>, u64) =
+        file_repo::find_top_level_deleted_paginated(&state.db, user_id, file_limit, file_cursor)
             .await?;
+
+    let next_file_cursor = if file_limit > 0 && raw_files.len() as u64 == file_limit {
+        raw_files.last().and_then(|f| {
+            f.deleted_at.map(|ts| TrashFileCursor {
+                deleted_at: ts,
+                id: f.id,
+            })
+        })
+    } else {
+        None
+    };
 
     let mut files = Vec::new();
     for file in raw_files {
@@ -84,6 +103,7 @@ pub async fn list_trash(
         files,
         folders_total,
         files_total,
+        next_file_cursor,
     })
 }
 
@@ -262,7 +282,7 @@ pub async fn purge_all(state: &AppState, user_id: i64) -> Result<u32> {
 
     // 2. 处理顶层已删除散文件（批量）
     let (top_files, _) =
-        file_repo::find_top_level_deleted_paginated(&state.db, user_id, 10000, 0).await?;
+        file_repo::find_top_level_deleted_paginated(&state.db, user_id, 10000, None).await?;
     if !top_files.is_empty() {
         let file_count = top_files.len() as u32;
         match file_service::batch_purge(state, top_files, user_id).await {

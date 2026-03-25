@@ -188,7 +188,7 @@ pub async fn list_shared_content(
         query.folder_limit(),
         query.folder_offset(),
         query.file_limit(),
-        query.file_offset(),
+        query.file_cursor(),
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
@@ -226,7 +226,7 @@ pub async fn list_shared_subfolder_content(
         query.folder_limit(),
         query.folder_offset(),
         query.file_limit(),
-        query.file_offset(),
+        query.file_cursor(),
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))

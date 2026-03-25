@@ -59,41 +59,83 @@ async fn test_folder_list_pagination_defaults() {
 }
 
 #[actix_web::test]
-async fn test_folder_list_pagination_limit_offset() {
+async fn test_folder_list_file_cursor_pagination() {
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
-    for i in 0..5 {
-        create_folder!(app, token, format!("folder-{i:03}"));
-    }
+    // Create 8 files
     for _ in 0..8 {
         upload_test_file!(app, token);
     }
 
-    // Page 1: folder_limit=2, file_limit=3
+    // Page 1: file_limit=3, no cursor
     let req = test::TestRequest::get()
-        .uri("/api/v1/folders?folder_limit=2&folder_offset=0&file_limit=3&file_offset=0")
+        .uri("/api/v1/folders?folder_limit=0&file_limit=3")
         .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["folders"].as_array().unwrap().len(), 2);
-    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 3);
-    assert_eq!(body["data"]["folders_total"], 5);
+    let page1_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(page1_files.len(), 3);
     assert_eq!(body["data"]["files_total"], 8);
+    // next_file_cursor must be set (more pages exist)
+    assert!(!body["data"]["next_file_cursor"].is_null());
 
-    // Page tail: offset near end
+    let cursor_name = body["data"]["next_file_cursor"]["name"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let cursor_id = body["data"]["next_file_cursor"]["id"].as_i64().unwrap();
+    let page1_ids: Vec<i64> = page1_files
+        .iter()
+        .map(|f| f["id"].as_i64().unwrap())
+        .collect();
+
+    // Page 2: use cursor
+    let uri = format!(
+        "/api/v1/folders?folder_limit=0&file_limit=3&file_after_name={}&file_after_id={}",
+        urlencoding::encode(&cursor_name),
+        cursor_id
+    );
     let req = test::TestRequest::get()
-        .uri("/api/v1/folders?folder_limit=2&folder_offset=4&file_limit=3&file_offset=6")
+        .uri(&uri)
         .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"]["folders"].as_array().unwrap().len(), 1); // 5th folder
-    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 2); // 7th + 8th file
-    assert_eq!(body["data"]["folders_total"], 5);
-    assert_eq!(body["data"]["files_total"], 8);
+    let page2_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(page2_files.len(), 3);
+    // No duplicates between pages
+    for f in page2_files {
+        let id = f["id"].as_i64().unwrap();
+        assert!(!page1_ids.contains(&id), "duplicate file id {id} in page 2");
+    }
+    let cursor_name2 = body["data"]["next_file_cursor"]["name"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let cursor_id2 = body["data"]["next_file_cursor"]["id"].as_i64().unwrap();
+
+    // Page 3: last page (2 files)
+    let uri = format!(
+        "/api/v1/folders?folder_limit=0&file_limit=3&file_after_name={}&file_after_id={}",
+        urlencoding::encode(&cursor_name2),
+        cursor_id2
+    );
+    let req = test::TestRequest::get()
+        .uri(&uri)
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let page3_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(page3_files.len(), 2);
+    // Last page: next_file_cursor must be null
+    assert!(body["data"]["next_file_cursor"].is_null());
 }
 
 #[actix_web::test]
@@ -193,7 +235,7 @@ async fn test_trash_pagination() {
     assert_eq!(body["data"]["folders_total"], 4);
     assert_eq!(body["data"]["files_total"], 5);
 
-    // Paginated trash
+    // Page 1: file_limit=3, should get next_file_cursor
     let req = test::TestRequest::get()
         .uri("/api/v1/trash?folder_limit=2&file_limit=3")
         .insert_header(("Cookie", format!("aster_access={token}")))
@@ -204,4 +246,23 @@ async fn test_trash_pagination() {
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 3);
     assert_eq!(body["data"]["folders_total"], 4);
     assert_eq!(body["data"]["files_total"], 5);
+    let cursor = &body["data"]["next_file_cursor"];
+    assert!(
+        cursor.is_object(),
+        "should have next_file_cursor after page 1"
+    );
+    let after_deleted_at = cursor["deleted_at"].as_str().unwrap();
+    let after_id = cursor["id"].as_i64().unwrap();
+
+    // Page 2: use cursor, should get remaining 2 files and no more cursor
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/trash?folder_limit=0&file_limit=3&file_after_deleted_at={after_deleted_at}&file_after_id={after_id}"
+        ))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 2);
+    assert!(body["data"]["next_file_cursor"].is_null(), "no more pages");
 }

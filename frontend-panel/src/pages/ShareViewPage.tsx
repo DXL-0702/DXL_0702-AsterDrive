@@ -54,8 +54,7 @@ export default function ShareViewPage() {
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
 
 	const SHARE_PAGE_SIZE = 100;
-	const hasMoreFiles =
-		(folderContents?.files.length ?? 0) < (folderContents?.files_total ?? 0);
+	const hasMoreFiles = folderContents?.next_file_cursor != null;
 
 	const loadInfo = useCallback(async () => {
 		if (!token) return;
@@ -133,25 +132,40 @@ export default function ShareViewPage() {
 	);
 
 	const loadMoreShareFiles = useCallback(async () => {
-		if (!token || !folderContents || loadingMore) return;
+		if (
+			!token ||
+			!folderContents ||
+			loadingMore ||
+			!folderContents.next_file_cursor
+		)
+			return;
 		setLoadingMore(true);
 		try {
 			// Current folder = last breadcrumb item
 			const currentId = breadcrumb[breadcrumb.length - 1]?.id ?? null;
+			const cursor = folderContents.next_file_cursor;
 			const contents =
 				currentId === null
 					? await shareService.listContent(token, {
 							folder_limit: 0,
 							file_limit: SHARE_PAGE_SIZE,
-							file_offset: folderContents.files.length,
+							file_after_name: cursor.name,
+							file_after_id: cursor.id,
 						})
 					: await shareService.listSubfolderContent(token, currentId, {
 							folder_limit: 0,
 							file_limit: SHARE_PAGE_SIZE,
-							file_offset: folderContents.files.length,
+							file_after_name: cursor.name,
+							file_after_id: cursor.id,
 						});
 			setFolderContents((prev) =>
-				prev ? { ...prev, files: [...prev.files, ...contents.files] } : prev,
+				prev
+					? {
+							...prev,
+							files: [...prev.files, ...contents.files],
+							next_file_cursor: contents.next_file_cursor,
+						}
+					: prev,
 			);
 		} catch (e) {
 			handleApiError(e);
