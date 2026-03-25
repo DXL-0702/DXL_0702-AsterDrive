@@ -10,19 +10,23 @@ use error_code::ErrorCode;
 use response::ApiResponse;
 
 pub fn configure(cfg: &mut web::ServiceConfig, db: &sea_orm::DatabaseConnection) {
+    let rl = crate::config::try_get_config()
+        .map(|c| c.rate_limit.clone())
+        .unwrap_or_default();
+
     cfg.service(
         web::scope("/api/v1")
-            .service(routes::auth::routes())
-            .service(routes::files::routes())
-            .service(routes::folders::routes())
-            .service(routes::admin::routes())
-            .service(routes::shares::routes())
-            .service(routes::share_public::routes())
-            .service(routes::webdav_accounts::routes())
-            .service(routes::trash::routes())
-            .service(routes::properties::routes())
-            .service(routes::batch::routes())
-            .service(routes::search::routes())
+            .service(routes::auth::routes(&rl))
+            .service(routes::files::routes(&rl))
+            .service(routes::folders::routes(&rl))
+            .service(routes::admin::routes(&rl))
+            .service(routes::shares::routes(&rl))
+            .service(routes::share_public::routes(&rl))
+            .service(routes::webdav_accounts::routes(&rl))
+            .service(routes::trash::routes(&rl))
+            .service(routes::properties::routes(&rl))
+            .service(routes::batch::routes(&rl))
+            .service(routes::search::routes(&rl))
             .default_service(web::to(api_not_found)),
     )
     .service(routes::health::routes());

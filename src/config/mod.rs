@@ -3,7 +3,8 @@ mod loader;
 mod schema;
 
 pub use schema::{
-    AuthConfig, CacheConfig, Config, DatabaseConfig, LoggingConfig, ServerConfig, WebDavConfig,
+    AuthConfig, CacheConfig, Config, DatabaseConfig, LoggingConfig, RateLimitConfig,
+    RateLimitTier, ServerConfig, WebDavConfig,
 };
 
 use std::sync::Arc;

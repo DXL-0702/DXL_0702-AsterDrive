@@ -46,18 +46,8 @@ export const fileService = {
 	setFolderLock: (id: number, locked: boolean) =>
 		api.post<FolderInfo>(`/folders/${id}/lock`, { locked }),
 
-	createEmptyFile: async (name: string, folderId?: number | null) => {
-		const formData = new FormData();
-		formData.append("file", new Blob([]), name);
-		const params = new URLSearchParams();
-		if (folderId != null) params.set("folder_id", String(folderId));
-		const resp = await api.client.post(
-			`/files/upload${params.size ? `?${params}` : ""}`,
-			formData,
-			{ headers: { "Content-Type": "multipart/form-data" } },
-		);
-		return resp.data.data as FileInfo;
-	},
+	createEmptyFile: (name: string, folderId?: number | null) =>
+		api.post<FileInfo>("/files/new", { name, folder_id: folderId ?? null }),
 
 	copyFile: (id: number, folderId?: number | null) =>
 		api.post<FileInfo>(`/files/${id}/copy`, {

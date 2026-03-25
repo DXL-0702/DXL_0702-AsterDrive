@@ -508,7 +508,8 @@ async fn test_presigned_upload_s3_e2e() {
     let got = driver.get(&blob.storage_path).await.unwrap();
     assert_eq!(got, data);
 
-    // 5. 上传相同内容 → 应该 dedup（ref_count 增加，不新建 blob）
+    // 5. 上传相同内容 → S3 presigned 不做 blob 去重（避免回拉 SHA256 抵消直传优势）
+    //    每次上传产生独立 blob，各自 ref_count=1
     let init2 =
         upload_service::init_upload(&state, user.id, "hello2.txt", data.len() as i64, None, None)
             .await
@@ -522,18 +523,22 @@ async fn test_presigned_upload_s3_e2e() {
         .send()
         .await
         .unwrap();
-    // 同名文件会冲突，用不同文件名
     let file2 = upload_service::complete_upload(&state, &id2, user.id, None)
         .await
         .unwrap();
-    assert_eq!(
+    assert_ne!(
         file2.blob_id, file.blob_id,
-        "same content should dedup to same blob"
+        "S3 presigned skips dedup — each upload creates its own blob"
     );
 
-    let blob_after =
+    let blob1 =
         aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, file.blob_id)
             .await
             .unwrap();
-    assert_eq!(blob_after.ref_count, 2);
+    let blob2 =
+        aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, file2.blob_id)
+            .await
+            .unwrap();
+    assert_eq!(blob1.ref_count, 1);
+    assert_eq!(blob2.ref_count, 1);
 }

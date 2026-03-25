@@ -3,46 +3,29 @@ use crate::db::repository::user_repo;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{audit_service, auth_service};
-use actix_governor::{Governor, GovernorConfigBuilder};
+use actix_governor::Governor;
+use actix_web::middleware::Condition;
 use actix_web::cookie::time::Duration as CookieDuration;
 use actix_web::cookie::{Cookie, SameSite};
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 use utoipa::ToSchema;
 
+use crate::api::middleware::rate_limit;
+use crate::config::RateLimitConfig;
+
 const ACCESS_COOKIE: &str = "aster_access";
 const REFRESH_COOKIE: &str = "aster_refresh";
 
-pub fn routes() -> actix_web::Scope {
-    let login_limiter = GovernorConfigBuilder::default()
-        .seconds_per_request(1)
-        .burst_size(5)
-        .finish()
-        .unwrap();
-
-    let register_limiter = GovernorConfigBuilder::default()
-        .seconds_per_request(1)
-        .burst_size(3)
-        .finish()
-        .unwrap();
+pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
+    let limiter = rate_limit::build_governor(&rl.auth);
 
     web::scope("/auth")
+        .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
         .route("/check", web::post().to(check))
-        .service(
-            web::resource("/register")
-                .wrap(Governor::new(&register_limiter))
-                .route(web::post().to(register)),
-        )
-        .service(
-            web::resource("/setup")
-                .wrap(Governor::new(&register_limiter))
-                .route(web::post().to(setup)),
-        )
-        .service(
-            web::resource("/login")
-                .wrap(Governor::new(&login_limiter))
-                .route(web::post().to(login)),
-        )
+        .route("/register", web::post().to(register))
+        .route("/setup", web::post().to(setup))
+        .route("/login", web::post().to(login))
         .route("/refresh", web::post().to(refresh))
         .route("/logout", web::post().to(logout))
         .route("/me", web::get().to(me))

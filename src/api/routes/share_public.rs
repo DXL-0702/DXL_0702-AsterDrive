@@ -1,16 +1,28 @@
+use crate::api::middleware::rate_limit;
 use crate::api::pagination::FolderListQuery;
 use crate::api::response::ApiResponse;
+use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::share_service;
+use actix_governor::Governor;
+use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 use utoipa::ToSchema;
 
-pub fn routes() -> actix_web::Scope {
+pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
+    let limiter = rate_limit::build_governor(&rl.public);
+    let verify_limiter = rate_limit::build_governor(&rl.auth);
+
     web::scope("/s")
+        .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
         .route("/{token}", web::get().to(get_share_info))
-        .route("/{token}/verify", web::post().to(verify_password))
+        .service(
+            web::resource("/{token}/verify")
+                .wrap(Condition::new(rl.enabled, Governor::new(&verify_limiter)))
+                .route(web::post().to(verify_password)),
+        )
         .route("/{token}/download", web::get().to(download_shared))
         .route(
             "/{token}/files/{file_id}/download",

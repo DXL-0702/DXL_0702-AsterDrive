@@ -30,3 +30,23 @@ max_backups = 5           # 保留的历史日志文件数量
 [webdav]
 prefix = "/webdav"
 payload_limit = 10737418240  # 10 GiB
+
+# Rate limiting 配置（默认不启用，按需开启）
+# [rate_limit]
+# enabled = true
+#
+# [rate_limit.auth]     # 认证接口：登录/注册/refresh（防暴力破解）
+# seconds_per_request = 2
+# burst_size = 5
+#
+# [rate_limit.public]   # 公开分享访问（匿名）
+# seconds_per_request = 1
+# burst_size = 30
+#
+# [rate_limit.api]      # 已认证一般读写接口
+# seconds_per_request = 1
+# burst_size = 120
+#
+# [rate_limit.write]    # 批量操作 / 管理后台（高成本写操作）
+# seconds_per_request = 2
+# burst_size = 10

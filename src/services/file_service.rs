@@ -453,7 +453,6 @@ pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64
         return Ok(0);
     }
 
-    let db = &state.db;
     let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
     let blob_ids: Vec<i64> = files.iter().map(|f| f.blob_id).collect();
     let total_size: i64 = files.iter().map(|f| f.size).sum();
@@ -848,4 +847,84 @@ pub async fn resolve_policy(
     policy_repo::find_default(db)
         .await?
         .ok_or_else(|| AsterError::storage_policy_not_found("no default storage policy configured"))
+}
+
+/// 直接创建空文件（0 字节），不走 multipart upload 流程。
+///
+/// - 校验文件名
+/// - 解析存储策略
+/// - blob 去重（空文件 sha256 固定）
+/// - 若 blob 不存在则用 driver.put 写入 0 字节
+/// - 创建文件记录并更新配额（0 字节不影响配额）
+pub async fn create_empty(
+    state: &AppState,
+    user_id: i64,
+    folder_id: Option<i64>,
+    filename: &str,
+) -> Result<file::Model> {
+    use crate::db::repository::{file_repo, user_repo};
+    use crate::entities::file;
+    use sea_orm::Set;
+
+    let db = &state.db;
+
+    crate::utils::validate_name(filename)?;
+
+    // 空文件固定 sha256
+    const EMPTY_SHA256: &str =
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const EMPTY_SIZE: i64 = 0;
+
+    let policy = resolve_policy(state, user_id, folder_id).await?;
+    let driver = state.driver_registry.get_driver(&policy)?;
+
+    let storage_path = crate::utils::storage_path_from_hash(EMPTY_SHA256);
+
+    // blob 去重
+    let blob_pre_exists =
+        file_repo::find_blob_by_hash(db, EMPTY_SHA256, policy.id)
+            .await?
+            .is_some();
+    if !blob_pre_exists {
+        driver.put(&storage_path, &[]).await?;
+    }
+
+    let now = chrono::Utc::now();
+    let mime = mime_guess::from_path(filename)
+        .first_or_octet_stream()
+        .to_string();
+
+    let txn = db.begin().await.map_err(AsterError::from)?;
+
+    let blob = file_repo::find_or_create_blob(
+        &txn,
+        EMPTY_SHA256,
+        EMPTY_SIZE,
+        policy.id,
+        &storage_path,
+    )
+    .await?;
+
+    let final_name =
+        file_repo::resolve_unique_filename(&txn, user_id, folder_id, filename).await?;
+
+    let file_model = file::ActiveModel {
+        name: Set(final_name),
+        folder_id: Set(folder_id),
+        blob_id: Set(blob.id),
+        size: Set(EMPTY_SIZE),
+        user_id: Set(user_id),
+        mime_type: Set(mime),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    };
+    let created = file_repo::create(&txn, file_model).await?;
+
+    // 空文件配额为 0，仍调用以保持一致性
+    user_repo::update_storage_used(&txn, user_id, EMPTY_SIZE).await?;
+
+    txn.commit().await.map_err(AsterError::from)?;
+
+    Ok(created)
 }

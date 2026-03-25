@@ -298,11 +298,64 @@ async fn test_file_versions() {
     // 改为：直接检查版本列表 API 可用性
     assert!(resp.status() == 201 || resp.status() == 400);
 
-    // 列出版本（可能有也可能没有，取决于是否覆盖成功）
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/files/{file_id}/versions"))
         .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_create_empty_file() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // 创建空文件
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/new")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Content-Type", "application/json"))
+        .set_json(serde_json::json!({ "name": "empty.txt", "folder_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+    assert_eq!(body["data"]["name"].as_str().unwrap(), "empty.txt");
+    assert_eq!(body["data"]["size"].as_i64().unwrap(), 0);
+
+    // 同名再建一个，应自动重命名
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/new")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Content-Type", "application/json"))
+        .set_json(serde_json::json!({ "name": "empty.txt", "folder_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body2: Value = test::read_body_json(resp).await;
+    let name2 = body2["data"]["name"].as_str().unwrap();
+    assert_ne!(name2, "empty.txt", "duplicate name should be auto-renamed");
+
+    // 下载空文件应返回 200，内容为空
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/download"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let bytes = test::read_body(resp).await;
+    assert!(bytes.is_empty());
+
+    // 无效文件名应返回 400
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/new")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Content-Type", "application/json"))
+        .set_json(serde_json::json!({ "name": "", "folder_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
 }

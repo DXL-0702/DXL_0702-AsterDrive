@@ -1,5 +1,7 @@
 use crate::api::middleware::auth::JwtAuth;
+use crate::api::middleware::rate_limit;
 use crate::api::response::ApiResponse;
+use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{
@@ -7,13 +9,18 @@ use crate::services::{
     auth_service::Claims,
     share_service,
 };
+use actix_governor::Governor;
+use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
 use utoipa::ToSchema;
 
-pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
+pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
+    let limiter = rate_limit::build_governor(&rl.api);
+
     web::scope("/shares")
         .wrap(JwtAuth)
+        .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
         .route("", web::post().to(create_share))
         .route("", web::get().to(list_shares))
         .route("/{id}", web::delete().to(delete_share))

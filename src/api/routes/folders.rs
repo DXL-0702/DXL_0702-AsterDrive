@@ -1,6 +1,8 @@
 use crate::api::middleware::auth::JwtAuth;
+use crate::api::middleware::rate_limit;
 use crate::api::pagination::FolderListQuery;
 use crate::api::response::ApiResponse;
+use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{
@@ -9,13 +11,18 @@ use crate::services::{
     folder_service,
 };
 use crate::types::EntityType;
+use actix_governor::Governor;
+use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
 use utoipa::ToSchema;
 
-pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
+pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
+    let limiter = rate_limit::build_governor(&rl.api);
+
     web::scope("/folders")
         .wrap(JwtAuth)
+        .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
         .route("", web::get().to(list_root))
         .route("", web::post().to(create_folder))
         .route("/{id}", web::get().to(list_folder))

@@ -1,15 +1,22 @@
 use crate::api::middleware::auth::JwtAuth;
+use crate::api::middleware::rate_limit;
 use crate::api::response::ApiResponse;
+use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{auth_service::Claims, webdav_account_service};
+use actix_governor::Governor;
+use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 use utoipa::ToSchema;
 
-pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
+pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
+    let limiter = rate_limit::build_governor(&rl.api);
+
     web::scope("/webdav-accounts")
         .wrap(JwtAuth)
+        .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
         .route("", web::get().to(list_accounts))
         .route("", web::post().to(create_account))
         .route("/{id}", web::delete().to(delete_account))

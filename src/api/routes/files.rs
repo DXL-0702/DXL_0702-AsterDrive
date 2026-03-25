@@ -1,5 +1,7 @@
 use crate::api::middleware::auth::JwtAuth;
+use crate::api::middleware::rate_limit;
 use crate::api::response::ApiResponse;
+use crate::config::RateLimitConfig;
 use crate::db::repository::file_repo;
 use crate::errors::AsterError;
 use crate::errors::Result;
@@ -10,14 +12,20 @@ use crate::services::{
     file_service, thumbnail_service, upload_service,
 };
 use crate::types::EntityType;
+use actix_governor::Governor;
+use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 
-pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
+pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
+    let limiter = rate_limit::build_governor(&rl.api);
+
     web::scope("/files")
         .wrap(JwtAuth)
+        .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
         .route("/upload", web::post().to(upload))
+        .route("/new", web::post().to(create_empty))
         // chunked upload routes (before /{id} to avoid conflicts)
         .route("/upload/init", web::post().to(init_chunked_upload))
         .route(
@@ -99,6 +107,40 @@ pub async fn upload(
         None,
     )
     .await;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct CreateEmptyRequest {
+    pub name: String,
+    pub folder_id: Option<i64>,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/files/new",
+    tag = "files",
+    operation_id = "create_empty_file",
+    request_body(content = CreateEmptyRequest, content_type = "application/json"),
+    responses(
+        (status = 201, description = "Empty file created", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 400, description = "Invalid name"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn create_empty(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    body: web::Json<CreateEmptyRequest>,
+) -> Result<HttpResponse> {
+    let file = file_service::create_empty(
+        &state,
+        claims.user_id,
+        body.folder_id,
+        &body.name,
+    )
+    .await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
 }
 

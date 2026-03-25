@@ -1,5 +1,7 @@
 use crate::api::middleware::auth::JwtAuth;
+use crate::api::middleware::rate_limit;
 use crate::api::response::ApiResponse;
+use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{
@@ -7,13 +9,18 @@ use crate::services::{
     user_service,
 };
 use crate::types::{DriverType, UserRole, UserStatus};
+use actix_governor::Governor;
+use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 
-pub fn routes() -> impl actix_web::dev::HttpServiceFactory {
+pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
+    let limiter = rate_limit::build_governor(&rl.write);
+
     web::scope("/admin")
         .wrap(JwtAuth)
+        .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
         // policies
         .route("/policies", web::get().to(list_policies))
         .route("/policies", web::post().to(create_policy))
@@ -407,6 +414,10 @@ pub async fn update_user(
         body.storage_quota,
     )
     .await?;
+
+    // 主动失效用户状态缓存（禁用用户立即生效）
+    state.cache.delete(&format!("user_status:{target_id}")).await;
+
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }
 

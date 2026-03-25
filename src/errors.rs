@@ -62,6 +62,7 @@ define_errors! {
     InternalError(       "E004", "Internal Server Error"),
     ValidationError(     "E005", "Validation Error"),
     RecordNotFound(      "E006", "Record Not Found"),
+    RateLimited(         "E007", "Rate Limited"),
 
     // ========== E010-E019: 认证错误 ==========
     AuthInvalidCredentials("E010", "Invalid Credentials"),
@@ -141,6 +142,8 @@ impl AsterError {
             Self::SharePasswordRequired(_) | Self::ShareDownloadLimit(_) => StatusCode::FORBIDDEN,
 
             Self::StorageQuotaExceeded(_) => StatusCode::INSUFFICIENT_STORAGE,
+
+            Self::RateLimited(_) => StatusCode::TOO_MANY_REQUESTS,
 
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }

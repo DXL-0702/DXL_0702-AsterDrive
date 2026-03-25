@@ -14,6 +14,8 @@ pub struct Config {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub webdav: WebDavConfig,
+    #[serde(default)]
+    pub rate_limit: RateLimitConfig,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -228,5 +230,95 @@ impl WebDavConfig {
     }
     fn default_payload_limit() -> usize {
         10_737_418_240 // 10 GB 硬上限
+    }
+}
+
+/// Rate limiting 配置
+///
+/// 四个层级，不同接口类别不同阈值：
+/// - `auth`: 认证/密码验证（最严格，防暴力破解）
+/// - `public`: 公开分享匿名访问
+/// - `api`: 已认证一般读写操作
+/// - `write`: 高成本写操作（批量/管理）
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RateLimitConfig {
+    #[serde(default = "RateLimitConfig::default_enabled")]
+    pub enabled: bool,
+    #[serde(default = "RateLimitConfig::default_auth")]
+    pub auth: RateLimitTier,
+    #[serde(default = "RateLimitConfig::default_public")]
+    pub public: RateLimitTier,
+    #[serde(default = "RateLimitConfig::default_api")]
+    pub api: RateLimitTier,
+    #[serde(default = "RateLimitConfig::default_write")]
+    pub write: RateLimitTier,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            enabled: Self::default_enabled(),
+            auth: Self::default_auth(),
+            public: Self::default_public(),
+            api: Self::default_api(),
+            write: Self::default_write(),
+        }
+    }
+}
+
+impl RateLimitConfig {
+    fn default_enabled() -> bool {
+        false
+    }
+    fn default_auth() -> RateLimitTier {
+        RateLimitTier {
+            seconds_per_request: 2,
+            burst_size: 5,
+        }
+    }
+    fn default_public() -> RateLimitTier {
+        RateLimitTier {
+            seconds_per_request: 1,
+            burst_size: 30,
+        }
+    }
+    fn default_api() -> RateLimitTier {
+        RateLimitTier {
+            seconds_per_request: 1,
+            burst_size: 120,
+        }
+    }
+    fn default_write() -> RateLimitTier {
+        RateLimitTier {
+            seconds_per_request: 2,
+            burst_size: 10,
+        }
+    }
+
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct RateLimitTier {
+    #[serde(default = "RateLimitTier::default_seconds")]
+    pub seconds_per_request: u64,
+    #[serde(default = "RateLimitTier::default_burst")]
+    pub burst_size: u32,
+}
+
+impl Default for RateLimitTier {
+    fn default() -> Self {
+        Self {
+            seconds_per_request: Self::default_seconds(),
+            burst_size: Self::default_burst(),
+        }
+    }
+}
+
+impl RateLimitTier {
+    fn default_seconds() -> u64 {
+        1
+    }
+    fn default_burst() -> u32 {
+        60
     }
 }

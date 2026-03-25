@@ -29,6 +29,7 @@ pub enum ErrorCode {
     DatabaseError = 1003,
     ConfigError = 1004,
     EndpointNotFound = 1005,
+    RateLimited = 1006,
 
     // 认证错误 2000-2099
     AuthFailed = 2000,
@@ -83,6 +84,7 @@ impl From<&AsterError> for ErrorCode {
             AsterError::AuthTokenExpired(_) => ErrorCode::TokenExpired,
             AsterError::AuthTokenInvalid(_) => ErrorCode::TokenInvalid,
             AsterError::AuthForbidden(_) => ErrorCode::Forbidden,
+            AsterError::RateLimited(_) => ErrorCode::RateLimited,
 
             // 文件
             AsterError::FileNotFound(_) => ErrorCode::FileNotFound,
