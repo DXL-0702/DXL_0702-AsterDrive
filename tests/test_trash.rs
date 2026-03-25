@@ -134,3 +134,150 @@ async fn test_trash_purge_all() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 0);
 }
+
+/// 测试嵌套文件夹的 purge：删除顶层文件夹后 purge，子文件夹和子文件都应被彻底清理
+#[actix_web::test]
+async fn test_purge_nested_folder_cleans_children() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // 创建 parent/child 文件夹结构
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "parent" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let parent_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "child", "parent_id": parent_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let child_id = body["data"]["id"].as_i64().unwrap();
+
+    // 在 child 内上传文件
+    let file_id = upload_test_file_to_folder!(app, token, child_id);
+
+    // 软删除顶层文件夹（会递归标记 child 和文件）
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/folders/{parent_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // purge 顶层文件夹
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/trash/folder/{parent_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // 回收站完全为空（子文件夹和子文件都已递归清理）
+    let req = test::TestRequest::get()
+        .uri("/api/v1/trash")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["folders"].as_array().unwrap().len(), 0);
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 0);
+
+    // 子文件应已被硬删除（404）
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404, "child file should be permanently deleted");
+}
+
+/// 测试 purge_all 三层嵌套：所有子项都应被清理
+#[actix_web::test]
+async fn test_purge_all_nested_no_orphans() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // 创建 A/B/C 三层嵌套
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "A" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let a_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "B", "parent_id": a_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let b_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "C", "parent_id": b_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let c_id = body["data"]["id"].as_i64().unwrap();
+
+    // 每层各上传一个文件
+    upload_test_file_to_folder!(app, token, a_id);
+    upload_test_file_to_folder!(app, token, b_id);
+    let c_file_id = upload_test_file_to_folder!(app, token, c_id);
+
+    // 根目录散文件
+    let root_file_id = upload_test_file!(app, token);
+
+    // 软删除 A + 散文件
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/folders/{a_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/files/{root_file_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    // purge all
+    let req = test::TestRequest::delete()
+        .uri("/api/v1/trash")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // 回收站完全为空
+    let req = test::TestRequest::get()
+        .uri("/api/v1/trash")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["folders"].as_array().unwrap().len(), 0);
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 0);
+
+    // 最深层文件也应 404
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{c_file_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404);
+}

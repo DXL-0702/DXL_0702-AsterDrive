@@ -115,6 +115,30 @@ pub async fn delete_all_by_file_id<C: ConnectionTrait>(db: &C, file_id: i64) -> 
     Ok(blob_ids)
 }
 
+/// 批量删除多个文件的所有版本记录，返回所有涉及的 blob_id
+pub async fn delete_all_by_file_ids<C: ConnectionTrait>(
+    db: &C,
+    file_ids: &[i64],
+) -> Result<Vec<i64>> {
+    if file_ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let versions = FileVersion::find()
+        .filter(file_version::Column::FileId.is_in(file_ids.to_vec()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+    let blob_ids: Vec<i64> = versions.iter().map(|v| v.blob_id).collect();
+
+    FileVersion::delete_many()
+        .filter(file_version::Column::FileId.is_in(file_ids.to_vec()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    Ok(blob_ids)
+}
+
 /// 获取下一个版本号
 pub async fn next_version<C: ConnectionTrait>(db: &C, file_id: i64) -> Result<i32> {
     let latest = FileVersion::find()

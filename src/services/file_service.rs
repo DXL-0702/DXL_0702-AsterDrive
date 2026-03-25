@@ -372,9 +372,7 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let db = &state.db;
     let f = file_repo::find_by_id(db, id).await?;
     crate::utils::verify_owner(f.user_id, user_id, "file")?;
-    if f.is_locked {
-        return Err(AsterError::resource_locked("file is locked"));
-    }
+    // 注意：不检查 is_locked——回收站内的文件和 recursive_purge_folder 都需要无条件清理
 
     let blob = file_repo::find_blob_by_id(db, f.blob_id).await?;
     let blob_size = blob.size;
@@ -445,6 +443,115 @@ pub async fn purge(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// 批量永久删除文件：一次事务处理所有 DB 操作，事务后并行清理物理文件
+///
+/// 比逐个调 `purge()` 快得多——N 个文件只需 ~10 次 DB 查询而非 ~12N 次。
+pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64) -> Result<u32> {
+    if files.is_empty() {
+        return Ok(0);
+    }
+
+    let db = &state.db;
+    let file_ids: Vec<i64> = files.iter().map(|f| f.id).collect();
+    let blob_ids: Vec<i64> = files.iter().map(|f| f.blob_id).collect();
+    let total_size: i64 = files.iter().map(|f| f.size).sum();
+    let count = files.len() as u32;
+
+    // ── 单次事务：版本 → 属性 → 文件 → blob → 配额 ──
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+
+    // 1. 批量删除版本记录，收集版本 blob IDs
+    let version_blob_ids =
+        crate::db::repository::version_repo::delete_all_by_file_ids(&txn, &file_ids).await?;
+
+    // 2. 批量删除文件属性
+    crate::db::repository::property_repo::delete_all_for_entities(
+        &txn,
+        crate::types::EntityType::File,
+        &file_ids,
+    )
+    .await?;
+
+    // 3. 批量删除文件记录（先于 blob，解除 FK）
+    file_repo::delete_many(&txn, &file_ids).await?;
+
+    // 4. 处理 blob 引用计数
+    //    合并主 blob 和版本 blob，按 blob_id 统计需要减少的引用数
+    let mut blob_decrements: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
+    for &bid in &blob_ids {
+        *blob_decrements.entry(bid).or_default() += 1;
+    }
+    for &vbid in &version_blob_ids {
+        *blob_decrements.entry(vbid).or_default() += 1;
+    }
+
+    // 分两类：需要删除的（ref_count <= decrement）和需要递减的
+    let mut blobs_to_delete_ids: Vec<i64> = Vec::new();
+    let mut blobs_to_decrement_ids: Vec<i64> = Vec::new();
+    let mut blobs_to_cleanup: Vec<file_blob::Model> = Vec::new();
+
+    for (&blob_id, &decrement) in &blob_decrements {
+        // 事务内重读 ref_count（防 TOCTOU）
+        if let Ok(blob) = file_repo::find_blob_by_id(&txn, blob_id).await {
+            if i64::from(blob.ref_count) <= decrement {
+                blobs_to_delete_ids.push(blob_id);
+                blobs_to_cleanup.push(blob);
+            } else {
+                blobs_to_decrement_ids.push(blob_id);
+            }
+        }
+        // blob 已被删除（其他并发操作）→ 跳过
+    }
+
+    file_repo::delete_blobs(&txn, &blobs_to_delete_ids).await?;
+    // 对需要递减的 blob，逐个处理（因为 decrement 数量不同）
+    for &bid in &blobs_to_decrement_ids {
+        let dec = blob_decrements[&bid];
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
+        crate::entities::file_blob::Entity::update_many()
+            .col_expr(
+                crate::entities::file_blob::Column::RefCount,
+                Expr::cust_with_values(
+                    "CASE WHEN ref_count < ? THEN 0 ELSE ref_count - ? END",
+                    [dec as i32, dec as i32],
+                ),
+            )
+            .col_expr(crate::entities::file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+            .filter(crate::entities::file_blob::Column::Id.eq(bid))
+            .exec(&txn)
+            .await
+            .map_err(AsterError::from)?;
+    }
+
+    // 5. 配额一次性更新
+    user_repo::update_storage_used(&txn, user_id, -total_size).await?;
+
+    txn.commit().await.map_err(AsterError::from)?;
+
+    // ── 事务后：并行物理清理（best-effort） ──
+    let state_ref = &state;
+    let cleanup_futures: Vec<_> = blobs_to_cleanup
+        .iter()
+        .map(|blob| async move {
+            if let Err(e) =
+                crate::services::thumbnail_service::delete_thumbnail(state_ref, blob).await
+            {
+                tracing::warn!("batch purge: thumbnail delete failed for blob {}: {e}", blob.id);
+            }
+            if let Ok(policy) = policy_repo::find_by_id(&state_ref.db, blob.policy_id).await
+                && let Ok(driver) = state_ref.driver_registry.get_driver(&policy)
+                && let Err(e) = driver.delete(&blob.storage_path).await
+            {
+                tracing::warn!("batch purge: blob file delete failed for blob {}: {e}", blob.id);
+            }
+        })
+        .collect();
+
+    futures::future::join_all(cleanup_futures).await;
+
+    Ok(count)
 }
 
 /// 更新文件（重命名/移动）

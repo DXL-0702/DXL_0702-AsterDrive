@@ -238,21 +238,30 @@ pub async fn purge_folder(state: &AppState, id: i64, user_id: i64) -> Result<()>
 }
 
 /// 清空用户回收站（返回实际成功删除数量）
+///
+/// 只处理顶层已删除项（文件夹内子项由 recursive_purge_folder 批量清理），
+/// 避免同一文件被重复 purge。
 pub async fn purge_all(state: &AppState, user_id: i64) -> Result<u32> {
-    let files = file_repo::find_deleted_by_user(&state.db, user_id).await?;
-    let folders = folder_repo::find_deleted_by_user(&state.db, user_id).await?;
     let mut count: u32 = 0;
 
-    for f in files {
-        match file_service::purge(state, f.id, user_id).await {
-            Ok(()) => count += 1,
-            Err(e) => tracing::warn!("purge file {} failed: {e}", f.id),
-        }
-    }
-    for f in folders {
+    // 1. 先处理顶层已删除文件夹（批量递归清理内部所有文件和子文件夹）
+    let (top_folders, _) =
+        folder_repo::find_top_level_deleted_paginated(&state.db, user_id, 10000, 0).await?;
+    for f in top_folders {
         match webdav_service::recursive_purge_folder(state, user_id, f.id).await {
             Ok(()) => count += 1,
             Err(e) => tracing::warn!("purge folder {} failed: {e}", f.id),
+        }
+    }
+
+    // 2. 处理顶层已删除散文件（批量）
+    let (top_files, _) =
+        file_repo::find_top_level_deleted_paginated(&state.db, user_id, 10000, 0).await?;
+    if !top_files.is_empty() {
+        let file_count = top_files.len() as u32;
+        match file_service::batch_purge(state, top_files, user_id).await {
+            Ok(_) => count += file_count,
+            Err(e) => tracing::warn!("batch purge top-level files failed: {e}"),
         }
     }
 

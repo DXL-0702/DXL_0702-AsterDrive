@@ -147,6 +147,44 @@ pub async fn delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// 批量硬删除文件夹记录
+pub async fn delete_many<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    Folder::delete_many()
+        .filter(folder::Column::Id.is_in(ids.to_vec()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+/// 查找某文件夹下的所有子文件夹（含已删除，递归收集用）
+pub async fn find_all_children<C: ConnectionTrait>(
+    db: &C,
+    parent_id: i64,
+) -> Result<Vec<folder::Model>> {
+    Folder::find()
+        .filter(folder::Column::ParentId.eq(parent_id))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+/// 查找某文件夹下的所有文件（含已删除，递归收集用）
+pub async fn find_all_files_in_folder<C: ConnectionTrait>(
+    db: &C,
+    folder_id: i64,
+) -> Result<Vec<crate::entities::file::Model>> {
+    use crate::entities::file::{self, Entity as File};
+    File::find()
+        .filter(file::Column::FolderId.eq(folder_id))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 // ── 软删除 / 回收站 ─────────────────────────────────────────────────
 
 /// 软删除：标记 deleted_at

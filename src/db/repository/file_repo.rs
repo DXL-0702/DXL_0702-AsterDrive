@@ -283,6 +283,53 @@ pub async fn delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// 批量硬删除文件记录
+pub async fn delete_many<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    File::delete_many()
+        .filter(file::Column::Id.is_in(ids.to_vec()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+/// 批量硬删除 blob 记录
+pub async fn delete_blobs<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    FileBlob::delete_many()
+        .filter(file_blob::Column::Id.is_in(ids.to_vec()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+/// 批量原子递减 blob ref_count
+pub async fn decrement_blob_ref_counts<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    FileBlob::update_many()
+        .col_expr(
+            file_blob::Column::RefCount,
+            Expr::cust_with_values(
+                "CASE WHEN ref_count < ? THEN 0 ELSE ref_count - ? END",
+                [1i32, 1i32],
+            ),
+        )
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.is_in(ids.to_vec()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
 pub async fn delete_blob<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     FileBlob::delete_by_id(id)
         .exec(db)

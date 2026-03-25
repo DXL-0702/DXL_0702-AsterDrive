@@ -90,6 +90,24 @@ pub async fn delete_all_for_entity<C: ConnectionTrait>(
     Ok(())
 }
 
+/// 批量删除多个实体的所有属性
+pub async fn delete_all_for_entities<C: ConnectionTrait>(
+    db: &C,
+    entity_type: EntityType,
+    entity_ids: &[i64],
+) -> Result<()> {
+    if entity_ids.is_empty() {
+        return Ok(());
+    }
+    EntityProperty::delete_many()
+        .filter(entity_property::Column::EntityType.eq(entity_type))
+        .filter(entity_property::Column::EntityId.is_in(entity_ids.to_vec()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
 /// 检查实体是否有自定义属性
 pub async fn has_properties<C: ConnectionTrait>(
     db: &C,
