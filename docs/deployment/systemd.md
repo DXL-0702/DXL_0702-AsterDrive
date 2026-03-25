@@ -2,7 +2,7 @@
 
 systemd 适合长期稳定运行。这里最重要的是先确定 `WorkingDirectory`，因为默认配置、SQLite 和本地上传目录都会受它影响。
 
-## 1. 安装二进制
+## 1. 准备二进制
 
 ```bash
 sudo install -m 0755 target/release/aster_drive /usr/local/bin/aster_drive
@@ -16,7 +16,7 @@ sudo mkdir -p /var/lib/asterdrive
 sudo chown -R asterdrive:asterdrive /var/lib/asterdrive
 ```
 
-## 3. 准备配置文件
+## 3. 准备配置文件和工作目录
 
 把配置文件放进工作目录：
 
@@ -55,7 +55,7 @@ Environment=RUST_LOG=info
 WantedBy=multi-user.target
 ```
 
-如果你现在还只是内网 HTTP 测试，记得在 `config.toml` 里把 `auth.cookie_secure` 设成 `false`。
+如果你现在还只是内网 HTTP 测试，记得在 `config.toml` 里把 `auth.cookie_secure` 设成 `false`。正式切到 HTTPS 后再改回 `true`。
 
 ## 5. 启动服务
 

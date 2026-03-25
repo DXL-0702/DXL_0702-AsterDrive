@@ -1,9 +1,10 @@
 [package]
 name = "aster_drive"
-version = "0.0.1-alpha.4"
+version = "0.0.1-alpha.5"
 description = "A self-hosted cloud storage solution."
 authors = [
     "AptS-1547 <apts-1547@esaps.net>",
+    "AptS-1548 <apts-1548@esaps.net>",
     "AptS-1738 <apts-1738@esaps.net>",
 ]
 repository = "https://github.com/AptS-1547/AsterDrive"

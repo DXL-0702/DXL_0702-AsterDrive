@@ -5,15 +5,19 @@
 level = "info"
 format = "text"
 file = ""
+enable_rotation = true
+max_backups = 5
 ```
 
 ## 字段说明
 
-| 字段 | 类型 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `level` | string | `"info"` | 日志级别：`trace`、`debug`、`info`、`warn`、`error` |
-| `format` | string | `"text"` | 输出格式：`text` 或 `json` |
-| `file` | string | `""` | 日志文件路径；留空时输出到 stdout |
+| 字段 | 默认值 | 说明 |
+| --- | --- | --- |
+| `level` | `"info"` | 日志级别：`trace`、`debug`、`info`、`warn`、`error` |
+| `format` | `"text"` | 输出格式：`text` 或 `json` |
+| `file` | `""` | 日志文件路径；留空时输出到 stdout |
+| `enable_rotation` | `true` | 是否按天轮转日志文件，仅 `file` 非空时生效 |
+| `max_backups` | `5` | 保留的历史日志文件数量 |
 
 ## 一般怎么选
 
@@ -21,6 +25,16 @@ file = ""
 - 对接集中式日志系统：`json`
 - Docker：通常留空，直接输出到 stdout
 - systemd：可以留空交给 journald，也可以写到专用日志文件
+
+## 日志轮转怎么理解
+
+只有在你设置了 `logging.file` 的情况下，`enable_rotation` 和 `max_backups` 才会生效。
+
+常见做法：
+
+- Docker：不写文件，让容器日志系统处理
+- systemd：不写文件，让 journald 处理
+- 裸机单进程：写入文件并开启轮转
 
 ## 优先级
 
@@ -38,13 +52,15 @@ RUST_LOG=debug
 ASTER__LOGGING__LEVEL=debug
 ```
 
-## 生产环境建议
+## 生产环境示例
 
 ```toml
 [logging]
 level = "info"
 format = "json"
 file = "/var/log/asterdrive.log"
+enable_rotation = true
+max_backups = 7
 ```
 
 审计日志和这里的运行日志不是同一回事。运行日志用于排障；审计日志用于记录用户和管理员操作。

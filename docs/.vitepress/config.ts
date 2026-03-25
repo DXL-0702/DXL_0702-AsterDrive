@@ -86,7 +86,7 @@ export default defineConfig({
             { text: '上传与大文件', link: '/guide/upload-modes' },
             { text: '分享', link: '/guide/sharing' },
             { text: '文件编辑', link: '/guide/editing' },
-            { text: '管理面板', link: '/guide/admin-console' }
+            { text: '管理后台', link: '/guide/admin-console' }
           ]
         }
       ],

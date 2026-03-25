@@ -3,7 +3,7 @@
 AsterDrive 的配置可以分成三类来看：
 
 - `config.toml`：决定服务怎么启动
-- 管理后台里的系统设置：决定回收站、版本、WebDAV 这类运行行为
+- 管理后台里的系统设置：决定 WebDAV、回收站、历史版本这类全站行为
 - 存储策略：决定文件存到哪里、怎么上传
 
 首次启动时，如果当前工作目录不存在 `config.toml`，服务会自动生成一份默认配置。
@@ -30,7 +30,7 @@ ASTER__WEBDAV__PREFIX=/dav
 | [database](/config/database) | 数据库连接、连接池、启动重试 |
 | [auth](/config/auth) | 登录密钥、会话有效期、Cookie 安全设置 |
 | [cache](/config/cache) | 内存缓存 / Redis / 关闭缓存 |
-| [logging](/config/logging) | 日志级别、格式、输出文件 |
+| [logging](/config/logging) | 日志级别、格式、输出文件与轮转 |
 | [webdav](/config/webdav) | WebDAV 路径前缀和上传体积上限 |
 
 ## 管理后台里的系统设置
@@ -48,13 +48,15 @@ ASTER__WEBDAV__PREFIX=/dav
 
 详情见 [系统设置](/config/runtime)。
 
-## 三类配置该怎么分工
+## 存储策略是什么
 
-| 类型 | 放什么 | 典型示例 |
-| --- | --- | --- |
-| `config.toml` | 影响启动和登录的参数 | 监听地址、数据库 URL、JWT 密钥、Cookie 安全设置 |
-| 系统设置 | 允许管理员在线调整的业务开关 | WebDAV 开关、回收站保留期、版本保留数 |
-| 存储策略 | 文件写到哪里，以及怎么上传 | 本地目录、S3、分片大小、是否开启直传 |
+存储策略不写在 `config.toml` 里，而是在管理后台里维护。它决定：
+
+- 文件真正存到哪里
+- 当前目录或用户命中哪条存储策略
+- 上传时走普通上传、分片上传还是 S3 直传
+
+详情见 [存储策略](/config/storage)。
 
 ## 默认配置示例
 
@@ -87,6 +89,8 @@ default_ttl = 3600
 level = "info"
 format = "text"
 file = ""
+enable_rotation = true
+max_backups = 5
 
 [webdav]
 prefix = "/webdav"
@@ -101,12 +105,17 @@ payload_limit = 10737418240
 - 默认 SQLite 的位置
 - 默认本地上传目录的位置
 
-部署时请始终先确定工作目录，再决定挂载方案。
+例如：
+
+- 本地直接运行：跟你执行命令的目录有关
+- systemd：跟 `WorkingDirectory` 有关
+- Docker 镜像：默认配置文件路径是 `/config.toml`
 
 ## 继续阅读
 
 - [服务器](/config/server)
+- [数据库](/config/database)
 - [登录与会话](/config/auth)
 - [存储策略](/config/storage)
-- [系统设置](/config/runtime)
 - [WebDAV](/config/webdav)
+- [系统设置](/config/runtime)

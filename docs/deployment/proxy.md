@@ -20,14 +20,16 @@
 - `Timeout`
 - 各类 WebDAV 方法：`PROPFIND`、`MOVE`、`COPY`、`LOCK`、`UNLOCK`
 
-## 上传大小
+如果这些头或方法被拦掉，桌面客户端通常会出现登录失败、移动失败、锁异常或上传失败。
 
-代理层要先取消自己的上传大小限制，例如在 Nginx 里：
+## 上传大小与超时
 
 注意四种上传方式对代理层的压力不同：
 
 - `direct` / `chunked`：上传流量直接经过 AsterDrive 与代理层
 - `presigned` / `presigned_multipart`：浏览器会直接把文件或分片发到对象存储，代理层和 AsterDrive 只参与协商与完成阶段
+
+如果你经常上传大文件，反向代理最好先放开自己的请求体限制，例如在 Nginx 里：
 
 ```nginx
 client_max_body_size 0;
@@ -85,3 +87,4 @@ server {
 
 - 如果你修改了 WebDAV 前缀，代理路径和客户端地址都要一起改
 - 公开分享页、主站页面和静态资源都由同一个 AsterDrive 服务返回，不需要额外再拆静态站点
+- 如果你启用了 S3 / MinIO 直传，大文件主流量可能不会经过你的反向代理，但对象存储本身仍然需要配置浏览器上传所需的 CORS

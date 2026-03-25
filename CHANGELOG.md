@@ -5,6 +5,59 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.5] - 2026-03-25
+
+### Release Highlights
+
+- S3 上传流程大幅简化：去掉 SHA256 回读和 copy_object，直接以 `files/{uuid}` 作为最终存储路径，降低延迟和流量消耗
+- 上传幂等重试：upload_session 记录 file_id，重复 complete 直接返回已有文件，新增 Assembling 中间状态（HTTP 202）防止前端轮询卡死
+- 日志轮转：支持按天自动轮转 + 保留历史文件数量配置（`enable_rotation` / `max_backups`）
+- 前端设置页和 WebDAV 账号页用 SettingsScaffold 组件重构，统一卡片式布局
+- 前端类型统一从生成的 API schema 导出，消除手写重复定义
+- 文件流式响应性能优化，减少内存占用
+
+### Added
+
+- **上传幂等重试**
+  - upload_sessions 表新增 `file_id` 列（migration），完成后记录关联文件 ID
+  - 重复 complete 请求：session 已完成 → 直接返回已有文件；正在处理 → 返回 HTTP 202（ErrorCode 3011）
+  - assembly 失败自动标记 session 为 Failed，防止前端无限重试
+  - `generate_upload_id()` 碰撞检测，最多重试 5 次
+- **日志轮转**
+  - `LoggingConfig` 新增 `enable_rotation`（默认 true）和 `max_backups`（默认 5）
+  - 基于 tracing_appender rolling 按天轮转，自动清理超出数量的历史日志
+  - 轮转失败自动 fallback 到 stdout 并输出警告
+- **前端 SettingsScaffold 组件**
+  - `SettingsPageIntro` / `SettingsSection` / `SettingsRow` / `SettingsIcon` 复用组件
+  - 统一卡片式布局，支持 action slot 和自定义内容区
+
+### Changed
+
+- **S3 上传流程简化**
+  - presigned / multipart 上传不再回读 S3 对象做 SHA256，改用 `s3-{upload_id}` 占位 hash
+  - 不再 copy_object 到内容寻址路径，直接以 `files/{upload_id}` 为最终 key
+  - 去除 S3 临时对象删除步骤（不再有临时→正式的两步操作）
+- **前端页面重构**
+  - SettingsPage 用 SettingsScaffold 重写，代码量大幅减少
+  - WebdavAccountsPage 重构精简，统一布局风格
+  - 前端类型统一从 `api.generated.ts` 导出，`types/api.ts` 仅做 re-export
+  - searchService / fileService / uploadService 改用生成的类型定义
+- **macOS 临时目录清理**
+  - `cleanup_temp_dir` 增加重试机制（最多 3 次 + 50ms 间隔），处理 Spotlight 造成的 ENOTEMPTY
+- **文件流式响应**
+  - `file_service` 优化流式响应性能，减少内存占用
+
+### Fixed
+
+- 修正 PDF 预览头部信息区域缩进格式
+- 修复目录上传工具函数的边界处理
+
+---
+
+**统计数据**：
+- 24 files changed, 1,045 insertions(+), 950 deletions(-)
+- 5 commits
+
 ## [v0.0.1-alpha.4] - 2026-03-25
 
 ### Release Highlights
@@ -341,6 +394,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
+[v0.0.1-alpha.5]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.4...v0.0.1-alpha.5
 [v0.0.1-alpha.4]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.3...v0.0.1-alpha.4
 [v0.0.1-alpha.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.2...v0.0.1-alpha.3
 [v0.0.1-alpha.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.1...v0.0.1-alpha.2
