@@ -44,6 +44,7 @@ interface FileTableProps {
 	onMove?: (type: "file" | "folder", id: number) => void;
 	onToggleLock: (type: "file" | "folder", id: number, locked: boolean) => void;
 	onDelete: (type: "file" | "folder", id: number) => void;
+	onRename?: (type: "file" | "folder", id: number, name: string) => void;
 	onVersions?: (fileId: number) => void;
 	onMoveToFolder?: (
 		fileIds: number[],
@@ -82,6 +83,7 @@ export function FileTable({
 	onMove,
 	onToggleLock,
 	onDelete,
+	onRename,
 	onVersions,
 	onMoveToFolder,
 	fadingFileIds,
@@ -211,6 +213,7 @@ export function FileTable({
 						}
 						onCopy={() => onCopy("folder", folder.id)}
 						onMove={onMove ? () => onMove("folder", folder.id) : undefined}
+						onRename={onRename ? () => onRename("folder", folder.id, folder.name) : undefined}
 						onToggleLock={() =>
 							onToggleLock("folder", folder.id, folder.is_locked ?? false)
 						}
@@ -256,6 +259,7 @@ export function FileTable({
 						onShare={() => onShare({ fileId: file.id, name: file.name })}
 						onCopy={() => onCopy("file", file.id)}
 						onMove={onMove ? () => onMove("file", file.id) : undefined}
+						onRename={onRename ? () => onRename("file", file.id, file.name) : undefined}
 						onToggleLock={() =>
 							onToggleLock("file", file.id, file.is_locked ?? false)
 						}

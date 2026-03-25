@@ -193,5 +193,7 @@
 	"upload_resume_select": "选择文件以继续上传",
 	"upload_resume_mismatch": "文件不匹配（期望 {{name}}，{{size}}）",
 	"upload_resume_found": "发现 {{count}} 个可恢复的上传",
-	"upload_resume_expired": "上传会话已过期"
+	"upload_resume_expired": "上传会话已过期",
+	"clipboard_copied": "已复制 {{count}} 项到剪贴板",
+	"clipboard_cut": "已剪切 {{count}} 项"
 }

@@ -13,6 +13,7 @@ import { CreateFolderDialog } from "@/components/files/CreateFolderDialog";
 import { FileGrid } from "@/components/files/FileGrid";
 import { FilePreview } from "@/components/files/FilePreview";
 import { FileTable } from "@/components/files/FileTable";
+import { RenameDialog } from "@/components/files/RenameDialog";
 import { ShareDialog } from "@/components/files/ShareDialog";
 import {
 	UploadArea,
@@ -127,10 +128,28 @@ export default function FileBrowserPage() {
 		mimeType: string;
 		size: number;
 	} | null>(null);
+	const [renameTarget, setRenameTarget] = useState<{
+		type: "file" | "folder";
+		id: number;
+		name: string;
+	} | null>(null);
 
 	useEffect(() => {
 		navigateTo(folderId, folderName).catch(handleApiError);
 	}, [folderId, folderName, navigateTo]);
+
+	useEffect(() => {
+		function onRenameRequest(e: Event) {
+			const { type, id, name } = (e as CustomEvent).detail as {
+				type: "file" | "folder";
+				id: number;
+				name: string;
+			};
+			setRenameTarget({ type, id, name });
+		}
+		document.addEventListener("rename-request", onRenameRequest);
+		return () => document.removeEventListener("rename-request", onRenameRequest);
+	}, []);
 
 	const handleDownload = useCallback(
 		async (fileId: number, fileName: string) => {
@@ -302,6 +321,8 @@ export default function FileBrowserPage() {
 		onMove: handleMove,
 		onToggleLock: handleToggleLock,
 		onDelete: handleDelete,
+		onRename: (type: "file" | "folder", id: number, name: string) =>
+			setRenameTarget({ type, id, name }),
 		onVersions: (fileId: number) => {
 			const targetFile = displayFiles.find((file) => file.id === fileId);
 			if (!targetFile) return;
@@ -494,6 +515,17 @@ export default function FileBrowserPage() {
 						setVersionTarget(null);
 						refresh();
 					}}
+				/>
+			)}
+			{renameTarget && (
+				<RenameDialog
+					open={true}
+					onOpenChange={(open) => {
+						if (!open) setRenameTarget(null);
+					}}
+					type={renameTarget.type}
+					id={renameTarget.id}
+					currentName={renameTarget.name}
 				/>
 			)}
 		</AppLayout>

@@ -193,5 +193,7 @@
 	"upload_resume_select": "Select file to resume",
 	"upload_resume_mismatch": "File does not match (expected {{name}}, {{size}})",
 	"upload_resume_found": "Found {{count}} resumable upload(s)",
-	"upload_resume_expired": "Upload session expired"
+	"upload_resume_expired": "Upload session expired",
+	"clipboard_copied": "{{count}} item(s) copied to clipboard",
+	"clipboard_cut": "{{count}} item(s) cut to clipboard"
 }

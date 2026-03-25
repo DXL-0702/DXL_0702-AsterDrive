@@ -12,6 +12,12 @@ interface BreadcrumbItem {
 	name: string;
 }
 
+interface Clipboard {
+	fileIds: number[];
+	folderIds: number[];
+	mode: "copy" | "cut";
+}
+
 type ViewMode = "grid" | "list";
 type SortBy = "name" | "date" | "size" | "type";
 type SortOrder = "asc" | "desc";
@@ -54,6 +60,9 @@ interface FileState {
 	selectedFileIds: Set<number>;
 	selectedFolderIds: Set<number>;
 
+	// Clipboard
+	clipboard: Clipboard | null;
+
 	// Navigation actions
 	navigateTo: (folderId: number | null, folderName?: string) => Promise<void>;
 	refresh: () => Promise<void>;
@@ -78,6 +87,12 @@ interface FileState {
 	search: (query: string) => Promise<void>;
 	clearSearch: () => void;
 
+	// Clipboard actions
+	clipboardCopy: () => number;
+	clipboardCut: () => number;
+	clipboardPaste: () => Promise<{ mode: "copy" | "cut"; result: BatchResult }>;
+	clearClipboard: () => void;
+
 	// CRUD actions
 	createFile: (name: string) => Promise<void>;
 	createFolder: (name: string) => Promise<void>;
@@ -90,7 +105,7 @@ interface FileState {
 	) => Promise<BatchResult>;
 }
 
-export type { BreadcrumbItem, SortBy, SortOrder, ViewMode };
+export type { BreadcrumbItem, Clipboard, SortBy, SortOrder, ViewMode };
 
 const initialPageParams: FolderListParams = {
 	folder_limit: FOLDER_LIMIT,
@@ -125,6 +140,8 @@ export const useFileStore = create<FileState>((set, get) => ({
 
 	selectedFileIds: new Set(),
 	selectedFolderIds: new Set(),
+
+	clipboard: null,
 
 	navigateTo: async (folderId, folderName) => {
 		set({
@@ -301,6 +318,75 @@ export const useFileStore = create<FileState>((set, get) => ({
 			searchFiles: [],
 			searchFolders: [],
 		});
+	},
+
+	clipboardCopy: () => {
+		const { selectedFileIds, selectedFolderIds } = get();
+		const count = selectedFileIds.size + selectedFolderIds.size;
+		if (count === 0) return 0;
+		set({
+			clipboard: {
+				fileIds: Array.from(selectedFileIds),
+				folderIds: Array.from(selectedFolderIds),
+				mode: "copy",
+			},
+		});
+		return count;
+	},
+
+	clipboardCut: () => {
+		const { selectedFileIds, selectedFolderIds } = get();
+		const count = selectedFileIds.size + selectedFolderIds.size;
+		if (count === 0) return 0;
+		set({
+			clipboard: {
+				fileIds: Array.from(selectedFileIds),
+				folderIds: Array.from(selectedFolderIds),
+				mode: "cut",
+			},
+		});
+		return count;
+	},
+
+	clipboardPaste: async () => {
+		const { clipboard, currentFolderId } = get();
+		if (!clipboard) throw new Error("No clipboard");
+
+		const result =
+			clipboard.mode === "copy"
+				? await batchService.batchCopy(
+						clipboard.fileIds,
+						clipboard.folderIds,
+						currentFolderId,
+					)
+				: await batchService.batchMove(
+						clipboard.fileIds,
+						clipboard.folderIds,
+						currentFolderId,
+					);
+
+		const mode = clipboard.mode;
+
+		// Cut: clear clipboard after paste; Copy: keep clipboard
+		if (mode === "cut") {
+			set({ clipboard: null });
+		}
+
+		// Silent refresh
+		get().clearSelection();
+		const contents = await fetchFolder(currentFolderId, initialPageParams);
+		set({
+			folders: contents.folders,
+			files: contents.files,
+			foldersTotalCount: contents.folders_total,
+			filesTotalCount: contents.files_total,
+		});
+
+		return { mode, result };
+	},
+
+	clearClipboard: () => {
+		set({ clipboard: null });
 	},
 
 	createFile: async (name) => {
