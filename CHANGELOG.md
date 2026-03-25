@@ -5,6 +5,73 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.6] - 2026-03-25
+
+### Release Highlights
+
+- 文件列表、回收站、分享页面全面支持分页 + 前端无限滚动，告别一次加载全量数据
+- 缩略图改为后台异步生成，接口返回 202 让前端轮询重试，解决大量文件上传后的内存峰值问题
+- 回收站永久删除批量优化，N 个文件由 ~12N 次 DB 查询降至 ~10 次
+- 新增剪贴板操作（Ctrl+C/X/V）与 F2 重命名快捷键
+- 新增四档限流中间件（auth/public/api/write）、空文件创建接口、用户状态缓存
+
+### Added
+
+- **分页系统**
+  - 后端新增 `FolderListQuery` 分页参数（`folder_limit/offset`、`file_limit/offset`），默认 folder_limit=200, file_limit=100
+  - 文件夹列表、回收站列表、分享内容列表三个接口全面支持分页
+  - 响应体新增 `folders_total` / `files_total` 字段
+  - 前端 `fileStore` 新增 `loadMoreFiles` + IntersectionObserver 无限滚动
+  - TrashPage、ShareViewPage 同步接入分页及无限滚动
+  - 文件夹树与目标文件夹选择弹窗传入 `file_limit: 0` 仅加载文件夹
+- **缩略图异步后台生成**
+  - `thumbnail_service::get_or_enqueue()` — 缩略图不存在时入队后台生成，返回 202 + `Retry-After: 2`
+  - `AppState.thumbnail_tx` 独立 tokio worker 顺序消费队列，HashSet 去重防止同一 blob 重复处理
+  - WebDAV fs/file/handler 全链路透传 thumbnail channel
+  - 前端 `useBlobUrl` 收到 202 自动按 `Retry-After` 间隔重试（最多 5 次）
+- **限流中间件**
+  - `RateLimitConfig` 四档限流（auth/public/api/write），默认关闭，支持按需启用
+  - `AsterIpKeyExtractor` — 429 响应返回统一 JSON 格式并携带 `Retry-After` 头
+  - 各路由通过 `Condition` 按 tier 挂载 Governor 限流中间件
+- **空文件创建接口**
+  - `POST /api/v1/files/new` 创建 0 字节空文件，支持 blob 去重与文件名冲突自动重命名
+  - 前端 `CreateFileDialog` 组件，支持文件浏览器内直接创建空文件
+- **剪贴板操作与重命名快捷键**
+  - `fileStore` 新增 `clipboardCopy` / `clipboardCut` / `clipboardPaste` / `clearClipboard`
+  - `useKeyboardShortcuts` 新增 Ctrl+C/X/V 剪贴板快捷键与 F2 重命名快捷键
+  - FileGrid / FileTable 新增 `onRename` 回调
+- **回收站批量操作 Repo 函数**
+  - `file_repo::delete_many` / `delete_blobs` / `decrement_blob_ref_counts`
+  - `folder_repo::delete_many` / `find_all_children` / `find_all_files_in_folder`
+  - `property_repo::delete_all_for_entities`、`version_repo::delete_all_by_file_ids`
+
+### Changed
+
+- **回收站批量清理重构**
+  - `file_service::batch_purge` — 单次事务处理所有 DB 操作，事务后并行物理清理
+  - `webdav_service::recursive_purge_folder` 改为先递归收集再批量清理
+  - `trash_service::purge_all` 优先批量处理顶层文件夹，再批量清理顶层散文件
+- **用户状态缓存**
+  - auth 中间件引入用户状态缓存（TTL=30s），减少每次请求查 DB
+  - admin 禁用用户时主动失效缓存
+- **前端组件**
+  - `ScrollArea` 改为 `forwardRef`，ref 指向 Viewport 元素支持 IntersectionObserver
+  - 前端空文件创建改为调用新接口，移除 multipart FormData 逻辑
+- **代码格式化**
+  - 统一 rustfmt 格式化全项目代码，拆分过长链式调用与函数参数
+
+### Fixed
+
+- 移除 `purge` 中对 `is_locked` 的检查，回收站内文件不应受锁限制
+- 回收站列表改为 SQL 级顶层删除项过滤分页，移除内存 HashSet 过滤逻辑
+- `recursive_purge_folder` 改用 `find_all_children`（不过滤 deleted_at），修复漏掉已软删除子目录的问题
+
+---
+
+**统计数据**：
+- 72 files changed, 2,844 insertions(+), 318 deletions(-)
+- 6 commits
+
 ## [v0.0.1-alpha.5] - 2026-03-25
 
 ### Release Highlights
@@ -394,6 +461,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
+[v0.0.1-alpha.6]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.5...v0.0.1-alpha.6
 [v0.0.1-alpha.5]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.4...v0.0.1-alpha.5
 [v0.0.1-alpha.4]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.3...v0.0.1-alpha.4
 [v0.0.1-alpha.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.2...v0.0.1-alpha.3
