@@ -41,11 +41,7 @@ pub fn recursive_soft_delete<'a>(
 ///
 /// 先递归收集所有文件和文件夹 ID，然后一次 batch_purge 处理所有文件，
 /// 再批量删除文件夹记录和属性。比逐个 purge 快得多。
-pub async fn recursive_purge_folder(
-    state: &AppState,
-    user_id: i64,
-    folder_id: i64,
-) -> Result<()> {
+pub async fn recursive_purge_folder(state: &AppState, user_id: i64, folder_id: i64) -> Result<()> {
     let db = &state.db;
 
     // ── 收集阶段：递归收集所有文件和文件夹 ID ──

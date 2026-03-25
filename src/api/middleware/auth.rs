@@ -79,19 +79,17 @@ where
                     Ok(claims) => {
                         // 查缓存确认用户状态（TTL=30s，避免每次打 DB）
                         let cache_key = format!("user_status:{}", claims.user_id);
-                        let status: Option<UserStatus> =
-                            state.cache.get(&cache_key).await;
+                        let status: Option<UserStatus> = state.cache.get(&cache_key).await;
 
                         let is_active = match status {
                             Some(s) => s.is_active(),
                             None => {
                                 // 缓存未命中，查 DB
-                                let user =
-                                    crate::db::repository::user_repo::find_by_id(
-                                        &state.db,
-                                        claims.user_id,
-                                    )
-                                    .await;
+                                let user = crate::db::repository::user_repo::find_by_id(
+                                    &state.db,
+                                    claims.user_id,
+                                )
+                                .await;
                                 match user {
                                     Ok(u) => {
                                         state

@@ -416,7 +416,10 @@ pub async fn update_user(
     .await?;
 
     // 主动失效用户状态缓存（禁用用户立即生效）
-    state.cache.delete(&format!("user_status:{target_id}")).await;
+    state
+        .cache
+        .delete(&format!("user_status:{target_id}"))
+        .await;
 
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }

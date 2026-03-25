@@ -134,13 +134,8 @@ pub async fn create_empty(
     claims: web::ReqData<Claims>,
     body: web::Json<CreateEmptyRequest>,
 ) -> Result<HttpResponse> {
-    let file = file_service::create_empty(
-        &state,
-        claims.user_id,
-        body.folder_id,
-        &body.name,
-    )
-    .await?;
+    let file =
+        file_service::create_empty(&state, claims.user_id, body.folder_id, &body.name).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
 }
 

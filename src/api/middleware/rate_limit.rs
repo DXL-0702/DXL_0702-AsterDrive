@@ -1,10 +1,12 @@
-use actix_governor::{GovernorConfig, GovernorConfigBuilder, KeyExtractor, SimpleKeyExtractionError};
+use actix_governor::{
+    GovernorConfig, GovernorConfigBuilder, KeyExtractor, SimpleKeyExtractionError,
+};
 use actix_web::dev::ServiceRequest;
 use actix_web::http::header::ContentType;
 use actix_web::{HttpResponse, HttpResponseBuilder};
+use governor::NotUntil;
 use governor::clock::{Clock, DefaultClock, QuantaInstant};
 use governor::middleware::NoOpMiddleware;
-use governor::NotUntil;
 use std::net::IpAddr;
 
 use crate::config::RateLimitTier;

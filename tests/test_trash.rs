@@ -196,7 +196,11 @@ async fn test_purge_nested_folder_cleans_children() {
         .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 404, "child file should be permanently deleted");
+    assert_eq!(
+        resp.status(),
+        404,
+        "child file should be permanently deleted"
+    );
 }
 
 /// 测试 purge_all 三层嵌套：所有子项都应被清理

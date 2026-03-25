@@ -517,7 +517,10 @@ pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64
                     [dec as i32, dec as i32],
                 ),
             )
-            .col_expr(crate::entities::file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+            .col_expr(
+                crate::entities::file_blob::Column::UpdatedAt,
+                Expr::value(Utc::now()),
+            )
             .filter(crate::entities::file_blob::Column::Id.eq(bid))
             .exec(&txn)
             .await
@@ -537,13 +540,19 @@ pub async fn batch_purge(state: &AppState, files: Vec<file::Model>, user_id: i64
             if let Err(e) =
                 crate::services::thumbnail_service::delete_thumbnail(state_ref, blob).await
             {
-                tracing::warn!("batch purge: thumbnail delete failed for blob {}: {e}", blob.id);
+                tracing::warn!(
+                    "batch purge: thumbnail delete failed for blob {}: {e}",
+                    blob.id
+                );
             }
             if let Ok(policy) = policy_repo::find_by_id(&state_ref.db, blob.policy_id).await
                 && let Ok(driver) = state_ref.driver_registry.get_driver(&policy)
                 && let Err(e) = driver.delete(&blob.storage_path).await
             {
-                tracing::warn!("batch purge: blob file delete failed for blob {}: {e}", blob.id);
+                tracing::warn!(
+                    "batch purge: blob file delete failed for blob {}: {e}",
+                    blob.id
+                );
             }
         })
         .collect();
@@ -871,8 +880,7 @@ pub async fn create_empty(
     crate::utils::validate_name(filename)?;
 
     // 空文件固定 sha256
-    const EMPTY_SHA256: &str =
-        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     const EMPTY_SIZE: i64 = 0;
 
     let policy = resolve_policy(state, user_id, folder_id).await?;
@@ -881,10 +889,9 @@ pub async fn create_empty(
     let storage_path = crate::utils::storage_path_from_hash(EMPTY_SHA256);
 
     // blob 去重
-    let blob_pre_exists =
-        file_repo::find_blob_by_hash(db, EMPTY_SHA256, policy.id)
-            .await?
-            .is_some();
+    let blob_pre_exists = file_repo::find_blob_by_hash(db, EMPTY_SHA256, policy.id)
+        .await?
+        .is_some();
     if !blob_pre_exists {
         driver.put(&storage_path, &[]).await?;
     }
@@ -896,17 +903,11 @@ pub async fn create_empty(
 
     let txn = db.begin().await.map_err(AsterError::from)?;
 
-    let blob = file_repo::find_or_create_blob(
-        &txn,
-        EMPTY_SHA256,
-        EMPTY_SIZE,
-        policy.id,
-        &storage_path,
-    )
-    .await?;
+    let blob =
+        file_repo::find_or_create_blob(&txn, EMPTY_SHA256, EMPTY_SIZE, policy.id, &storage_path)
+            .await?;
 
-    let final_name =
-        file_repo::resolve_unique_filename(&txn, user_id, folder_id, filename).await?;
+    let final_name = file_repo::resolve_unique_filename(&txn, user_id, folder_id, filename).await?;
 
     let file_model = file::ActiveModel {
         name: Set(final_name),

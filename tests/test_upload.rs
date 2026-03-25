@@ -531,14 +531,12 @@ async fn test_presigned_upload_s3_e2e() {
         "S3 presigned skips dedup — each upload creates its own blob"
     );
 
-    let blob1 =
-        aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, file.blob_id)
-            .await
-            .unwrap();
-    let blob2 =
-        aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, file2.blob_id)
-            .await
-            .unwrap();
+    let blob1 = aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, file.blob_id)
+        .await
+        .unwrap();
+    let blob2 = aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, file2.blob_id)
+        .await
+        .unwrap();
     assert_eq!(blob1.ref_count, 1);
     assert_eq!(blob2.ref_count, 1);
 }

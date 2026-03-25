@@ -294,7 +294,6 @@ impl RateLimitConfig {
             burst_size: 10,
         }
     }
-
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
