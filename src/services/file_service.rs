@@ -718,6 +718,65 @@ pub async fn duplicate_file_record(
     Ok(new_file)
 }
 
+/// 批量复制文件记录：一次事务处理 blob ref_count + 文件创建 + 配额
+///
+/// 与 `duplicate_file_record` 的区别：N 个文件只开 1 次事务，
+/// blob ref_count 按 blob_id 合并递增，配额只更新一次。
+/// 不返回创建的 Model（递归复制场景不需要）。
+pub async fn batch_duplicate_file_records(
+    state: &AppState,
+    src_files: &[file::Model],
+    dest_folder_id: Option<i64>,
+) -> Result<()> {
+    if src_files.is_empty() {
+        return Ok(());
+    }
+
+    let user_id = src_files[0].user_id;
+    let total_size: i64 = src_files.iter().map(|f| f.size).sum();
+    let now = chrono::Utc::now();
+
+    // 事务外 fast-fail 配额检查
+    user_repo::check_quota(&state.db, user_id, total_size).await?;
+
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+
+    // 事务内权威配额检查
+    user_repo::check_quota(&txn, user_id, total_size).await?;
+
+    // 按 blob_id 合并 ref_count 递增
+    let mut blob_counts: std::collections::HashMap<i64, i32> = std::collections::HashMap::new();
+    for f in src_files {
+        *blob_counts.entry(f.blob_id).or_default() += 1;
+    }
+    for (&blob_id, &count) in &blob_counts {
+        file_repo::increment_blob_ref_count_by(&txn, blob_id, count).await?;
+    }
+
+    // 批量插入文件记录
+    let models: Vec<file::ActiveModel> = src_files
+        .iter()
+        .map(|f| file::ActiveModel {
+            name: Set(f.name.clone()),
+            folder_id: Set(dest_folder_id),
+            blob_id: Set(f.blob_id),
+            size: Set(f.size),
+            user_id: Set(f.user_id),
+            mime_type: Set(f.mime_type.clone()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        })
+        .collect();
+    file_repo::create_many(&txn, models).await?;
+
+    // 配额一次性更新
+    user_repo::update_storage_used(&txn, user_id, total_size).await?;
+
+    txn.commit().await.map_err(AsterError::from)?;
+    Ok(())
+}
+
 /// 覆盖文件内容（REST API 编辑入口）
 ///
 /// 支持 ETag 乐观锁（If-Match）+ 悲观锁检查（is_locked）。

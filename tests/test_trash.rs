@@ -285,3 +285,102 @@ async fn test_purge_all_nested_no_orphans() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
 }
+
+/// 测试嵌套文件夹软删除（batch soft_delete）：子文件夹和文件都应进入回收站
+#[actix_web::test]
+async fn test_soft_delete_nested_folder_marks_all_children() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // 创建 A/B 两层嵌套
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "A" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let a_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "B", "parent_id": a_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let b_id = body["data"]["id"].as_i64().unwrap();
+
+    // 每层各上传一个文件
+    let a_file = upload_test_file_to_folder!(app, token, a_id);
+    let b_file = upload_test_file_to_folder!(app, token, b_id);
+
+    // 软删除顶层文件夹
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/folders/{a_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // 子文件应不可访问（在回收站里）
+    for fid in [a_file, b_file] {
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/files/{fid}"))
+            .insert_header(("Cookie", format!("aster_access={token}")))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(
+            resp.status(),
+            404,
+            "file {fid} should be in trash (not accessible)"
+        );
+    }
+
+    // 根目录应为空（所有内容已进回收站）
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["folders"].as_array().unwrap().len(), 0);
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 0);
+
+    // 回收站应有顶层文件夹
+    let req = test::TestRequest::get()
+        .uri("/api/v1/trash")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["folders"].as_array().unwrap().len(), 1);
+
+    // 恢复后所有子项都回来
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/trash/folder/{a_id}/restore"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // A 文件夹里应有文件和子文件夹
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{a_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["folders"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 1);
+
+    // B 文件夹里也应有文件
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{b_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 1);
+}

@@ -219,6 +219,28 @@ pub async fn increment_blob_ref_count<C: ConnectionTrait>(db: &C, id: i64) -> Re
     Ok(())
 }
 
+/// 原子增加 blob ref_count（可变增量，批量复制用）
+pub async fn increment_blob_ref_count_by<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    delta: i32,
+) -> Result<()> {
+    if delta == 0 {
+        return Ok(());
+    }
+    FileBlob::update_many()
+        .col_expr(
+            file_blob::Column::RefCount,
+            Expr::cust_with_values("ref_count + ?", [delta]),
+        )
+        .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(file_blob::Column::Id.eq(id))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
 /// 原子递减 blob ref_count（floor 0，防止并发丢更新）
 pub async fn decrement_blob_ref_count<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     FileBlob::update_many()
@@ -248,6 +270,18 @@ pub async fn count_blobs_by_policy<C: ConnectionTrait>(db: &C, policy_id: i64) -
 
 pub async fn create<C: ConnectionTrait>(db: &C, model: file::ActiveModel) -> Result<file::Model> {
     model.insert(db).await.map_err(AsterError::from)
+}
+
+/// 批量插入文件记录（不返回创建的 Model，批量复制用）
+pub async fn create_many<C: ConnectionTrait>(db: &C, models: Vec<file::ActiveModel>) -> Result<()> {
+    if models.is_empty() {
+        return Ok(());
+    }
+    File::insert_many(models)
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
 }
 
 pub async fn find_blob_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file_blob::Model> {

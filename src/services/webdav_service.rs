@@ -138,11 +138,9 @@ pub fn recursive_copy_folder<'a>(
         )
         .await?;
 
-        // 复制文件：用 duplicate_file_record 统一处理
+        // 批量复制文件：一次事务处理所有文件
         let files = file_repo::find_by_folder(db, user_id, Some(src_folder_id)).await?;
-        for f in &files {
-            file_service::duplicate_file_record(state, f, Some(new_folder.id), &f.name).await?;
-        }
+        file_service::batch_duplicate_file_records(state, &files, Some(new_folder.id)).await?;
 
         // 递归复制子文件夹
         let children = folder_repo::find_children(db, user_id, Some(src_folder_id)).await?;

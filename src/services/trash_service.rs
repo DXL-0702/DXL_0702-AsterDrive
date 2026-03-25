@@ -308,7 +308,7 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
         .iter()
         .filter(|f| {
             f.parent_id
-                .map_or(true, |pid| !expired_folder_ids.contains(&pid))
+                .is_none_or(|pid| !expired_folder_ids.contains(&pid))
         })
         .collect();
     for f in &top_level_folders {

@@ -180,3 +180,96 @@ async fn test_folder_copy() {
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 1);
     assert_eq!(body["data"]["files"][0]["name"], "inside.txt");
 }
+
+/// 测试多层嵌套文件夹复制（batch_duplicate_file_records）
+#[actix_web::test]
+async fn test_nested_folder_copy() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    // 创建 A/B 两层嵌套，每层各一个文件
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "A" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let a_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "B", "parent_id": a_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let b_id = body["data"]["id"].as_i64().unwrap();
+
+    upload_test_file_to_folder!(app, token, a_id);
+    upload_test_file_to_folder!(app, token, b_id);
+
+    // 复制顶层文件夹 A → 根目录（A-copy）
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/folders/{a_id}/copy"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "A-copy" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let a_copy_id = body["data"]["id"].as_i64().unwrap();
+
+    // A-copy 里应有 1 个文件 + 1 个子文件夹
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{a_copy_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["data"]["files"].as_array().unwrap().len(),
+        1,
+        "A-copy should have 1 file"
+    );
+    assert_eq!(
+        body["data"]["folders"].as_array().unwrap().len(),
+        1,
+        "A-copy should have 1 subfolder"
+    );
+
+    // B-copy 里也应有 1 个文件
+    let b_copy_id = body["data"]["folders"][0]["id"].as_i64().unwrap();
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{b_copy_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["data"]["files"].as_array().unwrap().len(),
+        1,
+        "B-copy should have 1 file"
+    );
+
+    // 源文件夹和副本独立：删副本不影响源
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/folders/{a_copy_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{a_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["data"]["files"].as_array().unwrap().len(),
+        1,
+        "original A should still have its file"
+    );
+}
