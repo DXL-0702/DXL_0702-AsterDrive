@@ -51,6 +51,7 @@ enum FileMode {
         driver_registry: Arc<DriverRegistry>,
         config: Arc<Config>,
         cache: Arc<dyn CacheBackend>,
+        thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
         user_id: i64,
         folder_id: Option<i64>,
         filename: String,
@@ -86,6 +87,7 @@ impl AsterDavFile {
         driver_registry: Arc<DriverRegistry>,
         config: Arc<Config>,
         cache: Arc<dyn CacheBackend>,
+        thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
         user_id: i64,
         folder_id: Option<i64>,
         filename: String,
@@ -105,6 +107,7 @@ impl AsterDavFile {
                 driver_registry,
                 config,
                 cache,
+                thumbnail_tx,
                 user_id,
                 folder_id,
                 filename,
@@ -220,6 +223,7 @@ impl DavFile for AsterDavFile {
                 driver_registry,
                 config,
                 cache,
+                thumbnail_tx,
                 user_id,
                 folder_id,
                 filename,
@@ -244,6 +248,7 @@ impl DavFile for AsterDavFile {
                 driver_registry: driver_registry.clone(),
                 config: config.clone(),
                 cache: cache.clone(),
+                thumbnail_tx: thumbnail_tx.clone(),
             };
 
             // 调用公共函数，不重复 hash/dedup/quota 逻辑

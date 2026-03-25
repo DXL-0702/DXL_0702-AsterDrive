@@ -29,6 +29,7 @@ pub struct AsterDavFs {
     driver_registry: Arc<DriverRegistry>,
     config: Arc<Config>,
     cache: Arc<dyn CacheBackend>,
+    thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
     user_id: i64,
     /// 限制访问范围：None = 用户全部文件，Some(id) = 只能访问该文件夹及子目录
     root_folder_id: Option<i64>,
@@ -49,6 +50,7 @@ impl AsterDavFs {
         driver_registry: Arc<DriverRegistry>,
         config: Arc<Config>,
         cache: Arc<dyn CacheBackend>,
+        thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
         user_id: i64,
         root_folder_id: Option<i64>,
     ) -> Self {
@@ -57,6 +59,7 @@ impl AsterDavFs {
             driver_registry,
             config,
             cache,
+            thumbnail_tx,
             user_id,
             root_folder_id,
         }
@@ -68,6 +71,7 @@ impl AsterDavFs {
             driver_registry: self.driver_registry.clone(),
             config: self.config.clone(),
             cache: self.cache.clone(),
+            thumbnail_tx: self.thumbnail_tx.clone(),
         }
     }
 }
@@ -109,6 +113,7 @@ impl DavFileSystem for AsterDavFs {
                     self.driver_registry.clone(),
                     self.config.clone(),
                     self.cache.clone(),
+                    self.thumbnail_tx.clone(),
                     self.user_id,
                     parent_id,
                     filename,

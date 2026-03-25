@@ -15,4 +15,6 @@ pub struct AppState {
     pub driver_registry: Arc<DriverRegistry>,
     pub config: Arc<Config>,
     pub cache: Arc<dyn CacheBackend>,
+    /// 缩略图生成队列（blob_id），后台 worker 消费
+    pub thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
 }

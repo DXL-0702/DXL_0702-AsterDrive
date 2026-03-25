@@ -188,11 +188,18 @@ pub async fn get_thumbnail(
         ));
     }
     let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
-    let data = thumbnail_service::get_or_generate(&state, &blob).await?;
-    Ok(HttpResponse::Ok()
-        .content_type("image/webp")
-        .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
-        .body(data))
+    match thumbnail_service::get_or_enqueue(&state, &blob).await? {
+        Some(data) => Ok(HttpResponse::Ok()
+            .content_type("image/webp")
+            .insert_header(("Cache-Control", "public, max-age=31536000, immutable"))
+            .body(data)),
+        None => {
+            // 缩略图正在后台生成，返回 202 让前端稍后重试
+            Ok(HttpResponse::Accepted()
+                .insert_header(("Retry-After", "2"))
+                .json(ApiResponse::<()>::ok_empty()))
+        }
+    }
 }
 
 #[utoipa::path(

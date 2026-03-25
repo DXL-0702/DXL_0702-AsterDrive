@@ -66,11 +66,14 @@ pub async fn setup() -> AppState {
     // OnceLock 只设置一次，后续调用忽略
     let _ = aster_drive::config::set_config_for_test(config.clone());
 
+    let (thumbnail_tx, _thumbnail_rx) = tokio::sync::mpsc::channel::<i64>(16);
+
     AppState {
         db,
         driver_registry: std::sync::Arc::new(aster_drive::storage::DriverRegistry::new()),
         config,
         cache,
+        thumbnail_tx,
     }
 }
 

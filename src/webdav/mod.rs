@@ -92,6 +92,7 @@ pub async fn webdav_handler(
         state.driver_registry.clone(),
         state.config.clone(),
         state.cache.clone(),
+        state.thumbnail_tx.clone(),
         auth_result.user_id,
         auth_result.root_folder_id,
     );

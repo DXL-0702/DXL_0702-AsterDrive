@@ -47,49 +47,61 @@ async function acquireBlobUrl(path: string): Promise<string> {
 		headers["If-None-Match"] = previousEtag;
 	}
 
-	const promise = api.client
-		.get(path, {
+	const MAX_RETRIES = 5;
+
+	const fetchWithRetry = async (attempt: number): Promise<string> => {
+		const response = await api.client.get(path, {
 			headers,
 			responseType: "blob",
-			validateStatus: (status) => status === 200 || status === 304,
-		})
-		.then((response) => {
-			const current = blobUrlCache.get(path);
-			if (!current) {
-				if (response.status === 200) {
-					return URL.createObjectURL(response.data);
-				}
-				return previousObjectUrl ?? "";
-			}
-
-			if (response.status === 304 && previousObjectUrl) {
-				current.objectUrl = previousObjectUrl;
-				current.etag = previousEtag;
-				current.promise = undefined;
-				return previousObjectUrl;
-			}
-
-			const objectUrl = URL.createObjectURL(response.data);
-			current.objectUrl = objectUrl;
-			current.etag = response.headers.etag ?? null;
-			current.promise = undefined;
-			if (previousObjectUrl && previousObjectUrl !== objectUrl) {
-				URL.revokeObjectURL(previousObjectUrl);
-			}
-			return objectUrl;
-		})
-		.catch((error: unknown) => {
-			const current = blobUrlCache.get(path);
-			if (current) {
-				current.promise = undefined;
-				current.objectUrl = previousObjectUrl;
-				current.etag = previousEtag;
-				if (!current.objectUrl && current.refCount <= 0) {
-					blobUrlCache.delete(path);
-				}
-			}
-			throw error;
+			validateStatus: (status) =>
+				status === 200 || status === 304 || status === 202,
 		});
+
+		// 202 = 缩略图正在后台生成，稍后重试
+		if (response.status === 202) {
+			if (attempt >= MAX_RETRIES) return previousObjectUrl ?? "";
+			const retryAfter = Number(response.headers["retry-after"]) || 2;
+			await new Promise((r) => setTimeout(r, retryAfter * 1000));
+			return fetchWithRetry(attempt + 1);
+		}
+
+		const current = blobUrlCache.get(path);
+		if (!current) {
+			if (response.status === 200) {
+				return URL.createObjectURL(response.data);
+			}
+			return previousObjectUrl ?? "";
+		}
+
+		if (response.status === 304 && previousObjectUrl) {
+			current.objectUrl = previousObjectUrl;
+			current.etag = previousEtag;
+			current.promise = undefined;
+			return previousObjectUrl;
+		}
+
+		const objectUrl = URL.createObjectURL(response.data);
+		current.objectUrl = objectUrl;
+		current.etag = response.headers.etag ?? null;
+		current.promise = undefined;
+		if (previousObjectUrl && previousObjectUrl !== objectUrl) {
+			URL.revokeObjectURL(previousObjectUrl);
+		}
+		return objectUrl;
+	};
+
+	const promise = fetchWithRetry(0).catch((error: unknown) => {
+		const current = blobUrlCache.get(path);
+		if (current) {
+			current.promise = undefined;
+			current.objectUrl = previousObjectUrl;
+			current.etag = previousEtag;
+			if (!current.objectUrl && current.refCount <= 0) {
+				blobUrlCache.delete(path);
+			}
+		}
+		throw error;
+	});
 	entry.promise = promise;
 	blobUrlCache.set(path, entry);
 	return promise;
