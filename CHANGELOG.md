@@ -5,6 +5,67 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.7] - 2026-03-26
+
+### Release Highlights
+
+- 文件列表新增多字段排序，并升级为基于 cursor 的分页，深目录和大文件夹浏览更顺手
+- 前端接入 PWA，支持更新提示与离线登录态保持，弱网/断网场景体验更稳
+- 文件夹树状态管理重构，引入按需加载与祖先路径恢复，目录导航性能明显改善
+- 新增文件/文件夹详情信息对话框，快速查看大小、类型、时间、锁状态和子项数量
+- 回收站批量恢复与批量清理链路重构，减少事务和 DB 往返，删除与清空操作更高效
+- 上传面板引入虚拟滚动，预览错误态与重试入口统一，大量任务和异常场景下前端更稳定
+
+### Added
+
+- **文件列表排序与分页能力增强**
+  - 文件列表支持按 `name` / `size` / `created_at` / `updated_at` / `type` 排序
+  - 前端新增排序菜单，支持升序 / 降序切换
+  - 文件列表分页升级为 cursor 模式，支持 `file_after_value` + `file_after_id`
+- **PWA 支持**
+  - 前端接入 `vite-plugin-pwa`
+  - 支持 manifest、service worker 注册与新版本更新提示
+- **离线登录态保持**
+  - `authStore` 缓存用户信息，网络异常时保留现有登录态
+- **文件/文件夹详情信息对话框**
+  - 文件支持查看大小、MIME、创建/修改时间、锁状态、blob id
+  - 文件夹支持查看创建/修改时间、锁状态、策略 id 与子项数量
+- **文件夹祖先路径接口**
+  - 新增 `/folders/{id}/ancestors`，用于恢复深层目录导航路径
+
+### Changed
+
+- **文件夹树状态管理重构**
+  - 前端文件夹树改为按需加载，减少一次性加载整棵树的压力
+  - 深层目录进入时可正确恢复祖先路径与树展开状态
+- **回收站批量链路重构**
+  - 批量恢复、批量清理与递归清理逻辑统一走批处理路径
+  - 减少事务次数与数据库往返
+- **上传面板性能优化**
+  - 引入虚拟滚动，优化大量上传任务场景下的渲染性能
+- **前端资源加载优化**
+  - i18n 改为按需加载
+  - Vite 构建拆分优化，配合 PWA 缓存策略改进加载体验
+
+### Fixed
+
+- 排序切换后文件列表状态不同步的问题，切换排序时会正确重置列表并重新加载
+- 文件预览错误态不一致的问题，统一错误展示与重试入口
+- 分享内容列表与主文件列表能力不一致的问题，补齐排序与 cursor 分页链路
+- 缩略图生成重复入队与高负载下体验不稳定的问题，增加去重与重试优化
+- 回收站批量恢复 / 清理过程中的部分边界问题，避免重复处理和漏处理
+
+### Breaking Changes
+
+- **API**：文件列表查询不再使用 `file_offset`，改为 cursor 分页参数 `file_after_value` + `file_after_id`
+- **API**：文件列表相关接口新增 `sort_by` 与 `sort_order` 查询参数，旧调用方需要同步适配
+
+---
+
+**统计数据**：
+- 91 files changed, 4,209 insertions(+), 1,477 deletions(-)
+- 18 commits
+
 ## [v0.0.1-alpha.6] - 2026-03-25
 
 ### Release Highlights
@@ -461,7 +522,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.6...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.7...HEAD
+[v0.0.1-alpha.7]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.6...v0.0.1-alpha.7
 [v0.0.1-alpha.6]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.5...v0.0.1-alpha.6
 [v0.0.1-alpha.5]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.4...v0.0.1-alpha.5
 [v0.0.1-alpha.4]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.3...v0.0.1-alpha.4
