@@ -55,7 +55,12 @@ export const useAuthStore = create<AuthState>((set) => ({
 			// logout 失败不阻塞
 		}
 		setCachedUser(null);
-		set({ isAuthenticated: false, isChecking: false, isAuthStale: false, user: null });
+		set({
+			isAuthenticated: false,
+			isChecking: false,
+			isAuthStale: false,
+			user: null,
+		});
 	},
 
 	checkAuth: async () => {
@@ -63,7 +68,12 @@ export const useAuthStore = create<AuthState>((set) => ({
 		try {
 			const user = await authService.me();
 			setCachedUser(user);
-			set({ isAuthenticated: true, isChecking: false, isAuthStale: false, user });
+			set({
+				isAuthenticated: true,
+				isChecking: false,
+				isAuthStale: false,
+				user,
+			});
 		} catch (error) {
 			// 网络错误（离线）时用缓存的用户信息保持登录态
 			if (!axios.isAxiosError(error) || !error.response) {
@@ -81,7 +91,12 @@ export const useAuthStore = create<AuthState>((set) => ({
 				return;
 			}
 			setCachedUser(null);
-			set({ isAuthenticated: false, isChecking: false, isAuthStale: false, user: null });
+			set({
+				isAuthenticated: false,
+				isChecking: false,
+				isAuthStale: false,
+				user: null,
+			});
 		}
 	},
 

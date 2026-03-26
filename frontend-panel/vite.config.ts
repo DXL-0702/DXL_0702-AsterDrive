@@ -82,17 +82,11 @@ export default defineConfig({
 						id.includes("/scheduler/")
 					)
 						return "vendor-react";
-					if (id.includes("/react-router"))
-						return "vendor-router";
-					if (id.includes("/@base-ui/"))
-						return "vendor-ui";
-					if (
-						id.includes("/i18next") ||
-						id.includes("/react-i18next/")
-					)
+					if (id.includes("/react-router")) return "vendor-router";
+					if (id.includes("/@base-ui/")) return "vendor-ui";
+					if (id.includes("/i18next") || id.includes("/react-i18next/"))
 						return "vendor-i18n";
-					if (id.includes("/react-icons/"))
-						return "vendor-icons";
+					if (id.includes("/react-icons/")) return "vendor-icons";
 				},
 			},
 		},

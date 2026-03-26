@@ -36,7 +36,9 @@ async function ensureNamespaces(
 	lang: string,
 	namespaces: readonly LocaleNamespace[],
 ) {
-	const missing = namespaces.filter((namespace) => !i18n.hasResourceBundle(lang, namespace));
+	const missing = namespaces.filter(
+		(namespace) => !i18n.hasResourceBundle(lang, namespace),
+	);
 	if (missing.length === 0) return;
 	const resources = await loadLocale(lang, missing);
 	for (const [namespace, data] of Object.entries(resources)) {

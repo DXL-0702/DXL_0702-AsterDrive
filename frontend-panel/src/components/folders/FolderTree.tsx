@@ -65,6 +65,7 @@ function upsertChildren(
 	nodeMap: Map<number, FolderTreeNode>,
 	parentId: number | null,
 	folders: FolderInfo[],
+	getCachedChildIds?: (id: number) => number[] | undefined,
 ): { nodeMap: Map<number, FolderTreeNode>; rootIds: number[] } {
 	const nextNodeMap = new Map(nodeMap);
 	const childIds = folders.map((folder) => folder.id);
@@ -72,7 +73,7 @@ function upsertChildren(
 	for (const folder of folders) {
 		const existing = nextNodeMap.get(folder.id);
 		nextNodeMap.set(folder.id, {
-			childIds: existing?.childIds ?? [],
+			childIds: existing?.childIds ?? getCachedChildIds?.(folder.id) ?? [],
 			folder,
 			parentId,
 		});
@@ -195,7 +196,9 @@ function TreeNode({
 					<span className="truncate">{node.folder.name}</span>
 				</button>
 			</div>
-			{isExpanded && node.childIds.length > 0 && renderChildren(node.childIds, depth + 1)}
+			{isExpanded &&
+				node.childIds.length > 0 &&
+				renderChildren(node.childIds, depth + 1)}
 		</div>
 	);
 }
@@ -212,12 +215,15 @@ export function FolderTree() {
 	const storeCurrentFolderId = useFileStore((s) => s.currentFolderId);
 	const storeLoading = useFileStore((s) => s.loading);
 	const isRootRoute = location.pathname === "/";
-	const cachedSnapshot = folderTreeSnapshot?.userId === userId ? folderTreeSnapshot : null;
+	const cachedSnapshot =
+		folderTreeSnapshot?.userId === userId ? folderTreeSnapshot : null;
 
 	const [nodeMap, setNodeMap] = useState<Map<number, FolderTreeNode>>(
 		() => new Map(cachedSnapshot?.nodeEntries ?? []),
 	);
-	const [rootIds, setRootIds] = useState<number[]>(() => cachedSnapshot?.rootIds ?? []);
+	const [rootIds, setRootIds] = useState<number[]>(
+		() => cachedSnapshot?.rootIds ?? [],
+	);
 	const [expandedIds, setExpandedIds] = useState<Set<number>>(
 		() => new Set(cachedSnapshot?.expandedIds ?? []),
 	);
@@ -261,7 +267,13 @@ export function FolderTree() {
 	const syncFolderChildren = useCallback(
 		(parentId: number | null, folders: FolderInfo[]) => {
 			childrenCacheRef.current.set(parentId, folders);
-			setNodeMap((prev) => upsertChildren(prev, parentId, folders).nodeMap);
+			setNodeMap(
+				(prev) =>
+					upsertChildren(prev, parentId, folders, (id) => {
+						const cachedChildren = childrenCacheRef.current.get(id);
+						return cachedChildren?.map((folder) => folder.id);
+					}).nodeMap,
+			);
 			if (parentId === null) {
 				setRootIds(folders.map((folder) => folder.id));
 				setRootLoaded(true);
@@ -299,11 +311,14 @@ export function FolderTree() {
 				try {
 					const contents =
 						parentId === null
-							? await fileService.listRoot({ file_limit: 0, folder_limit: 1000 })
+							? await fileService.listRoot({
+									file_limit: 0,
+									folder_limit: 1000,
+								})
 							: await fileService.listFolder(parentId, {
 									file_limit: 0,
 									folder_limit: 1000,
-							  });
+								});
 					syncFolderChildren(parentId, contents.folders);
 				} finally {
 					if (parentId !== null) {
@@ -354,7 +369,13 @@ export function FolderTree() {
 		if (storeLoading) return;
 		if (!rootLoaded || storeCurrentFolderId === null) return;
 		syncFolderChildren(storeCurrentFolderId, storeFolders);
-	}, [rootLoaded, storeCurrentFolderId, storeFolders, storeLoading, syncFolderChildren]);
+	}, [
+		rootLoaded,
+		storeCurrentFolderId,
+		storeFolders,
+		storeLoading,
+		syncFolderChildren,
+	]);
 
 	useEffect(() => {
 		if (!rootLoaded || currentFolderId === null) return;
@@ -370,8 +391,7 @@ export function FolderTree() {
 		let cancelled = false;
 
 		async function expandPath() {
-			for (let i = 0; i < pathIds.length - 1; i++) {
-				const folderId = pathIds[i];
+			for (const folderId of pathIds) {
 				if (cancelled) return;
 				await ensureChildrenLoaded(folderId);
 				if (cancelled) return;
@@ -484,7 +504,10 @@ export function FolderTree() {
 		));
 	}
 
-	const visibleRootIds = useMemo(() => rootIds.filter((id) => nodeMap.has(id)), [nodeMap, rootIds]);
+	const visibleRootIds = useMemo(
+		() => rootIds.filter((id) => nodeMap.has(id)),
+		[nodeMap, rootIds],
+	);
 
 	return (
 		<div className="p-2 space-y-0.5">
@@ -497,7 +520,8 @@ export function FolderTree() {
 						className={cn(
 							"w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-accent transition-colors text-left",
 							currentFolderId === null &&
-								(location.pathname === "/" || location.pathname.startsWith("/folder")) &&
+								(location.pathname === "/" ||
+									location.pathname.startsWith("/folder")) &&
 								"bg-accent font-medium",
 							rootDragOver && "ring-2 ring-primary bg-accent/30",
 						)}
