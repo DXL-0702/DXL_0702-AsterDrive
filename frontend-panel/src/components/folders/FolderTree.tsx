@@ -8,6 +8,7 @@ import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
 import {
 	DRAG_MIME,
+	FOLDER_TREE_DRAG_EXPAND_DELAY_MS,
 	FOLDER_TREE_INDENT_PX,
 	FOLDER_TREE_ROW_OFFSET_PX,
 	SIDEBAR_SECTION_PADDING_CLASS,
@@ -41,6 +42,8 @@ interface TreeNodeProps {
 	loadingIds: Set<number>;
 	nodeId: number;
 	nodeMap: Map<number, FolderTreeNode>;
+	onDragHoverEnd: (id: number) => void;
+	onDragHoverStart: (id: number) => void;
 	onDrop: (
 		fileIds: number[],
 		folderIds: number[],
@@ -107,6 +110,8 @@ function TreeNode({
 	loadingIds,
 	nodeId,
 	nodeMap,
+	onDragHoverEnd,
+	onDragHoverStart,
 	onDrop,
 	onNavigate,
 	onToggle,
@@ -114,6 +119,7 @@ function TreeNode({
 }: TreeNodeProps) {
 	const node = nodeMap.get(nodeId);
 	const [dragOver, setDragOver] = useState(false);
+	const rowRef = useRef<HTMLDivElement | null>(null);
 
 	if (!node) return null;
 
@@ -128,14 +134,21 @@ function TreeNode({
 		e.preventDefault();
 		e.dataTransfer.dropEffect = "move";
 		setDragOver(true);
+		onDragHoverStart(node.folder.id);
 	};
 
-	const handleDragLeave = () => {
+	const handleDragLeave = (e: React.DragEvent) => {
+		const nextTarget = e.relatedTarget;
+		if (nextTarget instanceof Node && rowRef.current?.contains(nextTarget)) {
+			return;
+		}
 		setDragOver(false);
+		onDragHoverEnd(node.folder.id);
 	};
 
 	const handleDrop = (e: React.DragEvent) => {
 		setDragOver(false);
+		onDragHoverEnd(node.folder.id);
 		e.preventDefault();
 		const raw = e.dataTransfer.getData(DRAG_MIME);
 		if (!raw) return;
@@ -148,6 +161,7 @@ function TreeNode({
 		<div>
 			{/* biome-ignore lint/a11y/useSemanticElements: outer row needs drag-drop target and contains a nested toggle button */}
 			<div
+				ref={rowRef}
 				role="button"
 				tabIndex={0}
 				className={folderTreeRowClass(
@@ -171,6 +185,7 @@ function TreeNode({
 				{showToggle ? (
 					<button
 						type="button"
+						onDragEnter={(e) => e.preventDefault()}
 						className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent-foreground/10 hover:text-foreground disabled:cursor-default disabled:hover:bg-transparent"
 						onClick={(e) => {
 							e.stopPropagation();
@@ -253,9 +268,22 @@ export function FolderTree() {
 	const childrenCacheRef = useRef<Map<number | null, FolderInfo[]>>(new Map());
 	const inflightLoadsRef = useRef<Map<number | null, Promise<void>>>(new Map());
 	const expandingPathRef = useRef<string>("");
+	const hoverExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+		null,
+	);
+	const hoverExpandTargetIdRef = useRef<number | null>(null);
+
+	const clearHoverExpandTimer = useCallback(() => {
+		if (hoverExpandTimerRef.current) {
+			clearTimeout(hoverExpandTimerRef.current);
+			hoverExpandTimerRef.current = null;
+		}
+		hoverExpandTargetIdRef.current = null;
+	}, []);
 
 	useEffect(() => {
 		if (folderTreeSnapshot?.userId === userId) return;
+		clearHoverExpandTimer();
 		folderTreeSnapshot = null;
 		childrenCacheRef.current = new Map();
 		inflightLoadsRef.current = new Map();
@@ -266,7 +294,7 @@ export function FolderTree() {
 		setLoadingIds(new Set());
 		setLoadedIds(new Set());
 		setRootLoaded(false);
-	}, [userId]);
+	}, [clearHoverExpandTimer, userId]);
 
 	useEffect(() => {
 		folderTreeSnapshot = {
@@ -423,10 +451,23 @@ export function FolderTree() {
 	// biome-ignore lint/correctness/useExhaustiveDependencies: reset marker whenever folder target changes
 	useEffect(() => {
 		expandingPathRef.current = "";
-	}, [currentFolderId]);
+		clearHoverExpandTimer();
+	}, [clearHoverExpandTimer, currentFolderId]);
+
+	useEffect(() => () => clearHoverExpandTimer(), [clearHoverExpandTimer]);
+
+	const ensureFolderExpanded = useCallback(
+		async (folderId: number) => {
+			if (expandedIds.has(folderId)) return;
+			await ensureChildrenLoaded(folderId);
+			setExpandedIds((prev) => new Set(prev).add(folderId));
+		},
+		[ensureChildrenLoaded, expandedIds],
+	);
 
 	const handleToggle = useCallback(
 		async (folderId: number) => {
+			clearHoverExpandTimer();
 			if (expandedIds.has(folderId)) {
 				setExpandedIds((prev) => {
 					const next = new Set(prev);
@@ -436,23 +477,23 @@ export function FolderTree() {
 				return;
 			}
 
-			await ensureChildrenLoaded(folderId);
-			setExpandedIds((prev) => new Set(prev).add(folderId));
+			await ensureFolderExpanded(folderId);
 		},
-		[ensureChildrenLoaded, expandedIds],
+		[clearHoverExpandTimer, ensureFolderExpanded, expandedIds],
 	);
 
 	const handleNavigate = useCallback(
 		async (id: number, name: string) => {
-			await ensureChildrenLoaded(id);
-			setExpandedIds((prev) => new Set(prev).add(id));
+			clearHoverExpandTimer();
+			await ensureFolderExpanded(id);
 			navigate(`/folder/${id}?name=${encodeURIComponent(name)}`);
 		},
-		[ensureChildrenLoaded, navigate],
+		[clearHoverExpandTimer, ensureFolderExpanded, navigate],
 	);
 
 	const handleDrop = useCallback(
 		(fileIds: number[], folderIds: number[], targetFolderId: number) => {
+			clearHoverExpandTimer();
 			moveToFolder(fileIds, folderIds, targetFolderId)
 				.then((result) => {
 					const batchToast = formatBatchToast(t, "move", result);
@@ -468,17 +509,48 @@ export function FolderTree() {
 				})
 				.catch(handleApiError);
 		},
-		[moveToFolder, t],
+		[clearHoverExpandTimer, moveToFolder, t],
+	);
+
+	const scheduleHoverExpand = useCallback(
+		(folderId: number) => {
+			const node = nodeMap.get(folderId);
+			if (!node) return;
+			if (expandedIds.has(folderId)) return;
+			if (loadingIds.has(folderId)) return;
+			if (loadedIds.has(folderId) && node.childIds.length === 0) return;
+			if (hoverExpandTargetIdRef.current === folderId) return;
+
+			clearHoverExpandTimer();
+			hoverExpandTargetIdRef.current = folderId;
+			hoverExpandTimerRef.current = setTimeout(() => {
+				hoverExpandTimerRef.current = null;
+				const targetId = hoverExpandTargetIdRef.current;
+				hoverExpandTargetIdRef.current = null;
+				if (targetId == null) return;
+				void ensureFolderExpanded(targetId);
+			}, FOLDER_TREE_DRAG_EXPAND_DELAY_MS);
+		},
+		[
+			clearHoverExpandTimer,
+			ensureFolderExpanded,
+			expandedIds,
+			loadedIds,
+			loadingIds,
+			nodeMap,
+		],
 	);
 
 	const handleRootDragOver = (e: React.DragEvent) => {
 		if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
 		e.preventDefault();
 		e.dataTransfer.dropEffect = "move";
+		clearHoverExpandTimer();
 		setRootDragOver(true);
 	};
 
 	const handleRootDrop = (e: React.DragEvent) => {
+		clearHoverExpandTimer();
 		setRootDragOver(false);
 		e.preventDefault();
 		const raw = e.dataTransfer.getData(DRAG_MIME);
@@ -500,6 +572,21 @@ export function FolderTree() {
 			.catch(handleApiError);
 	};
 
+	const handleDragHoverStart = useCallback(
+		(folderId: number) => {
+			scheduleHoverExpand(folderId);
+		},
+		[scheduleHoverExpand],
+	);
+
+	const handleDragHoverEnd = useCallback(
+		(folderId: number) => {
+			if (hoverExpandTargetIdRef.current !== folderId) return;
+			clearHoverExpandTimer();
+		},
+		[clearHoverExpandTimer],
+	);
+
 	function renderChildren(ids: number[], depth: number): React.ReactNode {
 		return ids.map((id) => (
 			<TreeNode
@@ -511,6 +598,8 @@ export function FolderTree() {
 				loadingIds={loadingIds}
 				nodeId={id}
 				nodeMap={nodeMap}
+				onDragHoverEnd={handleDragHoverEnd}
+				onDragHoverStart={handleDragHoverStart}
 				onDrop={handleDrop}
 				onNavigate={handleNavigate}
 				onToggle={handleToggle}

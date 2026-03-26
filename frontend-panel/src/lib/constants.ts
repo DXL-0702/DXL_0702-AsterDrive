@@ -25,3 +25,4 @@ export const PAGE_SECTION_PADDING_CLASS = "px-4 md:px-6";
 export const FOLDER_TREE_INDENT_PX = 16;
 export const FOLDER_TREE_ROW_OFFSET_PX = 4;
 export const FOLDER_TREE_SKELETON_OFFSET_PX = 8;
+export const FOLDER_TREE_DRAG_EXPAND_DELAY_MS = 600;
