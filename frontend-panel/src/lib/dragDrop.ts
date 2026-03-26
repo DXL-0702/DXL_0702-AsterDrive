@@ -8,7 +8,7 @@ export interface InternalDragData {
 
 interface DragPreviewOptions {
 	itemCount?: number;
-	variant?: "default" | "grid-card";
+	variant?: "default" | "grid-card" | "list-row";
 }
 
 function themeColor(token: string, alpha: number) {
@@ -109,6 +109,86 @@ function createDragPreview(source: HTMLElement, options: DragPreviewOptions) {
 			badge.style.background = themeColor("--card", 0.94);
 			badge.style.border = `1px solid ${themeColor("--foreground", 0.12)}`;
 			badge.style.color = themeColor("--foreground", 0.88);
+			badge.style.fontSize = "0.75rem";
+			badge.style.fontWeight = "600";
+			badge.style.lineHeight = "1.2";
+			preview.append(badge);
+		}
+	}
+
+	if (options.variant === "list-row") {
+		preview.style.background = themeColor("--card", 0.96);
+		preview.style.backdropFilter = "none";
+		preview.style.setProperty("-webkit-backdrop-filter", "none");
+		preview.style.border = `1px solid ${themeColor("--foreground", 0.14)}`;
+		preview.style.borderRadius = "0.85rem";
+		preview.style.padding = "0.5rem 0.75rem";
+		preview.style.display = "flex";
+		preview.style.alignItems = "center";
+		preview.style.gap = "0.625rem";
+		preview.style.minHeight = "3rem";
+		preview.style.overflow = "hidden";
+		preview.style.boxShadow = "none";
+
+		const cells = preview.querySelectorAll("td, th");
+		cells.forEach((cell, index) => {
+			if (!(cell instanceof HTMLElement)) return;
+			if (index > 1) {
+				cell.style.display = "none";
+				return;
+			}
+			cell.style.padding = "0";
+			cell.style.border = "none";
+			cell.style.background = "transparent";
+			cell.style.verticalAlign = "middle";
+		});
+
+		const checkboxColumn = preview.querySelector(
+			"td:first-child, th:first-child",
+		);
+		if (checkboxColumn instanceof HTMLElement) {
+			checkboxColumn.style.display = "none";
+		}
+
+		preview.style.width = `${Math.min(Math.max(rect.width * 0.62, 260), 420)}px`;
+		preview.style.maxWidth = preview.style.width;
+
+		const nameCell = preview.querySelector("td:nth-child(2), th:nth-child(2)");
+		if (nameCell instanceof HTMLElement) {
+			nameCell.style.display = "block";
+			nameCell.style.flex = "1";
+			nameCell.style.minWidth = "0";
+
+			const row = nameCell.querySelector("div");
+			if (row instanceof HTMLElement) {
+				row.style.display = "flex";
+				row.style.alignItems = "center";
+				row.style.gap = "0.625rem";
+				row.style.minWidth = "0";
+			}
+
+			const label = nameCell.querySelector("span");
+			if (label instanceof HTMLElement) {
+				label.style.display = "block";
+				label.style.minWidth = "0";
+				label.style.overflow = "hidden";
+				label.style.textOverflow = "ellipsis";
+				label.style.whiteSpace = "nowrap";
+				label.style.fontSize = "0.875rem";
+				label.style.fontWeight = "500";
+			}
+		}
+
+		if ((options.itemCount ?? 1) > 1) {
+			const badge = document.createElement("div");
+			badge.textContent = `${options.itemCount} 项`;
+			badge.style.marginLeft = "auto";
+			badge.style.flexShrink = "0";
+			badge.style.padding = "0.125rem 0.5rem";
+			badge.style.borderRadius = "9999px";
+			badge.style.background = themeColor("--muted", 0.98);
+			badge.style.border = `1px solid ${themeColor("--foreground", 0.06)}`;
+			badge.style.color = themeColor("--foreground", 0.8);
 			badge.style.fontSize = "0.75rem";
 			badge.style.fontWeight = "600";
 			badge.style.lineHeight = "1.2";

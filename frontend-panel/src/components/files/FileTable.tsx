@@ -144,8 +144,12 @@ export function FileTable({
 		itemId: number,
 		isFolder: boolean,
 	) => {
-		writeInternalDragData(e.dataTransfer, makeDragData(itemId, isFolder));
-		setInternalDragPreview(e);
+		const data = makeDragData(itemId, isFolder);
+		writeInternalDragData(e.dataTransfer, data);
+		setInternalDragPreview(e, {
+			variant: "list-row",
+			itemCount: data.fileIds.length + data.folderIds.length,
+		});
 	};
 
 	const handleFolderDragOver = (e: React.DragEvent, folderId: number) => {
