@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
+import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
+import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
@@ -65,35 +67,41 @@ export default function AdminAuditPage() {
 
 	return (
 		<AdminLayout>
-			<div className="p-4 space-y-4">
-				<h2 className="text-lg font-semibold">{t("audit_log")}</h2>
-				<div className="flex gap-2">
-					<Input
-						placeholder={t("audit_filter_action")}
-						value={actionFilter}
-						onChange={(e) => {
-							setActionFilter(e.target.value);
-							setOffset(0);
-						}}
-						className="max-w-xs"
-					/>
-					<Select
-						value={entityTypeFilter}
-						onValueChange={(v) => {
-							if (v) setEntityTypeFilter(v);
-							setOffset(0);
-						}}
-					>
-						<SelectTrigger className="w-[150px]">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							<SelectItem value="__all__">{t("audit_all_types")}</SelectItem>
-							<SelectItem value="file">{t("common:file")}</SelectItem>
-							<SelectItem value="folder">{t("common:folder")}</SelectItem>
-						</SelectContent>
-					</Select>
-				</div>
+			<AdminPageShell>
+				<AdminPageHeader
+					title={t("audit_log")}
+					toolbar={
+						<>
+							<Input
+								placeholder={t("audit_filter_action")}
+								value={actionFilter}
+								onChange={(e) => {
+									setActionFilter(e.target.value);
+									setOffset(0);
+								}}
+								className="max-w-xs"
+							/>
+							<Select
+								value={entityTypeFilter}
+								onValueChange={(v) => {
+									if (v) setEntityTypeFilter(v);
+									setOffset(0);
+								}}
+							>
+								<SelectTrigger className="w-[150px]">
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="__all__">
+										{t("audit_all_types")}
+									</SelectItem>
+									<SelectItem value="file">{t("common:file")}</SelectItem>
+									<SelectItem value="folder">{t("common:folder")}</SelectItem>
+								</SelectContent>
+							</Select>
+						</>
+					}
+				/>
 
 				{loading ? (
 					<SkeletonTable columns={6} rows={8} />
@@ -103,7 +111,7 @@ export default function AdminAuditPage() {
 						title={t("no_audit_logs")}
 					/>
 				) : (
-					<ScrollArea className="flex-1">
+					<ScrollArea className="min-h-0 flex-1 rounded-xl border bg-background px-3 md:px-4">
 						<Table>
 							<TableHeader>
 								<TableRow>
@@ -170,7 +178,7 @@ export default function AdminAuditPage() {
 						</div>
 					</div>
 				)}
-			</div>
+			</AdminPageShell>
 		</AdminLayout>
 	);
 }

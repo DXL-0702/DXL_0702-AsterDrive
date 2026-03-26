@@ -6,6 +6,8 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
+import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
+import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -317,23 +319,31 @@ export default function AdminSettingsPage() {
 
 	return (
 		<AdminLayout>
-			<div className="p-6 space-y-4">
-				<div className="flex items-center justify-between">
-					<h2 className="text-lg font-semibold">{t("system_settings")}</h2>
-					<Button size="sm" onClick={openCreate}>
-						<Icon name="Plus" className="h-4 w-4 mr-1" />
-						{t("add_custom_config")}
-					</Button>
-				</div>
+			<AdminPageShell>
+				<AdminPageHeader
+					title={t("system_settings")}
+					description={t("config_category")}
+					actions={
+						<Button size="sm" onClick={openCreate}>
+							<Icon name="Plus" className="mr-1 h-4 w-4" />
+							{t("add_custom_config")}
+						</Button>
+					}
+				/>
 
 				{loading ? (
 					<SkeletonTable columns={4} rows={8} />
 				) : categories.length === 0 ? (
 					<EmptyState title={t("no_config")} />
 				) : categories.length === 1 ? (
-					renderCategory(categories[0])
+					<div className="min-h-0 flex-1 overflow-auto rounded-xl border bg-background px-3 md:px-4">
+						{renderCategory(categories[0])}
+					</div>
 				) : (
-					<Tabs defaultValue={categories[0]}>
+					<Tabs
+						defaultValue={categories[0]}
+						className="min-h-0 flex flex-1 flex-col gap-4"
+					>
 						<TabsList>
 							{categories.map((cat) => (
 								<TabsTrigger key={cat} value={cat}>
@@ -345,7 +355,11 @@ export default function AdminSettingsPage() {
 							))}
 						</TabsList>
 						{categories.map((cat) => (
-							<TabsContent key={cat} value={cat}>
+							<TabsContent
+								key={cat}
+								value={cat}
+								className="min-h-0 flex-1 overflow-auto rounded-xl border bg-background px-3 md:px-4"
+							>
 								{renderCategory(cat)}
 							</TabsContent>
 						))}
@@ -408,7 +422,7 @@ export default function AdminSettingsPage() {
 						</form>
 					</DialogContent>
 				</Dialog>
-			</div>
+			</AdminPageShell>
 		</AdminLayout>
 	);
 }

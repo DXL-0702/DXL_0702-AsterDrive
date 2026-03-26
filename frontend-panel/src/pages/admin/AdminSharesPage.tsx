@@ -5,6 +5,8 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
+import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
+import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -66,8 +68,11 @@ export default function AdminSharesPage() {
 
 	return (
 		<AdminLayout>
-			<div className="p-6 space-y-4">
-				<h2 className="text-lg font-semibold">{t("shares")}</h2>
+			<AdminPageShell>
+				<AdminPageHeader
+					title={t("shares")}
+					description={t("no_shares_desc")}
+				/>
 				{loading ? (
 					<SkeletonTable columns={8} rows={6} />
 				) : shares.length === 0 ? (
@@ -77,7 +82,7 @@ export default function AdminSharesPage() {
 						description={t("no_shares_desc")}
 					/>
 				) : (
-					<ScrollArea className="flex-1">
+					<ScrollArea className="min-h-0 flex-1 rounded-xl border bg-background px-3 md:px-4">
 						<Table>
 							<TableHeader>
 								<TableRow>
@@ -161,7 +166,7 @@ export default function AdminSharesPage() {
 						</Table>
 					</ScrollArea>
 				)}
-			</div>
+			</AdminPageShell>
 
 			<ConfirmDialog
 				open={deleteId !== null}

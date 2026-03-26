@@ -1,14 +1,23 @@
 import type { ReactNode } from "react";
+import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router-dom";
-import { LanguageSwitcher } from "@/components/common/LanguageSwitcher";
-import { ThemeSwitcher } from "@/components/common/ThemeSwitcher";
+import { AdminTopBar } from "@/components/layout/AdminTopBar";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
 
 export function AdminLayout({ children }: { children: ReactNode }) {
 	const { t } = useTranslation("admin");
+	const [mobileOpen, setMobileOpen] = useState(false);
+
+	const handleMobileToggle = useCallback(() => {
+		setMobileOpen((prev) => !prev);
+	}, []);
+
+	const handleMobileClose = useCallback(() => {
+		setMobileOpen(false);
+	}, []);
 
 	const navItems: { to: string; label: string; icon: IconName }[] = [
 		{ to: "/admin/users", label: t("users"), icon: "Shield" },
@@ -23,50 +32,58 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 		},
 	];
 
+	const sidebarContent = (
+		<div className="flex h-full flex-col bg-background">
+			<ScrollArea className="flex-1 pt-2">
+				<nav className="space-y-1 p-2">
+					{navItems.map((item) => (
+						<NavLink
+							key={item.to}
+							to={item.to}
+							onClick={handleMobileClose}
+							className={({ isActive }) =>
+								cn(
+									"flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors",
+									isActive
+										? "bg-accent text-accent-foreground font-medium"
+										: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+								)
+							}
+						>
+							<Icon name={item.icon} className="h-4 w-4 shrink-0" />
+							{item.label}
+						</NavLink>
+					))}
+				</nav>
+			</ScrollArea>
+		</div>
+	);
+
 	return (
-		<div className="h-screen flex flex-col">
-			<div className="flex flex-1 overflow-hidden">
-				<aside className="w-56 border-r flex flex-col shrink-0">
-					<div className="p-3 flex items-center justify-between">
-						<div className="flex items-center gap-2">
-							<NavLink
-								to="/"
-								className="text-muted-foreground hover:text-foreground transition-colors"
-							>
-								<Icon name="ArrowLeft" className="h-4 w-4" />
-							</NavLink>
-							<span className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">
-								{t("title")}
-							</span>
-						</div>
-						<div className="flex items-center gap-0.5">
-							<ThemeSwitcher />
-							<LanguageSwitcher />
-						</div>
-					</div>
-					<Separator />
-					<ScrollArea className="flex-1">
-						<nav className="p-2 space-y-1">
-							{navItems.map((item) => (
-								<NavLink
-									key={item.to}
-									to={item.to}
-									className={({ isActive }) =>
-										`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
-											isActive
-												? "bg-accent text-accent-foreground font-medium"
-												: "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-										}`
-									}
-								>
-									<Icon name={item.icon} className="h-4 w-4" />
-									{item.label}
-								</NavLink>
-							))}
-						</nav>
-					</ScrollArea>
+		<div className="flex h-screen flex-col bg-muted/20">
+			<AdminTopBar onSidebarToggle={handleMobileToggle} />
+			<div className="flex min-h-0 flex-1 overflow-hidden">
+				{mobileOpen && (
+					<button
+						type="button"
+						className="fixed inset-0 z-40 bg-black/50 md:hidden"
+						onClick={handleMobileClose}
+						aria-label="Close admin sidebar"
+					/>
+				)}
+				<aside
+					className={cn(
+						"border-r bg-background transition-all duration-200",
+						"hidden w-64 shrink-0 md:flex md:flex-col",
+						mobileOpen &&
+							"fixed inset-y-16 left-0 z-50 flex w-64 flex-col shadow-lg md:relative md:inset-y-0 md:left-auto md:z-auto",
+					)}
+				>
+					{sidebarContent}
 				</aside>
-				<main className="flex-1 flex flex-col overflow-hidden">{children}</main>
+				<main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+					{children}
+				</main>
 			</div>
 		</div>
 	);

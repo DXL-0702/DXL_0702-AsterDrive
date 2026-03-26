@@ -5,6 +5,8 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
+import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
+import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -82,13 +84,16 @@ export default function AdminLocksPage() {
 
 	return (
 		<AdminLayout>
-			<div className="p-6 space-y-4">
-				<div className="flex items-center justify-between">
-					<h2 className="text-lg font-semibold">{t("webdav_locks")}</h2>
-					<Button variant="outline" size="sm" onClick={handleCleanupExpired}>
-						{t("clean_expired")}
-					</Button>
-				</div>
+			<AdminPageShell>
+				<AdminPageHeader
+					title={t("webdav_locks")}
+					description={t("no_active_locks_desc")}
+					actions={
+						<Button variant="outline" size="sm" onClick={handleCleanupExpired}>
+							{t("clean_expired")}
+						</Button>
+					}
+				/>
 				{loading ? (
 					<SkeletonTable columns={7} rows={6} />
 				) : locks.length === 0 ? (
@@ -98,7 +103,7 @@ export default function AdminLocksPage() {
 						description={t("no_active_locks_desc")}
 					/>
 				) : (
-					<ScrollArea className="flex-1">
+					<ScrollArea className="min-h-0 flex-1 rounded-xl border bg-background px-3 md:px-4">
 						<Table>
 							<TableHeader>
 								<TableRow>
@@ -165,7 +170,7 @@ export default function AdminLocksPage() {
 						</Table>
 					</ScrollArea>
 				)}
-			</div>
+			</AdminPageShell>
 
 			<ConfirmDialog
 				open={unlockId !== null}

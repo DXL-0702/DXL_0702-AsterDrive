@@ -6,6 +6,8 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
+import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
+import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -261,14 +263,17 @@ export default function AdminPoliciesPage() {
 
 	return (
 		<AdminLayout>
-			<div className="p-6 space-y-4">
-				<div className="flex items-center justify-between">
-					<h2 className="text-lg font-semibold">{t("policies")}</h2>
-					<Button size="sm" onClick={openCreate}>
-						<Icon name="Plus" className="h-4 w-4 mr-1" />
-						{t("new_policy")}
-					</Button>
-				</div>
+			<AdminPageShell>
+				<AdminPageHeader
+					title={t("policies")}
+					description={t("no_policies_desc")}
+					actions={
+						<Button size="sm" onClick={openCreate}>
+							<Icon name="Plus" className="mr-1 h-4 w-4" />
+							{t("new_policy")}
+						</Button>
+					}
+				/>
 
 				{loading ? (
 					<SkeletonTable columns={7} rows={6} />
@@ -278,7 +283,7 @@ export default function AdminPoliciesPage() {
 						description={t("no_policies_desc")}
 					/>
 				) : (
-					<ScrollArea className="flex-1">
+					<ScrollArea className="min-h-0 flex-1 rounded-xl border bg-background px-3 md:px-4">
 						<Table>
 							<TableHeader>
 								<TableRow>
@@ -511,7 +516,7 @@ export default function AdminPoliciesPage() {
 						</form>
 					</DialogContent>
 				</Dialog>
-			</div>
+			</AdminPageShell>
 		</AdminLayout>
 	);
 }

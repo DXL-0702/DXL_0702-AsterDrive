@@ -4,6 +4,8 @@ import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
+import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
+import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -382,14 +384,14 @@ export default function AdminUsersPage() {
 
 	return (
 		<AdminLayout>
-			<div className="p-6 space-y-4">
-				<h2 className="text-lg font-semibold">{t("users")}</h2>
+			<AdminPageShell>
+				<AdminPageHeader title={t("users")} description={t("no_users")} />
 				{loading ? (
 					<SkeletonTable columns={8} rows={6} />
 				) : users.length === 0 ? (
 					<EmptyState title={t("no_users")} />
 				) : (
-					<ScrollArea className="flex-1">
+					<ScrollArea className="min-h-0 flex-1 rounded-xl border bg-background px-3 md:px-4">
 						<Table>
 							<TableHeader>
 								<TableRow>
@@ -445,7 +447,7 @@ export default function AdminUsersPage() {
 													<SelectItem value="active">
 														<Badge
 															variant="outline"
-															className="text-green-600 dark:text-green-400 border-green-600 dark:border-green-400"
+															className="border-green-600 text-green-600 dark:border-green-400 dark:text-green-400"
 														>
 															{t("common:active")}
 														</Badge>
@@ -453,7 +455,7 @@ export default function AdminUsersPage() {
 													<SelectItem value="disabled">
 														<Badge
 															variant="outline"
-															className="text-red-600 dark:text-red-400 border-red-600 dark:border-red-400"
+															className="border-red-600 text-red-600 dark:border-red-400 dark:text-red-400"
 														>
 															{t("common:disabled_status")}
 														</Badge>
@@ -471,7 +473,7 @@ export default function AdminUsersPage() {
 												className="h-8"
 												onClick={() => setPolicyDialogUserId(user.id)}
 											>
-												<Icon name="HardDrive" className="h-3.5 w-3.5 mr-1" />
+												<Icon name="HardDrive" className="mr-1 h-3.5 w-3.5" />
 												{t("common:manage")}
 											</Button>
 										</TableCell>
@@ -484,7 +486,7 @@ export default function AdminUsersPage() {
 						</Table>
 					</ScrollArea>
 				)}
-			</div>
+			</AdminPageShell>
 			{policyDialogUserId !== null && (
 				<UserPolicyDialog
 					userId={policyDialogUserId}
