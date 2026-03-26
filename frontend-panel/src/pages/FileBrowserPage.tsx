@@ -25,6 +25,7 @@ import {
 	BreadcrumbItem,
 	BreadcrumbLink,
 	BreadcrumbList,
+	BreadcrumbPage,
 	BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import {
@@ -403,41 +404,73 @@ export default function FileBrowserPage() {
 	);
 	const pageCore = (
 		<>
-			{/* Breadcrumb / search indicator */}
-			<div className="px-4 pt-3 pb-1">
-				{isSearching ? (
-					<span className="text-sm text-muted-foreground">
-						{t("common:search")}: &quot;{searchQuery}&quot;
-					</span>
-				) : (
-					<Breadcrumb>
-						<BreadcrumbList>
-							{breadcrumb.map((item, i) => (
-								<Fragment key={item.id ?? "root"}>
-									{i > 0 && <BreadcrumbSeparator />}
-									<BreadcrumbItem>
-										{i < breadcrumb.length - 1 ? (
-											<BreadcrumbLink
-												className="cursor-pointer"
-												onClick={() =>
-													navigate(
-														item.id === null
-															? "/"
-															: `/folder/${item.id}?name=${encodeURIComponent(item.name)}`,
-													)
-												}
-											>
-												{item.name}
-											</BreadcrumbLink>
-										) : (
-											<span className="font-medium">{item.name}</span>
-										)}
-									</BreadcrumbItem>
-								</Fragment>
-							))}
-						</BreadcrumbList>
-					</Breadcrumb>
-				)}
+			{/* Breadcrumb / local controls */}
+			<div className="border-b border-border/70 bg-background px-4 py-2.5">
+				<div className="flex flex-wrap items-center justify-between gap-3">
+					<div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-3">
+						<Icon
+							name="FolderOpen"
+							className="h-4 w-4 shrink-0 text-muted-foreground/70"
+						/>
+						<div className="min-w-0 flex-1">
+							{isSearching ? (
+								<span className="text-sm text-muted-foreground">
+									{t("common:search")}: &quot;{searchQuery}&quot;
+								</span>
+							) : (
+								<Breadcrumb>
+									<BreadcrumbList className="gap-2">
+										{breadcrumb.map((item, i) => (
+											<Fragment key={item.id ?? "root"}>
+												{i > 0 && (
+													<BreadcrumbSeparator className="mx-0.5 text-muted-foreground/45" />
+												)}
+												<BreadcrumbItem>
+													{i < breadcrumb.length - 1 ? (
+														<BreadcrumbLink
+															className="cursor-pointer text-muted-foreground"
+															onClick={() =>
+																navigate(
+																	item.id === null
+																		? "/"
+																		: `/folder/${item.id}?name=${encodeURIComponent(item.name)}`,
+																)
+															}
+														>
+															{item.name}
+														</BreadcrumbLink>
+													) : (
+														<BreadcrumbPage className="text-base font-semibold text-foreground">
+															{item.name}
+														</BreadcrumbPage>
+													)}
+												</BreadcrumbItem>
+											</Fragment>
+										))}
+									</BreadcrumbList>
+								</Breadcrumb>
+							)}
+						</div>
+						<button
+							type="button"
+							className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground"
+							onClick={() => void refresh()}
+							aria-label={t("refresh")}
+							title={t("refresh")}
+						>
+							<Icon name="ArrowsClockwise" className="h-4 w-4" />
+						</button>
+					</div>
+					<div className="flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-2">
+						<SortMenu
+							sortBy={sortBy}
+							sortOrder={sortOrder}
+							onSortBy={setSortBy}
+							onSortOrder={setSortOrder}
+						/>
+						<ViewToggle value={viewMode} onChange={setViewMode} />
+					</div>
+				</div>
 			</div>
 			<ContextMenu>
 				<ContextMenuTrigger className="flex min-h-0 flex-1 flex-col">
@@ -503,20 +536,7 @@ export default function FileBrowserPage() {
 	);
 
 	return (
-		<AppLayout
-			actions={
-				<div className="flex items-center gap-2">
-					<SortMenu
-						sortBy={sortBy}
-						sortOrder={sortOrder}
-						onSortBy={setSortBy}
-						onSortOrder={setSortOrder}
-					/>
-					<ViewToggle value={viewMode} onChange={setViewMode} />
-				</div>
-			}
-			onTrashDrop={handleTrashDrop}
-		>
+		<AppLayout onTrashDrop={handleTrashDrop}>
 			<Suspense fallback={pageCore}>
 				<UploadArea ref={handleUploadAreaReady}>{pageCore}</UploadArea>
 			</Suspense>

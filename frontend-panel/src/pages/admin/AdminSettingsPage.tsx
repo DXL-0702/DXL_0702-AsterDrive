@@ -68,10 +68,10 @@ export default function AdminSettingsPage() {
 		try {
 			setLoading(true);
 			const [cfgs, schemaList] = await Promise.all([
-				adminConfigService.list(),
+				adminConfigService.list({ limit: 200, offset: 0 }),
 				adminConfigService.schema(),
 			]);
-			setConfigs(cfgs);
+			setConfigs(cfgs.items);
 			setSchemas(schemaList);
 		} catch (e) {
 			handleApiError(e);

@@ -106,13 +106,13 @@ async fn test_user_policy_assignment() {
     let body: Value = test::read_body_json(resp).await;
     let user_id = body["data"]["items"][0]["id"].as_i64().unwrap();
 
-    // 分配策略给用户
+    // 分配一个非默认策略给用户
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({
             "policy_id": policy_id,
-            "is_default": true,
+            "is_default": false,
             "quota_bytes": 1073741824
         }))
         .to_request();
@@ -245,10 +245,10 @@ async fn test_cannot_unset_only_default_policy() {
     );
 }
 
-// ── 删除用户默认策略时自动转移 ──────────────────────────────
+// ── 不能删除用户默认策略分配 ────────────────────────────────
 
 #[actix_web::test]
-async fn test_user_policy_default_auto_promote() {
+async fn test_cannot_delete_default_user_policy() {
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -300,7 +300,7 @@ async fn test_user_policy_default_auto_promote() {
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
-    let usp1_id = body["data"]["id"].as_i64().unwrap();
+    let default_assignment_id = body["data"]["id"].as_i64().unwrap();
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
@@ -314,15 +314,15 @@ async fn test_user_policy_default_auto_promote() {
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
 
-    // 删除 default 策略分配
+    // 删除 default 策略分配 → 应被拒绝
     let req = test::TestRequest::delete()
-        .uri(&format!("/api/v1/admin/users/{user_id}/policies/{usp1_id}"))
+        .uri(&format!("/api/v1/admin/users/{user_id}/policies/{default_assignment_id}"))
         .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.status(), 400);
 
-    // 剩余的策略中应有一个 is_default=true
+    // 默认分配仍存在，且默认标记未变化
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
         .insert_header(("Cookie", format!("aster_access={token}")))
@@ -330,11 +330,74 @@ async fn test_user_policy_default_auto_promote() {
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
     let policies = body["data"]["items"].as_array().unwrap();
-    let has_default = policies.iter().any(|p| p["is_default"] == true);
-    assert!(
-        has_default,
-        "should have at least one default policy after deleting the previous default"
-    );
+    let default_assignment = policies
+        .iter()
+        .find(|p| p["id"] == default_assignment_id)
+        .unwrap();
+    assert_eq!(policies.len(), 3);
+    assert_eq!(default_assignment["is_default"], true);
+}
+
+#[actix_web::test]
+async fn test_can_delete_non_default_user_policy_with_multiple_assignments() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Third Policy",
+            "driver_type": "local",
+            "base_path": "/tmp/test-third",
+            "max_file_size": 0,
+            "is_default": false
+        }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "policy_id": policy_id,
+            "is_default": false,
+            "quota_bytes": 0
+        }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let assignment_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/admin/users/{user_id}/policies/{assignment_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let policies = body["data"]["items"].as_array().unwrap();
+    assert_eq!(policies.len(), 1);
+    assert_eq!(policies[0]["is_default"], true);
 }
 
 // ── 不能取消用户唯一默认策略 ────────────────────────────────

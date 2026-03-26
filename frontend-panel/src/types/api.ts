@@ -58,6 +58,11 @@ export type StoragePolicyPage =
 	components["schemas"]["OffsetPage_StoragePolicy"];
 export type UserStoragePolicyPage =
 	components["schemas"]["OffsetPage_UserStoragePolicy"];
+export type SharePage = components["schemas"]["OffsetPage_ShareInfo"];
+export type LockPage = components["schemas"]["OffsetPage_ResourceLock"];
+export type SystemConfigPage = components["schemas"]["OffsetPage_SystemConfig"];
+export type WebdavAccountPage =
+	components["schemas"]["OffsetPage_WebdavAccountInfo"];
 
 // ErrorCode constants (generated type is a union of literal numbers, we need named constants)
 export const ErrorCode = {

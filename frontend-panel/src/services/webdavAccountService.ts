@@ -1,8 +1,20 @@
-import type { WebdavAccountCreated, WebdavAccountInfo } from "@/types/api";
+import type {
+	WebdavAccountCreated,
+	WebdavAccountInfo,
+	WebdavAccountPage,
+} from "@/types/api";
 import { api } from "./http";
 
 export const webdavAccountService = {
-	list: () => api.get<WebdavAccountInfo[]>("/webdav-accounts"),
+	list: (params?: { limit?: number; offset?: number }) => {
+		const query = new URLSearchParams();
+		if (params?.limit != null) query.set("limit", String(params.limit));
+		if (params?.offset != null) query.set("offset", String(params.offset));
+		const suffix = query.toString();
+		return api.get<WebdavAccountPage>(
+			suffix ? `/webdav-accounts?${suffix}` : "/webdav-accounts",
+		);
+	},
 
 	create: (username: string, password?: string, rootFolderId?: number) =>
 		api.post<WebdavAccountCreated>("/webdav-accounts", {

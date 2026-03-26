@@ -25,19 +25,8 @@ import {
 	ADMIN_ICON_BUTTON_CLASS,
 	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
 } from "@/lib/constants";
+import type { WebdavLock } from "@/services/adminService";
 import { adminLockService } from "@/services/adminService";
-
-interface WebdavLock {
-	id: number;
-	token: string;
-	path: string;
-	principal: string | null;
-	owner_xml: string | null;
-	timeout_at: string | null;
-	shared: boolean;
-	deep: boolean;
-	created_at: string;
-}
 
 export default function AdminLocksPage() {
 	const { t } = useTranslation("admin");
@@ -48,8 +37,8 @@ export default function AdminLocksPage() {
 	const load = useCallback(async () => {
 		try {
 			setLoading(true);
-			const data = await adminLockService.list();
-			setLocks(data);
+			const data = await adminLockService.list({ limit: 100, offset: 0 });
+			setLocks(data.items);
 		} catch (e) {
 			handleApiError(e);
 		} finally {
@@ -115,7 +104,7 @@ export default function AdminLocksPage() {
 									<TableRow>
 										<TableHead className="w-16">{t("id")}</TableHead>
 										<TableHead>{t("path")}</TableHead>
-										<TableHead>{t("principal")}</TableHead>
+										<TableHead>{t("common:owner")}</TableHead>
 										<TableHead>{t("common:type")}</TableHead>
 										<TableHead>{t("common:status")}</TableHead>
 										<TableHead>{t("common:created_at")}</TableHead>
@@ -134,7 +123,8 @@ export default function AdminLocksPage() {
 												{l.path}
 											</TableCell>
 											<TableCell className="text-xs">
-												{l.principal ?? "-"}
+												{l.owner_info ??
+													(l.owner_id != null ? `#${l.owner_id}` : "-")}
 											</TableCell>
 											<TableCell>
 												<div className="flex gap-1">

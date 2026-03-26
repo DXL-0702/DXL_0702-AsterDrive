@@ -52,7 +52,7 @@ export function HeaderControls({
 	};
 
 	return (
-		<div className="flex items-center gap-1.5 shrink-0">
+		<div className="flex items-center gap-2 shrink-0">
 			{actions}
 			{isAuthStale && (
 				<Tooltip>
@@ -88,7 +88,9 @@ export function HeaderControls({
 			<LanguageSwitcher />
 			<DropdownMenu>
 				<DropdownMenuTrigger
-					render={<Button variant="ghost" size="sm" className="gap-1.5" />}
+					render={
+						<Button variant="ghost" size="sm" className="h-9 gap-2 px-3" />
+					}
 				>
 					<span className="max-w-24 truncate text-sm">{user?.username}</span>
 					{user?.role === "admin" ? (

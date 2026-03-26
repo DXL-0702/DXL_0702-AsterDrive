@@ -142,5 +142,9 @@
 	"initial_admin_protected": "Initial admin is protected",
 	"initial_admin_delete_blocked": "The initial admin account cannot be deleted.",
 	"initial_admin_status_blocked": "The initial admin account cannot be disabled.",
-	"initial_admin_role_blocked": "The initial admin account cannot be demoted."
+	"initial_admin_role_blocked": "The initial admin account cannot be demoted.",
+	"assignment_updated": "Assignment updated",
+	"default_selected": "Default",
+	"default_policy_required": "A default policy must always exist while assignments remain.",
+	"default_policy_remove_blocked": "Set another policy as default before removing the current default policy."
 }

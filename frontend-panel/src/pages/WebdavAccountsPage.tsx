@@ -5,6 +5,7 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +19,7 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Select,
 	SelectContent,
@@ -34,6 +36,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
+import { PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { fileService } from "@/services/fileService";
 import { webdavAccountService } from "@/services/webdavAccountService";
 import type { FolderInfo, WebdavAccountInfo } from "@/types/api";
@@ -91,8 +94,8 @@ export default function WebdavAccountsPage() {
 	const fetchAccounts = useCallback(async (showLoader = true) => {
 		if (showLoader) setLoading(true);
 		try {
-			const data = await webdavAccountService.list();
-			setAccounts(data);
+			const data = await webdavAccountService.list({ limit: 200, offset: 0 });
+			setAccounts(data.items);
 		} catch (err) {
 			handleApiError(err);
 		} finally {
@@ -364,7 +367,9 @@ export default function WebdavAccountsPage() {
 			)}
 
 			<div className="min-h-0 flex-1 overflow-auto">
-				<div className="flex flex-col gap-4 p-4 md:p-6">
+				<div
+					className={`flex flex-col gap-4 py-4 md:py-6 ${PAGE_SECTION_PADDING_CLASS}`}
+				>
 					{/* Page Header */}
 					<div className="flex items-start justify-between gap-4">
 						<div>
@@ -401,11 +406,9 @@ export default function WebdavAccountsPage() {
 					</div>
 
 					{/* Accounts Table */}
-					<div className="rounded-xl border overflow-hidden bg-background">
+					<AdminSurface>
 						{loading ? (
-							<div className="p-4">
-								<SkeletonTable columns={4} rows={5} />
-							</div>
+							<SkeletonTable columns={4} rows={5} />
 						) : sortedAccounts.length === 0 ? (
 							<EmptyState
 								icon={<Icon name="Globe" className="h-10 w-10" />}
@@ -413,91 +416,90 @@ export default function WebdavAccountsPage() {
 								description={t("common:no_webdav_accounts_desc")}
 							/>
 						) : (
-							<Table>
-								<TableHeader>
-									<TableRow>
-										<TableHead>{t("admin:username")}</TableHead>
-										<TableHead>{t("common:access_scope")}</TableHead>
-										<TableHead>{t("common:status")}</TableHead>
-										<TableHead>{t("common:created_at")}</TableHead>
-										<TableHead className="w-[96px] text-right">
-											{t("common:actions")}
-										</TableHead>
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{sortedAccounts.map((account) => (
-										<TableRow key={account.id}>
-											<TableCell>
-												<div className="flex min-w-[140px] items-center gap-2.5">
-													<div className="flex h-8 w-8 items-center justify-center rounded-lg border bg-muted/40 text-muted-foreground">
-														<Icon name="HardDrive" className="h-3.5 w-3.5" />
-													</div>
-													<span className="truncate font-mono text-sm font-medium">
-														{account.username}
-													</span>
-												</div>
-											</TableCell>
-											<TableCell>
-												<div className="flex min-w-[180px] items-center gap-2 text-sm">
-													<Icon
-														name={
-															account.root_folder_path ? "FolderOpen" : "Globe"
-														}
-														className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
-													/>
-													<span className="truncate">
-														{account.root_folder_path ?? t("common:all_files")}
-													</span>
-												</div>
-											</TableCell>
-											<TableCell>
-												<Badge
-													variant={account.is_active ? "secondary" : "outline"}
-													className={
-														account.is_active
-															? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-															: undefined
-													}
-												>
-													{account.is_active
-														? t("common:active")
-														: t("common:disabled_status")}
-												</Badge>
-											</TableCell>
-											<TableCell className="text-sm text-muted-foreground">
-												{formatDateOnly(account.created_at)}
-											</TableCell>
-											<TableCell>
-												<div className="flex justify-end gap-2">
-													<Button
-														variant="outline"
-														size="icon-sm"
-														onClick={() => void handleToggle(account.id)}
-														title={
-															account.is_active
-																? t("common:disabled_status")
-																: t("common:active")
-														}
-													>
-														<Icon name="Power" className="h-3.5 w-3.5" />
-													</Button>
-													<Button
-														variant="destructive"
-														size="icon-sm"
-														onClick={() => setDeleteId(account.id)}
-														title={t("common:delete")}
-													>
-														<Icon name="Trash" className="h-3.5 w-3.5" />
-													</Button>
-												</div>
-											</TableCell>
+							<ScrollArea className="min-h-0 flex-1">
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>{t("admin:username")}</TableHead>
+											<TableHead>{t("common:access_scope")}</TableHead>
+											<TableHead>{t("common:status")}</TableHead>
+											<TableHead>{t("common:created_at")}</TableHead>
+											<TableHead className="w-[96px] text-right">
+												{t("common:actions")}
+											</TableHead>
 										</TableRow>
-									))}
-								</TableBody>
-							</Table>
+									</TableHeader>
+									<TableBody>
+										{sortedAccounts.map((account) => (
+											<TableRow key={account.id}>
+												<TableCell>
+													<div className="min-w-[140px]">
+														<span className="truncate font-mono text-sm font-medium text-foreground">
+															{account.username}
+														</span>
+													</div>
+												</TableCell>
+												<TableCell>
+													<div className="flex min-w-[180px] items-center gap-2 text-sm text-foreground">
+														<Icon
+															name={
+																account.root_folder_path ? "FolderOpen" : "Globe"
+															}
+															className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+														/>
+														<span className="truncate">
+															{account.root_folder_path ?? t("common:all_files")}
+														</span>
+													</div>
+												</TableCell>
+												<TableCell>
+													<Badge
+														variant={account.is_active ? "secondary" : "outline"}
+														className={
+															account.is_active
+																? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+																: undefined
+														}
+													>
+														{account.is_active
+															? t("common:active")
+															: t("common:disabled_status")}
+													</Badge>
+												</TableCell>
+												<TableCell className="text-sm text-muted-foreground">
+													{formatDateOnly(account.created_at)}
+												</TableCell>
+												<TableCell>
+													<div className="flex justify-end gap-2">
+														<Button
+															variant="outline"
+															size="icon-sm"
+															onClick={() => void handleToggle(account.id)}
+															title={
+																account.is_active
+																	? t("common:disabled_status")
+																	: t("common:active")
+															}
+														>
+															<Icon name="Power" className="h-3.5 w-3.5" />
+														</Button>
+														<Button
+															variant="destructive"
+															size="icon-sm"
+															onClick={() => setDeleteId(account.id)}
+															title={t("common:delete")}
+														>
+															<Icon name="Trash" className="h-3.5 w-3.5" />
+														</Button>
+													</div>
+												</TableCell>
+											</TableRow>
+										))}
+									</TableBody>
+								</Table>
+							</ScrollArea>
 						)}
-					</div>
+					</AdminSurface>
 				</div>
 			</div>
 

@@ -25,7 +25,7 @@ import {
 	ADMIN_ICON_BUTTON_CLASS,
 	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
 } from "@/lib/constants";
-import { api } from "@/services/http";
+import { adminShareService } from "@/services/adminService";
 import type { ShareInfo } from "@/types/api";
 
 export default function AdminSharesPage() {
@@ -37,8 +37,8 @@ export default function AdminSharesPage() {
 	const load = useCallback(async () => {
 		try {
 			setLoading(true);
-			const data = await api.get<ShareInfo[]>("/admin/shares");
-			setShares(data);
+			const data = await adminShareService.list({ limit: 100, offset: 0 });
+			setShares(data.items);
 		} catch (e) {
 			handleApiError(e);
 		} finally {
@@ -52,7 +52,7 @@ export default function AdminSharesPage() {
 
 	const handleDelete = async (id: number) => {
 		try {
-			await api.delete<void>(`/admin/shares/${id}`);
+			await adminShareService.delete(id);
 			setShares((prev) => prev.filter((s) => s.id !== id));
 			toast.success(t("share_deleted"));
 		} catch (e) {

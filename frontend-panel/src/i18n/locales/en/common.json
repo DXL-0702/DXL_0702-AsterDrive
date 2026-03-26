@@ -143,5 +143,5 @@
 	"offline_mode": "Offline mode",
 	"auth_stale": "Session pending verification",
 	"offline_status_short": "Offline",
-	"auth_stale_detail": "Session will be verified automatically when connection is restored"
+	"auth_stale_detail": "The app will attempt to reconnect to the server once the connection is restored"
 }

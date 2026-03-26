@@ -143,5 +143,5 @@
 	"offline_mode": "离线模式",
 	"auth_stale": "登录状态待校验",
 	"offline_status_short": "离线",
-	"auth_stale_detail": "恢复连接后将自动校验登录状态"
+	"auth_stale_detail": "恢复连接后将重新连接服务器"
 }

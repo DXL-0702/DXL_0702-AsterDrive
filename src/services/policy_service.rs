@@ -354,7 +354,13 @@ pub async fn update_user_policy(
 pub async fn remove_user_policy(state: &AppState, id: i64) -> Result<()> {
     let existing = policy_repo::find_user_policy_by_id(&state.db, id).await?;
     let user_id = existing.user_id;
-    let was_default = existing.is_default;
+
+    // 不允许删除用户默认策略分配
+    if existing.is_default {
+        return Err(AsterError::validation_error(
+            "cannot remove the default storage policy assigned to this user",
+        ));
+    }
 
     // 不允许删除用户唯一的策略分配
     let all_policies = policy_repo::find_user_policies(&state.db, user_id).await?;
@@ -365,16 +371,6 @@ pub async fn remove_user_policy(state: &AppState, id: i64) -> Result<()> {
     }
 
     policy_repo::delete_user_policy(&state.db, id).await?;
-
-    // 删的是默认策略 → 自动把剩余第一个设为默认
-    if was_default {
-        let remaining = policy_repo::find_user_policies(&state.db, user_id).await?;
-        if let Some(first) = remaining.into_iter().next() {
-            let mut active: user_storage_policy::ActiveModel = first.into();
-            active.is_default = Set(true);
-            policy_repo::update_user_policy(&state.db, active).await?;
-        }
-    }
 
     state
         .cache

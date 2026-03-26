@@ -83,6 +83,10 @@ export function UserDetailDialog({
 	const [addPolicyId, setAddPolicyId] = useState<number | null>(null);
 	const [addQuota, setAddQuota] = useState("");
 	const [addDefault, setAddDefault] = useState(false);
+	const [editingAssignmentId, setEditingAssignmentId] = useState<number | null>(
+		null,
+	);
+	const [editingAssignmentQuota, setEditingAssignmentQuota] = useState("");
 
 	useEffect(() => {
 		if (!user) {
@@ -93,6 +97,8 @@ export function UserDetailDialog({
 			setAddPolicyId(null);
 			setAddQuota("");
 			setAddDefault(false);
+			setEditingAssignmentId(null);
+			setEditingAssignmentQuota("");
 			return;
 		}
 		setQuotaValue(
@@ -149,49 +155,67 @@ export function UserDetailDialog({
 		try {
 			const mb = Number.parseInt(addQuota, 10);
 			const quotaBytes = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
-			const created = await adminUserPolicyService.assign(user.id, {
+			await adminUserPolicyService.assign(user.id, {
 				policy_id: addPolicyId,
 				is_default: addDefault,
 				quota_bytes: quotaBytes,
 			});
-			setAssignments((prev) =>
-				addDefault
-					? [...prev.map((a) => ({ ...a, is_default: false })), created]
-					: [...prev, created],
-			);
 			setAddPolicyId(null);
 			setAddQuota("");
 			setAddDefault(false);
 			toast.success(t("policy_assigned"));
+			await loadPolicies();
 		} catch (e) {
 			handleApiError(e);
 		}
 	};
 
-	const handleToggleDefault = async (a: UserStoragePolicy) => {
+	const handleSetDefault = async (a: UserStoragePolicy) => {
+		if (a.is_default) return;
 		try {
-			const updated = await adminUserPolicyService.update(user.id, a.id, {
-				is_default: !a.is_default,
+			await adminUserPolicyService.update(user.id, a.id, {
+				is_default: true,
 			});
-			setAssignments((prev) =>
-				prev.map((item) =>
-					item.id === updated.id
-						? updated
-						: !a.is_default
-							? { ...item, is_default: false }
-							: item,
-				),
-			);
+			await loadPolicies();
 		} catch (e) {
 			handleApiError(e);
 		}
 	};
 
-	const handleRemove = async (id: number) => {
+	const handleRemove = async (assignment: UserStoragePolicy) => {
+		if (assignment.is_default && assignments.length > 1) {
+			toast.error(t("default_policy_remove_blocked"));
+			return;
+		}
 		try {
-			await adminUserPolicyService.remove(user.id, id);
-			setAssignments((prev) => prev.filter((a) => a.id !== id));
+			await adminUserPolicyService.remove(user.id, assignment.id);
 			toast.success(t("assignment_removed"));
+			await loadPolicies();
+		} catch (e) {
+			handleApiError(e);
+		}
+	};
+
+	const startEditAssignmentQuota = (assignment: UserStoragePolicy) => {
+		setEditingAssignmentId(assignment.id);
+		setEditingAssignmentQuota(
+			assignment.quota_bytes > 0
+				? String(Math.round(assignment.quota_bytes / 1024 / 1024))
+				: "0",
+		);
+	};
+
+	const saveAssignmentQuota = async (assignment: UserStoragePolicy) => {
+		try {
+			const mb = Number.parseInt(editingAssignmentQuota, 10);
+			const quotaBytes = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
+			await adminUserPolicyService.update(user.id, assignment.id, {
+				quota_bytes: quotaBytes,
+			});
+			setEditingAssignmentId(null);
+			setEditingAssignmentQuota("");
+			toast.success(t("assignment_updated"));
+			await loadPolicies();
 		} catch (e) {
 			handleApiError(e);
 		}
@@ -200,18 +224,21 @@ export function UserDetailDialog({
 	const availablePolicies = policies.filter(
 		(p) => !assignments.some((a) => a.policy_id === p.id),
 	);
+	const hasDefaultPolicy = assignments.some((a) => a.is_default);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="gap-0 sm:max-w-[min(1100px,calc(100vw-2rem))] p-0">
+			<DialogContent className="max-h-[calc(100vh-2rem)] gap-0 overflow-y-auto sm:max-w-[min(1100px,calc(100vw-2rem))] p-0">
 				<DialogHeader className="flex items-center justify-center px-6 pt-5 pb-0 text-center">
 					<DialogTitle className="text-lg">{t("user_details")}</DialogTitle>
 				</DialogHeader>
 				<div className="grid gap-0 lg:grid-cols-[320px_minmax(0,1fr)]">
 					<aside className="space-y-5 border-b bg-muted/20 p-6 lg:border-r lg:border-b-0">
 						<div className="space-y-3">
-							<div className="flex h-22 w-22 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground">
-								<Icon name="Info" className="h-8 w-8" />
+							<div className="aspect-square w-full max-w-[220px] overflow-hidden rounded-2xl bg-muted/60 text-muted-foreground">
+								<div className="flex h-full w-full items-center justify-center">
+									<Icon name="Info" className="h-12 w-12" />
+								</div>
 							</div>
 							<div className="space-y-1">
 								<h3 className="text-lg font-semibold text-foreground">
@@ -438,16 +465,46 @@ export function UserDetailDialog({
 											key={a.id}
 											className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3"
 										>
-											<div>
+											<div className="min-w-0 flex-1">
 												<div className="text-sm font-medium text-foreground">
 													{policyName(a.policy_id)}
 												</div>
-												<div className="text-xs text-muted-foreground">
-													{t("quota")}:{" "}
-													{a.quota_bytes > 0
-														? formatBytes(a.quota_bytes)
-														: t("common:unlimited")}
-												</div>
+												{editingAssignmentId === a.id ? (
+													<div className="mt-2 flex items-center gap-2">
+														<Input
+															type="number"
+															value={editingAssignmentQuota}
+															onChange={(e) =>
+																setEditingAssignmentQuota(e.target.value)
+															}
+															placeholder={`0 = ${t("common:unlimited").toLowerCase()}`}
+															className="h-8 max-w-[180px]"
+														/>
+														<Button
+															size="sm"
+															onClick={() => void saveAssignmentQuota(a)}
+														>
+															{t("common:save")}
+														</Button>
+														<Button
+															variant="ghost"
+															size="sm"
+															onClick={() => {
+																setEditingAssignmentId(null);
+																setEditingAssignmentQuota("");
+															}}
+														>
+															{t("common:cancel")}
+														</Button>
+													</div>
+												) : (
+													<div className="text-xs text-muted-foreground">
+														{t("quota")}:{" "}
+														{a.quota_bytes > 0
+															? formatBytes(a.quota_bytes)
+															: t("common:unlimited")}
+													</div>
+												)}
 											</div>
 											<div className="flex items-center gap-2">
 												{a.is_default ? (
@@ -458,15 +515,25 @@ export function UserDetailDialog({
 												<Button
 													variant="ghost"
 													size="sm"
-													onClick={() => void handleToggleDefault(a)}
+													onClick={() => void handleSetDefault(a)}
+													disabled={a.is_default}
 												>
-													{a.is_default ? t("unset_default") : t("set_default")}
+													{a.is_default
+														? t("default_selected")
+														: t("set_default")}
+												</Button>
+												<Button
+													variant="ghost"
+													size="sm"
+													onClick={() => startEditAssignmentQuota(a)}
+												>
+													{t("edit_quota")}
 												</Button>
 												<Button
 													variant="ghost"
 													size="icon"
 													className="h-8 w-8 text-destructive"
-													onClick={() => void handleRemove(a.id)}
+													onClick={() => void handleRemove(a)}
 												>
 													<Icon name="Trash" className="h-3.5 w-3.5" />
 												</Button>
@@ -481,6 +548,11 @@ export function UserDetailDialog({
 									<Label className="text-sm font-medium">
 										{t("assign_policy")}
 									</Label>
+									{!hasDefaultPolicy ? (
+										<p className="text-xs text-amber-600 dark:text-amber-400">
+											{t("default_policy_required")}
+										</p>
+									) : null}
 									<div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto] md:items-center">
 										<Select
 											value={addPolicyId != null ? String(addPolicyId) : ""}

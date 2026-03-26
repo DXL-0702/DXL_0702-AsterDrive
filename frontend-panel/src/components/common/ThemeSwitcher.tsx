@@ -16,8 +16,10 @@ export function ThemeSwitcher() {
 
 	return (
 		<DropdownMenu>
-			<DropdownMenuTrigger render={<Button variant="ghost" size="icon" />}>
-				<Icon name={iconName} className="h-4 w-4" />
+			<DropdownMenuTrigger
+				render={<Button variant="ghost" size="icon" className="h-9 w-9" />}
+			>
+				<Icon name={iconName} className="h-4.5 w-4.5" />
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="end">
 				<DropdownMenuItem onClick={() => setMode("light")}>

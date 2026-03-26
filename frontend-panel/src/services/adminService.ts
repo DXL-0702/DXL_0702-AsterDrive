@@ -1,8 +1,12 @@
 import type {
 	DriverType,
+	LockPage,
+	ShareInfo,
+	SharePage,
 	StoragePolicy,
 	StoragePolicyPage,
 	SystemConfig,
+	SystemConfigPage,
 	UserInfo,
 	UserPage,
 	UserRole,
@@ -132,20 +136,33 @@ export const adminUserPolicyService = {
 
 // --- WebDAV Locks ---
 
-interface WebdavLock {
-	id: number;
-	token: string;
-	path: string;
-	principal: string | null;
-	owner_xml: string | null;
-	timeout_at: string | null;
-	shared: boolean;
-	deep: boolean;
-	created_at: string;
-}
+export type WebdavLock = LockPage["items"][number];
+export type AdminShare = ShareInfo;
+
+export const adminShareService = {
+	list: (params?: { limit?: number; offset?: number }) => {
+		const query = new URLSearchParams();
+		if (params?.limit != null) query.set("limit", String(params.limit));
+		if (params?.offset != null) query.set("offset", String(params.offset));
+		const suffix = query.toString();
+		return api.get<SharePage>(
+			suffix ? `/admin/shares?${suffix}` : "/admin/shares",
+		);
+	},
+
+	delete: (id: number) => api.delete<void>(`/admin/shares/${id}`),
+};
 
 export const adminLockService = {
-	list: () => api.get<WebdavLock[]>("/admin/locks"),
+	list: (params?: { limit?: number; offset?: number }) => {
+		const query = new URLSearchParams();
+		if (params?.limit != null) query.set("limit", String(params.limit));
+		if (params?.offset != null) query.set("offset", String(params.offset));
+		const suffix = query.toString();
+		return api.get<LockPage>(
+			suffix ? `/admin/locks?${suffix}` : "/admin/locks",
+		);
+	},
 
 	forceUnlock: (id: number) => api.delete<void>(`/admin/locks/${id}`),
 
@@ -165,7 +182,15 @@ export interface ConfigSchemaItem {
 }
 
 export const adminConfigService = {
-	list: () => api.get<SystemConfig[]>("/admin/config"),
+	list: (params?: { limit?: number; offset?: number }) => {
+		const query = new URLSearchParams();
+		if (params?.limit != null) query.set("limit", String(params.limit));
+		if (params?.offset != null) query.set("offset", String(params.offset));
+		const suffix = query.toString();
+		return api.get<SystemConfigPage>(
+			suffix ? `/admin/config?${suffix}` : "/admin/config",
+		);
+	},
 
 	schema: () => api.get<ConfigSchemaItem[]>("/admin/config/schema"),
 

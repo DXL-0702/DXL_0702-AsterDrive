@@ -17,12 +17,6 @@ import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
 	Select,
 	SelectContent,
 	SelectItem,
@@ -37,6 +31,12 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { handleApiError } from "@/hooks/useApiError";
 import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
@@ -357,18 +357,20 @@ export default function AdminUsersPage() {
 				{loading ? (
 					<SkeletonTable columns={7} rows={6} />
 				) : users.length === 0 ? (
-					<EmptyState title={t("no_users")} />
-				) : users.length === 0 ? (
-					<EmptyState
-						icon={<Icon name="ListBullets" className="h-10 w-10" />}
-						title={t("no_filtered_users")}
-						description={t("no_filtered_users_desc")}
-						action={
-							<Button variant="outline" onClick={resetFilters}>
-								{t("clear_filters")}
-							</Button>
-						}
-					/>
+					hasServerFilters ? (
+						<EmptyState
+							icon={<Icon name="ListBullets" className="h-10 w-10" />}
+							title={t("no_filtered_users")}
+							description={t("no_filtered_users_desc")}
+							action={
+								<Button variant="outline" onClick={resetFilters}>
+									{t("clear_filters")}
+								</Button>
+							}
+						/>
+					) : (
+						<EmptyState title={t("no_users")} />
+					)
 				) : (
 					<AdminSurface>
 						<ScrollArea className="min-h-0 flex-1">

@@ -10,6 +10,7 @@ import {
 	DRAG_MIME,
 	FOLDER_TREE_INDENT_PX,
 	FOLDER_TREE_ROW_OFFSET_PX,
+	SIDEBAR_SECTION_PADDING_CLASS,
 } from "@/lib/constants";
 import { formatBatchToast } from "@/lib/formatBatchToast";
 import { folderTreeRowClass } from "@/lib/utils";
@@ -524,7 +525,7 @@ export function FolderTree() {
 	);
 
 	return (
-		<div className="p-2 space-y-0.5">
+		<div className={`${SIDEBAR_SECTION_PADDING_CLASS} py-2 space-y-0.5`}>
 			{!rootLoaded ? (
 				<SkeletonTree count={4} />
 			) : (

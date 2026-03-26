@@ -142,5 +142,9 @@
 	"initial_admin_protected": "初始管理员受保护",
 	"initial_admin_delete_blocked": "初始管理员账号不可删除。",
 	"initial_admin_status_blocked": "初始管理员账号不可被禁用。",
-	"initial_admin_role_blocked": "初始管理员账号不可被降级。"
+	"initial_admin_role_blocked": "初始管理员账号不可被降级。",
+	"assignment_updated": "策略分配已更新",
+	"default_selected": "默认策略",
+	"default_policy_required": "存在策略分配时必须始终保留一个默认策略。",
+	"default_policy_remove_blocked": "请先将其他策略设为默认，再删除当前默认策略。"
 }
