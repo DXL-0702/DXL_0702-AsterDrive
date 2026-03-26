@@ -5,15 +5,18 @@ interface ItemCheckboxProps {
 	checked: boolean;
 	onChange: () => void;
 	className?: string;
+	"data-drag-preview-hidden"?: boolean;
 }
 
 export function ItemCheckbox({
 	checked,
 	onChange,
 	className,
+	"data-drag-preview-hidden": dragPreviewHidden,
 }: ItemCheckboxProps) {
 	return (
 		<button
+			data-drag-preview-hidden={dragPreviewHidden ? "true" : undefined}
 			type="button"
 			className={cn(
 				"inline-flex size-5 shrink-0 items-center justify-center rounded-md border shadow-sm transition-colors",

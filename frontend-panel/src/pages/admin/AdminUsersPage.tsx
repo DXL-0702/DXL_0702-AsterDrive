@@ -320,6 +320,7 @@ export default function AdminUsersPage() {
 		}
 	};
 
+	// TODO: 等后端提供批量更新用户设置端点后，这三个单字段更新函数可以收敛成一次保存调用。
 	const updateRole = async (id: number, role: UserRole) => {
 		try {
 			const updated = await adminUserService.update(id, { role });

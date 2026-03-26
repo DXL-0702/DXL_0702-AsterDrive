@@ -5,6 +5,7 @@ import { ItemCheckbox } from "@/components/ui/item-checkbox";
 import {
 	hasInternalDragData,
 	readInternalDragData,
+	setInternalDragPreview,
 	writeInternalDragData,
 } from "@/lib/dragDrop";
 import { cn } from "@/lib/utils";
@@ -50,6 +51,10 @@ export function FileCard({
 					? { fileIds: [], folderIds: [item.id] }
 					: { fileIds: [item.id], folderIds: [] };
 		writeInternalDragData(e.dataTransfer, data);
+		setInternalDragPreview(e, {
+			variant: "grid-card",
+			itemCount: data.fileIds.length + data.folderIds.length,
+		});
 	};
 
 	const handleDragOver = (e: React.DragEvent) => {
@@ -75,6 +80,7 @@ export function FileCard({
 	return (
 		// biome-ignore lint/a11y/useSemanticElements: card with nested interactive checkbox cannot be a button
 		<div
+			data-drag-preview-root
 			className={cn(
 				"group relative flex flex-col items-center p-3 rounded-lg border cursor-pointer transition-all duration-300 hover:bg-accent/50",
 				selected && "bg-accent border-primary",
@@ -92,6 +98,7 @@ export function FileCard({
 			tabIndex={0}
 		>
 			<ItemCheckbox
+				data-drag-preview-hidden
 				checked={selected}
 				onChange={onSelect}
 				className={cn(
@@ -101,7 +108,10 @@ export function FileCard({
 			/>
 
 			{/* Icon / Thumbnail */}
-			<div className="h-20 w-full flex items-center justify-center mb-2 rounded-lg bg-muted/40">
+			<div
+				data-drag-preview-media
+				className="h-20 w-full flex items-center justify-center mb-2 rounded-lg bg-muted/40"
+			>
 				{isFolder ? (
 					<Icon name="Folder" className="h-12 w-12 text-amber-500" />
 				) : (
@@ -115,6 +125,7 @@ export function FileCard({
 
 			{/* Name */}
 			<span
+				data-drag-preview-name
 				className="text-sm text-center w-full line-clamp-2 leading-tight"
 				title={item.name}
 			>

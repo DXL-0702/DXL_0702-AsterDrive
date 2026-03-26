@@ -34,6 +34,13 @@ debug = true
 strip = false
 lto = false
 
+[profile.release-performance]
+inherits = "release"
+opt-level = 3
+codegen-units = 1
+panic = "abort"
+strip = true
+
 [workspace]
 members = [".", "migration"]
 

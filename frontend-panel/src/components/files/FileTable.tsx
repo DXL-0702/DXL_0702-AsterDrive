@@ -22,6 +22,7 @@ import {
 import {
 	hasInternalDragData,
 	readInternalDragData,
+	setInternalDragPreview,
 	writeInternalDragData,
 } from "@/lib/dragDrop";
 import { cn } from "@/lib/utils";
@@ -144,6 +145,7 @@ export function FileTable({
 		isFolder: boolean,
 	) => {
 		writeInternalDragData(e.dataTransfer, makeDragData(itemId, isFolder));
+		setInternalDragPreview(e);
 	};
 
 	const handleFolderDragOver = (e: React.DragEvent, folderId: number) => {
