@@ -141,14 +141,23 @@ function TreeNode({
 
 	return (
 		<div>
-			{/* biome-ignore lint/a11y/noStaticElementInteractions: drag-drop target */}
+			{/* biome-ignore lint/a11y/useSemanticElements: outer row needs drag-drop target and contains a nested toggle button */}
 			<div
+				role="button"
+				tabIndex={0}
 				className={cn(
-					"flex items-center gap-0.5 py-1.5 rounded-md text-sm hover:bg-accent transition-colors",
+					"flex cursor-pointer items-center gap-0.5 rounded-md py-1.5 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
 					isActive && "bg-accent font-medium",
 					dragOver && "ring-2 ring-primary bg-accent/30",
 				)}
 				style={{ paddingLeft: `${depth * 16 + 4}px` }}
+				onClick={() => onNavigate(node.folder.id, node.folder.name)}
+				onKeyDown={(e) => {
+					if (e.key === "Enter" || e.key === " ") {
+						e.preventDefault();
+						onNavigate(node.folder.id, node.folder.name);
+					}
+				}}
 				onDragOver={handleDragOver}
 				onDragLeave={handleDragLeave}
 				onDrop={handleDrop}
@@ -156,8 +165,11 @@ function TreeNode({
 				{showToggle ? (
 					<button
 						type="button"
-						className="p-0.5 hover:bg-accent-foreground/10 rounded shrink-0 disabled:cursor-default disabled:hover:bg-transparent"
-						onClick={() => onToggle(node.folder.id)}
+						className="rounded p-0.5 hover:bg-accent-foreground/10 shrink-0 disabled:cursor-default disabled:hover:bg-transparent"
+						onClick={(e) => {
+							e.stopPropagation();
+							onToggle(node.folder.id);
+						}}
 						disabled={isLoading}
 					>
 						{isLoading ? (
@@ -177,11 +189,7 @@ function TreeNode({
 				) : (
 					<span className="h-4 w-4 shrink-0" aria-hidden="true" />
 				)}
-				<button
-					type="button"
-					className="flex-1 flex items-center gap-1.5 text-left min-w-0 px-1"
-					onClick={() => onNavigate(node.folder.id, node.folder.name)}
-				>
+				<div className="flex min-w-0 flex-1 items-center gap-1.5 px-1">
 					{isExpanded ? (
 						<Icon
 							name="FolderOpen"
@@ -194,7 +202,7 @@ function TreeNode({
 						/>
 					)}
 					<span className="truncate">{node.folder.name}</span>
-				</button>
+				</div>
 			</div>
 			{isExpanded &&
 				node.childIds.length > 0 &&
@@ -406,6 +414,7 @@ export function FolderTree() {
 		};
 	}, [breadcrumb, currentFolderId, ensureChildrenLoaded, rootLoaded]);
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: reset marker whenever folder target changes
 	useEffect(() => {
 		expandingPathRef.current = "";
 	}, [currentFolderId]);
