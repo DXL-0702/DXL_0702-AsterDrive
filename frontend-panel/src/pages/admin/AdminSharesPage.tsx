@@ -21,6 +21,10 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
+import {
+	ADMIN_ICON_BUTTON_CLASS,
+	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
+} from "@/lib/constants";
 import { api } from "@/services/http";
 import type { ShareInfo } from "@/types/api";
 
@@ -70,10 +74,7 @@ export default function AdminSharesPage() {
 	return (
 		<AdminLayout>
 			<AdminPageShell>
-				<AdminPageHeader
-					title={t("shares")}
-					description={t("no_shares_desc")}
-				/>
+				<AdminPageHeader title={t("shares")} description={t("shares_intro")} />
 				{loading ? (
 					<SkeletonTable columns={8} rows={6} />
 				) : shares.length === 0 ? (
@@ -95,7 +96,7 @@ export default function AdminSharesPage() {
 										<TableHead>{t("common:status")}</TableHead>
 										<TableHead>Downloads</TableHead>
 										<TableHead>{t("common:created_at")}</TableHead>
-										<TableHead className="w-20">
+										<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
 											{t("common:actions")}
 										</TableHead>
 									</TableRow>
@@ -160,7 +161,7 @@ export default function AdminSharesPage() {
 												<Button
 													variant="ghost"
 													size="icon"
-													className="h-8 w-8 text-destructive"
+													className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
 													onClick={() => setDeleteId(s.id)}
 												>
 													<Icon name="Trash" className="h-3.5 w-3.5" />

@@ -38,6 +38,10 @@ import {
 } from "@/components/ui/tooltip";
 import { handleApiError } from "@/hooks/useApiError";
 import {
+	ADMIN_ICON_BUTTON_CLASS,
+	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
+} from "@/lib/constants";
+import {
 	adminConfigService,
 	type ConfigSchemaItem,
 } from "@/services/adminService";
@@ -253,7 +257,7 @@ export default function AdminSettingsPage() {
 							<Button
 								variant="ghost"
 								size="icon"
-								className="h-8 w-8"
+								className={ADMIN_ICON_BUTTON_CLASS}
 								onClick={() => openEdit(c)}
 							>
 								<Icon name="PencilSimple" className="h-3.5 w-3.5" />
@@ -267,7 +271,7 @@ export default function AdminSettingsPage() {
 											<Button
 												variant="ghost"
 												size="icon"
-												className="h-8 w-8 text-yellow-600 dark:text-yellow-400"
+												className={`${ADMIN_ICON_BUTTON_CLASS} text-yellow-600 dark:text-yellow-400`}
 												onClick={() => handleReset(c)}
 											/>
 										}
@@ -289,7 +293,7 @@ export default function AdminSettingsPage() {
 							<Button
 								variant="ghost"
 								size="icon"
-								className="h-8 w-8 text-destructive"
+								className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
 								onClick={() => setDeleteKey(c.key)}
 							>
 								<Icon name="Trash" className="h-3.5 w-3.5" />
@@ -310,7 +314,9 @@ export default function AdminSettingsPage() {
 						<TableHead className="w-[40%]">{t("config_key")}</TableHead>
 						<TableHead>{t("config_value")}</TableHead>
 						<TableHead className="w-24">{t("common:type")}</TableHead>
-						<TableHead className="w-28">{t("common:actions")}</TableHead>
+						<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
+							{t("common:actions")}
+						</TableHead>
 					</TableRow>
 				</TableHeader>
 				<TableBody>{items.map(renderConfigRow)}</TableBody>
@@ -323,7 +329,7 @@ export default function AdminSettingsPage() {
 			<AdminPageShell>
 				<AdminPageHeader
 					title={t("system_settings")}
-					description={t("config_category")}
+					description={t("settings_intro")}
 					actions={
 						<Button size="sm" onClick={openCreate}>
 							<Icon name="Plus" className="mr-1 h-4 w-4" />

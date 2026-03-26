@@ -38,6 +38,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
+import { ADMIN_ICON_BUTTON_CLASS } from "@/lib/constants";
 import { adminPolicyService } from "@/services/adminService";
 import type { DriverType, StoragePolicy } from "@/types/api";
 
@@ -267,7 +268,7 @@ export default function AdminPoliciesPage() {
 			<AdminPageShell>
 				<AdminPageHeader
 					title={t("policies")}
-					description={t("no_policies_desc")}
+					description={t("policies_intro")}
 					actions={
 						<Button size="sm" onClick={openCreate}>
 							<Icon name="Plus" className="mr-1 h-4 w-4" />
@@ -332,7 +333,7 @@ export default function AdminPoliciesPage() {
 													<Button
 														variant="ghost"
 														size="icon"
-														className="h-8 w-8"
+														className={ADMIN_ICON_BUTTON_CLASS}
 														onClick={() => openEdit(p)}
 													>
 														<Icon name="PencilSimple" className="h-3.5 w-3.5" />
@@ -340,7 +341,7 @@ export default function AdminPoliciesPage() {
 													<Button
 														variant="ghost"
 														size="icon"
-														className="h-8 w-8 text-destructive"
+														className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
 														onClick={() => setDeleteId(p.id)}
 													>
 														<Icon name="Trash" className="h-3.5 w-3.5" />

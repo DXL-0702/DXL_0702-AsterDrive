@@ -37,6 +37,10 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
+import {
+	ADMIN_CONTROL_HEIGHT_CLASS,
+	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
+} from "@/lib/constants";
 import { formatBytes } from "@/lib/format";
 import {
 	adminPolicyService,
@@ -386,7 +390,7 @@ export default function AdminUsersPage() {
 	return (
 		<AdminLayout>
 			<AdminPageShell>
-				<AdminPageHeader title={t("users")} description={t("no_users")} />
+				<AdminPageHeader title={t("users")} description={t("users_intro")} />
 				{loading ? (
 					<SkeletonTable columns={8} rows={6} />
 				) : users.length === 0 ? (
@@ -403,7 +407,9 @@ export default function AdminUsersPage() {
 										<TableHead className="w-32">{t("role")}</TableHead>
 										<TableHead className="w-32">{t("common:status")}</TableHead>
 										<TableHead className="w-40">{t("storage")}</TableHead>
-										<TableHead className="w-24">{t("policies")}</TableHead>
+										<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
+											{t("policies")}
+										</TableHead>
 										<TableHead>{t("common:created_at")}</TableHead>
 									</TableRow>
 								</TableHeader>
@@ -426,7 +432,9 @@ export default function AdminUsersPage() {
 														updateRole(user.id, v as UserRole)
 													}
 												>
-													<SelectTrigger className="h-8 w-24">
+													<SelectTrigger
+														className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-24`}
+													>
 														<SelectValue />
 													</SelectTrigger>
 													<SelectContent>
@@ -442,7 +450,9 @@ export default function AdminUsersPage() {
 														updateStatus(user.id, v as UserStatus)
 													}
 												>
-													<SelectTrigger className="h-8 w-28">
+													<SelectTrigger
+														className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-28`}
+													>
 														<SelectValue />
 													</SelectTrigger>
 													<SelectContent>
@@ -472,7 +482,7 @@ export default function AdminUsersPage() {
 												<Button
 													variant="ghost"
 													size="sm"
-													className="h-8"
+													className={ADMIN_CONTROL_HEIGHT_CLASS}
 													onClick={() => setPolicyDialogUserId(user.id)}
 												>
 													<Icon name="HardDrive" className="mr-1 h-3.5 w-3.5" />

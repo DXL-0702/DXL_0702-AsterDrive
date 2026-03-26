@@ -11,3 +11,8 @@ export const ADMIN_TOPBAR_OFFSET_CLASS = "inset-y-14";
 /** 侧栏宽度 */
 export const USER_SIDEBAR_WIDTH_CLASS = "w-60";
 export const ADMIN_SIDEBAR_WIDTH_CLASS = "w-60";
+
+/** Admin 页面密度 */
+export const ADMIN_CONTROL_HEIGHT_CLASS = "h-8";
+export const ADMIN_ICON_BUTTON_CLASS = "h-8 w-8";
+export const ADMIN_TABLE_ACTIONS_WIDTH_CLASS = "w-24";

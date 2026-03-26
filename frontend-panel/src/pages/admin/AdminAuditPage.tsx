@@ -26,6 +26,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
+import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { formatDateAbsolute } from "@/lib/format";
 import { auditService } from "@/services/auditService";
 import type { AuditLogEntry } from "@/types/api";
@@ -71,6 +72,7 @@ export default function AdminAuditPage() {
 			<AdminPageShell>
 				<AdminPageHeader
 					title={t("audit_log")}
+					description={t("audit_intro")}
 					toolbar={
 						<>
 							<Input
@@ -80,7 +82,7 @@ export default function AdminAuditPage() {
 									setActionFilter(e.target.value);
 									setOffset(0);
 								}}
-								className="max-w-xs"
+								className={`${ADMIN_CONTROL_HEIGHT_CLASS} max-w-xs`}
 							/>
 							<Select
 								value={entityTypeFilter}
@@ -89,7 +91,9 @@ export default function AdminAuditPage() {
 									setOffset(0);
 								}}
 							>
-								<SelectTrigger className="w-[150px]">
+								<SelectTrigger
+									className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-[150px]`}
+								>
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
