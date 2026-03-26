@@ -11,6 +11,16 @@ interface DragPreviewOptions {
 	variant?: "default" | "grid-card";
 }
 
+function themeColor(token: string, alpha: number) {
+	const value = getComputedStyle(document.documentElement)
+		.getPropertyValue(token)
+		.trim();
+	if (!value) {
+		return `rgba(255, 255, 255, ${alpha})`;
+	}
+	return `hsl(${value} / ${alpha})`;
+}
+
 function createDragPreview(source: HTMLElement, options: DragPreviewOptions) {
 	const preview = source.cloneNode(true);
 	if (!(preview instanceof HTMLElement)) return null;
@@ -38,13 +48,13 @@ function createDragPreview(source: HTMLElement, options: DragPreviewOptions) {
 	preview.style.boxShadow = "none";
 
 	if (options.variant === "grid-card") {
-		preview.style.background = "rgba(255, 255, 255, 0.82)";
+		preview.style.background = themeColor("--card", 0.86);
 		preview.style.backdropFilter = "blur(20px) saturate(1.12)";
 		preview.style.setProperty(
 			"-webkit-backdrop-filter",
 			"blur(20px) saturate(1.12)",
 		);
-		preview.style.border = "1px solid rgba(148, 163, 184, 0.28)";
+		preview.style.border = `1px solid ${themeColor("--foreground", 0.16)}`;
 		preview.style.borderRadius = "0.9rem";
 		preview.style.padding = "0.75rem";
 		preview.style.display = "flex";
@@ -70,8 +80,8 @@ function createDragPreview(source: HTMLElement, options: DragPreviewOptions) {
 			media.style.flexShrink = "0";
 			media.style.borderRadius = "0.75rem";
 			media.style.overflow = "hidden";
-			media.style.background = "rgba(15, 23, 42, 0.04)";
-			media.style.border = "1px solid rgba(148, 163, 184, 0.14)";
+			media.style.background = themeColor("--muted", 0.72);
+			media.style.border = `1px solid ${themeColor("--foreground", 0.06)}`;
 		}
 
 		const name = preview.querySelector("[data-drag-preview-name]");
@@ -96,9 +106,9 @@ function createDragPreview(source: HTMLElement, options: DragPreviewOptions) {
 			badge.style.right = "0.5rem";
 			badge.style.padding = "0.125rem 0.5rem";
 			badge.style.borderRadius = "9999px";
-			badge.style.background = "rgba(255, 255, 255, 0.94)";
-			badge.style.border = "1px solid rgba(148, 163, 184, 0.18)";
-			badge.style.color = "rgba(15, 23, 42, 0.88)";
+			badge.style.background = themeColor("--card", 0.94);
+			badge.style.border = `1px solid ${themeColor("--foreground", 0.12)}`;
+			badge.style.color = themeColor("--foreground", 0.88);
 			badge.style.fontSize = "0.75rem";
 			badge.style.fontWeight = "600";
 			badge.style.lineHeight = "1.2";
