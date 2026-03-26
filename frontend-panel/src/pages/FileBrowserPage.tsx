@@ -1,7 +1,7 @@
 import {
 	Fragment,
-	Suspense,
 	lazy,
+	Suspense,
 	useCallback,
 	useEffect,
 	useRef,
@@ -14,8 +14,8 @@ import { BatchActionBar } from "@/components/common/BatchActionBar";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonFileGrid } from "@/components/common/SkeletonFileGrid";
 import { SkeletonFileTable } from "@/components/common/SkeletonFileTable";
-import { ViewToggle } from "@/components/common/ViewToggle";
 import { SortMenu } from "@/components/common/SortMenu";
+import { ViewToggle } from "@/components/common/ViewToggle";
 import { FileGrid } from "@/components/files/FileGrid";
 import { FileTable } from "@/components/files/FileTable";
 import type { UploadAreaHandle } from "@/components/files/UploadArea";

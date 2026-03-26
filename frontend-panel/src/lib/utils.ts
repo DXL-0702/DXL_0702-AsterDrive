@@ -14,3 +14,13 @@ export function sidebarNavItemClass(isActive: boolean, extra?: ClassValue) {
 		extra,
 	);
 }
+
+export function folderTreeRowClass(isActive: boolean, extra?: ClassValue) {
+	return cn(
+		"flex items-center gap-1 rounded-md py-1.5 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+		isActive
+			? "bg-accent text-accent-foreground font-medium"
+			: "text-foreground",
+		extra,
+	);
+}

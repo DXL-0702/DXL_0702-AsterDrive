@@ -1,4 +1,8 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+	FOLDER_TREE_INDENT_PX,
+	FOLDER_TREE_SKELETON_OFFSET_PX,
+} from "@/lib/constants";
 
 interface SkeletonTreeProps {
 	count?: number;
@@ -11,8 +15,10 @@ export function SkeletonTree({ count = 5 }: SkeletonTreeProps) {
 				<div
 					// biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholders never reorder
 					key={`skeleton-node-${i}`}
-					className="flex items-center gap-2 px-2 py-1.5"
-					style={{ paddingLeft: `${(i % 3) * 16 + 8}px` }}
+					className="flex items-center gap-1 rounded-md px-2 py-1.5"
+					style={{
+						paddingLeft: `${(i % 3) * FOLDER_TREE_INDENT_PX + FOLDER_TREE_SKELETON_OFFSET_PX}px`,
+					}}
 				>
 					<Skeleton className="h-3 w-3 shrink-0" />
 					<Skeleton className="h-4 w-4 shrink-0" />

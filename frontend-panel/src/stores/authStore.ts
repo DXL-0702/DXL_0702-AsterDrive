@@ -1,5 +1,5 @@
-import { create } from "zustand";
 import axios from "axios";
+import { create } from "zustand";
 import { authService } from "@/services/authService";
 import type { UserInfo } from "@/types/api";
 

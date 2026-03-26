@@ -1,7 +1,7 @@
 import {
 	Fragment,
-	Suspense,
 	lazy,
+	Suspense,
 	useCallback,
 	useEffect,
 	useRef,

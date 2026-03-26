@@ -6,9 +6,13 @@ import { toast } from "sonner";
 import { SkeletonTree } from "@/components/common/SkeletonTree";
 import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
-import { DRAG_MIME } from "@/lib/constants";
+import {
+	DRAG_MIME,
+	FOLDER_TREE_INDENT_PX,
+	FOLDER_TREE_ROW_OFFSET_PX,
+} from "@/lib/constants";
 import { formatBatchToast } from "@/lib/formatBatchToast";
-import { cn } from "@/lib/utils";
+import { folderTreeRowClass } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
@@ -145,12 +149,13 @@ function TreeNode({
 			<div
 				role="button"
 				tabIndex={0}
-				className={cn(
-					"flex cursor-pointer items-center gap-0.5 rounded-md py-1.5 text-left text-sm transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-					isActive && "bg-accent font-medium",
+				className={folderTreeRowClass(
+					isActive,
 					dragOver && "ring-2 ring-primary bg-accent/30",
 				)}
-				style={{ paddingLeft: `${depth * 16 + 4}px` }}
+				style={{
+					paddingLeft: `${depth * FOLDER_TREE_INDENT_PX + FOLDER_TREE_ROW_OFFSET_PX}px`,
+				}}
 				onClick={() => onNavigate(node.folder.id, node.folder.name)}
 				onKeyDown={(e) => {
 					if (e.key === "Enter" || e.key === " ") {
@@ -165,7 +170,7 @@ function TreeNode({
 				{showToggle ? (
 					<button
 						type="button"
-						className="rounded p-0.5 hover:bg-accent-foreground/10 shrink-0 disabled:cursor-default disabled:hover:bg-transparent"
+						className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent-foreground/10 hover:text-foreground disabled:cursor-default disabled:hover:bg-transparent"
 						onClick={(e) => {
 							e.stopPropagation();
 							onToggle(node.folder.id);
@@ -189,16 +194,16 @@ function TreeNode({
 				) : (
 					<span className="h-4 w-4 shrink-0" aria-hidden="true" />
 				)}
-				<div className="flex min-w-0 flex-1 items-center gap-1.5 px-1">
+				<div className="flex min-w-0 flex-1 items-center gap-2 px-1">
 					{isExpanded ? (
 						<Icon
 							name="FolderOpen"
-							className="h-4 w-4 text-muted-foreground shrink-0"
+							className="h-4 w-4 shrink-0 text-muted-foreground"
 						/>
 					) : (
 						<Icon
 							name="Folder"
-							className="h-4 w-4 text-muted-foreground shrink-0"
+							className="h-4 w-4 shrink-0 text-muted-foreground"
 						/>
 					)}
 					<span className="truncate">{node.folder.name}</span>
@@ -526,12 +531,10 @@ export function FolderTree() {
 				<>
 					<button
 						type="button"
-						className={cn(
-							"w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-accent transition-colors text-left",
+						className={folderTreeRowClass(
 							currentFolderId === null &&
 								(location.pathname === "/" ||
-									location.pathname.startsWith("/folder")) &&
-								"bg-accent font-medium",
+									location.pathname.startsWith("/folder")),
 							rootDragOver && "ring-2 ring-primary bg-accent/30",
 						)}
 						onClick={() => navigate("/")}

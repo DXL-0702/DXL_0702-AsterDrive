@@ -16,3 +16,8 @@ export const ADMIN_SIDEBAR_WIDTH_CLASS = "w-60";
 export const ADMIN_CONTROL_HEIGHT_CLASS = "h-8";
 export const ADMIN_ICON_BUTTON_CLASS = "h-8 w-8";
 export const ADMIN_TABLE_ACTIONS_WIDTH_CLASS = "w-24";
+
+/** FolderTree 视觉节奏 */
+export const FOLDER_TREE_INDENT_PX = 16;
+export const FOLDER_TREE_ROW_OFFSET_PX = 4;
+export const FOLDER_TREE_SKELETON_OFFSET_PX = 8;
