@@ -395,9 +395,12 @@ export default function FileBrowserPage() {
 	const isEmpty =
 		!loading && displayFolders.length === 0 && displayFiles.length === 0;
 	const uploadReady = uploadAreaRef.current !== null;
-	const handleUploadAreaReady = useCallback((instance: UploadAreaHandle | null) => {
-		uploadAreaRef.current = instance;
-	}, []);
+	const handleUploadAreaReady = useCallback(
+		(instance: UploadAreaHandle | null) => {
+			uploadAreaRef.current = instance;
+		},
+		[],
+	);
 	const pageCore = (
 		<>
 			{/* Breadcrumb / search indicator */}
