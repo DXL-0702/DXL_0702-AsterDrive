@@ -288,7 +288,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 
 	setSortBy: (sortBy) => {
 		localStorage.setItem(STORAGE_KEYS.sortBy, sortBy);
-		set({ sortBy, files: [], nextFileCursor: null, filesTotalCount: 0 });
+		set({ sortBy, files: [], folders: [], nextFileCursor: null, filesTotalCount: 0, foldersTotalCount: 0 });
 		const { currentFolderId, sortOrder } = get();
 		void fetchFolder(
 			currentFolderId,
@@ -296,7 +296,9 @@ export const useFileStore = create<FileState>((set, get) => ({
 		).then((contents) =>
 			set({
 				files: contents.files,
+				folders: contents.folders,
 				filesTotalCount: contents.files_total,
+				foldersTotalCount: contents.folders_total,
 				nextFileCursor: contents.next_file_cursor ?? null,
 			}),
 		);
@@ -304,7 +306,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 
 	setSortOrder: (sortOrder) => {
 		localStorage.setItem(STORAGE_KEYS.sortOrder, sortOrder);
-		set({ sortOrder, files: [], nextFileCursor: null, filesTotalCount: 0 });
+		set({ sortOrder, files: [], folders: [], nextFileCursor: null, filesTotalCount: 0, foldersTotalCount: 0 });
 		const { currentFolderId, sortBy } = get();
 		void fetchFolder(
 			currentFolderId,
@@ -312,7 +314,9 @@ export const useFileStore = create<FileState>((set, get) => ({
 		).then((contents) =>
 			set({
 				files: contents.files,
+				folders: contents.folders,
 				filesTotalCount: contents.files_total,
+				foldersTotalCount: contents.folders_total,
 				nextFileCursor: contents.next_file_cursor ?? null,
 			}),
 		);
