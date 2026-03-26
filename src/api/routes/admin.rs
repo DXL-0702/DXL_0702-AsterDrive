@@ -35,6 +35,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/policies/test", web::post().to(test_policy_params))
         // users
         .route("/users", web::get().to(list_users))
+        .route("/users", web::post().to(create_user))
         .route("/users/{id}", web::get().to(get_user))
         .route("/users/{id}", web::patch().to(update_user))
         .route("/users/{id}", web::delete().to(force_delete_user))
@@ -320,6 +321,54 @@ pub struct AdminUserListQuery {
     pub keyword: Option<String>,
     pub role: Option<UserRole>,
     pub status: Option<UserStatus>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct CreateUserReq {
+    pub username: String,
+    pub email: String,
+    pub password: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/admin/users",
+    tag = "admin",
+    operation_id = "create_user",
+    request_body = CreateUserReq,
+    responses(
+        (status = 201, description = "User created", body = inline(ApiResponse<crate::entities::user::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 400, description = "Validation error"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn create_user(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: actix_web::HttpRequest,
+    body: web::Json<CreateUserReq>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    let user = user_service::create(&state, &body.username, &body.email, &body.password).await?;
+    audit_service::log(
+        &state,
+        &ctx,
+        "admin_create_user",
+        Some("user"),
+        Some(user.id),
+        Some(&user.username),
+        Some(serde_json::json!({
+            "email": user.email,
+            "role": user.role,
+            "status": user.status,
+            "storage_quota": user.storage_quota,
+        })),
+    )
+    .await;
+    Ok(HttpResponse::Created().json(ApiResponse::ok(user)))
 }
 
 #[utoipa::path(

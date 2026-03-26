@@ -74,16 +74,16 @@ fn validate_password(password: &str) -> Result<()> {
     Ok(())
 }
 
-/// 注册用户，返回用户信息（不含密码）
-pub async fn register(
+async fn create_user_with_role(
     state: &AppState,
     username: &str,
     email: &str,
     password: &str,
+    role: UserRole,
+    status: UserStatus,
 ) -> Result<user::Model> {
     let db = &state.db;
 
-    // ── 输入校验 ──
     validate_username(username)?;
     validate_email(email)?;
     validate_password(password)?;
@@ -98,19 +98,6 @@ pub async fn register(
     let password_hash = hash::hash_password(password)?;
     let now = Utc::now();
 
-    // 第一个注册的用户自动成为 admin
-    let is_first_user = user_repo::count_all(db).await? == 0;
-    let role = if is_first_user {
-        UserRole::Admin
-    } else {
-        UserRole::User
-    };
-
-    if is_first_user {
-        tracing::info!("first user registered — granting admin role to '{username}'");
-    }
-
-    // 从 system_config 读取默认配额
     let default_quota = match config_repo::find_by_key(db, "default_storage_quota").await? {
         Some(cfg) => cfg.value.parse::<i64>().unwrap_or_else(|_| {
             tracing::warn!(
@@ -127,7 +114,7 @@ pub async fn register(
         email: Set(email.to_string()),
         password_hash: Set(password_hash),
         role: Set(role),
-        status: Set(UserStatus::Active),
+        status: Set(status),
         storage_used: Set(0),
         storage_quota: Set(default_quota),
         created_at: Set(now),
@@ -136,7 +123,6 @@ pub async fn register(
     };
     let user = user_repo::create(db, model).await?;
 
-    // 自动分配系统默认存储策略
     if let Ok(Some(default_policy)) = policy_repo::find_default(db).await {
         let usp = crate::entities::user_storage_policy::ActiveModel {
             user_id: Set(user.id),
@@ -155,6 +141,44 @@ pub async fn register(
     }
 
     Ok(user)
+}
+
+pub async fn create_user_by_admin(
+    state: &AppState,
+    username: &str,
+    email: &str,
+    password: &str,
+) -> Result<user::Model> {
+    create_user_with_role(
+        state,
+        username,
+        email,
+        password,
+        UserRole::User,
+        UserStatus::Active,
+    )
+    .await
+}
+
+/// 注册用户，返回用户信息（不含密码）
+pub async fn register(
+    state: &AppState,
+    username: &str,
+    email: &str,
+    password: &str,
+) -> Result<user::Model> {
+    let is_first_user = user_repo::count_all(&state.db).await? == 0;
+    let role = if is_first_user {
+        UserRole::Admin
+    } else {
+        UserRole::User
+    };
+
+    if is_first_user {
+        tracing::info!("first user registered — granting admin role to '{username}'");
+    }
+
+    create_user_with_role(state, username, email, password, role, UserStatus::Active).await
 }
 
 /// 检查标识符（邮箱或用户名）是否存在，以及系统是否有用户

@@ -114,6 +114,49 @@ async fn test_force_delete_user() {
 // ── 不能删除初始管理员 id=1 ────────────────────────────────
 
 #[actix_web::test]
+async fn test_admin_create_user_uses_default_quota_and_policy() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/admin/config/default_storage_quota")
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .set_json(serde_json::json!({ "value": "1048576" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "quotauser",
+            "email": "quotauser@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["id"].as_i64().unwrap();
+    assert_eq!(body["data"]["storage_quota"], 1_048_576);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let items = body["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0]["is_default"], true);
+    assert_eq!(items[0]["quota_bytes"], 1_048_576);
+}
+
+#[actix_web::test]
 async fn test_cannot_delete_initial_admin() {
     let state = common::setup().await;
     let app = create_test_app!(state);

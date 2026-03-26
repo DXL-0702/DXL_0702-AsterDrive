@@ -33,6 +33,40 @@ async fn test_audit_log_recorded_on_upload() {
 }
 
 #[actix_web::test]
+async fn test_audit_log_recorded_on_admin_create_user() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "audituser",
+            "email": "audituser@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/audit-logs")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let items = body["data"]["items"].as_array().unwrap();
+    let entry = items.iter().find(|item| item["action"] == "admin_create_user");
+    assert!(entry.is_some(), "audit log should contain admin_create_user");
+    let entry = entry.unwrap();
+    assert_eq!(entry["entity_type"], "user");
+    assert_eq!(entry["entity_name"], "audituser");
+}
+
+#[actix_web::test]
 async fn test_audit_log_pagination_fields_and_offset() {
     let state = common::setup().await;
     let app = create_test_app!(state);

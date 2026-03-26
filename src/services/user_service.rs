@@ -9,6 +9,7 @@ use crate::db::repository::{
 use crate::entities::user;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
+use crate::services::auth_service;
 use crate::types::{UserRole, UserStatus};
 
 pub async fn list_all(state: &AppState) -> Result<Vec<user::Model>> {
@@ -31,6 +32,15 @@ pub async fn list_paginated(
 
 pub async fn get(state: &AppState, id: i64) -> Result<user::Model> {
     user_repo::find_by_id(&state.db, id).await
+}
+
+pub async fn create(
+    state: &AppState,
+    username: &str,
+    email: &str,
+    password: &str,
+) -> Result<user::Model> {
+    auth_service::create_user_by_admin(state, username, email, password).await
 }
 
 pub async fn update(

@@ -77,6 +77,87 @@ async fn test_admin_users() {
 }
 
 #[actix_web::test]
+async fn test_admin_create_user() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "newuser",
+            "email": "newuser@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let user = &body["data"];
+    assert_eq!(user["username"], "newuser");
+    assert_eq!(user["email"], "newuser@example.com");
+    assert_eq!(user["role"], "user");
+    assert_eq!(user["status"], "active");
+    assert_eq!(user["storage_quota"], 0);
+    assert!(user.get("password_hash").is_none());
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users?keyword=newuser")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["items"][0]["username"], "newuser");
+}
+
+#[actix_web::test]
+async fn test_non_admin_cannot_create_user() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (_admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "plainuser",
+            "email": "plainuser@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "plainuser",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let token = common::extract_cookie(&resp, "aster_access").unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "blockeduser",
+            "email": "blockeduser@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+}
+
+#[actix_web::test]
 async fn test_admin_users_server_side_filters() {
     let state = common::setup().await;
     let app = create_test_app!(state);

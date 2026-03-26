@@ -40,6 +40,7 @@ export type CompletedPart = components["schemas"]["CompletedPartReq"];
 
 // Auth
 export type CheckResp = components["schemas"]["CheckResp"];
+export type CreateUserReq = components["schemas"]["CreateUserReq"];
 
 // Search
 export type FileSearchItem = components["schemas"]["FileSearchItem"];

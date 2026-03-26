@@ -40,6 +40,9 @@ export const adminUserService = {
 
 	get: (id: number) => api.get<UserInfo>(`/admin/users/${id}`),
 
+	create: (data: { username: string; email: string; password: string }) =>
+		api.post<UserInfo>("/admin/users", data),
+
 	update: (
 		id: number,
 		data: { role?: UserRole; status?: UserStatus; storage_quota?: number },

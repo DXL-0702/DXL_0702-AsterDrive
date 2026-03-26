@@ -221,7 +221,7 @@ export interface paths {
         };
         get: operations["list_users"];
         put?: never;
-        post?: never;
+        post: operations["create_user"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1247,6 +1247,11 @@ export interface components {
             /** Format: int64 */
             max_downloads?: number;
             password?: string | null;
+        };
+        CreateUserReq: {
+            email: string;
+            password: string;
+            username: string;
         };
         CreateWebdavAccountReq: {
             password?: string | null;
@@ -2998,6 +3003,68 @@ export interface operations {
                         msg: string;
                     };
                 };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    create_user: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateUserReq"];
+            };
+        };
+        responses: {
+            /** @description User created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            email: string;
+                            /** Format: int64 */
+                            id: number;
+                            role: components["schemas"]["UserRole"];
+                            status: components["schemas"]["UserStatus"];
+                            /** Format: int64 */
+                            storage_quota: number;
+                            /** Format: int64 */
+                            storage_used: number;
+                            updated_at: string;
+                            username: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Validation error */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {

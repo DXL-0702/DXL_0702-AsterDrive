@@ -1,7 +1,9 @@
+import type { FormEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { z } from "zod/v4";
 import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
@@ -12,8 +14,17 @@ import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -44,9 +55,23 @@ import {
 } from "@/lib/constants";
 import { formatBytes } from "@/lib/format";
 import { adminUserService } from "@/services/adminService";
-import type { UserInfo, UserRole, UserStatus } from "@/types/api";
+import type { CreateUserReq, UserInfo, UserRole, UserStatus } from "@/types/api";
 
 const USER_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+
+const createUserUsernameSchema = z
+	.string()
+	.min(4, "Username must be 4-16 characters")
+	.max(16, "Username must be 4-16 characters")
+	.regex(/^[a-zA-Z0-9_-]+$/, "Only letters, numbers, _ and -");
+const createUserEmailSchema = z
+	.string()
+	.max(254, "Email is too long")
+	.regex(/^[^@]+@[^@]+\.[^@]+$/, "Invalid email format");
+const createUserPasswordSchema = z
+	.string()
+	.min(6, "Password must be at least 6 characters")
+	.max(128, "Password must be at most 128 characters");
 
 function getRoleBadgeClass(role: UserRole) {
 	return role === "admin"
@@ -121,6 +146,14 @@ export default function AdminUsersPage() {
 		null,
 	);
 	const [deleteUserId, setDeleteUserId] = useState<number | null>(null);
+	const [createDialogOpen, setCreateDialogOpen] = useState(false);
+	const [creating, setCreating] = useState(false);
+	const [createErrors, setCreateErrors] = useState<Partial<CreateUserReq>>({});
+	const [createForm, setCreateForm] = useState<CreateUserReq>({
+		username: "",
+		email: "",
+		password: "",
+	});
 
 	useEffect(() => {
 		const timer = window.setTimeout(() => {
@@ -210,6 +243,74 @@ export default function AdminUsersPage() {
 		setOffset(0);
 	};
 
+	const resetCreateForm = () => {
+		setCreateForm({ username: "", email: "", password: "" });
+		setCreateErrors({});
+	};
+
+	const validateCreateField = (field: keyof CreateUserReq, value: string) => {
+		const schema =
+			field === "username"
+				? createUserUsernameSchema
+				: field === "email"
+					? createUserEmailSchema
+					: createUserPasswordSchema;
+		const result = schema.safeParse(value);
+		setCreateErrors((prev) => {
+			if (result.success) {
+				const next = { ...prev };
+				delete next[field];
+				return next;
+			}
+			return { ...prev, [field]: result.error.issues[0]?.message ?? "" };
+		});
+	};
+
+	const validateCreateForm = () => {
+		const nextErrors: Partial<CreateUserReq> = {};
+		const usernameResult = createUserUsernameSchema.safeParse(
+			createForm.username.trim(),
+		);
+		if (!usernameResult.success) {
+			nextErrors.username = usernameResult.error.issues[0]?.message ?? "";
+		}
+		const emailResult = createUserEmailSchema.safeParse(createForm.email.trim());
+		if (!emailResult.success) {
+			nextErrors.email = emailResult.error.issues[0]?.message ?? "";
+		}
+		const passwordResult = createUserPasswordSchema.safeParse(createForm.password);
+		if (!passwordResult.success) {
+			nextErrors.password = passwordResult.error.issues[0]?.message ?? "";
+		}
+		setCreateErrors(nextErrors);
+		return Object.keys(nextErrors).length === 0;
+	};
+
+	const handleCreateFormChange = (key: keyof CreateUserReq, value: string) => {
+		setCreateForm((prev) => ({ ...prev, [key]: value }));
+	};
+
+	const handleCreateUser = async (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		if (!validateCreateForm()) return;
+		try {
+			setCreating(true);
+			await adminUserService.create({
+				username: createForm.username.trim(),
+				email: createForm.email.trim(),
+				password: createForm.password,
+			});
+			toast.success(t("user_created"));
+			setCreateDialogOpen(false);
+			resetCreateForm();
+			await load();
+		} catch (e) {
+			handleApiError(e);
+		} finally {
+			setCreating(false);
+		}
+	};
+
 	const updateRole = async (id: number, role: UserRole) => {
 		try {
 			const updated = await adminUserService.update(id, { role });
@@ -281,19 +382,29 @@ export default function AdminUsersPage() {
 					title={t("users")}
 					description={t("users_intro")}
 					actions={
-						<Button
-							variant="outline"
-							size="sm"
-							className={ADMIN_CONTROL_HEIGHT_CLASS}
-							onClick={() => void load()}
-							disabled={loading}
-						>
-							<Icon
-								name={loading ? "Spinner" : "ArrowsClockwise"}
-								className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
-							/>
-							{t("refresh")}
-						</Button>
+						<>
+							<Button
+								size="sm"
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								onClick={() => setCreateDialogOpen(true)}
+							>
+								<Icon name="Plus" className="mr-1 h-4 w-4" />
+								{t("new_user")}
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								onClick={() => void load()}
+								disabled={loading}
+							>
+								<Icon
+									name={loading ? "Spinner" : "ArrowsClockwise"}
+									className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+								/>
+								{t("refresh")}
+							</Button>
+						</>
 					}
 					toolbar={
 						<>
@@ -399,6 +510,7 @@ export default function AdminUsersPage() {
 													type="button"
 													className="flex w-full min-w-0 items-center rounded-lg border border-transparent bg-muted/10 px-2 py-2 text-left transition-colors duration-200 hover:border-border hover:bg-muted/25 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 													onClick={() => setDetailDialogUserId(user.id)}
+													title={t("view_details")}
 												>
 													<div className="min-w-0">
 														<div className="truncate font-medium text-foreground">
@@ -412,6 +524,7 @@ export default function AdminUsersPage() {
 													type="button"
 													className="flex w-full min-w-0 items-center rounded-lg border border-transparent bg-muted/10 px-2 py-2 text-left transition-colors duration-200 hover:border-border hover:bg-muted/25 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 													onClick={() => setDetailDialogUserId(user.id)}
+													title={t("view_details")}
 												>
 													<div className="truncate text-sm text-muted-foreground">
 														{user.email}
@@ -423,6 +536,7 @@ export default function AdminUsersPage() {
 													type="button"
 													className="flex w-full items-center rounded-lg border border-transparent bg-muted/20 px-3 py-2 text-left transition-colors duration-200 hover:border-border hover:bg-muted/35 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 													onClick={() => setDetailDialogUserId(user.id)}
+													title={t("view_details")}
 												>
 													<Badge
 														variant="outline"
@@ -437,6 +551,7 @@ export default function AdminUsersPage() {
 													type="button"
 													className="flex w-full items-center rounded-lg border border-transparent bg-muted/20 px-3 py-2 text-left transition-colors duration-200 hover:border-border hover:bg-muted/35 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
 													onClick={() => setDetailDialogUserId(user.id)}
+													title={t("view_details")}
 												>
 													<Badge
 														variant="outline"
@@ -453,6 +568,7 @@ export default function AdminUsersPage() {
 													type="button"
 													className="w-full text-left"
 													onClick={() => setDetailDialogUserId(user.id)}
+													title={t("view_details")}
 												>
 													<QuotaCell user={user} />
 												</button>
@@ -469,6 +585,7 @@ export default function AdminUsersPage() {
 																		className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
 																		onClick={() => setDeleteUserId(user.id)}
 																		aria-label={t("delete_user")}
+																		title={t("delete_user")}
 																		disabled={user.id === 1}
 																	>
 																		<Icon
@@ -570,6 +687,99 @@ export default function AdminUsersPage() {
 					</div>
 				) : null}
 			</AdminPageShell>
+			<Dialog
+				open={createDialogOpen}
+				onOpenChange={(open) => {
+					setCreateDialogOpen(open);
+					if (!open && !creating) {
+						resetCreateForm();
+					}
+				}}
+			>
+				<DialogContent className="sm:max-w-md">
+					<form onSubmit={handleCreateUser} className="space-y-4">
+						<DialogHeader>
+							<DialogTitle>{t("create_user")}</DialogTitle>
+							<DialogDescription>
+								{t("create_user_desc")}
+							</DialogDescription>
+						</DialogHeader>
+						<div className="space-y-2">
+							<Label htmlFor="create-user-username">{t("username")}</Label>
+							<Input
+								id="create-user-username"
+								value={createForm.username}
+								onChange={(e) => {
+									const value = e.target.value;
+									handleCreateFormChange("username", value);
+									validateCreateField("username", value.trim());
+								}}
+								required
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								aria-invalid={!!createErrors.username}
+							/>
+							{createErrors.username ? (
+								<p className="text-xs text-destructive">{createErrors.username}</p>
+							) : null}
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="create-user-email">{t("email")}</Label>
+							<Input
+								id="create-user-email"
+								value={createForm.email}
+								onChange={(e) => {
+									const value = e.target.value;
+									handleCreateFormChange("email", value);
+									validateCreateField("email", value.trim());
+								}}
+								required
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								aria-invalid={!!createErrors.email}
+							/>
+							{createErrors.email ? (
+								<p className="text-xs text-destructive">{createErrors.email}</p>
+							) : null}
+						</div>
+						<div className="space-y-2">
+							<Label htmlFor="create-user-password">{t("password")}</Label>
+							<Input
+								id="create-user-password"
+								type="password"
+								value={createForm.password}
+								onChange={(e) => {
+									const value = e.target.value;
+									handleCreateFormChange("password", value);
+									validateCreateField("password", value);
+								}}
+								required
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								aria-invalid={!!createErrors.password}
+							/>
+							{createErrors.password ? (
+								<p className="text-xs text-destructive">{createErrors.password}</p>
+							) : null}
+						</div>
+						<DialogFooter>
+							<Button
+								type="button"
+								variant="outline"
+								onClick={() => setCreateDialogOpen(false)}
+								disabled={creating}
+							>
+								{t("common:cancel")}
+							</Button>
+							<Button type="submit" disabled={creating}>
+								{creating ? (
+									<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
+								) : (
+									<Icon name="Plus" className="mr-1 h-4 w-4" />
+								)}
+								{t("common:create")}
+							</Button>
+						</DialogFooter>
+					</form>
+				</DialogContent>
+			</Dialog>
 			<UserDetailDialog
 				user={selectedUser}
 				open={detailDialogUserId !== null}
