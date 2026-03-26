@@ -52,7 +52,12 @@ export type BatchItemError = components["schemas"]["BatchItemError"];
 
 // Audit
 export type AuditLogEntry = components["schemas"]["AuditLogEntry"];
-export type AuditLogPage = components["schemas"]["AuditLogPage"];
+export type AuditLogPage = components["schemas"]["OffsetPage_AuditLogEntry"];
+export type UserPage = components["schemas"]["OffsetPage_UserInfo"];
+export type StoragePolicyPage =
+	components["schemas"]["OffsetPage_StoragePolicy"];
+export type UserStoragePolicyPage =
+	components["schemas"]["OffsetPage_UserStoragePolicy"];
 
 // ErrorCode constants (generated type is a union of literal numbers, we need named constants)
 export const ErrorCode = {

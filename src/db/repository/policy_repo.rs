@@ -1,9 +1,12 @@
+use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::{
     storage_policy::{self, Entity as StoragePolicy},
     user_storage_policy::{self, Entity as UserStoragePolicy},
 };
 use crate::errors::{AsterError, Result};
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,
+};
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<storage_policy::Model> {
     StoragePolicy::find_by_id(id)
@@ -23,9 +26,24 @@ pub async fn find_default<C: ConnectionTrait>(db: &C) -> Result<Option<storage_p
 
 pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<storage_policy::Model>> {
     StoragePolicy::find()
+        .order_by_asc(storage_policy::Column::Id)
         .all(db)
         .await
         .map_err(AsterError::from)
+}
+
+pub async fn find_paginated<C: ConnectionTrait>(
+    db: &C,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<storage_policy::Model>, u64)> {
+    fetch_offset_page(
+        db,
+        StoragePolicy::find().order_by_asc(storage_policy::Column::Id),
+        limit,
+        offset,
+    )
+    .await
 }
 
 pub async fn find_user_default<C: ConnectionTrait>(
@@ -70,9 +88,27 @@ pub async fn find_user_policies<C: ConnectionTrait>(
 ) -> Result<Vec<user_storage_policy::Model>> {
     UserStoragePolicy::find()
         .filter(user_storage_policy::Column::UserId.eq(user_id))
+        .order_by_asc(user_storage_policy::Column::Id)
         .all(db)
         .await
         .map_err(AsterError::from)
+}
+
+pub async fn find_user_policies_paginated<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<user_storage_policy::Model>, u64)> {
+    fetch_offset_page(
+        db,
+        UserStoragePolicy::find()
+            .filter(user_storage_policy::Column::UserId.eq(user_id))
+            .order_by_asc(user_storage_policy::Column::Id),
+        limit,
+        offset,
+    )
+    .await
 }
 
 pub async fn find_user_policy_by_id<C: ConnectionTrait>(

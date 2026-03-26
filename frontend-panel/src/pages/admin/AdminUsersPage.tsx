@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
+import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { AdminLayout } from "@/components/layout/AdminLayout";
@@ -9,17 +12,16 @@ import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { AdminSurface } from "@/components/layout/AdminSurface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
 	Select,
 	SelectContent,
@@ -27,7 +29,6 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import {
 	Table,
 	TableBody,
@@ -39,321 +40,175 @@ import {
 import { handleApiError } from "@/hooks/useApiError";
 import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
-	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
+	ADMIN_ICON_BUTTON_CLASS,
 } from "@/lib/constants";
 import { formatBytes } from "@/lib/format";
-import {
-	adminPolicyService,
-	adminUserPolicyService,
-	adminUserService,
-} from "@/services/adminService";
-import type {
-	StoragePolicy,
-	UserInfo,
-	UserRole,
-	UserStatus,
-	UserStoragePolicy,
-} from "@/types/api";
+import { adminUserService } from "@/services/adminService";
+import type { UserInfo, UserRole, UserStatus } from "@/types/api";
 
-function QuotaCell({
-	user,
-	onUpdate,
-}: {
-	user: UserInfo;
-	onUpdate: (id: number, quota: number) => void;
-}) {
-	const { t } = useTranslation();
-	const [editing, setEditing] = useState(false);
-	const [value, setValue] = useState("");
+const USER_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 
+function getRoleBadgeClass(role: UserRole) {
+	return role === "admin"
+		? "border-blue-500/60 bg-blue-500/10 text-blue-600 dark:text-blue-300"
+		: "border-border bg-muted/40 text-muted-foreground";
+}
+
+function getStatusBadgeClass(status: UserStatus) {
+	return status === "active"
+		? "border-green-500/60 bg-green-500/10 text-green-600 dark:text-green-300"
+		: "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-300";
+}
+
+function QuotaCell({ user }: { user: UserInfo }) {
+	const { t } = useTranslation("admin");
 	const quota = user.storage_quota ?? 0;
 	const used = user.storage_used ?? 0;
 	const pct = quota > 0 ? Math.min((used / quota) * 100, 100) : 0;
 
-	const startEdit = () => {
-		setValue(quota > 0 ? String(Math.round(quota / 1024 / 1024)) : "0");
-		setEditing(true);
-	};
-
-	const confirm = () => {
-		const mb = Number.parseInt(value, 10);
-		const newQuota = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
-		onUpdate(user.id, newQuota);
-		setEditing(false);
-	};
-
-	if (editing) {
-		return (
-			<div className="flex items-center gap-1">
-				<Input
-					className="h-7 w-20 text-xs"
-					value={value}
-					onChange={(e) => setValue(e.target.value)}
-					onKeyDown={(e) => {
-						if (e.key === "Enter") confirm();
-						if (e.key === "Escape") setEditing(false);
-					}}
-					onBlur={confirm}
-					autoFocus
-					placeholder="MB"
-				/>
-				<span className="text-xs text-muted-foreground">MB</span>
-			</div>
-		);
-	}
-
 	return (
-		<button
-			type="button"
-			className="text-left w-full group cursor-pointer"
-			onClick={startEdit}
-		>
-			<div className="text-xs">
-				{formatBytes(used)}
-				{quota > 0 ? ` / ${formatBytes(quota)}` : ` / ${t("unlimited")}`}
+		<div className="flex w-full flex-col gap-2 rounded-lg border border-transparent bg-muted/20 px-3 py-2 text-left">
+			<div className="flex items-center justify-between gap-3 text-xs">
+				<span className="font-medium text-foreground">
+					{formatBytes(used)}
+					{quota > 0
+						? ` / ${formatBytes(quota)}`
+						: ` / ${t("common:unlimited")}`}
+				</span>
+				<span className="text-[11px] text-muted-foreground">
+					{quota > 0 ? `${Math.round(pct)}%` : t("quota_unlimited_short")}
+				</span>
 			</div>
-			{quota > 0 && <Progress value={pct} className="h-1.5 mt-1" />}
-		</button>
-	);
-}
-
-function UserPolicyDialog({
-	userId,
-	open,
-	onOpenChange,
-}: {
-	userId: number;
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-}) {
-	const { t } = useTranslation("admin");
-	const [assignments, setAssignments] = useState<UserStoragePolicy[]>([]);
-	const [policies, setPolicies] = useState<StoragePolicy[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [addPolicyId, setAddPolicyId] = useState<number | null>(null);
-	const [addQuota, setAddQuota] = useState("");
-	const [addDefault, setAddDefault] = useState(false);
-
-	const load = useCallback(async () => {
-		try {
-			setLoading(true);
-			const [a, p] = await Promise.all([
-				adminUserPolicyService.list(userId),
-				adminPolicyService.list(),
-			]);
-			setAssignments(a);
-			setPolicies(p);
-		} catch (e) {
-			handleApiError(e);
-		} finally {
-			setLoading(false);
-		}
-	}, [userId]);
-
-	useEffect(() => {
-		if (open) load();
-	}, [open, load]);
-
-	const policyName = (policyId: number) =>
-		policies.find((p) => p.id === policyId)?.name ?? `#${policyId}`;
-
-	const handleAssign = async () => {
-		if (!addPolicyId) return;
-		try {
-			const mb = Number.parseInt(addQuota, 10);
-			const quotaBytes = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
-			const created = await adminUserPolicyService.assign(userId, {
-				policy_id: addPolicyId,
-				is_default: addDefault,
-				quota_bytes: quotaBytes,
-			});
-			setAssignments((prev) =>
-				addDefault
-					? [...prev.map((a) => ({ ...a, is_default: false })), created]
-					: [...prev, created],
-			);
-			setAddPolicyId(null);
-			setAddQuota("");
-			setAddDefault(false);
-			toast.success(t("policy_assigned"));
-		} catch (e) {
-			handleApiError(e);
-		}
-	};
-
-	const handleToggleDefault = async (a: UserStoragePolicy) => {
-		try {
-			const updated = await adminUserPolicyService.update(userId, a.id, {
-				is_default: !a.is_default,
-			});
-			setAssignments((prev) =>
-				prev.map((item) =>
-					item.id === updated.id
-						? updated
-						: !a.is_default
-							? { ...item, is_default: false }
-							: item,
-				),
-			);
-		} catch (e) {
-			handleApiError(e);
-		}
-	};
-
-	const handleRemove = async (id: number) => {
-		try {
-			await adminUserPolicyService.remove(userId, id);
-			setAssignments((prev) => prev.filter((a) => a.id !== id));
-			toast.success(t("assignment_removed"));
-		} catch (e) {
-			handleApiError(e);
-		}
-	};
-
-	// Policies not yet assigned
-	const availablePolicies = policies.filter(
-		(p) => !assignments.some((a) => a.policy_id === p.id),
-	);
-
-	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="max-w-lg">
-				<DialogHeader>
-					<DialogTitle>{t("storage_policy_assignments")}</DialogTitle>
-				</DialogHeader>
-
-				{loading ? (
-					<SkeletonTable columns={4} rows={5} />
-				) : (
-					<div className="space-y-4">
-						{/* Existing assignments */}
-						{assignments.length === 0 ? (
-							<p className="text-sm text-muted-foreground">
-								{t("no_policies_assigned")}
-							</p>
-						) : (
-							<div className="space-y-2">
-								{assignments.map((a) => (
-									<div
-										key={a.id}
-										className="flex items-center justify-between p-3 border rounded-lg"
-									>
-										<div>
-											<div className="text-sm font-medium">
-												{policyName(a.policy_id)}
-											</div>
-											<div className="text-xs text-muted-foreground">
-												{t("quota")}:{" "}
-												{a.quota_bytes > 0
-													? formatBytes(a.quota_bytes)
-													: t("common:unlimited")}
-											</div>
-										</div>
-										<div className="flex items-center gap-2">
-											{a.is_default && (
-												<Badge className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
-													{t("is_default")}
-												</Badge>
-											)}
-											<Button
-												variant="ghost"
-												size="sm"
-												onClick={() => handleToggleDefault(a)}
-											>
-												{a.is_default ? t("unset_default") : t("set_default")}
-											</Button>
-											<Button
-												variant="ghost"
-												size="icon"
-												className="h-8 w-8 text-destructive"
-												onClick={() => handleRemove(a.id)}
-											>
-												<Icon name="Trash" className="h-3.5 w-3.5" />
-											</Button>
-										</div>
-									</div>
-								))}
-							</div>
-						)}
-
-						{/* Add new assignment */}
-						{availablePolicies.length > 0 && (
-							<div className="border-t pt-4 space-y-3">
-								<Label className="text-sm font-medium">
-									<Icon name="Plus" className="h-3.5 w-3.5 inline mr-1" />
-									{t("assign_policy")}
-								</Label>
-								<Select
-									value={addPolicyId != null ? String(addPolicyId) : ""}
-									onValueChange={(v) => setAddPolicyId(v ? Number(v) : null)}
-								>
-									<SelectTrigger>
-										<SelectValue placeholder={t("select_policy")} />
-									</SelectTrigger>
-									<SelectContent>
-										{availablePolicies.map((p) => (
-											<SelectItem key={p.id} value={String(p.id)}>
-												{p.name} ({p.driver_type})
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-								<div className="flex items-center gap-3">
-									<div className="flex-1">
-										<Input
-											placeholder={`${t("quota")} (MB, 0=${t("common:unlimited").toLowerCase()})`}
-											value={addQuota}
-											onChange={(e) => setAddQuota(e.target.value)}
-										/>
-									</div>
-									<div className="flex items-center gap-2">
-										<Switch
-											checked={addDefault}
-											onCheckedChange={setAddDefault}
-										/>
-										<span className="text-xs">{t("is_default")}</span>
-									</div>
-								</div>
-								<Button
-									size="sm"
-									className="w-full"
-									disabled={!addPolicyId}
-									onClick={handleAssign}
-								>
-									{t("common:confirm")}
-								</Button>
-							</div>
-						)}
-					</div>
-				)}
-			</DialogContent>
-		</Dialog>
+			{quota > 0 ? <Progress value={pct} className="h-1.5" /> : null}
+		</div>
 	);
 }
 
 export default function AdminUsersPage() {
 	const { t } = useTranslation("admin");
+	const [searchParams, setSearchParams] = useSearchParams();
+	const initialKeyword = searchParams.get("keyword") ?? "";
+	const initialRole = searchParams.get("role");
+	const initialStatus = searchParams.get("status");
+	const initialOffset = Number(searchParams.get("offset") ?? "0");
+	const initialPageSize = Number(searchParams.get("pageSize") ?? "20");
 	const [users, setUsers] = useState<UserInfo[]>([]);
 	const [loading, setLoading] = useState(true);
-	const [policyDialogUserId, setPolicyDialogUserId] = useState<number | null>(
+	const [total, setTotal] = useState(0);
+	const [offset, setOffset] = useState(
+		Number.isNaN(initialOffset) ? 0 : initialOffset,
+	);
+	const [pageSize, setPageSize] = useState<
+		(typeof USER_PAGE_SIZE_OPTIONS)[number]
+	>(
+		USER_PAGE_SIZE_OPTIONS.includes(
+			initialPageSize as (typeof USER_PAGE_SIZE_OPTIONS)[number],
+		)
+			? (initialPageSize as (typeof USER_PAGE_SIZE_OPTIONS)[number])
+			: 20,
+	);
+	const [keyword, setKeyword] = useState(initialKeyword);
+	const [debouncedKeyword, setDebouncedKeyword] = useState(initialKeyword);
+	const [roleFilter, setRoleFilter] = useState<"__all__" | UserRole>(
+		initialRole === "admin" || initialRole === "user" ? initialRole : "__all__",
+	);
+	const [statusFilter, setStatusFilter] = useState<"__all__" | UserStatus>(
+		initialStatus === "active" || initialStatus === "disabled"
+			? initialStatus
+			: "__all__",
+	);
+	const [detailDialogUserId, setDetailDialogUserId] = useState<number | null>(
 		null,
 	);
+	const [deleteUserId, setDeleteUserId] = useState<number | null>(null);
+
+	useEffect(() => {
+		const timer = window.setTimeout(() => {
+			setDebouncedKeyword(keyword);
+		}, 300);
+		return () => window.clearTimeout(timer);
+	}, [keyword]);
+
+	useEffect(() => {
+		const params = new URLSearchParams();
+		if (debouncedKeyword.trim()) params.set("keyword", debouncedKeyword.trim());
+		if (roleFilter !== "__all__") params.set("role", roleFilter);
+		if (statusFilter !== "__all__") params.set("status", statusFilter);
+		if (offset > 0) params.set("offset", String(offset));
+		if (pageSize !== 20) params.set("pageSize", String(pageSize));
+		setSearchParams(params, { replace: true });
+	}, [
+		debouncedKeyword,
+		offset,
+		pageSize,
+		roleFilter,
+		setSearchParams,
+		statusFilter,
+	]);
 
 	const load = useCallback(async () => {
 		try {
 			setLoading(true);
-			const data = await adminUserService.list();
-			setUsers(data);
+			const page = await adminUserService.list({
+				limit: pageSize,
+				offset,
+				keyword: debouncedKeyword.trim() || undefined,
+				role: roleFilter === "__all__" ? undefined : roleFilter,
+				status: statusFilter === "__all__" ? undefined : statusFilter,
+			});
+			setUsers(page.items);
+			setTotal(page.total);
 		} catch (e) {
 			handleApiError(e);
 		} finally {
 			setLoading(false);
 		}
-	}, []);
+	}, [debouncedKeyword, offset, pageSize, roleFilter, statusFilter]);
 
 	useEffect(() => {
-		load();
+		void load();
 	}, [load]);
+
+	const activeFilterCount =
+		(debouncedKeyword.trim().length > 0 ? 1 : 0) +
+		(roleFilter !== "__all__" ? 1 : 0) +
+		(statusFilter !== "__all__" ? 1 : 0);
+	const totalPages = Math.max(1, Math.ceil(total / pageSize));
+	const currentPage = Math.floor(offset / pageSize) + 1;
+	const hasServerFilters = activeFilterCount > 0;
+	const prevPageDisabled = offset === 0;
+	const nextPageDisabled = offset + pageSize >= total;
+
+	const resetFilters = () => {
+		setKeyword("");
+		setRoleFilter("__all__");
+		setStatusFilter("__all__");
+		setOffset(0);
+	};
+
+	const handlePageSizeChange = (value: string | null) => {
+		if (!value) return;
+		const next = Number(value) as (typeof USER_PAGE_SIZE_OPTIONS)[number];
+		setPageSize(next);
+		setOffset(0);
+	};
+
+	const handleKeywordChange = (value: string) => {
+		setKeyword(value);
+		setOffset(0);
+	};
+
+	const handleRoleFilterChange = (value: string | null) => {
+		if (!value) return;
+		setRoleFilter(value as "__all__" | UserRole);
+		setOffset(0);
+	};
+
+	const handleStatusFilterChange = (value: string | null) => {
+		if (!value) return;
+		setStatusFilter(value as "__all__" | UserStatus);
+		setOffset(0);
+	};
 
 	const updateRole = async (id: number, role: UserRole) => {
 		try {
@@ -387,14 +242,133 @@ export default function AdminUsersPage() {
 		}
 	};
 
+	const deleteUser = async (id: number) => {
+		try {
+			await adminUserService.delete(id);
+			const isLastItemOnPage = users.length === 1;
+			const nextOffset =
+				isLastItemOnPage && offset > 0
+					? Math.max(0, offset - pageSize)
+					: offset;
+			if (detailDialogUserId === id) {
+				setDetailDialogUserId(null);
+			}
+			if (nextOffset !== offset) {
+				setOffset(nextOffset);
+			} else {
+				setUsers((prev) => prev.filter((u) => u.id !== id));
+				setTotal((prev) => Math.max(0, prev - 1));
+			}
+			toast.success(t("user_deleted"));
+		} catch (e) {
+			handleApiError(e);
+		}
+	};
+
+	const selectedUser = useMemo(
+		() => users.find((user) => user.id === detailDialogUserId) ?? null,
+		[users, detailDialogUserId],
+	);
+	const deleteTargetUser = useMemo(
+		() => users.find((user) => user.id === deleteUserId) ?? null,
+		[users, deleteUserId],
+	);
+
 	return (
 		<AdminLayout>
 			<AdminPageShell>
-				<AdminPageHeader title={t("users")} description={t("users_intro")} />
+				<AdminPageHeader
+					title={t("users")}
+					description={t("users_intro")}
+					actions={
+						<Button
+							variant="outline"
+							size="sm"
+							className={ADMIN_CONTROL_HEIGHT_CLASS}
+							onClick={() => void load()}
+							disabled={loading}
+						>
+							<Icon
+								name={loading ? "Spinner" : "ArrowsClockwise"}
+								className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+							/>
+							{t("refresh")}
+						</Button>
+					}
+					toolbar={
+						<>
+							<div className="relative min-w-[240px] flex-1 md:max-w-sm">
+								<Icon
+									name="MagnifyingGlass"
+									className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+								/>
+								<Input
+									value={keyword}
+									onChange={(e) => handleKeywordChange(e.target.value)}
+									placeholder={t("user_search_placeholder")}
+									className={`${ADMIN_CONTROL_HEIGHT_CLASS} pl-9`}
+								/>
+							</div>
+							<Select value={roleFilter} onValueChange={handleRoleFilterChange}>
+								<SelectTrigger
+									className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-[140px]`}
+								>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="__all__">{t("all_roles")}</SelectItem>
+									<SelectItem value="admin">Admin</SelectItem>
+									<SelectItem value="user">User</SelectItem>
+								</SelectContent>
+							</Select>
+							<Select
+								value={statusFilter}
+								onValueChange={handleStatusFilterChange}
+							>
+								<SelectTrigger
+									className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-[150px]`}
+								>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="__all__">{t("all_statuses")}</SelectItem>
+									<SelectItem value="active">{t("common:active")}</SelectItem>
+									<SelectItem value="disabled">
+										{t("common:disabled_status")}
+									</SelectItem>
+								</SelectContent>
+							</Select>
+							<div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+								{hasServerFilters ? <span>{t("filters_active")}</span> : null}
+								{activeFilterCount > 0 ? (
+									<Button
+										variant="ghost"
+										size="sm"
+										className={ADMIN_CONTROL_HEIGHT_CLASS}
+										onClick={resetFilters}
+									>
+										{t("clear_filters")}
+									</Button>
+								) : null}
+							</div>
+						</>
+					}
+				/>
 				{loading ? (
-					<SkeletonTable columns={8} rows={6} />
+					<SkeletonTable columns={7} rows={6} />
 				) : users.length === 0 ? (
 					<EmptyState title={t("no_users")} />
+				) : users.length === 0 ? (
+					<EmptyState
+						icon={<Icon name="ListBullets" className="h-10 w-10" />}
+						title={t("no_filtered_users")}
+						description={t("no_filtered_users_desc")}
+						action={
+							<Button variant="outline" onClick={resetFilters}>
+								{t("clear_filters")}
+							</Button>
+						}
+					/>
 				) : (
 					<AdminSurface>
 						<ScrollArea className="min-h-0 flex-1">
@@ -406,91 +380,110 @@ export default function AdminUsersPage() {
 										<TableHead>{t("email")}</TableHead>
 										<TableHead className="w-32">{t("role")}</TableHead>
 										<TableHead className="w-32">{t("common:status")}</TableHead>
-										<TableHead className="w-40">{t("storage")}</TableHead>
-										<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
-											{t("policies")}
+										<TableHead className="w-[220px]">{t("storage")}</TableHead>
+										<TableHead className="w-20">
+											{t("common:actions")}
 										</TableHead>
-										<TableHead>{t("common:created_at")}</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
 									{users.map((user) => (
 										<TableRow key={user.id}>
-											<TableCell className="font-mono text-xs">
+											<TableCell className="font-mono text-xs text-muted-foreground">
 												{user.id}
 											</TableCell>
-											<TableCell className="font-medium">
-												{user.username}
-											</TableCell>
-											<TableCell className="text-muted-foreground">
-												{user.email}
+											<TableCell>
+												<button
+													type="button"
+													className="flex w-full min-w-0 items-center rounded-lg border border-transparent bg-muted/10 px-2 py-2 text-left transition-colors duration-200 hover:border-border hover:bg-muted/25 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+													onClick={() => setDetailDialogUserId(user.id)}
+												>
+													<div className="min-w-0">
+														<div className="truncate font-medium text-foreground">
+															{user.username}
+														</div>
+													</div>
+												</button>
 											</TableCell>
 											<TableCell>
-												<Select
-													value={user.role}
-													onValueChange={(v) =>
-														updateRole(user.id, v as UserRole)
-													}
+												<button
+													type="button"
+													className="flex w-full min-w-0 items-center rounded-lg border border-transparent bg-muted/10 px-2 py-2 text-left transition-colors duration-200 hover:border-border hover:bg-muted/25 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+													onClick={() => setDetailDialogUserId(user.id)}
 												>
-													<SelectTrigger
-														className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-24`}
+													<div className="truncate text-sm text-muted-foreground">
+														{user.email}
+													</div>
+												</button>
+											</TableCell>
+											<TableCell>
+												<button
+													type="button"
+													className="flex w-full items-center rounded-lg border border-transparent bg-muted/20 px-3 py-2 text-left transition-colors duration-200 hover:border-border hover:bg-muted/35 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+													onClick={() => setDetailDialogUserId(user.id)}
+												>
+													<Badge
+														variant="outline"
+														className={getRoleBadgeClass(user.role)}
 													>
-														<SelectValue />
-													</SelectTrigger>
-													<SelectContent>
-														<SelectItem value="admin">Admin</SelectItem>
-														<SelectItem value="user">User</SelectItem>
-													</SelectContent>
-												</Select>
+														{user.role === "admin" ? "Admin" : "User"}
+													</Badge>
+												</button>
 											</TableCell>
 											<TableCell>
-												<Select
-													value={user.status}
-													onValueChange={(v) =>
-														updateStatus(user.id, v as UserStatus)
-													}
+												<button
+													type="button"
+													className="flex w-full items-center rounded-lg border border-transparent bg-muted/20 px-3 py-2 text-left transition-colors duration-200 hover:border-border hover:bg-muted/35 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+													onClick={() => setDetailDialogUserId(user.id)}
 												>
-													<SelectTrigger
-														className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-28`}
+													<Badge
+														variant="outline"
+														className={getStatusBadgeClass(user.status)}
 													>
-														<SelectValue />
-													</SelectTrigger>
-													<SelectContent>
-														<SelectItem value="active">
-															<Badge
-																variant="outline"
-																className="border-green-600 text-green-600 dark:border-green-400 dark:text-green-400"
-															>
-																{t("common:active")}
-															</Badge>
-														</SelectItem>
-														<SelectItem value="disabled">
-															<Badge
-																variant="outline"
-																className="border-red-600 text-red-600 dark:border-red-400 dark:text-red-400"
-															>
-																{t("common:disabled_status")}
-															</Badge>
-														</SelectItem>
-													</SelectContent>
-												</Select>
+														{user.status === "active"
+															? t("common:active")
+															: t("common:disabled_status")}
+													</Badge>
+												</button>
 											</TableCell>
 											<TableCell>
-												<QuotaCell user={user} onUpdate={updateQuota} />
-											</TableCell>
-											<TableCell>
-												<Button
-													variant="ghost"
-													size="sm"
-													className={ADMIN_CONTROL_HEIGHT_CLASS}
-													onClick={() => setPolicyDialogUserId(user.id)}
+												<button
+													type="button"
+													className="w-full text-left"
+													onClick={() => setDetailDialogUserId(user.id)}
 												>
-													<Icon name="HardDrive" className="mr-1 h-3.5 w-3.5" />
-													{t("common:manage")}
-												</Button>
+													<QuotaCell user={user} />
+												</button>
 											</TableCell>
-											<TableCell className="text-muted-foreground text-xs">
-												{new Date(user.created_at).toLocaleDateString()}
+											<TableCell>
+												<div className="flex justify-end">
+													<TooltipProvider>
+														<Tooltip>
+															<TooltipTrigger>
+																<div>
+																	<Button
+																		variant="ghost"
+																		size="icon"
+																		className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
+																		onClick={() => setDeleteUserId(user.id)}
+																		aria-label={t("delete_user")}
+																		disabled={user.id === 1}
+																	>
+																		<Icon
+																			name="Trash"
+																			className="h-3.5 w-3.5"
+																		/>
+																	</Button>
+																</div>
+															</TooltipTrigger>
+															{user.id === 1 ? (
+																<TooltipContent>
+																	{t("initial_admin_delete_blocked")}
+																</TooltipContent>
+															) : null}
+														</Tooltip>
+													</TooltipProvider>
+												</div>
 											</TableCell>
 										</TableRow>
 									))}
@@ -499,16 +492,113 @@ export default function AdminUsersPage() {
 						</ScrollArea>
 					</AdminSurface>
 				)}
+
+				{total > 0 ? (
+					<div className="flex items-center justify-between gap-3 px-4 pb-4 text-sm text-muted-foreground md:px-6">
+						<div className="flex items-center gap-3">
+							<span>
+								{t("entries_page", {
+									total,
+									current: currentPage,
+									pages: totalPages,
+								})}
+							</span>
+							<Select
+								value={String(pageSize)}
+								onValueChange={handlePageSizeChange}
+							>
+								<SelectTrigger
+									className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-[120px]`}
+								>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									{USER_PAGE_SIZE_OPTIONS.map((size) => (
+										<SelectItem key={size} value={String(size)}>
+											{t("page_size_option", { count: size })}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+						<TooltipProvider>
+							<div className="flex items-center gap-2">
+								<Tooltip>
+									<TooltipTrigger
+										render={
+											<Button
+												variant="outline"
+												size="sm"
+												disabled={prevPageDisabled}
+												onClick={() =>
+													setOffset(Math.max(0, offset - pageSize))
+												}
+											/>
+										}
+									>
+										<Icon name="CaretLeft" className="h-4 w-4" />
+									</TooltipTrigger>
+									{prevPageDisabled ? (
+										<TooltipContent>
+											{t("pagination_prev_disabled")}
+										</TooltipContent>
+									) : null}
+								</Tooltip>
+								<Tooltip>
+									<TooltipTrigger
+										render={
+											<Button
+												variant="outline"
+												size="sm"
+												disabled={nextPageDisabled}
+												onClick={() => setOffset(offset + pageSize)}
+											/>
+										}
+									>
+										<Icon name="CaretRight" className="h-4 w-4" />
+									</TooltipTrigger>
+									{nextPageDisabled ? (
+										<TooltipContent>
+											{t("pagination_next_disabled")}
+										</TooltipContent>
+									) : null}
+								</Tooltip>
+							</div>
+						</TooltipProvider>
+					</div>
+				) : null}
 			</AdminPageShell>
-			{policyDialogUserId !== null && (
-				<UserPolicyDialog
-					userId={policyDialogUserId}
-					open={true}
-					onOpenChange={(open) => {
-						if (!open) setPolicyDialogUserId(null);
-					}}
-				/>
-			)}
+			<UserDetailDialog
+				user={selectedUser}
+				open={detailDialogUserId !== null}
+				onOpenChange={(open) => {
+					if (!open) setDetailDialogUserId(null);
+				}}
+				onUpdateRole={updateRole}
+				onUpdateStatus={updateStatus}
+				onUpdateQuota={updateQuota}
+			/>
+			<ConfirmDialog
+				open={deleteUserId !== null}
+				onOpenChange={(open) => {
+					if (!open) setDeleteUserId(null);
+				}}
+				title={t("delete_user")}
+				description={
+					deleteTargetUser?.id === 1
+						? t("initial_admin_delete_blocked")
+						: t("confirm_force_delete")
+				}
+				confirmLabel={t("common:delete")}
+				onConfirm={() => {
+					const id = deleteUserId;
+					setDeleteUserId(null);
+					if (id !== null && id !== 1) {
+						void deleteUser(id);
+					}
+				}}
+				variant="destructive"
+			/>
 		</AdminLayout>
 	);
 }

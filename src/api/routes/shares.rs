@@ -1,5 +1,6 @@
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
+use crate::api::pagination::{LimitOffsetQuery, OffsetPage};
 use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
@@ -84,8 +85,9 @@ pub async fn create_share(
     path = "/api/v1/shares",
     tag = "shares",
     operation_id = "list_my_shares",
+    params(LimitOffsetQuery),
     responses(
-        (status = 200, description = "My shares", body = inline(ApiResponse<Vec<crate::entities::share::Model>>)),
+        (status = 200, description = "My shares", body = inline(ApiResponse<OffsetPage<crate::entities::share::Model>>)),
         (status = 401, description = "Unauthorized"),
     ),
     security(("bearer" = [])),
@@ -93,8 +95,15 @@ pub async fn create_share(
 pub async fn list_shares(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
-    let shares = share_service::list_my_shares(&state, claims.user_id).await?;
+    let shares = share_service::list_my_shares_paginated(
+        &state,
+        claims.user_id,
+        query.limit_or(50, 100),
+        query.offset(),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(shares)))
 }
 

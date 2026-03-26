@@ -22,7 +22,7 @@ async fn test_policy_delete_with_blobs_rejected() {
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
-    let policy_id = body["data"][0]["id"].as_i64().unwrap();
+    let policy_id = body["data"]["items"][0]["id"].as_i64().unwrap();
 
     // 尝试删除策略 → 应被拒绝（有 blob 引用）
     let req = test::TestRequest::delete()
@@ -84,7 +84,7 @@ async fn test_force_delete_user() {
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
-    let users = body["data"].as_array().unwrap();
+    let users = body["data"]["items"].as_array().unwrap();
     let victim_id = users.iter().find(|u| u["username"] == "victim").unwrap()["id"]
         .as_i64()
         .unwrap();
@@ -160,7 +160,7 @@ async fn test_cannot_delete_admin_role() {
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
-    let users = body["data"].as_array().unwrap();
+    let users = body["data"]["items"].as_array().unwrap();
     let admin2_id = users.iter().find(|u| u["username"] == "admin2").unwrap()["id"]
         .as_i64()
         .unwrap();

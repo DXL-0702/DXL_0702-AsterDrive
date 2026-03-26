@@ -1150,16 +1150,6 @@ export interface components {
             /** Format: int64 */
             user_id: number;
         };
-        /** @description Admin 分页查询 */
-        AuditLogPage: {
-            items: components["schemas"]["AuditLogEntry"][];
-            /** Format: int64 */
-            limit: number;
-            /** Format: int64 */
-            offset: number;
-            /** Format: int64 */
-            total: number;
-        };
         BatchCopyReq: {
             file_ids?: number[];
             folder_ids?: number[];
@@ -1402,9 +1392,209 @@ export interface components {
             total_chunks?: number | null;
             upload_id?: string | null;
         };
+        LimitOffsetQuery: {
+            /** Format: int64 */
+            limit?: number | null;
+            /** Format: int64 */
+            offset?: number | null;
+        };
         LoginReq: {
             identifier: string;
             password: string;
+        };
+        OffsetPage_AuditLogEntry: {
+            items: {
+                action: string;
+                created_at: string;
+                details?: string | null;
+                /** Format: int64 */
+                entity_id?: number | null;
+                entity_name?: string | null;
+                entity_type?: string | null;
+                /** Format: int64 */
+                id: number;
+                ip_address?: string | null;
+                user_agent?: string | null;
+                /** Format: int64 */
+                user_id: number;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
+        };
+        OffsetPage_ResourceLock: {
+            items: {
+                created_at: string;
+                deep: boolean;
+                /** Format: int64 */
+                entity_id: number;
+                entity_type: components["schemas"]["EntityType"];
+                /** Format: int64 */
+                id: number;
+                /** Format: int64 */
+                owner_id?: number | null;
+                owner_info?: string | null;
+                path: string;
+                shared: boolean;
+                timeout_at?: string | null;
+                token: string;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
+        };
+        OffsetPage_ShareInfo: {
+            items: {
+                created_at: string;
+                /** Format: int64 */
+                download_count: number;
+                expires_at?: string | null;
+                /** Format: int64 */
+                file_id?: number | null;
+                /** Format: int64 */
+                folder_id?: number | null;
+                /** Format: int64 */
+                id: number;
+                /** Format: int64 */
+                max_downloads: number;
+                token: string;
+                updated_at: string;
+                /** Format: int64 */
+                user_id: number;
+                /** Format: int64 */
+                view_count: number;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
+        };
+        OffsetPage_StoragePolicy: {
+            items: {
+                allowed_types: string;
+                base_path: string;
+                bucket: string;
+                /** Format: int64 */
+                chunk_size: number;
+                created_at: string;
+                driver_type: components["schemas"]["DriverType"];
+                endpoint: string;
+                /** Format: int64 */
+                id: number;
+                is_default: boolean;
+                /** Format: int64 */
+                max_file_size: number;
+                name: string;
+                options: string;
+                updated_at: string;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
+        };
+        OffsetPage_SystemConfig: {
+            items: {
+                /** @description 分类（前端分组用） */
+                category?: string;
+                /** @description 描述 */
+                description?: string;
+                /** Format: int64 */
+                id: number;
+                /** @description 是否敏感值（前端脱敏显示） */
+                is_sensitive?: boolean;
+                key: string;
+                /** @description 自定义配置的命名空间，系统配置为 "" */
+                namespace?: string;
+                /** @description 修改后是否需要重启才生效 */
+                requires_restart?: boolean;
+                /** @description 来源：system（代码定义）/ custom（用户创建） */
+                source?: string;
+                updated_at: string;
+                /** Format: int64 */
+                updated_by?: number | null;
+                value: string;
+                /** @description 值类型：string / number / boolean */
+                value_type?: string;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
+        };
+        OffsetPage_UserInfo: {
+            items: {
+                created_at: string;
+                email: string;
+                /** Format: int64 */
+                id: number;
+                role: components["schemas"]["UserRole"];
+                status: components["schemas"]["UserStatus"];
+                /** Format: int64 */
+                storage_quota: number;
+                /** Format: int64 */
+                storage_used: number;
+                updated_at: string;
+                username: string;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
+        };
+        OffsetPage_UserStoragePolicy: {
+            items: {
+                created_at: string;
+                /** Format: int64 */
+                id: number;
+                is_default: boolean;
+                /** Format: int64 */
+                policy_id: number;
+                /** Format: int64 */
+                quota_bytes: number;
+                /** Format: int64 */
+                user_id: number;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
+        };
+        OffsetPage_WebdavAccountInfo: {
+            items: {
+                created_at: string;
+                /** Format: int64 */
+                id: number;
+                is_active: boolean;
+                /** Format: int64 */
+                root_folder_id?: number | null;
+                /** @description 文件夹路径，如 "/Documents/Photos"，None 表示全部访问 */
+                root_folder_path?: string | null;
+                updated_at: string;
+                username: string;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
         };
         PatchFileReq: {
             /** Format: int64 */
@@ -1800,13 +1990,13 @@ export interface operations {
     list_audit_logs: {
         parameters: {
             query?: {
+                limit?: number | null;
+                offset?: number | null;
                 user_id?: number | null;
                 action?: string | null;
                 entity_type?: string | null;
                 after?: string | null;
                 before?: string | null;
-                limit?: number | null;
-                offset?: number | null;
             };
             header?: never;
             path?: never;
@@ -1822,9 +2012,22 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
-                        /** @description Admin 分页查询 */
                         data?: {
-                            items: components["schemas"]["AuditLogEntry"][];
+                            items: {
+                                action: string;
+                                created_at: string;
+                                details?: string | null;
+                                /** Format: int64 */
+                                entity_id?: number | null;
+                                entity_name?: string | null;
+                                entity_type?: string | null;
+                                /** Format: int64 */
+                                id: number;
+                                ip_address?: string | null;
+                                user_agent?: string | null;
+                                /** Format: int64 */
+                                user_id: number;
+                            }[];
                             /** Format: int64 */
                             limit: number;
                             /** Format: int64 */
@@ -1854,14 +2057,17 @@ export interface operations {
     };
     list_config: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description List all config entries */
+            /** @description List config entries */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1870,28 +2076,36 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            /** @description 分类（前端分组用） */
-                            category?: string;
-                            /** @description 描述 */
-                            description?: string;
+                            items: {
+                                /** @description 分类（前端分组用） */
+                                category?: string;
+                                /** @description 描述 */
+                                description?: string;
+                                /** Format: int64 */
+                                id: number;
+                                /** @description 是否敏感值（前端脱敏显示） */
+                                is_sensitive?: boolean;
+                                key: string;
+                                /** @description 自定义配置的命名空间，系统配置为 "" */
+                                namespace?: string;
+                                /** @description 修改后是否需要重启才生效 */
+                                requires_restart?: boolean;
+                                /** @description 来源：system（代码定义）/ custom（用户创建） */
+                                source?: string;
+                                updated_at: string;
+                                /** Format: int64 */
+                                updated_by?: number | null;
+                                value: string;
+                                /** @description 值类型：string / number / boolean */
+                                value_type?: string;
+                            }[];
                             /** Format: int64 */
-                            id: number;
-                            /** @description 是否敏感值（前端脱敏显示） */
-                            is_sensitive?: boolean;
-                            key: string;
-                            /** @description 自定义配置的命名空间，系统配置为 "" */
-                            namespace?: string;
-                            /** @description 修改后是否需要重启才生效 */
-                            requires_restart?: boolean;
-                            /** @description 来源：system（代码定义）/ custom（用户创建） */
-                            source?: string;
-                            updated_at: string;
+                            limit: number;
                             /** Format: int64 */
-                            updated_by?: number | null;
-                            value: string;
-                            /** @description 值类型：string / number / boolean */
-                            value_type?: string;
-                        }[];
+                            offset: number;
+                            /** Format: int64 */
+                            total: number;
+                        };
                         msg: string;
                     };
                 };
@@ -2139,7 +2353,10 @@ export interface operations {
     };
     list_locks: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2155,21 +2372,29 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            created_at: string;
-                            deep: boolean;
+                            items: {
+                                created_at: string;
+                                deep: boolean;
+                                /** Format: int64 */
+                                entity_id: number;
+                                entity_type: components["schemas"]["EntityType"];
+                                /** Format: int64 */
+                                id: number;
+                                /** Format: int64 */
+                                owner_id?: number | null;
+                                owner_info?: string | null;
+                                path: string;
+                                shared: boolean;
+                                timeout_at?: string | null;
+                                token: string;
+                            }[];
                             /** Format: int64 */
-                            entity_id: number;
-                            entity_type: components["schemas"]["EntityType"];
+                            limit: number;
                             /** Format: int64 */
-                            id: number;
+                            offset: number;
                             /** Format: int64 */
-                            owner_id?: number | null;
-                            owner_info?: string | null;
-                            path: string;
-                            shared: boolean;
-                            timeout_at?: string | null;
-                            token: string;
-                        }[];
+                            total: number;
+                        };
                         msg: string;
                     };
                 };
@@ -2245,14 +2470,17 @@ export interface operations {
     };
     list_policies: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description List all storage policies */
+            /** @description List storage policies */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2261,23 +2489,31 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            allowed_types: string;
-                            base_path: string;
-                            bucket: string;
+                            items: {
+                                allowed_types: string;
+                                base_path: string;
+                                bucket: string;
+                                /** Format: int64 */
+                                chunk_size: number;
+                                created_at: string;
+                                driver_type: components["schemas"]["DriverType"];
+                                endpoint: string;
+                                /** Format: int64 */
+                                id: number;
+                                is_default: boolean;
+                                /** Format: int64 */
+                                max_file_size: number;
+                                name: string;
+                                options: string;
+                                updated_at: string;
+                            }[];
                             /** Format: int64 */
-                            chunk_size: number;
-                            created_at: string;
-                            driver_type: components["schemas"]["DriverType"];
-                            endpoint: string;
+                            limit: number;
                             /** Format: int64 */
-                            id: number;
-                            is_default: boolean;
+                            offset: number;
                             /** Format: int64 */
-                            max_file_size: number;
-                            name: string;
-                            options: string;
-                            updated_at: string;
-                        }[];
+                            total: number;
+                        };
                         msg: string;
                     };
                 };
@@ -2606,7 +2842,10 @@ export interface operations {
     };
     list_all_shares: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -2622,25 +2861,33 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            created_at: string;
+                            items: {
+                                created_at: string;
+                                /** Format: int64 */
+                                download_count: number;
+                                expires_at?: string | null;
+                                /** Format: int64 */
+                                file_id?: number | null;
+                                /** Format: int64 */
+                                folder_id?: number | null;
+                                /** Format: int64 */
+                                id: number;
+                                /** Format: int64 */
+                                max_downloads: number;
+                                token: string;
+                                updated_at: string;
+                                /** Format: int64 */
+                                user_id: number;
+                                /** Format: int64 */
+                                view_count: number;
+                            }[];
                             /** Format: int64 */
-                            download_count: number;
-                            expires_at?: string | null;
+                            limit: number;
                             /** Format: int64 */
-                            file_id?: number | null;
+                            offset: number;
                             /** Format: int64 */
-                            folder_id?: number | null;
-                            /** Format: int64 */
-                            id: number;
-                            /** Format: int64 */
-                            max_downloads: number;
-                            token: string;
-                            updated_at: string;
-                            /** Format: int64 */
-                            user_id: number;
-                            /** Format: int64 */
-                            view_count: number;
-                        }[];
+                            total: number;
+                        };
                         msg: string;
                     };
                 };
@@ -2705,14 +2952,20 @@ export interface operations {
     };
     list_users: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+                keyword?: string | null;
+                role?: null | components["schemas"]["UserRole"];
+                status?: null | components["schemas"]["UserStatus"];
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description List all users */
+            /** @description List users */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -2721,19 +2974,27 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            created_at: string;
-                            email: string;
+                            items: {
+                                created_at: string;
+                                email: string;
+                                /** Format: int64 */
+                                id: number;
+                                role: components["schemas"]["UserRole"];
+                                status: components["schemas"]["UserStatus"];
+                                /** Format: int64 */
+                                storage_quota: number;
+                                /** Format: int64 */
+                                storage_used: number;
+                                updated_at: string;
+                                username: string;
+                            }[];
                             /** Format: int64 */
-                            id: number;
-                            role: components["schemas"]["UserRole"];
-                            status: components["schemas"]["UserStatus"];
+                            limit: number;
                             /** Format: int64 */
-                            storage_quota: number;
+                            offset: number;
                             /** Format: int64 */
-                            storage_used: number;
-                            updated_at: string;
-                            username: string;
-                        }[];
+                            total: number;
+                        };
                         msg: string;
                     };
                 };
@@ -2931,7 +3192,10 @@ export interface operations {
     };
     list_user_policies: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
             header?: never;
             path: {
                 /** @description User ID */
@@ -2950,17 +3214,25 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            created_at: string;
+                            items: {
+                                created_at: string;
+                                /** Format: int64 */
+                                id: number;
+                                is_default: boolean;
+                                /** Format: int64 */
+                                policy_id: number;
+                                /** Format: int64 */
+                                quota_bytes: number;
+                                /** Format: int64 */
+                                user_id: number;
+                            }[];
                             /** Format: int64 */
-                            id: number;
-                            is_default: boolean;
+                            limit: number;
                             /** Format: int64 */
-                            policy_id: number;
+                            offset: number;
                             /** Format: int64 */
-                            quota_bytes: number;
-                            /** Format: int64 */
-                            user_id: number;
-                        }[];
+                            total: number;
+                        };
                         msg: string;
                     };
                 };
@@ -5533,7 +5805,10 @@ export interface operations {
     };
     list_my_shares: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5549,25 +5824,33 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            created_at: string;
+                            items: {
+                                created_at: string;
+                                /** Format: int64 */
+                                download_count: number;
+                                expires_at?: string | null;
+                                /** Format: int64 */
+                                file_id?: number | null;
+                                /** Format: int64 */
+                                folder_id?: number | null;
+                                /** Format: int64 */
+                                id: number;
+                                /** Format: int64 */
+                                max_downloads: number;
+                                token: string;
+                                updated_at: string;
+                                /** Format: int64 */
+                                user_id: number;
+                                /** Format: int64 */
+                                view_count: number;
+                            }[];
                             /** Format: int64 */
-                            download_count: number;
-                            expires_at?: string | null;
+                            limit: number;
                             /** Format: int64 */
-                            file_id?: number | null;
+                            offset: number;
                             /** Format: int64 */
-                            folder_id?: number | null;
-                            /** Format: int64 */
-                            id: number;
-                            /** Format: int64 */
-                            max_downloads: number;
-                            token: string;
-                            updated_at: string;
-                            /** Format: int64 */
-                            user_id: number;
-                            /** Format: int64 */
-                            view_count: number;
-                        }[];
+                            total: number;
+                        };
                         msg: string;
                     };
                 };
@@ -5821,7 +6104,10 @@ export interface operations {
     };
     list_webdav_accounts: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -5837,17 +6123,25 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            created_at: string;
+                            items: {
+                                created_at: string;
+                                /** Format: int64 */
+                                id: number;
+                                is_active: boolean;
+                                /** Format: int64 */
+                                root_folder_id?: number | null;
+                                /** @description 文件夹路径，如 "/Documents/Photos"，None 表示全部访问 */
+                                root_folder_path?: string | null;
+                                updated_at: string;
+                                username: string;
+                            }[];
                             /** Format: int64 */
-                            id: number;
-                            is_active: boolean;
+                            limit: number;
                             /** Format: int64 */
-                            root_folder_id?: number | null;
-                            /** @description 文件夹路径，如 "/Documents/Photos"，None 表示全部访问 */
-                            root_folder_path?: string | null;
-                            updated_at: string;
-                            username: string;
-                        }[];
+                            offset: number;
+                            /** Format: int64 */
+                            total: number;
+                        };
                         msg: string;
                     };
                 };

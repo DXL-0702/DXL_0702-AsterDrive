@@ -1,7 +1,9 @@
+use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::share::{self, Entity as Share};
 use crate::errors::{AsterError, Result};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder,
+    sea_query::Expr,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<share::Model> {
@@ -26,13 +28,49 @@ pub async fn find_by_token<C: ConnectionTrait>(
 pub async fn find_by_user<C: ConnectionTrait>(db: &C, user_id: i64) -> Result<Vec<share::Model>> {
     Share::find()
         .filter(share::Column::UserId.eq(user_id))
+        .order_by_desc(share::Column::CreatedAt)
         .all(db)
         .await
         .map_err(AsterError::from)
 }
 
+pub async fn find_by_user_paginated<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<share::Model>, u64)> {
+    fetch_offset_page(
+        db,
+        Share::find()
+            .filter(share::Column::UserId.eq(user_id))
+            .order_by_desc(share::Column::CreatedAt),
+        limit,
+        offset,
+    )
+    .await
+}
+
 pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<share::Model>> {
-    Share::find().all(db).await.map_err(AsterError::from)
+    Share::find()
+        .order_by_desc(share::Column::CreatedAt)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_paginated<C: ConnectionTrait>(
+    db: &C,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<share::Model>, u64)> {
+    fetch_offset_page(
+        db,
+        Share::find().order_by_desc(share::Column::CreatedAt),
+        limit,
+        offset,
+    )
+    .await
 }
 
 /// 查找用户对同一资源是否已有活跃分享

@@ -1,6 +1,7 @@
 use chrono::Utc;
 use sea_orm::{ConnectionTrait, Set, TransactionTrait};
 use serde::Serialize;
+use std::collections::{HashMap, HashSet};
 use utoipa::ToSchema;
 
 use crate::db::repository::{file_repo, folder_repo};
@@ -105,6 +106,95 @@ async fn ensure_folder_in_parent<C: ConnectionTrait>(
             }
         }
     }
+}
+
+async fn load_folder_chain_map(
+    db: &sea_orm::DatabaseConnection,
+    folder_ids: &[i64],
+) -> Result<HashMap<i64, folder::Model>> {
+    let mut loaded = HashMap::new();
+    let mut frontier: Vec<i64> = folder_ids.to_vec();
+
+    while !frontier.is_empty() {
+        frontier.retain(|id| !loaded.contains_key(id));
+        frontier.sort_unstable();
+        frontier.dedup();
+        if frontier.is_empty() {
+            break;
+        }
+
+        let rows = folder_repo::find_by_ids(db, &frontier).await?;
+        let mut found = HashSet::with_capacity(rows.len());
+        let mut next = Vec::new();
+
+        for row in rows {
+            found.insert(row.id);
+            if let Some(pid) = row.parent_id
+                && !loaded.contains_key(&pid)
+            {
+                next.push(pid);
+            }
+            loaded.insert(row.id, row);
+        }
+
+        if let Some(missing) = frontier.iter().find(|id| !found.contains(id)) {
+            return Err(AsterError::record_not_found(format!("folder #{missing}")));
+        }
+
+        frontier = next;
+    }
+
+    Ok(loaded)
+}
+
+pub async fn build_folder_paths(
+    db: &sea_orm::DatabaseConnection,
+    folder_ids: &[i64],
+) -> Result<HashMap<i64, String>> {
+    let chain_map = load_folder_chain_map(db, folder_ids).await?;
+    let mut paths = HashMap::with_capacity(folder_ids.len());
+
+    for &folder_id in folder_ids {
+        let mut parts = Vec::new();
+        let mut current_id = Some(folder_id);
+        while let Some(id) = current_id {
+            let folder = chain_map
+                .get(&id)
+                .ok_or_else(|| AsterError::record_not_found(format!("folder #{id}")))?;
+            parts.push(folder.name.clone());
+            current_id = folder.parent_id;
+        }
+        parts.reverse();
+        paths.insert(folder_id, format!("/{}", parts.join("/")));
+    }
+
+    Ok(paths)
+}
+
+pub async fn verify_folder_in_scope(
+    db: &sea_orm::DatabaseConnection,
+    folder_id: i64,
+    root_folder_id: i64,
+) -> Result<()> {
+    if folder_id == root_folder_id {
+        return Ok(());
+    }
+
+    let chain_map = load_folder_chain_map(db, &[folder_id]).await?;
+    let mut current_id = Some(folder_id);
+    while let Some(id) = current_id {
+        let folder = chain_map
+            .get(&id)
+            .ok_or_else(|| AsterError::record_not_found(format!("folder #{id}")))?;
+        if folder.parent_id == Some(root_folder_id) {
+            return Ok(());
+        }
+        current_id = folder.parent_id;
+    }
+
+    Err(AsterError::auth_forbidden(
+        "folder is outside shared folder scope",
+    ))
 }
 
 /// 校验目标文件夹存在、归属当前用户且未被删除

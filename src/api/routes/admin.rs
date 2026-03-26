@@ -1,5 +1,6 @@
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
+use crate::api::pagination::{LimitOffsetQuery, OffsetPage};
 use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
@@ -78,8 +79,9 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
     path = "/api/v1/admin/policies",
     tag = "admin",
     operation_id = "list_policies",
+    params(LimitOffsetQuery),
     responses(
-        (status = 200, description = "List all storage policies", body = inline(ApiResponse<Vec<crate::entities::storage_policy::Model>>)),
+        (status = 200, description = "List storage policies", body = inline(ApiResponse<OffsetPage<crate::entities::storage_policy::Model>>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -88,9 +90,11 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
 pub async fn list_policies(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let policies = policy_service::list_all(&state).await?;
+    let policies =
+        policy_service::list_paginated(&state, query.limit_or(50, 100), query.offset()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policies)))
 }
 
@@ -311,13 +315,21 @@ pub async fn test_policy_params(
 
 // ── Users ────────────────────────────────────────────────────────────
 
+#[derive(Deserialize, IntoParams)]
+pub struct AdminUserListQuery {
+    pub keyword: Option<String>,
+    pub role: Option<UserRole>,
+    pub status: Option<UserStatus>,
+}
+
 #[utoipa::path(
     get,
     path = "/api/v1/admin/users",
     tag = "admin",
     operation_id = "list_users",
+    params(LimitOffsetQuery, AdminUserListQuery),
     responses(
-        (status = 200, description = "List all users", body = inline(ApiResponse<Vec<crate::entities::user::Model>>)),
+        (status = 200, description = "List users", body = inline(ApiResponse<OffsetPage<crate::entities::user::Model>>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -326,9 +338,19 @@ pub async fn test_policy_params(
 pub async fn list_users(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    page: web::Query<LimitOffsetQuery>,
+    query: web::Query<AdminUserListQuery>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let users = user_service::list_all(&state).await?;
+    let users = user_service::list_paginated(
+        &state,
+        page.limit_or(50, 100),
+        page.offset(),
+        query.keyword.as_deref(),
+        query.role,
+        query.status,
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(users)))
 }
 
@@ -387,25 +409,6 @@ pub async fn update_user(
     require_admin(&claims)?;
     let target_id = *path;
     let body = body.into_inner();
-
-    // 禁止降级或禁用初始管理员 (id=1)
-    if target_id == 1 {
-        if let Some(ref status) = body.status
-            && !status.is_active()
-        {
-            return Err(crate::errors::AsterError::validation_error(
-                "cannot disable the initial admin account",
-            ));
-        }
-        if let Some(ref role) = body.role
-            && !role.is_admin()
-        {
-            return Err(crate::errors::AsterError::validation_error(
-                "cannot demote the initial admin account",
-            ));
-        }
-    }
-
     let user = user_service::update(
         &state,
         target_id,
@@ -414,13 +417,6 @@ pub async fn update_user(
         body.storage_quota,
     )
     .await?;
-
-    // 主动失效用户状态缓存（禁用用户立即生效）
-    state
-        .cache
-        .delete(&format!("user_status:{target_id}"))
-        .await;
-
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }
 
@@ -467,9 +463,9 @@ pub struct UserPolicyItemPath {
     path = "/api/v1/admin/users/{user_id}/policies",
     tag = "admin",
     operation_id = "list_user_policies",
-    params(("user_id" = i64, Path, description = "User ID")),
+    params(("user_id" = i64, Path, description = "User ID"), LimitOffsetQuery),
     responses(
-        (status = 200, description = "User policy assignments", body = inline(ApiResponse<Vec<crate::entities::user_storage_policy::Model>>)),
+        (status = 200, description = "User policy assignments", body = inline(ApiResponse<OffsetPage<crate::entities::user_storage_policy::Model>>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -479,9 +475,16 @@ pub async fn list_user_policies(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
     path: web::Path<UserPolicyPath>,
+    query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let policies = policy_service::list_user_policies(&state, path.user_id).await?;
+    let policies = policy_service::list_user_policies_paginated(
+        &state,
+        path.user_id,
+        query.limit_or(50, 100),
+        query.offset(),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policies)))
 }
 
@@ -598,8 +601,9 @@ pub async fn remove_user_policy(
     path = "/api/v1/admin/shares",
     tag = "admin",
     operation_id = "list_all_shares",
+    params(LimitOffsetQuery),
     responses(
-        (status = 200, description = "All shares", body = inline(ApiResponse<Vec<crate::entities::share::Model>>)),
+        (status = 200, description = "All shares", body = inline(ApiResponse<OffsetPage<crate::entities::share::Model>>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -608,9 +612,11 @@ pub async fn remove_user_policy(
 pub async fn list_all_shares(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let shares = share_service::list_all(&state).await?;
+    let shares =
+        share_service::list_paginated(&state, query.limit_or(50, 100), query.offset()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(shares)))
 }
 
@@ -645,8 +651,9 @@ pub async fn admin_delete_share(
     path = "/api/v1/admin/config",
     tag = "admin",
     operation_id = "list_config",
+    params(LimitOffsetQuery),
     responses(
-        (status = 200, description = "List all config entries", body = inline(ApiResponse<Vec<crate::entities::system_config::Model>>)),
+        (status = 200, description = "List config entries", body = inline(ApiResponse<OffsetPage<crate::entities::system_config::Model>>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -655,9 +662,11 @@ pub async fn admin_delete_share(
 pub async fn list_config(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let configs = config_service::list_all(&state).await?;
+    let configs =
+        config_service::list_paginated(&state, query.limit_or(50, 100), query.offset()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(configs)))
 }
 
@@ -753,18 +762,9 @@ pub async fn set_config(
     body: web::Json<SetConfigReq>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let config = config_service::set(&state, &path, &body.value, claims.user_id).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    audit_service::log(
-        &state,
-        &ctx,
-        "config_update",
-        None,
-        None,
-        Some(&path),
-        Some(serde_json::json!({ "value": body.value })),
-    )
-    .await;
+    let config =
+        config_service::set_with_audit(&state, &path, &body.value, claims.user_id, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(config)))
 }
 
@@ -801,8 +801,9 @@ pub async fn delete_config(
     path = "/api/v1/admin/locks",
     tag = "admin",
     operation_id = "list_locks",
+    params(LimitOffsetQuery),
     responses(
-        (status = 200, description = "All WebDAV locks", body = inline(ApiResponse<Vec<crate::entities::resource_lock::Model>>)),
+        (status = 200, description = "All WebDAV locks", body = inline(ApiResponse<OffsetPage<crate::entities::resource_lock::Model>>)),
         (status = 403, description = "Admin required"),
     ),
     security(("bearer" = [])),
@@ -810,9 +811,15 @@ pub async fn delete_config(
 pub async fn list_locks(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let locks = crate::db::repository::lock_repo::find_all(&state.db).await?;
+    let locks = crate::services::lock_service::list_paginated(
+        &state,
+        query.limit_or(50, 100),
+        query.offset(),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(locks)))
 }
 
@@ -861,25 +868,14 @@ pub async fn cleanup_expired_locks(
 
 // ── Audit Logs ─────────────────────────────────────────────────────
 
-#[derive(Deserialize, IntoParams)]
-pub struct AuditLogQuery {
-    pub user_id: Option<i64>,
-    pub action: Option<String>,
-    pub entity_type: Option<String>,
-    pub after: Option<String>,
-    pub before: Option<String>,
-    pub limit: Option<u64>,
-    pub offset: Option<u64>,
-}
-
 #[utoipa::path(
     get,
     path = "/api/v1/admin/audit-logs",
     tag = "admin",
     operation_id = "list_audit_logs",
-    params(AuditLogQuery),
+    params(LimitOffsetQuery, audit_service::AuditLogFilterQuery),
     responses(
-        (status = 200, description = "Audit log entries", body = inline(ApiResponse<audit_service::AuditLogPage>)),
+        (status = 200, description = "Audit log entries", body = inline(ApiResponse<OffsetPage<crate::entities::audit_log::Model>>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -888,32 +884,13 @@ pub struct AuditLogQuery {
 pub async fn list_audit_logs(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
-    query: web::Query<AuditLogQuery>,
+    page: web::Query<LimitOffsetQuery>,
+    query: web::Query<audit_service::AuditLogFilterQuery>,
 ) -> Result<HttpResponse> {
     require_admin(&claims)?;
 
-    let after = query
-        .after
-        .as_deref()
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&chrono::Utc));
-    let before = query
-        .before
-        .as_deref()
-        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-        .map(|dt| dt.with_timezone(&chrono::Utc));
-
-    let page = audit_service::query(
-        &state,
-        query.user_id,
-        query.action.as_deref(),
-        query.entity_type.as_deref(),
-        after,
-        before,
-        query.limit.unwrap_or(50),
-        query.offset.unwrap_or(0),
-    )
-    .await?;
+    let filters = audit_service::AuditLogFilters::from_query(&query);
+    let page = audit_service::query(&state, filters, page.limit_or(50, 200), page.offset()).await?;
 
     Ok(HttpResponse::Ok().json(ApiResponse::ok(page)))
 }

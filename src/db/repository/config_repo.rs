@@ -1,11 +1,32 @@
 use crate::config::definitions::ALL_CONFIGS;
+use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::system_config::{self, Entity as SystemConfig};
 use crate::errors::{AsterError, Result};
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,
+};
 
 pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<system_config::Model>> {
-    SystemConfig::find().all(db).await.map_err(AsterError::from)
+    SystemConfig::find()
+        .order_by_asc(system_config::Column::Id)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_paginated<C: ConnectionTrait>(
+    db: &C,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<system_config::Model>, u64)> {
+    fetch_offset_page(
+        db,
+        SystemConfig::find().order_by_asc(system_config::Column::Id),
+        limit,
+        offset,
+    )
+    .await
 }
 
 pub async fn find_by_key<C: ConnectionTrait>(

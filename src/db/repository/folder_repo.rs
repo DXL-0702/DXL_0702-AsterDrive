@@ -15,6 +15,17 @@ pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<folder::M
         .ok_or_else(|| AsterError::record_not_found(format!("folder #{id}")))
 }
 
+pub async fn find_by_ids<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<Vec<folder::Model>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    Folder::find()
+        .filter(folder::Column::Id.is_in(ids.iter().copied()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 /// 查询子文件夹（排除已删除）
 pub async fn find_children<C: ConnectionTrait>(
     db: &C,

@@ -1,0 +1,539 @@
+import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { toast } from "sonner";
+import { SkeletonTable } from "@/components/common/SkeletonTable";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
+import { Icon } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { handleApiError } from "@/hooks/useApiError";
+import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
+import { formatBytes, formatDateAbsolute } from "@/lib/format";
+import {
+	adminPolicyService,
+	adminUserPolicyService,
+} from "@/services/adminService";
+import type {
+	StoragePolicy,
+	UserInfo,
+	UserRole,
+	UserStatus,
+	UserStoragePolicy,
+} from "@/types/api";
+
+const POLICY_PAGE_SIZE = 100;
+
+function getRoleBadgeClass(role: UserRole) {
+	return role === "admin"
+		? "border-blue-500/60 bg-blue-500/10 text-blue-600 dark:text-blue-300"
+		: "border-border bg-muted/40 text-muted-foreground";
+}
+
+function getStatusBadgeClass(status: UserStatus) {
+	return status === "active"
+		? "border-green-500/60 bg-green-500/10 text-green-600 dark:text-green-300"
+		: "border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-300";
+}
+
+interface UserDetailDialogProps {
+	user: UserInfo | null;
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	onUpdateRole: (id: number, role: UserRole) => Promise<void>;
+	onUpdateStatus: (id: number, status: UserStatus) => Promise<void>;
+	onUpdateQuota: (id: number, quota: number) => Promise<void>;
+}
+
+export function UserDetailDialog({
+	user,
+	open,
+	onOpenChange,
+	onUpdateRole,
+	onUpdateStatus,
+	onUpdateQuota,
+}: UserDetailDialogProps) {
+	const { t } = useTranslation("admin");
+	const [quotaValue, setQuotaValue] = useState("");
+	const [assignments, setAssignments] = useState<UserStoragePolicy[]>([]);
+	const [policies, setPolicies] = useState<StoragePolicy[]>([]);
+	const [policiesLoading, setPoliciesLoading] = useState(true);
+	const [addPolicyId, setAddPolicyId] = useState<number | null>(null);
+	const [addQuota, setAddQuota] = useState("");
+	const [addDefault, setAddDefault] = useState(false);
+
+	useEffect(() => {
+		if (!user) {
+			setQuotaValue("");
+			setAssignments([]);
+			setPolicies([]);
+			setPoliciesLoading(true);
+			setAddPolicyId(null);
+			setAddQuota("");
+			setAddDefault(false);
+			return;
+		}
+		setQuotaValue(
+			user.storage_quota > 0
+				? String(Math.round(user.storage_quota / 1024 / 1024))
+				: "0",
+		);
+	}, [user]);
+
+	const loadPolicies = useCallback(async () => {
+		if (!user) return;
+		try {
+			setPoliciesLoading(true);
+			const [a, p] = await Promise.all([
+				adminUserPolicyService.list(user.id, {
+					limit: POLICY_PAGE_SIZE,
+					offset: 0,
+				}),
+				adminPolicyService.list({ limit: POLICY_PAGE_SIZE, offset: 0 }),
+			]);
+			setAssignments(a.items);
+			setPolicies(p.items);
+		} catch (e) {
+			handleApiError(e);
+		} finally {
+			setPoliciesLoading(false);
+		}
+	}, [user]);
+
+	useEffect(() => {
+		if (open && user) {
+			void loadPolicies();
+		}
+	}, [open, user, loadPolicies]);
+
+	if (!user) return null;
+
+	const quota = user.storage_quota ?? 0;
+	const used = user.storage_used ?? 0;
+	const pct = quota > 0 ? Math.min((used / quota) * 100, 100) : 0;
+	const isInitialAdmin = user.id === 1;
+
+	const handleQuotaSave = async () => {
+		const mb = Number.parseInt(quotaValue, 10);
+		const newQuota = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
+		await onUpdateQuota(user.id, newQuota);
+	};
+
+	const policyName = (policyId: number) =>
+		policies.find((p) => p.id === policyId)?.name ?? `#${policyId}`;
+
+	const handleAssign = async () => {
+		if (!addPolicyId) return;
+		try {
+			const mb = Number.parseInt(addQuota, 10);
+			const quotaBytes = Number.isNaN(mb) || mb <= 0 ? 0 : mb * 1024 * 1024;
+			const created = await adminUserPolicyService.assign(user.id, {
+				policy_id: addPolicyId,
+				is_default: addDefault,
+				quota_bytes: quotaBytes,
+			});
+			setAssignments((prev) =>
+				addDefault
+					? [...prev.map((a) => ({ ...a, is_default: false })), created]
+					: [...prev, created],
+			);
+			setAddPolicyId(null);
+			setAddQuota("");
+			setAddDefault(false);
+			toast.success(t("policy_assigned"));
+		} catch (e) {
+			handleApiError(e);
+		}
+	};
+
+	const handleToggleDefault = async (a: UserStoragePolicy) => {
+		try {
+			const updated = await adminUserPolicyService.update(user.id, a.id, {
+				is_default: !a.is_default,
+			});
+			setAssignments((prev) =>
+				prev.map((item) =>
+					item.id === updated.id
+						? updated
+						: !a.is_default
+							? { ...item, is_default: false }
+							: item,
+				),
+			);
+		} catch (e) {
+			handleApiError(e);
+		}
+	};
+
+	const handleRemove = async (id: number) => {
+		try {
+			await adminUserPolicyService.remove(user.id, id);
+			setAssignments((prev) => prev.filter((a) => a.id !== id));
+			toast.success(t("assignment_removed"));
+		} catch (e) {
+			handleApiError(e);
+		}
+	};
+
+	const availablePolicies = policies.filter(
+		(p) => !assignments.some((a) => a.policy_id === p.id),
+	);
+
+	return (
+		<Dialog open={open} onOpenChange={onOpenChange}>
+			<DialogContent className="gap-0 sm:max-w-[min(1100px,calc(100vw-2rem))] p-0">
+				<DialogHeader className="flex items-center justify-center px-6 pt-5 pb-0 text-center">
+					<DialogTitle className="text-lg">{t("user_details")}</DialogTitle>
+				</DialogHeader>
+				<div className="grid gap-0 lg:grid-cols-[320px_minmax(0,1fr)]">
+					<aside className="space-y-5 border-b bg-muted/20 p-6 lg:border-r lg:border-b-0">
+						<div className="space-y-3">
+							<div className="flex h-22 w-22 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground">
+								<Icon name="Info" className="h-8 w-8" />
+							</div>
+							<div className="space-y-1">
+								<h3 className="text-lg font-semibold text-foreground">
+									{user.username}
+								</h3>
+								<p className="text-sm text-muted-foreground">{user.email}</p>
+							</div>
+							<div className="flex flex-wrap gap-2">
+								<Badge
+									variant="outline"
+									className={getRoleBadgeClass(user.role)}
+								>
+									{user.role === "admin" ? "Admin" : "User"}
+								</Badge>
+								<Badge
+									variant="outline"
+									className={getStatusBadgeClass(user.status)}
+								>
+									{user.status === "active"
+										? t("common:active")
+										: t("common:disabled_status")}
+								</Badge>
+							</div>
+						</div>
+
+						<div className="space-y-3 rounded-xl border bg-background/60 p-4">
+							<div className="space-y-1">
+								<p className="text-xs uppercase tracking-wide text-muted-foreground">
+									ID
+								</p>
+								<p className="font-mono text-sm text-foreground">{user.id}</p>
+							</div>
+							<div className="space-y-1">
+								<p className="text-xs uppercase tracking-wide text-muted-foreground">
+									{t("common:created_at")}
+								</p>
+								<p className="text-sm text-foreground">
+									{formatDateAbsolute(user.created_at)}
+								</p>
+							</div>
+						</div>
+
+						<div className="space-y-3 rounded-xl border bg-background/60 p-4">
+							<div>
+								<p className="text-sm font-medium text-foreground">
+									{t("storage")}
+								</p>
+								<p className="text-xs text-muted-foreground">
+									{formatBytes(used)}
+									{quota > 0
+										? ` / ${formatBytes(quota)}`
+										: ` / ${t("common:unlimited")}`}
+								</p>
+							</div>
+							{quota > 0 ? <Progress value={pct} className="h-2" /> : null}
+						</div>
+					</aside>
+
+					<div className="min-w-0 space-y-5 p-6">
+						<section className="rounded-2xl border bg-background/60 p-6">
+							<div className="mb-5">
+								<h4 className="text-base font-semibold text-foreground">
+									{t("user_details")}
+								</h4>
+								<p className="mt-1 text-sm text-muted-foreground">
+									{t("storage_quota_settings_desc")}
+								</p>
+							</div>
+							<div className="grid gap-5 md:grid-cols-2">
+								<div className="space-y-2">
+									<Label>{t("email")}</Label>
+									<Input
+										value={user.email}
+										readOnly
+										className={ADMIN_CONTROL_HEIGHT_CLASS}
+									/>
+								</div>
+								<div className="space-y-2">
+									<Label>{t("username")}</Label>
+									<Input
+										value={user.username}
+										readOnly
+										className={ADMIN_CONTROL_HEIGHT_CLASS}
+									/>
+								</div>
+								<div className="space-y-2">
+									<div className="flex items-center justify-between gap-2">
+										<Label>{t("common:status")}</Label>
+										{isInitialAdmin ? (
+											<span className="text-xs text-muted-foreground">
+												{t("initial_admin_protected")}
+											</span>
+										) : null}
+									</div>
+									<TooltipProvider>
+										<Tooltip>
+											<TooltipTrigger>
+												<div>
+													<Select
+														value={user.status}
+														onValueChange={(value) =>
+															void onUpdateStatus(user.id, value as UserStatus)
+														}
+														disabled={isInitialAdmin}
+													>
+														<SelectTrigger
+															className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
+														>
+															<SelectValue />
+														</SelectTrigger>
+														<SelectContent>
+															<SelectItem value="active">
+																{t("common:active")}
+															</SelectItem>
+															<SelectItem value="disabled">
+																{t("common:disabled_status")}
+															</SelectItem>
+														</SelectContent>
+													</Select>
+												</div>
+											</TooltipTrigger>
+											{isInitialAdmin ? (
+												<TooltipContent>
+													{t("initial_admin_status_blocked")}
+												</TooltipContent>
+											) : null}
+										</Tooltip>
+									</TooltipProvider>
+								</div>
+								<div className="space-y-2">
+									<div className="flex items-center justify-between gap-2">
+										<Label>{t("role")}</Label>
+										{isInitialAdmin ? (
+											<span className="text-xs text-muted-foreground">
+												{t("initial_admin_protected")}
+											</span>
+										) : null}
+									</div>
+									<TooltipProvider>
+										<Tooltip>
+											<TooltipTrigger>
+												<div>
+													<Select
+														value={user.role}
+														onValueChange={(value) =>
+															void onUpdateRole(user.id, value as UserRole)
+														}
+														disabled={isInitialAdmin}
+													>
+														<SelectTrigger
+															className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
+														>
+															<SelectValue />
+														</SelectTrigger>
+														<SelectContent>
+															<SelectItem value="admin">Admin</SelectItem>
+															<SelectItem value="user">User</SelectItem>
+														</SelectContent>
+													</Select>
+												</div>
+											</TooltipTrigger>
+											{isInitialAdmin ? (
+												<TooltipContent>
+													{t("initial_admin_role_blocked")}
+												</TooltipContent>
+											) : null}
+										</Tooltip>
+									</TooltipProvider>
+								</div>
+								<div className="space-y-2 md:col-span-2">
+									<Label htmlFor="user-storage-quota">{t("quota_mb")}</Label>
+									<div className="flex gap-3">
+										<Input
+											id="user-storage-quota"
+											type="number"
+											value={quotaValue}
+											onChange={(e) => setQuotaValue(e.target.value)}
+											placeholder={`0 = ${t("common:unlimited").toLowerCase()}`}
+											className={ADMIN_CONTROL_HEIGHT_CLASS}
+										/>
+										<Button onClick={() => void handleQuotaSave()}>
+											{t("save_changes")}
+										</Button>
+									</div>
+								</div>
+							</div>
+						</section>
+
+						<section className="rounded-2xl border bg-background/60 p-6">
+							<div className="mb-5 flex items-center justify-between gap-3">
+								<div>
+									<h4 className="text-base font-semibold text-foreground">
+										{t("storage_policy_assignments")}
+									</h4>
+									<p className="mt-1 text-sm text-muted-foreground">
+										{t("storage_policy_assignments_desc")}
+									</p>
+								</div>
+								<Button
+									variant="ghost"
+									size="sm"
+									className={ADMIN_CONTROL_HEIGHT_CLASS}
+									onClick={() => void loadPolicies()}
+									disabled={policiesLoading}
+								>
+									<Icon
+										name={policiesLoading ? "Spinner" : "ArrowsClockwise"}
+										className={`mr-1 h-3.5 w-3.5 ${policiesLoading ? "animate-spin" : ""}`}
+									/>
+									{t("refresh")}
+								</Button>
+							</div>
+
+							{policiesLoading ? (
+								<SkeletonTable columns={4} rows={4} />
+							) : assignments.length === 0 ? (
+								<p className="text-sm text-muted-foreground">
+									{t("no_policies_assigned")}
+								</p>
+							) : (
+								<div className="space-y-2">
+									{assignments.map((a) => (
+										<div
+											key={a.id}
+											className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3"
+										>
+											<div>
+												<div className="text-sm font-medium text-foreground">
+													{policyName(a.policy_id)}
+												</div>
+												<div className="text-xs text-muted-foreground">
+													{t("quota")}:{" "}
+													{a.quota_bytes > 0
+														? formatBytes(a.quota_bytes)
+														: t("common:unlimited")}
+												</div>
+											</div>
+											<div className="flex items-center gap-2">
+												{a.is_default ? (
+													<Badge className="border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-700 dark:bg-blue-900 dark:text-blue-300">
+														{t("is_default")}
+													</Badge>
+												) : null}
+												<Button
+													variant="ghost"
+													size="sm"
+													onClick={() => void handleToggleDefault(a)}
+												>
+													{a.is_default ? t("unset_default") : t("set_default")}
+												</Button>
+												<Button
+													variant="ghost"
+													size="icon"
+													className="h-8 w-8 text-destructive"
+													onClick={() => void handleRemove(a.id)}
+												>
+													<Icon name="Trash" className="h-3.5 w-3.5" />
+												</Button>
+											</div>
+										</div>
+									))}
+								</div>
+							)}
+
+							{availablePolicies.length > 0 ? (
+								<div className="mt-5 space-y-4 rounded-xl border bg-muted/10 p-4">
+									<Label className="text-sm font-medium">
+										{t("assign_policy")}
+									</Label>
+									<div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto] md:items-center">
+										<Select
+											value={addPolicyId != null ? String(addPolicyId) : ""}
+											onValueChange={(v) =>
+												setAddPolicyId(v ? Number(v) : null)
+											}
+										>
+											<SelectTrigger>
+												<SelectValue placeholder={t("select_policy")} />
+											</SelectTrigger>
+											<SelectContent>
+												{availablePolicies.map((p) => (
+													<SelectItem key={p.id} value={String(p.id)}>
+														{p.name} ({p.driver_type})
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+										<Input
+											placeholder={`${t("quota")} (MB, 0=${t("common:unlimited").toLowerCase()})`}
+											value={addQuota}
+											onChange={(e) => setAddQuota(e.target.value)}
+										/>
+										<div className="flex items-center justify-between gap-3 md:justify-end">
+											<div className="flex items-center gap-2">
+												<Switch
+													checked={addDefault}
+													onCheckedChange={setAddDefault}
+												/>
+												<span className="text-xs">{t("is_default")}</span>
+											</div>
+											<Button
+												disabled={!addPolicyId}
+												onClick={() => void handleAssign()}
+											>
+												{t("common:confirm")}
+											</Button>
+										</div>
+									</div>
+								</div>
+							) : null}
+						</section>
+					</div>
+				</div>
+				<DialogFooter className="mx-0 mb-0 justify-between rounded-b-xl px-6 py-3 sm:flex-row sm:items-center">
+					<p className="text-xs text-muted-foreground">
+						{t("user_details_footer_hint")}
+					</p>
+					<Button variant="outline" onClick={() => onOpenChange(false)}>
+						{t("common:close")}
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
+	);
+}

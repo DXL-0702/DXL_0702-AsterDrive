@@ -1,6 +1,7 @@
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 
+use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::policy_repo;
 use crate::entities::{storage_policy, user_storage_policy};
 use crate::errors::{AsterError, MapAsterErr, Result};
@@ -9,6 +10,17 @@ use crate::types::DriverType;
 
 pub async fn list_all(state: &AppState) -> Result<Vec<storage_policy::Model>> {
     policy_repo::find_all(&state.db).await
+}
+
+pub async fn list_paginated(
+    state: &AppState,
+    limit: u64,
+    offset: u64,
+) -> Result<OffsetPage<storage_policy::Model>> {
+    load_offset_page(limit, offset, 100, |limit, offset| async move {
+        policy_repo::find_paginated(&state.db, limit, offset).await
+    })
+    .await
 }
 
 pub async fn get(state: &AppState, id: i64) -> Result<storage_policy::Model> {
@@ -246,6 +258,18 @@ pub async fn list_user_policies(
     user_id: i64,
 ) -> Result<Vec<user_storage_policy::Model>> {
     policy_repo::find_user_policies(&state.db, user_id).await
+}
+
+pub async fn list_user_policies_paginated(
+    state: &AppState,
+    user_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<OffsetPage<user_storage_policy::Model>> {
+    load_offset_page(limit, offset, 100, |limit, offset| async move {
+        policy_repo::find_user_policies_paginated(&state.db, user_id, limit, offset).await
+    })
+    .await
 }
 
 pub async fn assign_user_policy(

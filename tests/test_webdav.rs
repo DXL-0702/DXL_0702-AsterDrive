@@ -2,6 +2,7 @@
 mod common;
 
 use actix_web::test;
+use base64::Engine;
 
 #[actix_web::test]
 async fn test_webdav_propfind_root() {
@@ -169,6 +170,73 @@ async fn test_webdav_copy_move() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_webdav_basic_auth_root_scope() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "scope-root" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    let root_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "inside", "parent_id": root_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "outside" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/webdav-accounts")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "username": "basic-scope-user",
+            "password": "basic-scope-pass",
+            "root_folder_id": root_id,
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let basic = format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode("basic-scope-user:basic-scope-pass")
+    );
+
+    let req = test::TestRequest::with_uri("/webdav/")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", basic.clone()))
+        .insert_header(("Depth", "1"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+    assert!(xml.contains("inside"));
+    assert!(!xml.contains("outside"));
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/outside/")
+        .insert_header(("Authorization", basic.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status().is_client_error());
 }
 
 #[actix_web::test]

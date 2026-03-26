@@ -127,7 +127,8 @@ async fn test_register_auto_assigns_policy() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    let policies = body["data"].as_array().unwrap();
+    let policies = body["data"]["items"].as_array().unwrap();
+    assert_eq!(body["data"]["total"], 1);
     assert_eq!(
         policies.len(),
         1,

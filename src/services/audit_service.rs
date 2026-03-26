@@ -1,9 +1,10 @@
 use actix_web::HttpRequest;
-use chrono::{Duration, Utc};
+use chrono::{DateTime, Duration, Utc};
 use sea_orm::Set;
-use serde::Serialize;
-use utoipa::ToSchema;
+use serde::Deserialize;
+use utoipa::IntoParams;
 
+use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{audit_log_repo, config_repo};
 use crate::entities::audit_log;
 use crate::errors::Result;
@@ -17,6 +18,43 @@ pub struct AuditContext {
     pub user_id: i64,
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
+}
+
+#[derive(Deserialize, IntoParams)]
+pub struct AuditLogFilterQuery {
+    pub user_id: Option<i64>,
+    pub action: Option<String>,
+    pub entity_type: Option<String>,
+    pub after: Option<String>,
+    pub before: Option<String>,
+}
+
+pub struct AuditLogFilters {
+    pub user_id: Option<i64>,
+    pub action: Option<String>,
+    pub entity_type: Option<String>,
+    pub after: Option<DateTime<Utc>>,
+    pub before: Option<DateTime<Utc>>,
+}
+
+impl AuditLogFilters {
+    pub fn from_query(query: &AuditLogFilterQuery) -> Self {
+        Self {
+            user_id: query.user_id,
+            action: query.action.clone(),
+            entity_type: query.entity_type.clone(),
+            after: query
+                .after
+                .as_deref()
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&Utc)),
+            before: query
+                .before
+                .as_deref()
+                .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.with_timezone(&Utc)),
+        }
+    }
 }
 
 impl AuditContext {
@@ -76,44 +114,26 @@ pub async fn log(
     }
 }
 
-/// Admin 分页查询
-#[derive(Serialize, ToSchema)]
-pub struct AuditLogPage {
-    pub items: Vec<audit_log::Model>,
-    pub total: u64,
-    pub limit: u64,
-    pub offset: u64,
-}
-
 pub async fn query(
     state: &AppState,
-    user_id: Option<i64>,
-    action: Option<&str>,
-    entity_type: Option<&str>,
-    after: Option<chrono::DateTime<Utc>>,
-    before: Option<chrono::DateTime<Utc>>,
+    filters: AuditLogFilters,
     limit: u64,
     offset: u64,
-) -> Result<AuditLogPage> {
-    let limit = limit.clamp(1, 200);
-    let (items, total) = audit_log_repo::find_with_filters(
-        &state.db,
-        user_id,
-        action,
-        entity_type,
-        after,
-        before,
-        limit,
-        offset,
-    )
-    .await?;
-
-    Ok(AuditLogPage {
-        items,
-        total,
-        limit,
-        offset,
+) -> Result<OffsetPage<audit_log::Model>> {
+    load_offset_page(limit, offset, 200, |limit, offset| async move {
+        audit_log_repo::find_with_filters(
+            &state.db,
+            filters.user_id,
+            filters.action.as_deref(),
+            filters.entity_type.as_deref(),
+            filters.after,
+            filters.before,
+            limit,
+            offset,
+        )
+        .await
     })
+    .await
 }
 
 /// 清理过期审计日志

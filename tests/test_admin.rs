@@ -20,7 +20,8 @@ async fn test_admin_locks() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"].as_array().unwrap().len(), 0);
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 0);
+    assert_eq!(body["data"]["total"], 0);
 
     // 清理过期锁
     let req = test::TestRequest::delete()
@@ -39,18 +40,135 @@ async fn test_admin_users() {
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
-    // 列出用户
+    // 再注册两个普通用户
+    for (username, email) in [
+        ("user2", "user2@example.com"),
+        ("user3", "user3@example.com"),
+    ] {
+        let req = test::TestRequest::post()
+            .uri("/api/v1/auth/register")
+            .peer_addr("127.0.0.1:12345".parse().unwrap())
+            .set_json(serde_json::json!({
+                "username": username,
+                "email": email,
+                "password": "password123"
+            }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+    }
+
+    // 分页列出用户
     let req = test::TestRequest::get()
-        .uri("/api/v1/admin/users")
+        .uri("/api/v1/admin/users?limit=2&offset=1")
         .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    let users = body["data"].as_array().unwrap();
-    assert_eq!(users.len(), 1);
-    assert_eq!(users[0]["username"], "testuser");
-    assert_eq!(users[0]["role"], "admin");
+    let data = &body["data"];
+    let users = data["items"].as_array().unwrap();
+    assert_eq!(data["limit"], 2);
+    assert_eq!(data["offset"], 1);
+    assert_eq!(data["total"], 3);
+    assert_eq!(users.len(), 2);
+    assert_eq!(users[0]["username"], "user2");
+    assert_eq!(users[1]["username"], "user3");
+}
+
+#[actix_web::test]
+async fn test_admin_users_server_side_filters() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    for (username, email) in [
+        ("filter-alice", "filter-alice@example.com"),
+        ("filter-bob", "filter-bob@example.com"),
+        ("filter-charlie", "filter-charlie@example.com"),
+    ] {
+        let req = test::TestRequest::post()
+            .uri("/api/v1/auth/register")
+            .peer_addr("127.0.0.1:12345".parse().unwrap())
+            .set_json(serde_json::json!({
+                "username": username,
+                "email": email,
+                "password": "password123"
+            }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+    }
+
+    // 提升 alice 为 admin，禁用 bob
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let users = body["data"]["items"].as_array().unwrap();
+    let alice_id = users
+        .iter()
+        .find(|u| u["username"] == "filter-alice")
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let bob_id = users
+        .iter()
+        .find(|u| u["username"] == "filter-bob")
+        .unwrap()["id"]
+        .as_i64()
+        .unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/users/{alice_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({"role": "admin"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/users/{bob_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({"status": "disabled"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users?keyword=alice")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let items = body["data"]["items"].as_array().unwrap();
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(items[0]["username"], "filter-alice");
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users?role=admin")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let items = body["data"]["items"].as_array().unwrap();
+    assert_eq!(body["data"]["total"], 2);
+    assert!(items.iter().all(|u| u["role"] == "admin"));
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users?status=disabled")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let items = body["data"]["items"].as_array().unwrap();
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(items[0]["username"], "filter-bob");
 }
 
 #[actix_web::test]
@@ -67,7 +185,8 @@ async fn test_admin_policies() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    let policies = body["data"].as_array().unwrap();
+    let policies = body["data"]["items"].as_array().unwrap();
+    assert_eq!(body["data"]["total"], 1);
     assert_eq!(policies.len(), 1);
     assert_eq!(policies[0]["name"], "Test Local");
     assert_eq!(policies[0]["is_default"], true);
@@ -106,7 +225,8 @@ async fn test_admin_config() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert!(!body["data"].as_array().unwrap().is_empty());
+    assert!(!body["data"]["items"].as_array().unwrap().is_empty());
+    assert!(body["data"]["total"].as_u64().unwrap() >= 1);
 
     // 删除配置
     let req = test::TestRequest::delete()
@@ -143,7 +263,8 @@ async fn test_admin_shares() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"]["total"], 1);
 
     // admin 删除分享
     let req = test::TestRequest::delete()
@@ -177,7 +298,8 @@ async fn test_admin_force_unlock() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    let locks = body["data"].as_array().unwrap();
+    let locks = body["data"]["items"].as_array().unwrap();
+    assert_eq!(body["data"]["total"], 1);
     assert_eq!(locks.len(), 1);
     let lock_id = locks[0]["id"].as_i64().unwrap();
 

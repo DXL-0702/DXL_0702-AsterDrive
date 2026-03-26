@@ -24,15 +24,18 @@ async fn test_shares_crud() {
     let share_token = body["data"]["token"].as_str().unwrap().to_string();
     let share_id = body["data"]["id"].as_i64().unwrap();
 
-    // 列出分享
+    // 分页列出分享
     let req = test::TestRequest::get()
-        .uri("/api/v1/shares")
+        .uri("/api/v1/shares?limit=1&offset=0")
         .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["limit"], 1);
+    assert_eq!(body["data"]["offset"], 0);
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
 
     // 公开访问分享信息
     let req = test::TestRequest::get()
@@ -120,6 +123,30 @@ async fn test_share_password() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert!(resp.status() == 401 || resp.status() == 403);
+}
+
+#[actix_web::test]
+async fn test_duplicate_active_share_rejected() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "file_id": file_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "file_id": file_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
 }
 
 #[actix_web::test]
@@ -219,6 +246,157 @@ async fn test_share_folder() {
 
 /// 伪造 cookie 不能绕过密码验证
 #[actix_web::test]
+async fn test_expired_share_public_endpoints_rejected() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_id": file_id,
+            "expires_at": "2000-01-01T00:00:00Z"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap();
+
+    for path in [
+        format!("/api/v1/s/{share_token}"),
+        format!("/api/v1/s/{share_token}/download"),
+        format!("/api/v1/s/{share_token}/thumbnail"),
+    ] {
+        let req = test::TestRequest::get().uri(&path).to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status() == 403 || resp.status() == 410 || resp.status() == 404);
+    }
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{share_token}/verify"))
+        .set_json(serde_json::json!({ "password": "secret123" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 403 || resp.status() == 410 || resp.status() == 404);
+}
+
+#[actix_web::test]
+async fn test_folder_share_deleted_child_resource_rejected() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Shared Root" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let root_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Child", "parent_id": root_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let child_id = body["data"]["id"].as_i64().unwrap();
+
+    let child_file_id = upload_test_file_to_folder!(app, token, child_id);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "folder_id": root_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/files/{child_file_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/s/{share_token}/files/{child_file_id}/download"
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 404 || resp.status() == 403);
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/folders/{child_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/s/{share_token}/folders/{child_id}/content"
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 404 || resp.status() == 403);
+}
+
+#[actix_web::test]
+async fn test_share_type_mismatch_rejected() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "file_id": file_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let file_share_token = body["data"]["token"].as_str().unwrap();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{file_share_token}/content"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status().is_client_error());
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Folder Share" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "folder_id": folder_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let folder_share_token = body["data"]["token"].as_str().unwrap();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{folder_share_token}/download"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status().is_client_error());
+}
+
+#[actix_web::test]
 async fn test_share_forged_cookie_rejected() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -278,6 +456,87 @@ async fn test_share_forged_cookie_rejected() {
         "signed cookie should allow download, got {}",
         resp.status()
     );
+}
+
+#[actix_web::test]
+async fn test_share_folder_deep_scope_and_outside_access() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Root" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let root_id = body["data"]["id"].as_i64().unwrap();
+
+    let mut parent_id = root_id;
+    for name in ["A", "B", "C"] {
+        let req = test::TestRequest::post()
+            .uri("/api/v1/folders")
+            .insert_header(("Cookie", format!("aster_access={token}")))
+            .set_json(serde_json::json!({ "name": name, "parent_id": parent_id }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        let body: Value = test::read_body_json(resp).await;
+        parent_id = body["data"]["id"].as_i64().unwrap();
+    }
+    let deep_folder_id = parent_id;
+    let deep_file_id = upload_test_file_to_folder!(app, token, deep_folder_id);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Outside" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let outside_folder_id = body["data"]["id"].as_i64().unwrap();
+    let outside_file_id = upload_test_file_to_folder!(app, token, outside_folder_id);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "folder_id": root_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap();
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/s/{share_token}/folders/{deep_folder_id}/content"
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/s/{share_token}/files/{deep_file_id}/download"
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/s/{share_token}/files/{outside_file_id}/download"
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/s/{share_token}/folders/{outside_folder_id}/content"
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
 }
 
 #[actix_web::test]

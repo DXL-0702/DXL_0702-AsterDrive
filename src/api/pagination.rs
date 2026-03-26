@@ -1,10 +1,63 @@
 use crate::entities::file;
-use serde::Deserialize;
-use utoipa::IntoParams;
+use crate::errors::Result;
+use serde::{Deserialize, Serialize};
+use std::future::Future;
+use utoipa::{IntoParams, ToSchema};
 
 pub const DEFAULT_FOLDER_LIMIT: u64 = 200;
 pub const DEFAULT_FILE_LIMIT: u64 = 100;
 pub const MAX_PAGE_SIZE: u64 = 1000;
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, IntoParams, ToSchema)]
+pub struct LimitOffsetQuery {
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
+}
+
+impl LimitOffsetQuery {
+    pub fn limit_or(&self, default: u64, max: u64) -> u64 {
+        self.limit.map(|v| v.clamp(1, max)).unwrap_or(default)
+    }
+
+    pub fn offset(&self) -> u64 {
+        self.offset.unwrap_or(0)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct OffsetPage<T: Serialize + ToSchema> {
+    pub items: Vec<T>,
+    pub total: u64,
+    pub limit: u64,
+    pub offset: u64,
+}
+
+impl<T: Serialize + ToSchema> OffsetPage<T> {
+    pub fn new(items: Vec<T>, total: u64, limit: u64, offset: u64) -> Self {
+        Self {
+            items,
+            total,
+            limit,
+            offset,
+        }
+    }
+}
+
+pub async fn load_offset_page<T, F, Fut>(
+    limit: u64,
+    offset: u64,
+    max_limit: u64,
+    fetch: F,
+) -> Result<OffsetPage<T>>
+where
+    T: Serialize + ToSchema,
+    F: FnOnce(u64, u64) -> Fut,
+    Fut: Future<Output = Result<(Vec<T>, u64)>>,
+{
+    let limit = limit.clamp(1, max_limit);
+    let (items, total) = fetch(limit, offset).await?;
+    Ok(OffsetPage::new(items, total, limit, offset))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]

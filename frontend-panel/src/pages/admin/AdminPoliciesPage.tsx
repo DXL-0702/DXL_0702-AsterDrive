@@ -153,8 +153,8 @@ export default function AdminPoliciesPage() {
 	const load = useCallback(async () => {
 		try {
 			setLoading(true);
-			const data = await adminPolicyService.list();
-			setPolicies(data);
+			const data = await adminPolicyService.list({ limit: 100, offset: 0 });
+			setPolicies(data.items);
 		} catch (e) {
 			handleApiError(e);
 		} finally {

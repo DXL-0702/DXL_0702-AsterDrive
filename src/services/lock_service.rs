@@ -1,10 +1,12 @@
 use chrono::{Duration, Utc};
 use sea_orm::Set;
 
+use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{file_repo, folder_repo, lock_repo};
 use crate::entities::resource_lock;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
+use crate::services::folder_service;
 use crate::types::EntityType;
 
 /// 锁定资源（REST/WebDAV/Web Editor 统一入口）
@@ -90,6 +92,17 @@ pub async fn unlock_by_token(state: &AppState, token: &str) -> Result<()> {
     lock_repo::delete_by_token(db, token).await?;
     set_entity_locked(db, lock.entity_type, lock.entity_id, false).await?;
     Ok(())
+}
+
+pub async fn list_paginated(
+    state: &AppState,
+    limit: u64,
+    offset: u64,
+) -> Result<OffsetPage<resource_lock::Model>> {
+    load_offset_page(limit, offset, 100, |limit, offset| async move {
+        crate::db::repository::lock_repo::find_paginated(&state.db, limit, offset).await
+    })
+    .await
 }
 
 /// 强制解锁（admin 用）
@@ -202,35 +215,23 @@ pub async fn resolve_entity_path(
     match entity_type {
         EntityType::File => {
             let f = file_repo::find_by_id(db, entity_id).await?;
-            let folder_path = resolve_folder_path(db, f.folder_id).await?;
+            let folder_path = match f.folder_id {
+                Some(folder_id) => folder_service::build_folder_paths(db, &[folder_id])
+                    .await?
+                    .remove(&folder_id)
+                    .map(|path| format!("{path}/"))
+                    .unwrap_or_else(|| "/".to_string()),
+                None => "/".to_string(),
+            };
             Ok(format!("{}{}", folder_path, f.name))
         }
         EntityType::Folder => {
             let f = folder_repo::find_by_id(db, entity_id).await?;
-            let parent_path = resolve_folder_path(db, Some(f.id)).await?;
-            Ok(parent_path)
+            let path = folder_service::build_folder_paths(db, &[f.id])
+                .await?
+                .remove(&f.id)
+                .ok_or_else(|| AsterError::record_not_found(format!("folder #{}", f.id)))?;
+            Ok(format!("{path}/"))
         }
-    }
-}
-
-/// 递归拼出文件夹路径
-async fn resolve_folder_path(
-    db: &sea_orm::DatabaseConnection,
-    folder_id: Option<i64>,
-) -> Result<String> {
-    let mut segments = Vec::new();
-    let mut current = folder_id;
-
-    while let Some(fid) = current {
-        let f = folder_repo::find_by_id(db, fid).await?;
-        segments.push(f.name);
-        current = f.parent_id;
-    }
-
-    segments.reverse();
-    if segments.is_empty() {
-        Ok("/".to_string())
-    } else {
-        Ok(format!("/{}/", segments.join("/")))
     }
 }

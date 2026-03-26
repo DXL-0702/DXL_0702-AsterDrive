@@ -14,11 +14,21 @@ interface AuditLogQuery {
 export const auditService = {
 	list: (params: AuditLogQuery = {}) => {
 		const query = new URLSearchParams();
+		if (params.limit !== undefined && params.limit !== null) {
+			query.set("limit", String(params.limit));
+		}
+		if (params.offset !== undefined && params.offset !== null) {
+			query.set("offset", String(params.offset));
+		}
 		for (const [key, value] of Object.entries(params)) {
+			if (key === "limit" || key === "offset") continue;
 			if (value !== undefined && value !== null && value !== "") {
 				query.set(key, String(value));
 			}
 		}
-		return api.get<AuditLogPage>(`/admin/audit-logs?${query.toString()}`);
+		const suffix = query.toString();
+		return api.get<AuditLogPage>(
+			suffix ? `/admin/audit-logs?${suffix}` : "/admin/audit-logs",
+		);
 	},
 };

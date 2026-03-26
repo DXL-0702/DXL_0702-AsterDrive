@@ -1,6 +1,9 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Set};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,
+};
 
+use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::resource_lock::{self, Entity as ResourceLock};
 use crate::errors::{AsterError, Result};
 use crate::types::EntityType;
@@ -13,7 +16,25 @@ pub async fn create<C: ConnectionTrait>(
 }
 
 pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<resource_lock::Model>> {
-    ResourceLock::find().all(db).await.map_err(AsterError::from)
+    ResourceLock::find()
+        .order_by_asc(resource_lock::Column::Id)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_paginated<C: ConnectionTrait>(
+    db: &C,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<resource_lock::Model>, u64)> {
+    fetch_offset_page(
+        db,
+        ResourceLock::find().order_by_asc(resource_lock::Column::Id),
+        limit,
+        offset,
+    )
+    .await
 }
 
 pub async fn find_by_id<C: ConnectionTrait>(

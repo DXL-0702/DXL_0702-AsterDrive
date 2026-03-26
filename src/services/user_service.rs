@@ -1,6 +1,7 @@
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, EntityTrait, Set};
 
+use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{
     file_repo, folder_repo, lock_repo, policy_repo, share_repo, upload_session_repo, user_repo,
     webdav_account_repo,
@@ -14,6 +15,20 @@ pub async fn list_all(state: &AppState) -> Result<Vec<user::Model>> {
     user_repo::find_all(&state.db).await
 }
 
+pub async fn list_paginated(
+    state: &AppState,
+    limit: u64,
+    offset: u64,
+    keyword: Option<&str>,
+    role: Option<UserRole>,
+    status: Option<UserStatus>,
+) -> Result<OffsetPage<user::Model>> {
+    load_offset_page(limit, offset, 100, |limit, offset| async move {
+        user_repo::find_paginated(&state.db, limit, offset, keyword, role, status).await
+    })
+    .await
+}
+
 pub async fn get(state: &AppState, id: i64) -> Result<user::Model> {
     user_repo::find_by_id(&state.db, id).await
 }
@@ -25,6 +40,23 @@ pub async fn update(
     status: Option<UserStatus>,
     storage_quota: Option<i64>,
 ) -> Result<user::Model> {
+    if id == 1 {
+        if let Some(ref status) = status
+            && !status.is_active()
+        {
+            return Err(AsterError::validation_error(
+                "cannot disable the initial admin account",
+            ));
+        }
+        if let Some(ref role) = role
+            && !role.is_admin()
+        {
+            return Err(AsterError::validation_error(
+                "cannot demote the initial admin account",
+            ));
+        }
+    }
+
     let existing = user_repo::find_by_id(&state.db, id).await?;
     let mut active: user::ActiveModel = existing.into();
     if let Some(r) = role {
@@ -37,7 +69,9 @@ pub async fn update(
         active.storage_quota = Set(q);
     }
     active.updated_at = Set(Utc::now());
-    active.update(&state.db).await.map_err(AsterError::from)
+    let updated = active.update(&state.db).await.map_err(AsterError::from)?;
+    state.cache.delete(&format!("user_status:{id}")).await;
+    Ok(updated)
 }
 
 /// 强制删除用户及其所有数据（不可逆）

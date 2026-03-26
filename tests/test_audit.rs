@@ -33,6 +33,50 @@ async fn test_audit_log_recorded_on_upload() {
 }
 
 #[actix_web::test]
+async fn test_audit_log_pagination_fields_and_offset() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    for _ in 0..3 {
+        let _file_id = upload_test_file!(app, token);
+    }
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/audit-logs?limit=1&offset=1")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+
+    assert_eq!(body["data"]["limit"], 1);
+    assert_eq!(body["data"]["offset"], 1);
+    assert!(body["data"]["total"].as_u64().unwrap() >= 3);
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
+}
+
+#[actix_web::test]
+async fn test_audit_log_limit_is_clamped() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let _file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/audit-logs?limit=9999")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+
+    assert_eq!(body["data"]["limit"], 200);
+    assert_eq!(body["data"]["offset"], 0);
+}
+
+#[actix_web::test]
 async fn test_audit_log_admin_only() {
     let state = common::setup().await;
     let app = create_test_app!(state);

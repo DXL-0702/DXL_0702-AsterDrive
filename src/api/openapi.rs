@@ -113,6 +113,15 @@ use utoipa::{Modify, OpenApi};
             crate::api::error_code::ErrorCode,
             crate::api::pagination::SortBy,
             crate::api::pagination::SortOrder,
+            crate::api::pagination::LimitOffsetQuery,
+            crate::api::pagination::OffsetPage<crate::entities::audit_log::Model>,
+            crate::api::pagination::OffsetPage<crate::entities::user::Model>,
+            crate::api::pagination::OffsetPage<crate::entities::storage_policy::Model>,
+            crate::api::pagination::OffsetPage<crate::entities::user_storage_policy::Model>,
+            crate::api::pagination::OffsetPage<crate::entities::share::Model>,
+            crate::api::pagination::OffsetPage<crate::entities::system_config::Model>,
+            crate::api::pagination::OffsetPage<crate::entities::resource_lock::Model>,
+            crate::api::pagination::OffsetPage<crate::services::webdav_account_service::WebdavAccountInfo>,
             crate::services::folder_service::FolderContents,
             crate::services::folder_service::FolderAncestorItem,
             crate::api::response::HealthResponse,
@@ -172,7 +181,6 @@ use utoipa::{Modify, OpenApi};
             crate::api::routes::properties::SetPropReq,
             // audit log
             crate::entities::audit_log::Model,
-            crate::services::audit_service::AuditLogPage,
             // search
             crate::db::repository::search_repo::FileSearchItem,
             crate::services::search_service::SearchParams,

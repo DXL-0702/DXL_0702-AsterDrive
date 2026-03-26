@@ -3,6 +3,7 @@ use sea_orm::{DatabaseConnection, Set};
 use serde::Serialize;
 use utoipa::ToSchema;
 
+use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{file_repo, folder_repo, share_repo};
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
@@ -94,11 +95,7 @@ pub async fn create_share(
 
 pub async fn get_share_info(state: &AppState, token: &str) -> Result<SharePublicInfo> {
     let db = &state.db;
-    let share = share_repo::find_by_token(db, token)
-        .await?
-        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
-
-    validate_share(&share)?;
+    let share = load_valid_share(state, token).await?;
 
     // increment view count (fire and forget)
     let _ = share_repo::increment_view_count(db, share.id).await;
@@ -123,11 +120,7 @@ pub async fn get_share_info(state: &AppState, token: &str) -> Result<SharePublic
 }
 
 pub async fn verify_password(state: &AppState, token: &str, password: &str) -> Result<()> {
-    let share = share_repo::find_by_token(&state.db, token)
-        .await?
-        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
-
-    validate_share(&share)?;
+    let share = load_valid_share(state, token).await?;
 
     let pw_hash = share
         .password
@@ -146,11 +139,7 @@ pub async fn download_shared_file(
     token: &str,
     if_none_match: Option<&str>,
 ) -> Result<actix_web::HttpResponse> {
-    let share = share_repo::find_by_token(&state.db, token)
-        .await?
-        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
-
-    validate_share(&share)?;
+    let share = load_valid_share(state, token).await?;
 
     let file_id = share
         .file_id
@@ -173,30 +162,9 @@ pub async fn download_shared_folder_file(
     file_id: i64,
     if_none_match: Option<&str>,
 ) -> Result<actix_web::HttpResponse> {
-    let share = share_repo::find_by_token(&state.db, token)
-        .await?
-        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+    let (share, file) = load_shared_folder_file_target(state, token, file_id).await?;
 
-    validate_share(&share)?;
-
-    let root_folder_id = share
-        .folder_id
-        .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
-
-    let file = file_repo::find_by_id(&state.db, file_id).await?;
-    if file.deleted_at.is_some() {
-        return Err(AsterError::file_not_found(format!(
-            "file #{file_id} is in trash"
-        )));
-    }
-
-    // 校验文件所在文件夹在分享范围内
-    let file_folder_id = file
-        .folder_id
-        .ok_or_else(|| AsterError::auth_forbidden("file is outside shared folder scope"))?;
-    verify_folder_in_share_scope(&state.db, file_folder_id, root_folder_id).await?;
-
-    let response = file_service::download_raw(state, file_id, if_none_match).await?;
+    let response = file_service::download_raw(state, file.id, if_none_match).await?;
 
     if response.status() != actix_web::http::StatusCode::NOT_MODIFIED {
         let _ = share_repo::increment_download_count(&state.db, share.id).await;
@@ -215,15 +183,7 @@ pub async fn list_shared_folder(
     sort_by: crate::api::pagination::SortBy,
     sort_order: crate::api::pagination::SortOrder,
 ) -> Result<folder_service::FolderContents> {
-    let share = share_repo::find_by_token(&state.db, token)
-        .await?
-        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
-
-    validate_share(&share)?;
-
-    let folder_id = share
-        .folder_id
-        .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
+    let (_, folder_id) = load_valid_folder_share_root(state, token).await?;
 
     // list folder contents (bypass user ownership — shared access)
     folder_service::list_shared(
@@ -243,6 +203,18 @@ pub async fn list_my_shares(state: &AppState, user_id: i64) -> Result<Vec<share:
     share_repo::find_by_user(&state.db, user_id).await
 }
 
+pub async fn list_my_shares_paginated(
+    state: &AppState,
+    user_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<OffsetPage<share::Model>> {
+    load_offset_page(limit, offset, 100, |limit, offset| async move {
+        share_repo::find_by_user_paginated(&state.db, user_id, limit, offset).await
+    })
+    .await
+}
+
 pub async fn delete_share(state: &AppState, share_id: i64, user_id: i64) -> Result<()> {
     let share = share_repo::find_by_id(&state.db, share_id).await?;
     crate::utils::verify_owner(share.user_id, user_id, "share")?;
@@ -253,6 +225,17 @@ pub async fn list_all(state: &AppState) -> Result<Vec<share::Model>> {
     share_repo::find_all(&state.db).await
 }
 
+pub async fn list_paginated(
+    state: &AppState,
+    limit: u64,
+    offset: u64,
+) -> Result<OffsetPage<share::Model>> {
+    load_offset_page(limit, offset, 100, |limit, offset| async move {
+        share_repo::find_paginated(&state.db, limit, offset).await
+    })
+    .await
+}
+
 pub async fn admin_delete_share(state: &AppState, share_id: i64) -> Result<()> {
     share_repo::find_by_id(&state.db, share_id).await?; // 校验存在
     share_repo::delete(&state.db, share_id).await
@@ -260,11 +243,7 @@ pub async fn admin_delete_share(state: &AppState, share_id: i64) -> Result<()> {
 
 /// 获取公开分享文件的缩略图（公开访问，无需认证）
 pub async fn get_shared_thumbnail(state: &AppState, token: &str) -> Result<Vec<u8>> {
-    let share = share_repo::find_by_token(&state.db, token)
-        .await?
-        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
-
-    validate_share(&share)?;
+    let share = load_valid_share(state, token).await?;
 
     let file_id = share
         .file_id
@@ -287,28 +266,7 @@ pub async fn get_shared_folder_file_thumbnail(
     token: &str,
     file_id: i64,
 ) -> Result<Vec<u8>> {
-    let share = share_repo::find_by_token(&state.db, token)
-        .await?
-        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
-
-    validate_share(&share)?;
-
-    let root_folder_id = share
-        .folder_id
-        .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
-
-    let f = file_repo::find_by_id(&state.db, file_id).await?;
-    if f.deleted_at.is_some() {
-        return Err(AsterError::file_not_found(format!(
-            "file #{file_id} is in trash"
-        )));
-    }
-
-    // 校验文件在分享范围内
-    let file_folder_id = f
-        .folder_id
-        .ok_or_else(|| AsterError::auth_forbidden("file is outside shared folder scope"))?;
-    verify_folder_in_share_scope(&state.db, file_folder_id, root_folder_id).await?;
+    let (_, f) = load_shared_folder_file_target(state, token, file_id).await?;
 
     if !crate::services::thumbnail_service::is_supported_mime(&f.mime_type) {
         return Err(AsterError::thumbnail_generation_failed(
@@ -331,30 +289,11 @@ pub async fn list_shared_subfolder(
     sort_by: crate::api::pagination::SortBy,
     sort_order: crate::api::pagination::SortOrder,
 ) -> Result<folder_service::FolderContents> {
-    let share = share_repo::find_by_token(&state.db, token)
-        .await?
-        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
-
-    validate_share(&share)?;
-
-    let root_folder_id = share
-        .folder_id
-        .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
-
-    // 检查目标文件夹未删除
-    let target = folder_repo::find_by_id(&state.db, folder_id).await?;
-    if target.deleted_at.is_some() {
-        return Err(AsterError::folder_not_found(format!(
-            "folder #{folder_id} is in trash"
-        )));
-    }
-
-    // 校验目标文件夹在分享范围内
-    verify_folder_in_share_scope(&state.db, folder_id, root_folder_id).await?;
+    let (_, target) = load_shared_subfolder_target(state, token, folder_id).await?;
 
     folder_service::list_shared(
         state,
-        folder_id,
+        target.id,
         folder_limit,
         folder_offset,
         file_limit,
@@ -367,28 +306,58 @@ pub async fn list_shared_subfolder(
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-/// 校验 folder_id 是 root_folder_id 自身或其子孙
-async fn verify_folder_in_share_scope(
-    db: &DatabaseConnection,
+async fn load_valid_share(state: &AppState, token: &str) -> Result<share::Model> {
+    let share = share_repo::find_by_token(&state.db, token)
+        .await?
+        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+    validate_share(&share)?;
+    Ok(share)
+}
+
+async fn load_valid_folder_share_root(
+    state: &AppState,
+    token: &str,
+) -> Result<(share::Model, i64)> {
+    let share = load_valid_share(state, token).await?;
+    let root_folder_id = share
+        .folder_id
+        .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
+    Ok((share, root_folder_id))
+}
+
+async fn load_shared_folder_file_target(
+    state: &AppState,
+    token: &str,
+    file_id: i64,
+) -> Result<(share::Model, crate::entities::file::Model)> {
+    let (share, root_folder_id) = load_valid_folder_share_root(state, token).await?;
+    let file = file_repo::find_by_id(&state.db, file_id).await?;
+    if file.deleted_at.is_some() {
+        return Err(AsterError::file_not_found(format!(
+            "file #{file_id} is in trash"
+        )));
+    }
+    let file_folder_id = file
+        .folder_id
+        .ok_or_else(|| AsterError::auth_forbidden("file is outside shared folder scope"))?;
+    folder_service::verify_folder_in_scope(&state.db, file_folder_id, root_folder_id).await?;
+    Ok((share, file))
+}
+
+async fn load_shared_subfolder_target(
+    state: &AppState,
+    token: &str,
     folder_id: i64,
-    root_folder_id: i64,
-) -> Result<()> {
-    if folder_id == root_folder_id {
-        return Ok(());
+) -> Result<(share::Model, crate::entities::folder::Model)> {
+    let (share, root_folder_id) = load_valid_folder_share_root(state, token).await?;
+    let target = folder_repo::find_by_id(&state.db, folder_id).await?;
+    if target.deleted_at.is_some() {
+        return Err(AsterError::folder_not_found(format!(
+            "folder #{folder_id} is in trash"
+        )));
     }
-    let mut current_id = folder_id;
-    loop {
-        let folder = folder_repo::find_by_id(db, current_id).await?;
-        match folder.parent_id {
-            Some(pid) if pid == root_folder_id => return Ok(()),
-            Some(pid) => current_id = pid,
-            None => {
-                return Err(AsterError::auth_forbidden(
-                    "folder is outside shared folder scope",
-                ));
-            }
-        }
-    }
+    folder_service::verify_folder_in_scope(&state.db, folder_id, root_folder_id).await?;
+    Ok((share, target))
 }
 
 fn validate_share(share: &share::Model) -> Result<()> {

@@ -3,6 +3,7 @@ use sea_orm::Set;
 use serde::Serialize;
 use utoipa::ToSchema;
 
+use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{folder_repo, webdav_account_repo};
 use crate::entities::webdav_account;
 use crate::errors::{AsterError, Result};
@@ -67,7 +68,9 @@ pub async fn create(
     let root_folder_path = if let Some(fid) = root_folder_id {
         let folder = folder_repo::find_by_id(&state.db, fid).await?;
         crate::utils::verify_owner(folder.user_id, user_id, "folder")?;
-        Some(build_folder_path(&state.db, fid).await?)
+        crate::services::folder_service::build_folder_paths(&state.db, &[fid])
+            .await?
+            .remove(&fid)
     } else {
         None
     };
@@ -96,14 +99,37 @@ pub async fn create(
 /// 列出用户的所有 WebDAV 账号（带文件夹路径）
 pub async fn list(state: &AppState, user_id: i64) -> Result<Vec<WebdavAccountInfo>> {
     let accounts = webdav_account_repo::find_by_user(&state.db, user_id).await?;
-    let mut result = Vec::with_capacity(accounts.len());
+    build_account_infos(&state.db, accounts).await
+}
 
+pub async fn list_paginated(
+    state: &AppState,
+    user_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<OffsetPage<WebdavAccountInfo>> {
+    load_offset_page(limit, offset, 100, |limit, offset| async move {
+        let (items, total) =
+            webdav_account_repo::find_by_user_paginated(&state.db, user_id, limit, offset).await?;
+        let items = build_account_infos(&state.db, items).await?;
+        Ok((items, total))
+    })
+    .await
+}
+
+async fn build_account_infos(
+    db: &sea_orm::DatabaseConnection,
+    accounts: Vec<webdav_account::Model>,
+) -> Result<Vec<WebdavAccountInfo>> {
+    let folder_ids: Vec<i64> = accounts
+        .iter()
+        .filter_map(|acc| acc.root_folder_id)
+        .collect();
+    let paths = crate::services::folder_service::build_folder_paths(db, &folder_ids).await?;
+
+    let mut result = Vec::with_capacity(accounts.len());
     for acc in accounts {
-        let root_folder_path = if let Some(fid) = acc.root_folder_id {
-            build_folder_path(&state.db, fid).await.ok()
-        } else {
-            None
-        };
+        let root_folder_path = acc.root_folder_id.and_then(|fid| paths.get(&fid).cloned());
         result.push(WebdavAccountInfo {
             id: acc.id,
             username: acc.username,
@@ -138,21 +164,6 @@ pub async fn toggle_active(
     active.is_active = Set(new_is_active);
     active.updated_at = Set(Utc::now());
     webdav_account_repo::update(&state.db, active).await
-}
-
-/// 从 folder_id 向上遍历构建完整路径，如 "/Documents/Photos"
-async fn build_folder_path(db: &sea_orm::DatabaseConnection, folder_id: i64) -> Result<String> {
-    let mut parts = Vec::new();
-    let mut current_id = Some(folder_id);
-
-    while let Some(id) = current_id {
-        let folder = folder_repo::find_by_id(db, id).await?;
-        parts.push(folder.name);
-        current_id = folder.parent_id;
-    }
-
-    parts.reverse();
-    Ok(format!("/{}", parts.join("/")))
 }
 
 /// 测试 WebDAV 凭据是否正确

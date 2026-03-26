@@ -6,7 +6,7 @@ use crate::db::repository::{config_repo, file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::services::{file_service, webdav_service};
+use crate::services::{file_service, folder_service, webdav_service};
 
 const DEFAULT_RETENTION_DAYS: i64 = 7;
 
@@ -147,20 +147,12 @@ async fn resolve_folder_path(
     db: &sea_orm::DatabaseConnection,
     folder_id: Option<i64>,
 ) -> Result<String> {
-    let mut segments = Vec::new();
-    let mut current = folder_id;
-
-    while let Some(folder_id) = current {
-        let folder = folder_repo::find_by_id(db, folder_id).await?;
-        segments.push(folder.name);
-        current = folder.parent_id;
-    }
-
-    segments.reverse();
-    if segments.is_empty() {
-        Ok("/".to_string())
-    } else {
-        Ok(format!("/{}", segments.join("/")))
+    match folder_id {
+        Some(folder_id) => folder_service::build_folder_paths(db, &[folder_id])
+            .await?
+            .remove(&folder_id)
+            .ok_or_else(|| AsterError::record_not_found(format!("folder #{folder_id}"))),
+        None => Ok("/".to_string()),
     }
 }
 

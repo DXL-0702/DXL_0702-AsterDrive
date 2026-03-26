@@ -1,5 +1,8 @@
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder,
+};
 
+use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::webdav_account::{self, Entity as WebdavAccount};
 use crate::errors::{AsterError, Result};
 
@@ -28,9 +31,27 @@ pub async fn find_by_user<C: ConnectionTrait>(
 ) -> Result<Vec<webdav_account::Model>> {
     WebdavAccount::find()
         .filter(webdav_account::Column::UserId.eq(user_id))
+        .order_by_asc(webdav_account::Column::Id)
         .all(db)
         .await
         .map_err(AsterError::from)
+}
+
+pub async fn find_by_user_paginated<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<webdav_account::Model>, u64)> {
+    fetch_offset_page(
+        db,
+        WebdavAccount::find()
+            .filter(webdav_account::Column::UserId.eq(user_id))
+            .order_by_asc(webdav_account::Column::Id),
+        limit,
+        offset,
+    )
+    .await
 }
 
 pub async fn create<C: ConnectionTrait>(

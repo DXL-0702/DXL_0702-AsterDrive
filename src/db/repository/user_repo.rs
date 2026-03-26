@@ -1,8 +1,10 @@
+use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::user::{self, Entity as User};
 use crate::errors::{AsterError, Result};
+use crate::types::{UserRole, UserStatus};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    sea_query::Expr,
+    QueryOrder, sea_query::Expr,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<user::Model> {
@@ -33,7 +35,39 @@ pub async fn find_by_email<C: ConnectionTrait>(db: &C, email: &str) -> Result<Op
 }
 
 pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<user::Model>> {
-    User::find().all(db).await.map_err(AsterError::from)
+    User::find()
+        .order_by_asc(user::Column::Id)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_paginated<C: ConnectionTrait>(
+    db: &C,
+    limit: u64,
+    offset: u64,
+    keyword: Option<&str>,
+    role: Option<UserRole>,
+    status: Option<UserStatus>,
+) -> Result<(Vec<user::Model>, u64)> {
+    let mut q = User::find().order_by_asc(user::Column::Id);
+
+    if let Some(keyword) = keyword.filter(|s| !s.trim().is_empty()) {
+        let pattern = format!("%{}%", keyword.trim());
+        q = q.filter(
+            sea_orm::Condition::any()
+                .add(user::Column::Username.like(&pattern))
+                .add(user::Column::Email.like(&pattern)),
+        );
+    }
+    if let Some(role) = role {
+        q = q.filter(user::Column::Role.eq(role));
+    }
+    if let Some(status) = status {
+        q = q.filter(user::Column::Status.eq(status));
+    }
+
+    fetch_offset_page(db, q, limit, offset).await
 }
 
 pub async fn count_all<C: ConnectionTrait>(db: &C) -> Result<u64> {

@@ -1,5 +1,6 @@
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
+use crate::api::pagination::{LimitOffsetQuery, OffsetPage};
 use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
@@ -42,8 +43,9 @@ pub struct CreateWebdavAccountReq {
     path = "/api/v1/webdav-accounts",
     tag = "webdav",
     operation_id = "list_webdav_accounts",
+    params(LimitOffsetQuery),
     responses(
-        (status = 200, description = "WebDAV accounts", body = inline(ApiResponse<Vec<webdav_account_service::WebdavAccountInfo>>)),
+        (status = 200, description = "WebDAV accounts", body = inline(ApiResponse<OffsetPage<webdav_account_service::WebdavAccountInfo>>)),
         (status = 401, description = "Unauthorized"),
     ),
     security(("bearer" = [])),
@@ -51,8 +53,15 @@ pub struct CreateWebdavAccountReq {
 pub async fn list_accounts(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
-    let accounts = webdav_account_service::list(&state, claims.user_id).await?;
+    let accounts = webdav_account_service::list_paginated(
+        &state,
+        claims.user_id,
+        query.limit_or(50, 100),
+        query.offset(),
+    )
+    .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(accounts)))
 }
 

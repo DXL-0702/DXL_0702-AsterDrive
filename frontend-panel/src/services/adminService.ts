@@ -1,18 +1,38 @@
 import type {
 	DriverType,
 	StoragePolicy,
+	StoragePolicyPage,
 	SystemConfig,
 	UserInfo,
+	UserPage,
 	UserRole,
 	UserStatus,
 	UserStoragePolicy,
+	UserStoragePolicyPage,
 } from "@/types/api";
 import { api } from "./http";
 
 // --- Users ---
 
 export const adminUserService = {
-	list: () => api.get<UserInfo[]>("/admin/users"),
+	list: (params?: {
+		limit?: number;
+		offset?: number;
+		keyword?: string;
+		role?: UserRole;
+		status?: UserStatus;
+	}) => {
+		const query = new URLSearchParams();
+		if (params?.limit != null) query.set("limit", String(params.limit));
+		if (params?.offset != null) query.set("offset", String(params.offset));
+		if (params?.keyword) query.set("keyword", params.keyword);
+		if (params?.role) query.set("role", params.role);
+		if (params?.status) query.set("status", params.status);
+		const suffix = query.toString();
+		return api.get<UserPage>(
+			suffix ? `/admin/users?${suffix}` : "/admin/users",
+		);
+	},
 
 	get: (id: number) => api.get<UserInfo>(`/admin/users/${id}`),
 
@@ -20,12 +40,22 @@ export const adminUserService = {
 		id: number,
 		data: { role?: UserRole; status?: UserStatus; storage_quota?: number },
 	) => api.patch<UserInfo>(`/admin/users/${id}`, data),
+
+	delete: (id: number) => api.delete<void>(`/admin/users/${id}`),
 };
 
 // --- Policies ---
 
 export const adminPolicyService = {
-	list: () => api.get<StoragePolicy[]>("/admin/policies"),
+	list: (params?: { limit?: number; offset?: number }) => {
+		const query = new URLSearchParams();
+		if (params?.limit != null) query.set("limit", String(params.limit));
+		if (params?.offset != null) query.set("offset", String(params.offset));
+		const suffix = query.toString();
+		return api.get<StoragePolicyPage>(
+			suffix ? `/admin/policies?${suffix}` : "/admin/policies",
+		);
+	},
 
 	get: (id: number) => api.get<StoragePolicy>(`/admin/policies/${id}`),
 
@@ -72,8 +102,17 @@ export const adminPolicyService = {
 // --- User Storage Policies ---
 
 export const adminUserPolicyService = {
-	list: (userId: number) =>
-		api.get<UserStoragePolicy[]>(`/admin/users/${userId}/policies`),
+	list: (userId: number, params?: { limit?: number; offset?: number }) => {
+		const query = new URLSearchParams();
+		if (params?.limit != null) query.set("limit", String(params.limit));
+		if (params?.offset != null) query.set("offset", String(params.offset));
+		const suffix = query.toString();
+		return api.get<UserStoragePolicyPage>(
+			suffix
+				? `/admin/users/${userId}/policies?${suffix}`
+				: `/admin/users/${userId}/policies`,
+		);
+	},
 
 	assign: (
 		userId: number,
