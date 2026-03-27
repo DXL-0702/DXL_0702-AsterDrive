@@ -1,3 +1,4 @@
+import { config } from "@/config/app";
 import type {
 	ErrorCode,
 	FileInfo,
@@ -6,7 +7,6 @@ import type {
 	FolderContents,
 	FolderInfo,
 } from "@/types/api";
-import { config } from "@/config/app";
 import { ApiError, api } from "./http";
 
 export interface FolderListParams {

@@ -1,10 +1,10 @@
+import { config } from "@/config/app";
 import type {
 	FolderContents,
 	ShareInfo,
 	SharePage,
 	SharePublicInfo,
 } from "@/types/api";
-import { config } from "@/config/app";
 import type { FolderListParams } from "./fileService";
 import { api } from "./http";
 

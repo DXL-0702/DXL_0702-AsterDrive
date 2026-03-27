@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonFileGrid } from "@/components/common/SkeletonFileGrid";
 import { SkeletonFileTable } from "@/components/common/SkeletonFileTable";
 import { SortMenu } from "@/components/common/SortMenu";
+import { ToolbarBar } from "@/components/common/ToolbarBar";
 import { ViewToggle } from "@/components/common/ViewToggle";
 import { FileGrid } from "@/components/files/FileGrid";
 import { FileTable } from "@/components/files/FileTable";
@@ -45,8 +46,8 @@ import {
 	type InternalDragData,
 	readInternalDragData,
 } from "@/lib/dragDrop";
-import { cn } from "@/lib/utils";
 import { formatBatchToast } from "@/lib/formatBatchToast";
+import { cn } from "@/lib/utils";
 import { batchService } from "@/services/batchService";
 import { fileService } from "@/services/fileService";
 import { useAuthStore } from "@/stores/authStore";
@@ -511,9 +512,9 @@ export default function FileBrowserPage() {
 	const pageCore = (
 		<>
 			{/* Breadcrumb / local controls */}
-			<div className="border-b border-border/70 bg-background px-4 py-2.5">
-				<div className="flex flex-wrap items-center justify-between gap-3">
-					<div className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-3">
+			<ToolbarBar
+				left={
+					<>
 						<Icon
 							name="FolderOpen"
 							className="h-4 w-4 shrink-0 text-muted-foreground/70"
@@ -577,8 +578,10 @@ export default function FileBrowserPage() {
 						>
 							<Icon name="ArrowsClockwise" className="h-4 w-4" />
 						</button>
-					</div>
-					<div className="flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-2">
+					</>
+				}
+				right={
+					<>
 						<SortMenu
 							sortBy={sortBy}
 							sortOrder={sortOrder}
@@ -586,9 +589,9 @@ export default function FileBrowserPage() {
 							onSortOrder={setSortOrder}
 						/>
 						<ViewToggle value={viewMode} onChange={setViewMode} />
-					</div>
-				</div>
-			</div>
+					</>
+				}
+			/>
 			<div
 				className={cn(
 					"relative min-h-0 flex-1 transition-colors",
@@ -655,22 +658,22 @@ export default function FileBrowserPage() {
 							disabled={!uploadReady}
 							onClick={() => uploadAreaRef.current?.triggerFileUpload()}
 						>
-							<Icon name="Upload" className="h-4 w-4 mr-2" />
+							<Icon name="Upload" className="mr-2 h-4 w-4" />
 							{t("upload_file")}
 						</ContextMenuItem>
 						<ContextMenuItem
 							disabled={!uploadReady}
 							onClick={() => uploadAreaRef.current?.triggerFolderUpload()}
 						>
-							<Icon name="FolderOpen" className="h-4 w-4 mr-2" />
+							<Icon name="FolderOpen" className="mr-2 h-4 w-4" />
 							{t("upload_folder")}
 						</ContextMenuItem>
 						<ContextMenuItem onClick={() => setCreateFolderOpen(true)}>
-							<Icon name="FolderPlus" className="h-4 w-4 mr-2" />
+							<Icon name="FolderPlus" className="mr-2 h-4 w-4" />
 							{t("new_folder")}
 						</ContextMenuItem>
 						<ContextMenuItem onClick={() => setCreateFileOpen(true)}>
-							<Icon name="FilePlus" className="h-4 w-4 mr-2" />
+							<Icon name="FilePlus" className="mr-2 h-4 w-4" />
 							{t("new_file")}
 						</ContextMenuItem>
 					</ContextMenuContent>

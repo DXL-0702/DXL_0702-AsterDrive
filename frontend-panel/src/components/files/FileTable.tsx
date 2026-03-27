@@ -2,7 +2,6 @@ import type React from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileContextMenu } from "@/components/files/FileContextMenu";
-import { DRAG_SOURCE_MIME } from "@/lib/constants";
 import {
 	FileNameCell,
 	FileSizeCell,
@@ -20,6 +19,7 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import { DRAG_SOURCE_MIME } from "@/lib/constants";
 import {
 	getInvalidInternalDropReason,
 	hasInternalDragData,
