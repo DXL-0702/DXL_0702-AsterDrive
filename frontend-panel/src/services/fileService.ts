@@ -6,6 +6,7 @@ import type {
 	FolderContents,
 	FolderInfo,
 } from "@/types/api";
+import { config } from "@/config/app";
 import { ApiError, api } from "./http";
 
 export interface FolderListParams {
@@ -44,6 +45,8 @@ export const fileService = {
 		api.patch<FileInfo>(`/files/${id}`, { name }),
 
 	downloadPath: (id: number) => `/files/${id}/download`,
+
+	downloadUrl: (id: number) => `${config.apiBaseUrl}/files/${id}/download`,
 
 	thumbnailPath: (id: number) => `/files/${id}/thumbnail`,
 

@@ -49,7 +49,6 @@ import { cn } from "@/lib/utils";
 import { formatBatchToast } from "@/lib/formatBatchToast";
 import { batchService } from "@/services/batchService";
 import { fileService } from "@/services/fileService";
-import { api } from "@/services/http";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
 import type {
@@ -215,24 +214,12 @@ export default function FileBrowserPage() {
 			document.removeEventListener("rename-request", onRenameRequest);
 	}, []);
 
-	const handleDownload = useCallback(
-		async (fileId: number, fileName: string) => {
-			try {
-				const res = await api.client.get(fileService.downloadPath(fileId), {
-					responseType: "blob",
-				});
-				const objectUrl = URL.createObjectURL(res.data);
-				const a = document.createElement("a");
-				a.href = objectUrl;
-				a.download = fileName;
-				a.click();
-				URL.revokeObjectURL(objectUrl);
-			} catch (err) {
-				handleApiError(err);
-			}
-		},
-		[],
-	);
+	const handleDownload = useCallback((fileId: number, _fileName: string) => {
+		const a = document.createElement("a");
+		a.href = fileService.downloadUrl(fileId);
+		a.download = "";
+		a.click();
+	}, []);
 
 	const handleCopy = useCallback((type: "file" | "folder", id: number) => {
 		setCopyTarget({ type, id });
