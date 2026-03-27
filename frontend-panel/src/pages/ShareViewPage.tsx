@@ -58,7 +58,7 @@ const FilePreview = lazy(async () => {
 });
 
 export default function ShareViewPage() {
-	const { t } = useTranslation();
+	const { t } = useTranslation(["core", "share"]);
 	const { token } = useParams<{ token: string }>();
 	const [info, setInfo] = useState<SharePublicInfo | null>(null);
 	const [needsPassword, setNeedsPassword] = useState(false);
@@ -94,16 +94,16 @@ export default function ShareViewPage() {
 		} catch (e) {
 			if (e instanceof ApiError) {
 				if (e.code === ErrorCode.ShareExpired) {
-					setError(t("share_expired"));
+					setError(t("share:share_expired"));
 				} else if (e.code === ErrorCode.ShareNotFound) {
-					setError(t("share_not_found"));
+					setError(t("share:share_not_found"));
 				} else if (e.code === ErrorCode.ShareDownloadLimitReached) {
-					setError(t("download_limit_reached"));
+					setError(t("share:download_limit_reached"));
 				} else {
 					setError(e.message);
 				}
 			} else {
-				setError(t("failed_to_load_share"));
+				setError(t("share:failed_to_load_share"));
 			}
 		} finally {
 			setLoading(false);
@@ -212,7 +212,7 @@ export default function ShareViewPage() {
 			await shareService.verifyPassword(token, password);
 			setPasswordVerified(true);
 			setNeedsPassword(false);
-			toast.success(t("password_verified"));
+			toast.success(t("share:password_verified"));
 
 			if (info?.share_type === "folder") {
 				const contents = await shareService.listContent(token, sharePageParams);
@@ -330,7 +330,7 @@ export default function ShareViewPage() {
 								className="mx-auto mb-2 h-10 w-10 text-muted-foreground"
 							/>
 							<CardTitle>{info.name}</CardTitle>
-							<CardDescription>{t("password_protected")}</CardDescription>
+							<CardDescription>{t("share:password_protected")}</CardDescription>
 						</CardHeader>
 						<CardContent>
 							<form onSubmit={handleVerifyPassword} className="space-y-4">
@@ -385,15 +385,15 @@ export default function ShareViewPage() {
 									<CardTitle className="truncate">{info.name}</CardTitle>
 									<CardDescription className="mt-1">
 										{info.max_downloads > 0
-											? t("n_of_m_downloads", {
+											? t("share:n_of_m_downloads", {
 													count: info.download_count,
 													max: info.max_downloads,
 												})
-											: t("n_downloads", {
+											: t("share:n_downloads", {
 													count: info.download_count,
 												})}
 										{info.expires_at &&
-											` · ${t("expires_date", {
+											` · ${t("share:expires_date", {
 												date: formatDateShort(info.expires_at),
 											})}`}
 									</CardDescription>

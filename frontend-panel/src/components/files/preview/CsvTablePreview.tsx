@@ -20,7 +20,7 @@ interface CsvTablePreviewProps {
 const MAX_ROWS = 500;
 
 export function CsvTablePreview({ path, delimiter }: CsvTablePreviewProps) {
-	const { t } = useTranslation(["files", "common"]);
+	const { t } = useTranslation(["core", "files"]);
 	const { content, loading, error, reload } = useTextContent(path);
 
 	const parsed = useMemo(() => {
@@ -66,7 +66,7 @@ export function CsvTablePreview({ path, delimiter }: CsvTablePreviewProps) {
 								key={`header-${headerKey}-${cell || `column-${index + 1}`}`}
 								className="whitespace-pre-wrap break-words"
 							>
-								{cell || `${t("common:column")} ${index + 1}`}
+								{cell || `${t("column")} ${index + 1}`}
 							</TableHead>
 						))}
 					</TableRow>

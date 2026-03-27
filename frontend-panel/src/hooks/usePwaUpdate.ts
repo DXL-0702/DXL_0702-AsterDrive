@@ -54,9 +54,9 @@ export function usePwaUpdate() {
 
 	useEffect(() => {
 		if (needRefresh) {
-			toast.info(t("pwa_update_available"), {
+			toast.info(t("offline:pwa_update_available"), {
 				action: {
-					label: t("pwa_refresh"),
+					label: t("offline:pwa_refresh"),
 					onClick: () => {
 						logPwaUpdate("apply update clicked");
 						void updateServiceWorker(true);

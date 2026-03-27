@@ -38,7 +38,7 @@ export function TrashTable({
 	onRestore,
 	onPurge,
 }: TrashTableProps) {
-	const { t } = useTranslation(["common", "files", "admin"]);
+	const { t } = useTranslation(["core", "files", "admin"]);
 
 	return (
 		<Table>
@@ -52,12 +52,12 @@ export function TrashTable({
 							/>
 						</div>
 					</TableHead>
-					<TableHead>{t("common:name")}</TableHead>
-					<TableHead>{t("common:original_location")}</TableHead>
+					<TableHead>{t("name")}</TableHead>
+					<TableHead>{t("original_location")}</TableHead>
 					<TableHead className="w-[160px]">{t("admin:deleted_at")}</TableHead>
-					<TableHead className="w-[100px]">{t("common:size")}</TableHead>
+					<TableHead className="w-[100px]">{t("size")}</TableHead>
 					<TableHead className="w-[180px] text-right">
-						{t("common:actions")}
+						{t("actions")}
 					</TableHead>
 				</TableRow>
 			</TableHeader>
@@ -104,8 +104,8 @@ export function TrashTable({
 										</p>
 										<p className="text-xs text-muted-foreground">
 											{item.entity_type === "folder"
-												? t("common:folder")
-												: t("common:file")}
+												? t("folder")
+												: t("file")}
 										</p>
 									</div>
 								</div>

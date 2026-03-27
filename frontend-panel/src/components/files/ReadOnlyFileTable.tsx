@@ -35,15 +35,15 @@ export function ReadOnlyFileTable({
 	onFileDownload,
 	getThumbnailPath,
 }: ReadOnlyFileTableProps) {
-	const { t } = useTranslation(["files", "common"]);
+	const { t } = useTranslation(["core", "files"]);
 
 	return (
 		<Table>
 			<TableHeader>
 				<TableRow>
-					<TableHead>{t("common:name")}</TableHead>
-					<TableHead className="w-[100px]">{t("common:size")}</TableHead>
-					<TableHead>{t("common:date")}</TableHead>
+					<TableHead>{t("name")}</TableHead>
+					<TableHead className="w-[100px]">{t("size")}</TableHead>
+					<TableHead>{t("date")}</TableHead>
 					<TableHead className="w-[64px]" />
 				</TableRow>
 			</TableHeader>

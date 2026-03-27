@@ -23,7 +23,7 @@ import type { MyShareInfo, ShareStatus } from "@/types/api";
 const PAGE_SIZE = 50;
 
 export default function MySharesPage() {
-	const { t } = useTranslation(["common", "files"]);
+	const { t } = useTranslation(["core", "share"]);
 	const [page, setPage] = useState(0);
 	const [loading, setLoading] = useState(true);
 	const [shares, setShares] = useState<MyShareInfo[]>([]);
@@ -55,14 +55,14 @@ export default function MySharesPage() {
 	const copyShareLink = async (share: MyShareInfo) => {
 		const url = `${window.location.origin}/s/${share.token}`;
 		await navigator.clipboard.writeText(url);
-		toast.success(t("common:copied_to_clipboard"));
+		toast.success(t("copied_to_clipboard"));
 	};
 
 	const handleDelete = async () => {
 		if (!deleteTarget) return;
 		try {
 			await shareService.delete(deleteTarget.id);
-			toast.success(t("files:my_shares_delete_success"));
+			toast.success(t("share:my_shares_delete_success"));
 			setDeleteTarget(null);
 			if (shares.length === 1 && page > 0) {
 				setPage((current) => current - 1);
@@ -77,19 +77,19 @@ export default function MySharesPage() {
 	const statusBadge = (status: ShareStatus) => {
 		switch (status) {
 			case "active":
-				return <Badge variant="secondary">{t("common:active")}</Badge>;
+				return <Badge variant="secondary">{t("active")}</Badge>;
 			case "expired":
-				return <Badge variant="outline">{t("common:expired")}</Badge>;
+				return <Badge variant="outline">{t("expired")}</Badge>;
 			case "exhausted":
 				return (
 					<Badge variant="outline">
-						{t("files:my_shares_status_exhausted")}
+						{t("share:my_shares_status_exhausted")}
 					</Badge>
 				);
 			case "deleted":
 				return (
 					<Badge variant="destructive">
-						{t("files:my_shares_status_deleted")}
+						{t("share:my_shares_status_deleted")}
 					</Badge>
 				);
 		}
@@ -101,15 +101,15 @@ export default function MySharesPage() {
 				<div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 md:p-6">
 					<div className="flex items-center gap-3">
 						<h1 className="text-2xl font-semibold tracking-tight">
-							{t("files:my_shares_title")}
+							{t("share:my_shares_title")}
 						</h1>
 						<Button
 							variant="ghost"
 							size="icon-sm"
 							onClick={() => void loadShares()}
 							disabled={loading}
-							aria-label={t("common:refresh")}
-							title={t("common:refresh")}
+							aria-label={t("refresh")}
+							title={t("refresh")}
 						>
 							<Icon
 								name={loading ? "Spinner" : "ArrowsClockwise"}
@@ -129,8 +129,8 @@ export default function MySharesPage() {
 							<div className="py-12">
 								<EmptyState
 									icon={<Icon name="Link" className="h-10 w-10" />}
-									title={t("files:my_shares_empty_title")}
-									description={t("files:my_shares_empty_desc")}
+									title={t("share:my_shares_empty_title")}
+									description={t("share:my_shares_empty_desc")}
 								/>
 							</div>
 						</Card>
@@ -168,18 +168,18 @@ export default function MySharesPage() {
 												</div>
 												<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 pl-[42px] text-xs text-muted-foreground">
 													<span>
-														{t("files:my_shares_created_label", {
+														{t("share:my_shares_created_label", {
 															date: formatDateAbsolute(share.created_at),
 														})}
 													</span>
 													{share.expires_at ? (
 														<span>
-															{t("files:my_shares_expire_label", {
+															{t("share:my_shares_expire_label", {
 																date: formatDateAbsolute(share.expires_at),
 															})}
 														</span>
 													) : (
-														<span>{t("files:my_shares_never")}</span>
+														<span>{t("share:my_shares_never")}</span>
 													)}
 													{share.has_password && (
 														<Icon name="Lock" className="h-3 w-3" />
@@ -192,7 +192,7 @@ export default function MySharesPage() {
 												onClick={() => void copyShareLink(share)}
 											>
 												<Icon name="Copy" />
-												{t("files:my_shares_card_copy")}
+												{t("share:my_shares_card_copy")}
 											</ContextMenuItem>
 											<ContextMenuItem
 												onClick={() =>
@@ -204,7 +204,7 @@ export default function MySharesPage() {
 												}
 											>
 												<Icon name="ArrowSquareOut" />
-												{t("files:my_shares_card_open")}
+												{t("share:my_shares_card_open")}
 											</ContextMenuItem>
 											<ContextMenuSeparator />
 											<ContextMenuItem
@@ -212,7 +212,7 @@ export default function MySharesPage() {
 												onClick={() => setDeleteTarget(share)}
 											>
 												<Icon name="Trash" />
-												{t("files:my_shares_card_delete")}
+												{t("share:my_shares_card_delete")}
 											</ContextMenuItem>
 										</ContextMenuContent>
 									</ContextMenu>
@@ -221,7 +221,7 @@ export default function MySharesPage() {
 
 							<div className="flex items-center justify-between rounded-xl border bg-muted/15 px-4 py-3">
 								<p className="text-sm text-muted-foreground">
-									{t("files:my_shares_pagination_desc", {
+									{t("share:my_shares_pagination_desc", {
 										current: page + 1,
 										total: totalPages,
 										count: total,
@@ -236,7 +236,7 @@ export default function MySharesPage() {
 											setPage((current) => Math.max(0, current - 1))
 										}
 									>
-										{t("files:my_shares_prev")}
+										{t("share:my_shares_prev")}
 									</Button>
 									<Button
 										variant="outline"
@@ -248,7 +248,7 @@ export default function MySharesPage() {
 											)
 										}
 									>
-										{t("files:my_shares_next")}
+										{t("share:my_shares_next")}
 									</Button>
 								</div>
 							</div>
@@ -262,11 +262,11 @@ export default function MySharesPage() {
 				onOpenChange={(open) => {
 					if (!open) setDeleteTarget(null);
 				}}
-				title={t("files:my_shares_delete_title", {
+				title={t("share:my_shares_delete_title", {
 					name: deleteTarget?.resource_name ?? "",
 				})}
-				description={t("files:my_shares_delete_desc")}
-				confirmLabel={t("common:delete")}
+				description={t("share:my_shares_delete_desc")}
+				confirmLabel={t("delete")}
 				onConfirm={() => void handleDelete()}
 				variant="destructive"
 			/>

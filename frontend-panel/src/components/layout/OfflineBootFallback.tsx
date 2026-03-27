@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 
 export function OfflineBootFallback() {
-	const { t } = useTranslation("common");
+	const { t } = useTranslation("offline");
 
 	return (
 		<div className="flex min-h-screen bg-background text-foreground">

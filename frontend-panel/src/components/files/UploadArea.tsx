@@ -109,7 +109,7 @@ function createTaskId() {
 
 export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 	function UploadArea({ children }, ref) {
-		const { t } = useTranslation(["files", "common"]);
+		const { t } = useTranslation(["core", "files"]);
 		const refresh = useFileStore((s) => s.refresh);
 		const currentFolderId = useFileStore((s) => s.currentFolderId);
 		const breadcrumb = useFileStore((s) => s.breadcrumb);
@@ -411,7 +411,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					const message =
 						error instanceof Error
 							? error.message
-							: t("common:unexpected_error");
+							: t("errors:unexpected_error");
 					markTaskFailed(task.id, message);
 				} finally {
 					directAbortRef.current.delete(task.id);
@@ -519,7 +519,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					const message =
 						error instanceof Error
 							? error.message
-							: t("common:unexpected_error");
+							: t("errors:unexpected_error");
 					markTaskFailed(task.id, message);
 				} finally {
 					abortFlagsRef.current.delete(task.id);
@@ -574,7 +574,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					const message =
 						error instanceof Error
 							? error.message
-							: t("common:unexpected_error");
+							: t("errors:unexpected_error");
 					if (message.includes("abort")) {
 						patchTask(task.id, { status: "cancelled", error: null });
 						return;
@@ -722,7 +722,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					const message =
 						error instanceof Error
 							? error.message
-							: t("common:unexpected_error");
+							: t("errors:unexpected_error");
 					markTaskFailed(task.id, message);
 				} finally {
 					abortFlagsRef.current.delete(task.id);
@@ -835,7 +835,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					const message =
 						error instanceof Error
 							? error.message
-							: t("common:unexpected_error");
+							: t("errors:unexpected_error");
 					markTaskFailed(taskId, message);
 					finalizeTaskRefresh(task);
 				}
@@ -1206,7 +1206,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 								active: activeCount,
 							})}
 							tasks={uploadTasks}
-							emptyText={t("common:no_data")}
+							emptyText={t("no_data")}
 							totalCount={totalCount}
 							successCount={successCount}
 							failedCount={failedCount}

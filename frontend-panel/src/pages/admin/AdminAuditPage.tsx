@@ -100,8 +100,8 @@ export default function AdminAuditPage() {
 									<SelectItem value="__all__">
 										{t("audit_all_types")}
 									</SelectItem>
-									<SelectItem value="file">{t("common:file")}</SelectItem>
-									<SelectItem value="folder">{t("common:folder")}</SelectItem>
+									<SelectItem value="file">{t("core:file")}</SelectItem>
+									<SelectItem value="folder">{t("core:folder")}</SelectItem>
 								</SelectContent>
 							</Select>
 						</>
@@ -125,7 +125,7 @@ export default function AdminAuditPage() {
 										<TableHead>{t("audit_user")}</TableHead>
 										<TableHead>{t("audit_action")}</TableHead>
 										<TableHead>{t("audit_entity")}</TableHead>
-										<TableHead>{t("common:name")}</TableHead>
+										<TableHead>{t("core:name")}</TableHead>
 										<TableHead>{t("audit_ip")}</TableHead>
 									</TableRow>
 								</TableHeader>

@@ -81,7 +81,7 @@ function QuotaCell({ user }: { user: UserInfo }) {
 					{formatBytes(used)}
 					{quota > 0
 						? ` / ${formatBytes(quota)}`
-						: ` / ${t("common:unlimited")}`}
+						: ` / ${t("core:unlimited")}`}
 				</span>
 				<span className="text-[11px] text-muted-foreground">
 					{quota > 0 ? `${Math.round(pct)}%` : t("quota_unlimited_short")}
@@ -409,9 +409,9 @@ export default function AdminUsersPage() {
 								</SelectTrigger>
 								<SelectContent>
 									<SelectItem value="__all__">{t("all_statuses")}</SelectItem>
-									<SelectItem value="active">{t("common:active")}</SelectItem>
+									<SelectItem value="active">{t("core:active")}</SelectItem>
 									<SelectItem value="disabled">
-										{t("common:disabled_status")}
+										{t("core:disabled_status")}
 									</SelectItem>
 								</SelectContent>
 							</Select>
@@ -458,10 +458,10 @@ export default function AdminUsersPage() {
 										<TableHead>{t("username")}</TableHead>
 										<TableHead>{t("email")}</TableHead>
 										<TableHead className="w-32">{t("role")}</TableHead>
-										<TableHead className="w-32">{t("common:status")}</TableHead>
+										<TableHead className="w-32">{t("core:status")}</TableHead>
 										<TableHead className="w-[220px]">{t("storage")}</TableHead>
 										<TableHead className="w-20">
-											{t("common:actions")}
+											{t("core:actions")}
 										</TableHead>
 									</TableRow>
 								</TableHeader>
@@ -524,8 +524,8 @@ export default function AdminUsersPage() {
 														className={getStatusBadgeClass(user.status)}
 													>
 														{user.status === "active"
-															? t("common:active")
-															: t("common:disabled_status")}
+															? t("core:active")
+															: t("core:disabled_status")}
 													</Badge>
 												</button>
 											</TableCell>
@@ -734,7 +734,7 @@ export default function AdminUsersPage() {
 								onClick={() => setCreateDialogOpen(false)}
 								disabled={creating}
 							>
-								{t("common:cancel")}
+								{t("core:cancel")}
 							</Button>
 							<Button type="submit" disabled={creating}>
 								{creating ? (
@@ -742,7 +742,7 @@ export default function AdminUsersPage() {
 								) : (
 									<Icon name="Plus" className="mr-1 h-4 w-4" />
 								)}
-								{t("common:create")}
+								{t("core:create")}
 							</Button>
 						</DialogFooter>
 					</form>
@@ -767,7 +767,7 @@ export default function AdminUsersPage() {
 						? t("initial_admin_delete_blocked")
 						: t("confirm_force_delete")
 				}
-				confirmLabel={t("common:delete")}
+				confirmLabel={t("core:delete")}
 				onConfirm={() => {
 					const id = deleteUserId;
 					setDeleteUserId(null);

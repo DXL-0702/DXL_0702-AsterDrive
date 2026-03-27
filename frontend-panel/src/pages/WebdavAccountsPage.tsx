@@ -65,7 +65,7 @@ function CopyField({
 }
 
 export default function WebdavAccountsPage() {
-	const { t } = useTranslation(["common", "admin", "auth"]);
+	const { t } = useTranslation(["core", "admin", "auth", "webdav", "errors"]);
 	const {
 		items: accounts,
 		loading,
@@ -120,9 +120,9 @@ export default function WebdavAccountsPage() {
 		async (value: string) => {
 			try {
 				await navigator.clipboard.writeText(value);
-				toast.success(t("common:copied_to_clipboard"));
+				toast.success(t("copied_to_clipboard"));
 			} catch {
-				toast.error(t("common:unexpected_error"));
+				toast.error(t("errors:unexpected_error"));
 			}
 		},
 		[t],
@@ -130,7 +130,7 @@ export default function WebdavAccountsPage() {
 
 	const handleCreate = async () => {
 		if (!newUsername.trim()) {
-			toast.error(t("common:username_required"));
+			toast.error(t("webdav:username_required"));
 			return;
 		}
 
@@ -206,9 +206,9 @@ export default function WebdavAccountsPage() {
 			<Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
 				<DialogContent className="max-w-md">
 					<DialogHeader>
-						<DialogTitle>{t("common:create_webdav_account")}</DialogTitle>
+						<DialogTitle>{t("webdav:create_webdav_account")}</DialogTitle>
 						<DialogDescription>
-							{t("common:webdav_test_hint")}
+							{t("webdav:webdav_test_hint")}
 						</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-4 py-2">
@@ -219,7 +219,7 @@ export default function WebdavAccountsPage() {
 								id="username"
 								value={newUsername}
 								onChange={(e) => setNewUsername(e.target.value)}
-								placeholder={t("common:webdav_username_placeholder")}
+								placeholder={t("webdav:webdav_username_placeholder")}
 							/>
 						</div>
 						{/* password field */}
@@ -230,15 +230,15 @@ export default function WebdavAccountsPage() {
 								type="password"
 								value={newPassword}
 								onChange={(e) => setNewPassword(e.target.value)}
-								placeholder={t("common:auto_generate_password")}
+								placeholder={t("webdav:auto_generate_password")}
 							/>
 							<p className="text-xs text-muted-foreground">
-								{t("common:auto_generate_password")}
+								{t("webdav:auto_generate_password")}
 							</p>
 						</div>
 						{/* access scope select */}
 						<div className="space-y-1.5">
-							<Label htmlFor="rootFolder">{t("common:access_scope")}</Label>
+							<Label htmlFor="rootFolder">{t("webdav:access_scope")}</Label>
 							<Select
 								value={
 									selectedFolderId != null
@@ -256,7 +256,7 @@ export default function WebdavAccountsPage() {
 								</SelectTrigger>
 								<SelectContent>
 									<SelectItem value="__all__">
-										{t("common:all_files_full_access")}
+										{t("webdav:all_files_full_access")}
 									</SelectItem>
 									{folders.map((folder) => (
 										<SelectItem key={folder.id} value={String(folder.id)}>
@@ -267,7 +267,7 @@ export default function WebdavAccountsPage() {
 							</Select>
 							{folders.length === 0 && (
 								<p className="text-xs text-muted-foreground">
-									{t("common:webdav_no_root_folders")}
+									{t("webdav:webdav_no_root_folders")}
 								</p>
 							)}
 						</div>
@@ -278,7 +278,7 @@ export default function WebdavAccountsPage() {
 							disabled={creating || !newUsername.trim()}
 						>
 							<Icon name="Plus" className="h-4 w-4" />
-							{creating ? t("common:loading") : t("common:create")}
+							{creating ? t("loading") : t("create")}
 						</Button>
 					</DialogFooter>
 				</DialogContent>
@@ -298,9 +298,9 @@ export default function WebdavAccountsPage() {
 				>
 					<DialogContent className="max-w-md">
 						<DialogHeader>
-							<DialogTitle>{t("common:webdav_recent_credentials")}</DialogTitle>
+							<DialogTitle>{t("webdav:webdav_recent_credentials")}</DialogTitle>
 							<DialogDescription>
-								{t("common:webdav_recent_credentials_desc")}
+								{t("webdav:webdav_recent_credentials_desc")}
 							</DialogDescription>
 						</DialogHeader>
 						<div className="space-y-4 py-2">
@@ -358,9 +358,9 @@ export default function WebdavAccountsPage() {
 					{/* Page Header */}
 					<div className="flex items-start justify-between gap-4">
 						<div>
-							<h1 className="text-xl font-semibold">{t("common:webdav")}</h1>
+							<h1 className="text-xl font-semibold">{t("webdav")}</h1>
 							<p className="mt-1 text-sm text-muted-foreground">
-								{t("common:webdav_page_desc")}
+								{t("webdav:webdav_page_desc")}
 							</p>
 						</div>
 						<Button
@@ -368,7 +368,7 @@ export default function WebdavAccountsPage() {
 							onClick={() => setCreateDialogOpen(true)}
 						>
 							<Icon name="Plus" className="h-4 w-4" />
-							{t("common:create_webdav_account")}
+							{t("webdav:create_webdav_account")}
 						</Button>
 					</div>
 
@@ -377,16 +377,16 @@ export default function WebdavAccountsPage() {
 						<div className="flex items-center gap-2 mb-1">
 							<Icon name="Globe" className="h-4 w-4 text-muted-foreground" />
 							<p className="text-sm font-medium">
-								{t("common:webdav_endpoint")}
+								{t("webdav:webdav_endpoint")}
 							</p>
 						</div>
 						<p className="mb-3 text-xs text-muted-foreground">
-							{t("common:webdav_use_credentials_hint")}
+							{t("webdav:webdav_use_credentials_hint")}
 						</p>
 						<CopyField
 							value={endpointUrl}
 							onCopy={() => void copyToClipboard(endpointUrl)}
-							copyLabel={t("common:webdav_copy_endpoint")}
+							copyLabel={t("webdav:webdav_copy_endpoint")}
 						/>
 					</div>
 
@@ -397,17 +397,17 @@ export default function WebdavAccountsPage() {
 						columns={5}
 						rows={5}
 						emptyIcon={<Icon name="Globe" className="h-10 w-10" />}
-						emptyTitle={t("common:no_webdav_accounts")}
-						emptyDescription={t("common:no_webdav_accounts_desc")}
+						emptyTitle={t("webdav:no_webdav_accounts")}
+						emptyDescription={t("webdav:no_webdav_accounts_desc")}
 						headerRow={
 							<TableHeader>
 								<TableRow>
 									<TableHead>{t("admin:username")}</TableHead>
-									<TableHead>{t("common:access_scope")}</TableHead>
-									<TableHead>{t("common:status")}</TableHead>
-									<TableHead>{t("common:created_at")}</TableHead>
+									<TableHead>{t("webdav:access_scope")}</TableHead>
+									<TableHead>{t("status")}</TableHead>
+									<TableHead>{t("created_at")}</TableHead>
 									<TableHead className="w-[96px] text-right">
-										{t("common:actions")}
+										{t("actions")}
 									</TableHead>
 								</TableRow>
 							</TableHeader>
@@ -428,7 +428,7 @@ export default function WebdavAccountsPage() {
 											className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
 										/>
 										<span className="truncate">
-											{account.root_folder_path ?? t("common:all_files")}
+											{account.root_folder_path ?? t("all_files")}
 										</span>
 									</div>
 								</TableCell>
@@ -442,8 +442,8 @@ export default function WebdavAccountsPage() {
 										}
 									>
 										{account.is_active
-											? t("common:active")
-											: t("common:disabled_status")}
+											? t("active")
+											: t("disabled_status")}
 									</Badge>
 								</TableCell>
 								<TableCell className="text-sm text-muted-foreground">
@@ -457,8 +457,8 @@ export default function WebdavAccountsPage() {
 											onClick={() => void handleToggle(account.id)}
 											title={
 												account.is_active
-													? t("common:disabled_status")
-													: t("common:active")
+													? t("disabled_status")
+													: t("active")
 											}
 										>
 											<Icon name="Power" className="h-3.5 w-3.5" />
@@ -467,7 +467,7 @@ export default function WebdavAccountsPage() {
 											variant="destructive"
 											size="icon-sm"
 											onClick={() => requestConfirm(account.id)}
-											title={t("common:delete")}
+											title={t("delete")}
 										>
 											<Icon name="Trash" className="h-3.5 w-3.5" />
 										</Button>
@@ -481,9 +481,9 @@ export default function WebdavAccountsPage() {
 
 			<ConfirmDialog
 				{...dialogProps}
-				title={t("common:are_you_sure")}
-				description={t("common:cannot_undo")}
-				confirmLabel={t("common:delete")}
+				title={t("are_you_sure")}
+				description={t("cannot_undo")}
+				confirmLabel={t("delete")}
 				variant="destructive"
 			/>
 		</AppLayout>

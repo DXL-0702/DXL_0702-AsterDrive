@@ -69,7 +69,7 @@ export function FilePreviewDialog({
 	downloadPath,
 	editable = true,
 }: FilePreviewDialogProps) {
-	const { t } = useTranslation(["files", "common"]);
+	const { t } = useTranslation(["core", "files"]);
 	const profile = useMemo(() => detectFilePreviewProfile(file), [file]);
 	const preferredMode = useMemo(() => {
 		const stored = getStoredOpenWithPreference(profile.category);

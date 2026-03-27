@@ -134,7 +134,7 @@ export function VersionHistoryDialog({
 								</DialogTitle>
 								{(mimeType || currentSize !== undefined) && (
 									<div className="mt-1 text-xs text-muted-foreground">
-										{mimeType ?? t("common:file")}
+										{mimeType ?? t("file")}
 										{currentSize !== undefined
 											? ` · ${formatBytes(currentSize)}`
 											: ""}
@@ -159,7 +159,7 @@ export function VersionHistoryDialog({
 								<div className="mt-1 text-xs text-muted-foreground">
 									{currentSize !== undefined
 										? formatBytes(currentSize)
-										: t("common:file")}
+										: t("file")}
 									{mimeType ? ` · ${mimeType}` : ""}
 								</div>
 							</div>

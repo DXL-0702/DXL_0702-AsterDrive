@@ -12,15 +12,33 @@ function detectLanguage(): "en" | "zh" {
 }
 
 const ALL_NAMESPACES = [
-	"common",
+	"core",
 	"files",
 	"auth",
-	"admin",
-	"search",
 	"validation",
+	"admin",
+	"webdav",
+	"settings",
+	"share",
+	"errors",
+	"offline",
+	"search",
 ] as const;
-const INITIAL_NAMESPACES = ["common", "files", "auth"] as const;
-const DEFERRED_NAMESPACES = ["admin", "search", "validation"] as const;
+const INITIAL_NAMESPACES = [
+	"core",
+	"files",
+	"auth",
+	"validation",
+	"errors",
+	"offline",
+	"share",
+] as const;
+const DEFERRED_NAMESPACES = [
+	"admin",
+	"webdav",
+	"settings",
+	"search",
+] as const;
 
 type LocaleNamespace = (typeof ALL_NAMESPACES)[number];
 
@@ -60,7 +78,7 @@ i18n.use(initReactI18next).init({
 	resources: { [lang]: resources },
 	lng: lang,
 	fallbackLng: "en",
-	defaultNS: "common",
+	defaultNS: "core",
 	interpolation: { escapeValue: false },
 	showSupportNotice: false,
 });

@@ -65,11 +65,11 @@ export function HeaderControls({
 						}
 					>
 						<Icon name="Warning" className="h-3.5 w-3.5" />
-						<span>{t("offline_status_short")}</span>
+						<span>{t("offline:offline_status_short")}</span>
 					</TooltipTrigger>
 					<TooltipContent className="max-w-64 text-left leading-relaxed">
-						<div>{t("offline_mode")}</div>
-						<div className="text-background/80">{t("auth_stale_detail")}</div>
+						<div>{t("offline:offline_mode")}</div>
+						<div className="text-background/80">{t("offline:auth_stale_detail")}</div>
 					</TooltipContent>
 				</Tooltip>
 			)}

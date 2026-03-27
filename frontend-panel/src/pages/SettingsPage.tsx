@@ -16,7 +16,7 @@ type ThemeMode = "light" | "dark" | "system";
 type ViewMode = "list" | "grid";
 
 export default function SettingsPage() {
-	const { t, i18n } = useTranslation(["common", "files"]);
+	const { t, i18n } = useTranslation(["core", "files", "settings"]);
 	const { mode, setMode } = useThemeStore();
 	const viewMode = useFileStore((s) => s.viewMode);
 	const setViewMode = useFileStore((s) => s.setViewMode);
@@ -50,17 +50,17 @@ export default function SettingsPage() {
 	];
 	const currentLanguage = i18n.language?.startsWith("zh") ? "zh" : "en";
 	const themeDescriptions: Record<ThemeMode, string> = {
-		light: t("settings_theme_light_desc"),
-		dark: t("settings_theme_dark_desc"),
-		system: t("settings_theme_system_desc"),
+		light: t("settings:settings_theme_light_desc"),
+		dark: t("settings:settings_theme_dark_desc"),
+		system: t("settings:settings_theme_system_desc"),
 	};
 	const languageDescriptions = {
-		en: t("settings_language_en_desc"),
-		zh: t("settings_language_zh_desc"),
+		en: t("settings:settings_language_en_desc"),
+		zh: t("settings:settings_language_zh_desc"),
 	};
 	const browserDescriptions: Record<ViewMode, string> = {
-		list: t("settings_browser_list_desc"),
-		grid: t("settings_browser_grid_desc"),
+		list: t("settings:settings_browser_list_desc"),
+		grid: t("settings:settings_browser_grid_desc"),
 	};
 
 	return (
@@ -69,7 +69,7 @@ export default function SettingsPage() {
 				<div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-4 md:p-6">
 					<SettingsPageIntro
 						title={t("settings")}
-						description={t("settings_page_desc")}
+						description={t("settings:settings_page_desc")}
 					/>
 
 					<div className="space-y-4">
@@ -89,7 +89,7 @@ export default function SettingsPage() {
 							</SettingsRow>
 							<SettingsRow
 								label={t("color")}
-								description={t("settings_color_desc")}
+								description={t("settings:settings_color_desc")}
 							>
 								<div className="rounded-xl border bg-muted/20 p-3">
 									<ColorPresetPicker />

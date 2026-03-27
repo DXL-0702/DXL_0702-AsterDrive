@@ -59,7 +59,7 @@ function toTrashItems(contents: TrashContents): TrashItem[] {
 }
 
 export default function TrashPage() {
-	const { t } = useTranslation(["common", "files", "admin"]);
+	const { t } = useTranslation(["core", "files", "admin"]);
 	const refreshUser = useAuthStore((s) => s.refreshUser);
 	const [contents, setContents] = useState<TrashContents>({
 		files: [],
@@ -254,7 +254,7 @@ export default function TrashPage() {
 		try {
 			setPurgeAllOpen(false);
 			await trashService.purgeAll();
-			toast.success(t("common:trash_emptied"));
+			toast.success(t("trash_emptied"));
 			await Promise.all([load(), refreshUser()]);
 		} catch (err) {
 			handleApiError(err);
@@ -273,7 +273,7 @@ export default function TrashPage() {
 								<Icon name="Trash" className="h-5 w-5" />
 							</div>
 							<div className="min-w-0">
-								<h1 className="text-lg font-semibold">{t("common:trash")}</h1>
+								<h1 className="text-lg font-semibold">{t("trash")}</h1>
 								<p className="text-sm text-muted-foreground">
 									{t("files:trash_page_desc")}
 								</p>
@@ -304,8 +304,8 @@ export default function TrashPage() {
 							) : null}
 							<span className="text-sm font-medium">
 								{selectionCount > 0
-									? t("common:selected_count", { count: selectionCount })
-									: t("common:items_count", { count: items.length })}
+									? t("selected_count", { count: selectionCount })
+									: t("items_count", { count: items.length })}
 							</span>
 						</div>
 						<span className="hidden text-sm text-muted-foreground md:inline">
@@ -396,7 +396,7 @@ export default function TrashPage() {
 			<ConfirmDialog
 				open={purgeAllOpen}
 				onOpenChange={setPurgeAllOpen}
-				title={t("common:are_you_sure")}
+				title={t("are_you_sure")}
 				description={t("admin:confirm_empty_trash")}
 				confirmLabel={t("admin:empty_trash")}
 				onConfirm={handlePurgeAll}

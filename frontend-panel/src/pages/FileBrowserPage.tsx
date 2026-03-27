@@ -522,7 +522,7 @@ export default function FileBrowserPage() {
 						<div className="min-w-0 flex-1">
 							{isSearching ? (
 								<span className="text-sm text-muted-foreground">
-									{t("common:search")}: &quot;{searchQuery}&quot;
+									{t("search")}: &quot;{searchQuery}&quot;
 								</span>
 							) : (
 								<Breadcrumb>
@@ -631,7 +631,7 @@ export default function FileBrowserPage() {
 							) : error ? (
 								<EmptyState
 									icon={<Icon name="Warning" className="h-12 w-12" />}
-									title={t("common:error")}
+									title={t("error")}
 									description={error}
 								/>
 							) : isEmpty ? (

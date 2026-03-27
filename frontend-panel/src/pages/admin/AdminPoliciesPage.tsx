@@ -277,12 +277,12 @@ export default function AdminPoliciesPage() {
 						<TableHeader>
 							<TableRow>
 								<TableHead className="w-16">{t("id")}</TableHead>
-								<TableHead>{t("common:name")}</TableHead>
+								<TableHead>{t("core:name")}</TableHead>
 								<TableHead>{t("driver_type")}</TableHead>
 								<TableHead>{t("endpoint_path")}</TableHead>
 								<TableHead>{t("bucket")}</TableHead>
 								<TableHead className="w-20">{t("is_default")}</TableHead>
-								<TableHead className="w-24">{t("common:actions")}</TableHead>
+								<TableHead className="w-24">{t("core:actions")}</TableHead>
 							</TableRow>
 						</TableHeader>
 					}
@@ -338,7 +338,7 @@ export default function AdminPoliciesPage() {
 					{...dialogProps}
 					title={`${t("delete_policy")} "${deletePolicyName}"?`}
 					description={t("delete_policy_desc")}
-					confirmLabel={t("common:delete")}
+					confirmLabel={t("core:delete")}
 					variant="destructive"
 				/>
 
@@ -351,7 +351,7 @@ export default function AdminPoliciesPage() {
 						</DialogHeader>
 						<form onSubmit={handleSubmit} className="space-y-4">
 							<div className="space-y-2">
-								<Label htmlFor="name">{t("common:name")}</Label>
+								<Label htmlFor="name">{t("core:name")}</Label>
 								<Input
 									id="name"
 									value={form.name}
@@ -458,7 +458,7 @@ export default function AdminPoliciesPage() {
 									type="number"
 									value={form.max_file_size}
 									onChange={(e) => setField("max_file_size", e.target.value)}
-									placeholder={`0 = ${t("common:unlimited").toLowerCase()}`}
+									placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
 								/>
 							</div>
 
@@ -488,7 +488,7 @@ export default function AdminPoliciesPage() {
 							<div className="flex gap-2">
 								<TestConnectionButton form={form} editingId={editingId} />
 								<Button type="submit" className="flex-1">
-									{editingId ? t("save_changes") : t("common:create")}
+									{editingId ? t("save_changes") : t("core:create")}
 								</Button>
 							</div>
 						</form>

@@ -279,8 +279,8 @@ export function UserDetailDialog({
 									className={getStatusBadgeClass(user.status)}
 								>
 									{user.status === "active"
-										? t("common:active")
-										: t("common:disabled_status")}
+										? t("core:active")
+										: t("core:disabled_status")}
 								</Badge>
 							</div>
 						</div>
@@ -294,7 +294,7 @@ export function UserDetailDialog({
 							</div>
 							<div className="space-y-1">
 								<p className="text-xs uppercase tracking-wide text-muted-foreground">
-									{t("common:created_at")}
+									{t("core:created_at")}
 								</p>
 								<p className="text-sm text-foreground">
 									{formatDateAbsolute(user.created_at)}
@@ -311,7 +311,7 @@ export function UserDetailDialog({
 									{formatBytes(used)}
 									{quota > 0
 										? ` / ${formatBytes(quota)}`
-										: ` / ${t("common:unlimited")}`}
+										: ` / ${t("core:unlimited")}`}
 								</p>
 							</div>
 							{quota > 0 ? <Progress value={pct} className="h-2" /> : null}
@@ -347,7 +347,7 @@ export function UserDetailDialog({
 								</div>
 								<div className="space-y-2">
 									<div className="flex items-center justify-between gap-2">
-										<Label>{t("common:status")}</Label>
+										<Label>{t("core:status")}</Label>
 										{isInitialAdmin ? (
 											<span className="text-xs text-muted-foreground">
 												{t("initial_admin_protected")}
@@ -372,10 +372,10 @@ export function UserDetailDialog({
 														</SelectTrigger>
 														<SelectContent>
 															<SelectItem value="active">
-																{t("common:active")}
+																{t("core:active")}
 															</SelectItem>
 															<SelectItem value="disabled">
-																{t("common:disabled_status")}
+																{t("core:disabled_status")}
 															</SelectItem>
 														</SelectContent>
 													</Select>
@@ -437,7 +437,7 @@ export function UserDetailDialog({
 											type="number"
 											value={quotaValue}
 											onChange={(e) => setQuotaValue(e.target.value)}
-											placeholder={`0 = ${t("common:unlimited").toLowerCase()}`}
+											placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
 											className={ADMIN_CONTROL_HEIGHT_CLASS}
 											disabled={savingProfile}
 										/>
@@ -496,14 +496,14 @@ export function UserDetailDialog({
 															onChange={(e) =>
 																setEditingAssignmentQuota(e.target.value)
 															}
-															placeholder={`0 = ${t("common:unlimited").toLowerCase()}`}
+															placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
 															className="h-8 max-w-[180px]"
 														/>
 														<Button
 															size="sm"
 															onClick={() => void saveAssignmentQuota(a)}
 														>
-															{t("common:save")}
+															{t("core:save")}
 														</Button>
 														<Button
 															variant="ghost"
@@ -513,7 +513,7 @@ export function UserDetailDialog({
 																setEditingAssignmentQuota("");
 															}}
 														>
-															{t("common:cancel")}
+															{t("core:cancel")}
 														</Button>
 													</div>
 												) : (
@@ -521,7 +521,7 @@ export function UserDetailDialog({
 														{t("quota")}:{" "}
 														{a.quota_bytes > 0
 															? formatBytes(a.quota_bytes)
-															: t("common:unlimited")}
+															: t("core:unlimited")}
 													</div>
 												)}
 											</div>
@@ -591,7 +591,7 @@ export function UserDetailDialog({
 											</SelectContent>
 										</Select>
 										<Input
-											placeholder={`${t("quota")} (MB, 0=${t("common:unlimited").toLowerCase()})`}
+											placeholder={`${t("quota")} (MB, 0=${t("core:unlimited").toLowerCase()})`}
 											value={addQuota}
 											onChange={(e) => setAddQuota(e.target.value)}
 										/>
@@ -607,7 +607,7 @@ export function UserDetailDialog({
 												disabled={!addPolicyId}
 												onClick={() => void handleAssign()}
 											>
-												{t("common:confirm")}
+												{t("core:confirm")}
 											</Button>
 										</div>
 									</div>
@@ -629,7 +629,7 @@ export function UserDetailDialog({
 						</Button>
 					) : null}
 					<Button variant="outline" onClick={() => onOpenChange(false)}>
-						{t("common:close")}
+						{t("core:close")}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

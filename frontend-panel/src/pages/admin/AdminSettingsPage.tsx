@@ -313,9 +313,9 @@ export default function AdminSettingsPage() {
 					<TableRow>
 						<TableHead className="w-[40%]">{t("config_key")}</TableHead>
 						<TableHead>{t("config_value")}</TableHead>
-						<TableHead className="w-24">{t("common:type")}</TableHead>
+						<TableHead className="w-24">{t("core:type")}</TableHead>
 						<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
-							{t("common:actions")}
+							{t("core:actions")}
 						</TableHead>
 					</TableRow>
 				</TableHeader>
@@ -376,9 +376,9 @@ export default function AdminSettingsPage() {
 					onOpenChange={(open) => {
 						if (!open) setDeleteKey(null);
 					}}
-					title={`${t("common:delete")} "${deleteKey}"?`}
+					title={`${t("core:delete")} "${deleteKey}"?`}
 					description={t("delete_config_desc")}
-					confirmLabel={t("common:delete")}
+					confirmLabel={t("core:delete")}
 					onConfirm={() => {
 						const key = deleteKey;
 						setDeleteKey(null);
@@ -422,7 +422,7 @@ export default function AdminSettingsPage() {
 								/>
 							</div>
 							<Button type="submit" className="w-full">
-								{editingKey ? t("common:save") : t("common:create")}
+								{editingKey ? t("core:save") : t("core:create")}
 							</Button>
 						</form>
 					</DialogContent>

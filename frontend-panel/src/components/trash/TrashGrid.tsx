@@ -27,7 +27,7 @@ export function TrashGrid({
 	onRestore,
 	onPurge,
 }: TrashGridProps) {
-	const { t } = useTranslation(["common", "files", "admin"]);
+	const { t } = useTranslation(["core", "files", "admin"]);
 
 	return (
 		<div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -88,11 +88,11 @@ export function TrashGrid({
 
 							<div className="grid grid-cols-2 gap-3 text-xs text-muted-foreground">
 								<div className="space-y-1">
-									<p>{t("common:type")}</p>
+									<p>{t("type")}</p>
 									<p className="font-medium text-foreground">
 										{item.entity_type === "folder"
-											? t("common:folder")
-											: t("common:file")}
+											? t("folder")
+											: t("file")}
 									</p>
 								</div>
 								<div className="space-y-1">
@@ -105,7 +105,7 @@ export function TrashGrid({
 									</p>
 								</div>
 								<div className="space-y-1">
-									<p>{t("common:size")}</p>
+									<p>{t("size")}</p>
 									<p className="font-medium text-foreground">
 										{item.entity_type === "file" ? formatBytes(item.size) : "—"}
 									</p>

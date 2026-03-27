@@ -12,13 +12,13 @@ export function UnsavedChangesGuard({
 	onOpenChange,
 	onConfirm,
 }: UnsavedChangesGuardProps) {
-	const { t } = useTranslation(["common", "files"]);
+	const { t } = useTranslation(["core", "files"]);
 
 	return (
 		<ConfirmDialog
 			open={open}
 			onOpenChange={onOpenChange}
-			title={t("common:are_you_sure")}
+			title={t("are_you_sure")}
 			description={t("files:unsaved_confirm_desc")}
 			confirmLabel={t("files:discard_changes")}
 			onConfirm={onConfirm}

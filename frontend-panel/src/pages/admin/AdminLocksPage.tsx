@@ -92,12 +92,12 @@ export default function AdminLocksPage() {
 							<TableRow>
 								<TableHead className="w-16">{t("id")}</TableHead>
 								<TableHead>{t("path")}</TableHead>
-								<TableHead>{t("common:owner")}</TableHead>
-								<TableHead>{t("common:type")}</TableHead>
-								<TableHead>{t("common:status")}</TableHead>
-								<TableHead>{t("common:created_at")}</TableHead>
+								<TableHead>{t("owner")}</TableHead>
+								<TableHead>{t("core:type")}</TableHead>
+								<TableHead>{t("core:status")}</TableHead>
+								<TableHead>{t("core:created_at")}</TableHead>
 								<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
-									{t("common:actions")}
+									{t("core:actions")}
 								</TableHead>
 							</TableRow>
 						</TableHeader>
@@ -148,7 +148,7 @@ export default function AdminLocksPage() {
 				{...dialogProps}
 				title={`Force unlock "${unlockPath}"?`}
 				description={t("force_unlock_desc")}
-				confirmLabel={t("common:confirm")}
+				confirmLabel={t("core:confirm")}
 				variant="destructive"
 			/>
 		</AdminLayout>

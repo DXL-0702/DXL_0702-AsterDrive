@@ -36,7 +36,7 @@ export function ShareDialog({
 	folderId,
 	name,
 }: ShareDialogProps) {
-	const { t } = useTranslation(["common", "files"]);
+	const { t } = useTranslation(["core", "share"]);
 	const [password, setPassword] = useState("");
 	const [expiry, setExpiry] = useState("never");
 	const [maxDownloads, setMaxDownloads] = useState("");
@@ -61,7 +61,7 @@ export function ShareDialog({
 
 			const url = `${window.location.origin}/s/${share.token}`;
 			setShareUrl(url);
-			toast.success(t("files:share_created"));
+			toast.success(t("share:share_created"));
 		} catch (error) {
 			handleApiError(error);
 		} finally {
@@ -72,7 +72,7 @@ export function ShareDialog({
 	const handleCopy = async () => {
 		if (!shareUrl) return;
 		await navigator.clipboard.writeText(shareUrl);
-		toast.success(t("common:copied_to_clipboard"));
+		toast.success(t("copied_to_clipboard"));
 		setCopied(true);
 		setTimeout(() => setCopied(false), 2000);
 	};
@@ -94,7 +94,7 @@ export function ShareDialog({
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
 						<Icon name="Link" className="h-4 w-4" />
-						{t("files:share_dialog_title", { name })}
+						{t("share:share_dialog_title", { name })}
 					</DialogTitle>
 				</DialogHeader>
 
@@ -112,7 +112,7 @@ export function ShareDialog({
 						</div>
 						{password && (
 							<p className="text-xs text-muted-foreground">
-								{t("files:share_password_hint")}
+								{t("share:share_password_hint")}
 							</p>
 						)}
 						<Button
@@ -120,26 +120,26 @@ export function ShareDialog({
 							className="w-full"
 							onClick={() => handleClose(false)}
 						>
-							{t("files:share_done")}
+							{t("share:share_done")}
 						</Button>
 					</div>
 				) : (
 					<form onSubmit={handleCreate} className="space-y-4">
 						<div className="space-y-2">
 							<Label htmlFor="share-password">
-								{t("files:share_password_optional")}
+								{t("share:share_password_optional")}
 							</Label>
 							<Input
 								id="share-password"
 								type="password"
-								placeholder={t("files:share_password_placeholder")}
+								placeholder={t("share:share_password_placeholder")}
 								value={password}
 								onChange={(e) => setPassword(e.target.value)}
 							/>
 						</div>
 
 						<div className="space-y-2">
-							<Label>{t("files:share_expiration")}</Label>
+							<Label>{t("share:share_expiration")}</Label>
 							<Select
 								value={expiry}
 								onValueChange={(v) => setExpiry(v ?? "never")}
@@ -149,19 +149,19 @@ export function ShareDialog({
 								</SelectTrigger>
 								<SelectContent>
 									<SelectItem value="never">
-										{t("files:share_expiry_never")}
+										{t("share:share_expiry_never")}
 									</SelectItem>
 									<SelectItem value="1h">
-										{t("files:share_expiry_1h")}
+										{t("share:share_expiry_1h")}
 									</SelectItem>
 									<SelectItem value="1d">
-										{t("files:share_expiry_1d")}
+										{t("share:share_expiry_1d")}
 									</SelectItem>
 									<SelectItem value="7d">
-										{t("files:share_expiry_7d")}
+										{t("share:share_expiry_7d")}
 									</SelectItem>
 									<SelectItem value="30d">
-										{t("files:share_expiry_30d")}
+										{t("share:share_expiry_30d")}
 									</SelectItem>
 								</SelectContent>
 							</Select>
@@ -169,12 +169,12 @@ export function ShareDialog({
 
 						<div className="space-y-2">
 							<Label htmlFor="max-downloads">
-								{t("files:share_download_limit")}
+								{t("share:share_download_limit")}
 							</Label>
 							<Input
 								id="max-downloads"
 								type="number"
-								placeholder={t("files:share_download_limit_placeholder")}
+								placeholder={t("share:share_download_limit_placeholder")}
 								value={maxDownloads}
 								onChange={(e) => setMaxDownloads(e.target.value)}
 							/>
@@ -182,8 +182,8 @@ export function ShareDialog({
 
 						<Button type="submit" className="w-full" disabled={loading}>
 							{loading
-								? t("files:share_creating")
-								: t("files:share_create_button")}
+								? t("share:share_creating")
+								: t("share:share_create_button")}
 						</Button>
 					</form>
 				)}

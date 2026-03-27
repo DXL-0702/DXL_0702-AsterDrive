@@ -78,12 +78,12 @@ export default function AdminSharesPage() {
 								<TableHead className="w-16">{t("id")}</TableHead>
 								<TableHead>Token</TableHead>
 								<TableHead>{t("audit_user")}</TableHead>
-								<TableHead>{t("common:type")}</TableHead>
-								<TableHead>{t("common:status")}</TableHead>
+								<TableHead>{t("core:type")}</TableHead>
+								<TableHead>{t("core:status")}</TableHead>
 								<TableHead>Downloads</TableHead>
-								<TableHead>{t("common:created_at")}</TableHead>
+								<TableHead>{t("core:created_at")}</TableHead>
 								<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
-									{t("common:actions")}
+									{t("core:actions")}
 								</TableHead>
 							</TableRow>
 						</TableHeader>
@@ -105,7 +105,7 @@ export default function AdminSharesPage() {
 							<TableCell className="text-xs">#{s.user_id}</TableCell>
 							<TableCell>
 								<Badge variant="outline">
-									{s.file_id != null ? t("common:file") : t("common:folder")}
+									{s.file_id != null ? t("core:file") : t("core:folder")}
 								</Badge>
 							</TableCell>
 							<TableCell>
@@ -114,7 +114,7 @@ export default function AdminSharesPage() {
 										variant="outline"
 										className="text-red-600 dark:text-red-400 border-red-600 dark:border-red-400"
 									>
-										{t("common:expired")}
+										{t("core:expired")}
 									</Badge>
 								) : isLimitReached(s) ? (
 									<Badge
@@ -128,7 +128,7 @@ export default function AdminSharesPage() {
 										variant="outline"
 										className="text-green-600 dark:text-green-400 border-green-600 dark:border-green-400"
 									>
-										{t("common:active")}
+										{t("core:active")}
 									</Badge>
 								)}
 							</TableCell>
@@ -156,9 +156,9 @@ export default function AdminSharesPage() {
 
 			<ConfirmDialog
 				{...dialogProps}
-				title={`${t("common:delete")} "${deleteToken}"?`}
+				title={`${t("core:delete")} "${deleteToken}"?`}
 				description={t("delete_share_desc")}
-				confirmLabel={t("common:delete")}
+				confirmLabel={t("core:delete")}
 				variant="destructive"
 			/>
 		</AdminLayout>

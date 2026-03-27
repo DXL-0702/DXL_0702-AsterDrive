@@ -43,7 +43,7 @@ export function TextCodePreview({
 	onDirtyChange,
 	editable = true,
 }: TextCodePreviewProps) {
-	const { t } = useTranslation(["files", "common"]);
+	const { t } = useTranslation(["core", "files"]);
 	const isDark = useIsDark();
 	const { content, etag, loading, error, reload } = useTextContent(path);
 	const {
@@ -116,7 +116,7 @@ export function TextCodePreview({
 						editable ? (
 							<Button variant="outline" size="sm" onClick={startEditing}>
 								<Icon name="PencilSimple" className="mr-1 h-3.5 w-3.5" />
-								{t("common:edit")}
+								{t("edit")}
 							</Button>
 						) : null
 					) : (
@@ -128,11 +128,11 @@ export function TextCodePreview({
 								disabled={saving}
 							>
 								<Icon name="FloppyDisk" className="mr-1 h-3.5 w-3.5" />
-								{saving ? t("files:saving") : t("common:save")}
+								{saving ? t("files:saving") : t("save")}
 							</Button>
 							<Button variant="outline" size="sm" onClick={cancelEditing}>
 								<Icon name="Undo" className="mr-1 h-3.5 w-3.5" />
-								{t("common:cancel")}
+								{t("cancel")}
 							</Button>
 						</>
 					)}
@@ -142,10 +142,10 @@ export function TextCodePreview({
 				<span>{language}</span>
 				<span>·</span>
 				<span>
-					{editable && editing ? t("common:edit") : t("open_with_code")}
+					{editable && editing ? t("edit") : t("open_with_code")}
 				</span>
 				<span>·</span>
-				<span>{dirty ? t("files:unsaved_changes") : t("common:active")}</span>
+				<span>{dirty ? t("files:unsaved_changes") : t("active")}</span>
 				{editing ? (
 					<>
 						<span>·</span>

@@ -455,8 +455,8 @@ export default function LoginPage() {
 									tabIndex={-1}
 									aria-label={
 										showPassword
-											? t("common:hide_password")
-											: t("common:show_password")
+											? t("hide_password")
+											: t("show_password")
 									}
 								>
 									{showPassword ? (

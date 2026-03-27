@@ -15,14 +15,14 @@ export function TrashBatchActionBar({
 	onPurge,
 	onClearSelection,
 }: TrashBatchActionBarProps) {
-	const { t } = useTranslation(["common", "files"]);
+	const { t } = useTranslation(["core", "files"]);
 
 	if (count === 0) return null;
 
 	return (
 		<div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg border bg-background px-4 py-2 shadow-lg">
 			<span className="text-sm font-medium">
-				{t("common:selected_count", { count })}
+				{t("selected_count", { count })}
 			</span>
 			<div className="flex items-center gap-1">
 				<Button size="sm" variant="outline" onClick={onRestore}>

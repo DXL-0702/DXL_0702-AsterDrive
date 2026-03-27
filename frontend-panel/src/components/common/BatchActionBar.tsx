@@ -89,7 +89,7 @@ export function BatchActionBar() {
 		<>
 			<div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-background border rounded-lg shadow-lg px-4 py-2">
 				<span className="text-sm font-medium">
-					{t("common:selected_count", { count })}
+					{t("selected_count", { count })}
 				</span>
 				<div className="flex items-center gap-1">
 					<Button
@@ -98,7 +98,7 @@ export function BatchActionBar() {
 						onClick={() => setDeleteConfirmOpen(true)}
 					>
 						<Icon name="Trash" className="h-3.5 w-3.5 mr-1" />
-						{t("common:delete")}
+						{t("delete")}
 					</Button>
 					<Button size="sm" variant="outline" onClick={handleMove}>
 						<Icon name="ArrowsOutCardinal" className="h-3.5 w-3.5 mr-1" />
@@ -119,7 +119,7 @@ export function BatchActionBar() {
 				onOpenChange={setDeleteConfirmOpen}
 				title={t("batch_delete_confirm_title", { count })}
 				description={t("batch_delete_confirm_desc")}
-				confirmLabel={t("common:delete")}
+				confirmLabel={t("delete")}
 				variant="destructive"
 				onConfirm={handleDelete}
 			/>

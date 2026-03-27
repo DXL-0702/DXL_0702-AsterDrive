@@ -8,7 +8,7 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status }: StatusBadgeProps) {
-	const { t } = useTranslation("common");
+	const { t } = useTranslation();
 
 	const classMap: Record<StatusType, string> = {
 		active:

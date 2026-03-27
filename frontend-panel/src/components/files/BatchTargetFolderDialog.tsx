@@ -47,7 +47,7 @@ export function BatchTargetFolderDialog({
 	initialBreadcrumb,
 	selectedFolderIds = [],
 }: BatchTargetFolderDialogProps) {
-	const { t } = useTranslation(["files", "common"]);
+	const { t } = useTranslation(["files", "core"]);
 	const [loading, setLoading] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
 	const [creatingFolder, setCreatingFolder] = useState(false);
@@ -223,7 +223,7 @@ export function BatchTargetFolderDialog({
 										setNewFolderName("");
 									}}
 								>
-									{t("common:cancel")}
+									{t("cancel")}
 								</Button>
 								<Button
 									size="sm"
@@ -325,7 +325,7 @@ export function BatchTargetFolderDialog({
 						)}
 					</div>
 					<Button variant="outline" onClick={() => onOpenChange(false)}>
-						{t("common:cancel")}
+						{t("cancel")}
 					</Button>
 					<Button
 						onClick={handleConfirm}

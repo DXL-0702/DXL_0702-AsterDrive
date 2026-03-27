@@ -12,9 +12,9 @@ export interface BatchToastContent {
 function getEntityLabel(t: TFunction, entityType: string): string {
 	switch (entityType) {
 		case "file":
-			return t("common:file");
+			return t("file");
 		case "folder":
-			return t("common:folder");
+			return t("folder");
 		default:
 			return entityType;
 	}
