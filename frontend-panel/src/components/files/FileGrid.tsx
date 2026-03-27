@@ -2,14 +2,14 @@ import { useTranslation } from "react-i18next";
 import { FileCard } from "@/components/files/FileCard";
 import { FileContextMenu } from "@/components/files/FileContextMenu";
 import { useFileStore } from "@/stores/fileStore";
-import type { FileInfo, FolderInfo } from "@/types/api";
+import type { FileListItem, FolderListItem } from "@/types/api";
 
 interface FileGridProps {
-	folders: FolderInfo[];
-	files: FileInfo[];
+	folders: FolderListItem[];
+	files: FileListItem[];
 	breadcrumbPathIds?: number[];
 	onFolderOpen: (id: number, name: string) => void;
-	onFileClick: (file: FileInfo) => void;
+	onFileClick: (file: FileListItem) => void;
 	onShare: (target: {
 		fileId?: number;
 		folderId?: number;

@@ -3,17 +3,17 @@ import { ViewToggle } from "@/components/common/ViewToggle";
 import { ReadOnlyFileGrid } from "@/components/files/ReadOnlyFileGrid";
 import { ReadOnlyFileTable } from "@/components/files/ReadOnlyFileTable";
 import { Icon } from "@/components/ui/icon";
-import type { FileInfo, FolderInfo } from "@/types/api";
+import type { FileListItem, FolderListItem } from "@/types/api";
 
 interface ReadOnlyFileCollectionProps {
-	folders: FolderInfo[];
-	files: FileInfo[];
+	folders: FolderListItem[];
+	files: FileListItem[];
 	viewMode: "grid" | "list";
 	onViewModeChange: (mode: "grid" | "list") => void;
-	onFolderClick?: (folder: FolderInfo) => void;
-	onFileClick?: (file: FileInfo) => void;
-	onFileDownload?: (file: FileInfo) => void;
-	getThumbnailPath?: (file: FileInfo) => string;
+	onFolderClick?: (folder: FolderListItem) => void;
+	onFileClick?: (file: FileListItem) => void;
+	onFileDownload?: (file: FileListItem) => void;
+	getThumbnailPath?: (file: FileListItem) => string;
 	emptyTitle: string;
 	emptyDescription: string;
 }

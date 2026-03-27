@@ -104,8 +104,8 @@ function createDragPreview(source: HTMLElement, options: DragPreviewOptions) {
 			const badge = document.createElement("div");
 			badge.textContent = `${options.itemCount} 项`;
 			badge.style.position = "absolute";
-			badge.style.top = "0.5rem";
-			badge.style.right = "0.5rem";
+			badge.style.right = "0.75rem";
+			badge.style.bottom = "0.75rem";
 			badge.style.padding = "0.125rem 0.5rem";
 			badge.style.borderRadius = "9999px";
 			badge.style.background = themeColor("--card", 0.94);

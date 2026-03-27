@@ -7,9 +7,9 @@ import { searchService } from "@/services/searchService";
 import { useAuthStore } from "@/stores/authStore";
 import type {
 	BatchResult,
-	FileInfo,
+	FileListItem,
 	FolderContents,
-	FolderInfo,
+	FolderListItem,
 } from "@/types/api";
 
 interface BreadcrumbItem {
@@ -41,8 +41,8 @@ interface FileState {
 	breadcrumb: BreadcrumbItem[];
 
 	// Data
-	folders: FolderInfo[];
-	files: FileInfo[];
+	folders: FolderListItem[];
+	files: FileListItem[];
 	loading: boolean;
 	error: string | null;
 
@@ -54,8 +54,8 @@ interface FileState {
 
 	// Search
 	searchQuery: string | null;
-	searchFolders: FolderInfo[];
-	searchFiles: FileInfo[];
+	searchFolders: FolderListItem[];
+	searchFiles: FileListItem[];
 
 	// View preferences (persisted)
 	viewMode: ViewMode;
@@ -381,7 +381,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 		try {
 			const results = await searchService.search({ q: query, limit: 100 });
 			set({
-				searchFiles: results.files as FileInfo[],
+				searchFiles: results.files,
 				searchFolders: results.folders,
 				loading: false,
 				selectedFileIds: new Set(),

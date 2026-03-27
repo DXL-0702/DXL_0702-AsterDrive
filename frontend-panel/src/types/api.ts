@@ -5,6 +5,8 @@ import type { components } from "@/services/api.generated";
 export type UserInfo = components["schemas"]["UserInfo"];
 export type FileInfo = components["schemas"]["FileInfo"];
 export type FolderInfo = components["schemas"]["FolderInfo"];
+export type FileListItem = components["schemas"]["FileListItem"];
+export type FolderListItem = components["schemas"]["FolderListItem"];
 export type StoragePolicy = components["schemas"]["StoragePolicy"];
 export type SystemConfig = components["schemas"]["SystemConfig"];
 export type FolderContents = components["schemas"]["FolderContents"];

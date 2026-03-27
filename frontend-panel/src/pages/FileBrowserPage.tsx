@@ -52,7 +52,12 @@ import { fileService } from "@/services/fileService";
 import { api } from "@/services/http";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
-import type { FileInfo, FolderInfo } from "@/types/api";
+import type {
+	FileInfo,
+	FileListItem,
+	FolderInfo,
+	FolderListItem,
+} from "@/types/api";
 
 const BatchTargetFolderDialog = lazy(async () => {
 	const module = await import("@/components/files/BatchTargetFolderDialog");
@@ -156,7 +161,7 @@ export default function FileBrowserPage() {
 	const [fadingFolderIds, setFadingFolderIds] = useState<Set<number>>(
 		new Set(),
 	);
-	const [previewFile, setPreviewFile] = useState<FileInfo | null>(null);
+	const [previewFile, setPreviewFile] = useState<FileInfo | FileListItem | null>(null);
 	const [shareTarget, setShareTarget] = useState<{
 		fileId?: number;
 		folderId?: number;
@@ -186,8 +191,8 @@ export default function FileBrowserPage() {
 		name: string;
 	} | null>(null);
 	const [infoTarget, setInfoTarget] = useState<{
-		file?: FileInfo;
-		folder?: FolderInfo;
+		file?: FileInfo | FileListItem;
+		folder?: FolderInfo | FolderListItem;
 	} | null>(null);
 
 	useEffect(() => {
@@ -472,7 +477,7 @@ export default function FileBrowserPage() {
 		breadcrumbPathIds,
 		onFolderOpen: (id: number, name: string) =>
 			navigate(`/folder/${id}?name=${encodeURIComponent(name)}`),
-		onFileClick: (file: FileInfo) => setPreviewFile(file),
+		onFileClick: (file: FileListItem) => setPreviewFile(file),
 		onShare: setShareTarget,
 		onDownload: handleDownload,
 		onCopy: handleCopy,
