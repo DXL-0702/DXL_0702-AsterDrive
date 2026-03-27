@@ -595,7 +595,7 @@ export default function FileBrowserPage() {
 			<section
 				aria-label="File drop zone"
 				className={cn(
-					"relative min-h-0 flex-1 transition-colors",
+					"relative flex min-h-0 flex-1 flex-col transition-colors",
 					contentDragOver && "bg-accent/10",
 				)}
 				onDragOver={handleContentDragOver}
