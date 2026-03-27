@@ -97,7 +97,7 @@ pub async fn upload(
     audit_service::log(
         &state,
         &ctx,
-        "file_upload",
+        audit_service::AuditAction::FileUpload,
         Some("file"),
         Some(file.id),
         Some(&file.name),
@@ -187,7 +187,7 @@ pub async fn download(
     audit_service::log(
         &state,
         &ctx,
-        "file_download",
+        audit_service::AuditAction::FileDownload,
         Some("file"),
         Some(file_id),
         None,
@@ -260,7 +260,7 @@ pub async fn delete_file(
     audit_service::log(
         &state,
         &ctx,
-        "file_delete",
+        audit_service::AuditAction::FileDelete,
         Some("file"),
         Some(file_id),
         None,
@@ -307,9 +307,9 @@ pub async fn patch_file(
     .await?;
     let ctx = AuditContext::from_request(&req, &claims);
     let action = if body.folder_id.is_some() {
-        "file_move"
+        audit_service::AuditAction::FileMove
     } else {
-        "file_rename"
+        audit_service::AuditAction::FileRename
     };
     audit_service::log(
         &state,
@@ -562,7 +562,7 @@ pub async fn update_content(
     audit_service::log(
         &state,
         &ctx,
-        "file_edit",
+        audit_service::AuditAction::FileEdit,
         Some("file"),
         Some(file.id),
         Some(&file.name),
@@ -640,7 +640,7 @@ pub async fn copy_file(
     audit_service::log(
         &state,
         &ctx,
-        "file_copy",
+        audit_service::AuditAction::FileCopy,
         Some("file"),
         Some(file.id),
         Some(&file.name),

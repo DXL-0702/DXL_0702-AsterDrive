@@ -79,9 +79,15 @@ pub async fn batch_delete(
             .await?;
     let ctx = AuditContext::from_request(&req, &claims);
     audit_service::log(
-        &state, &ctx, "batch_delete", None, None, None,
+        &state,
+        &ctx,
+        audit_service::AuditAction::BatchDelete,
+        None,
+        None,
+        None,
         Some(serde_json::json!({ "file_ids": body.file_ids, "folder_ids": body.folder_ids, "succeeded": result.succeeded, "failed": result.failed })),
-    ).await;
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }
 
@@ -115,9 +121,15 @@ pub async fn batch_move(
     .await?;
     let ctx = AuditContext::from_request(&req, &claims);
     audit_service::log(
-        &state, &ctx, "batch_move", None, None, None,
+        &state,
+        &ctx,
+        audit_service::AuditAction::BatchMove,
+        None,
+        None,
+        None,
         Some(serde_json::json!({ "file_ids": body.file_ids, "folder_ids": body.folder_ids, "target_folder_id": body.target_folder_id, "succeeded": result.succeeded, "failed": result.failed })),
-    ).await;
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }
 
@@ -151,8 +163,14 @@ pub async fn batch_copy(
     .await?;
     let ctx = AuditContext::from_request(&req, &claims);
     audit_service::log(
-        &state, &ctx, "batch_copy", None, None, None,
+        &state,
+        &ctx,
+        audit_service::AuditAction::BatchCopy,
+        None,
+        None,
+        None,
         Some(serde_json::json!({ "file_ids": body.file_ids, "folder_ids": body.folder_ids, "target_folder_id": body.target_folder_id, "succeeded": result.succeeded, "failed": result.failed })),
-    ).await;
+    )
+    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }

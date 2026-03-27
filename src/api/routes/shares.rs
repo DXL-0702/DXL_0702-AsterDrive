@@ -70,7 +70,7 @@ pub async fn create_share(
     audit_service::log(
         &state,
         &ctx,
-        "share_create",
+        audit_service::AuditAction::ShareCreate,
         None,
         Some(share.id),
         None,
@@ -132,7 +132,7 @@ pub async fn delete_share(
     audit_service::log(
         &state,
         &ctx,
-        "share_delete",
+        audit_service::AuditAction::ShareDelete,
         None,
         Some(share_id),
         None,

@@ -61,7 +61,7 @@ pub async fn create_folder(
     audit_service::log(
         &state,
         &ctx,
-        "folder_create",
+        audit_service::AuditAction::FolderCreate,
         Some("folder"),
         Some(folder.id),
         Some(&folder.name),
@@ -184,7 +184,7 @@ pub async fn delete_folder(
     audit_service::log(
         &state,
         &ctx,
-        "folder_delete",
+        audit_service::AuditAction::FolderDelete,
         Some("folder"),
         Some(folder_id),
         None,
@@ -233,9 +233,9 @@ pub async fn patch_folder(
     .await?;
     let ctx = AuditContext::from_request(&req, &claims);
     let action = if body.parent_id.is_some() {
-        "folder_move"
+        audit_service::AuditAction::FolderMove
     } else {
-        "folder_rename"
+        audit_service::AuditAction::FolderRename
     };
     audit_service::log(
         &state,
@@ -315,7 +315,7 @@ pub async fn copy_folder(
     audit_service::log(
         &state,
         &ctx,
-        "folder_copy",
+        audit_service::AuditAction::FolderCopy,
         Some("folder"),
         Some(folder.id),
         Some(&folder.name),

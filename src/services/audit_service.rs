@@ -2,6 +2,7 @@ use actix_web::HttpRequest;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::Set;
 use serde::Deserialize;
+use std::fmt;
 use utoipa::IntoParams;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
@@ -18,6 +19,75 @@ pub struct AuditContext {
     pub user_id: i64,
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AuditAction {
+    AdminCreateUser,
+    AdminUpdateUser,
+    BatchCopy,
+    BatchDelete,
+    BatchMove,
+    ConfigUpdate,
+    FileCopy,
+    FileDelete,
+    FileDownload,
+    FileEdit,
+    FileMove,
+    FileRename,
+    FileUpload,
+    FolderCopy,
+    FolderCreate,
+    FolderDelete,
+    FolderMove,
+    FolderRename,
+    ShareCreate,
+    ShareDelete,
+    SystemSetup,
+    UserLogin,
+    UserRegister,
+}
+
+impl AuditAction {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AdminCreateUser => "admin_create_user",
+            Self::AdminUpdateUser => "admin_update_user",
+            Self::BatchCopy => "batch_copy",
+            Self::BatchDelete => "batch_delete",
+            Self::BatchMove => "batch_move",
+            Self::ConfigUpdate => "config_update",
+            Self::FileCopy => "file_copy",
+            Self::FileDelete => "file_delete",
+            Self::FileDownload => "file_download",
+            Self::FileEdit => "file_edit",
+            Self::FileMove => "file_move",
+            Self::FileRename => "file_rename",
+            Self::FileUpload => "file_upload",
+            Self::FolderCopy => "folder_copy",
+            Self::FolderCreate => "folder_create",
+            Self::FolderDelete => "folder_delete",
+            Self::FolderMove => "folder_move",
+            Self::FolderRename => "folder_rename",
+            Self::ShareCreate => "share_create",
+            Self::ShareDelete => "share_delete",
+            Self::SystemSetup => "system_setup",
+            Self::UserLogin => "user_login",
+            Self::UserRegister => "user_register",
+        }
+    }
+}
+
+impl AsRef<str> for AuditAction {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for AuditAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
 }
 
 #[derive(Deserialize, IntoParams)]
@@ -80,7 +150,7 @@ impl AuditContext {
 pub async fn log(
     state: &AppState,
     ctx: &AuditContext,
-    action: &str,
+    action: AuditAction,
     entity_type: Option<&str>,
     entity_id: Option<i64>,
     entity_name: Option<&str>,
@@ -156,4 +226,44 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u64> {
         tracing::info!("cleaned up {deleted} expired audit log entries");
     }
     Ok(deleted)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AuditAction;
+
+    #[test]
+    fn audit_action_strings_match_existing_contract() {
+        let cases = [
+            (AuditAction::AdminCreateUser, "admin_create_user"),
+            (AuditAction::AdminUpdateUser, "admin_update_user"),
+            (AuditAction::BatchCopy, "batch_copy"),
+            (AuditAction::BatchDelete, "batch_delete"),
+            (AuditAction::BatchMove, "batch_move"),
+            (AuditAction::ConfigUpdate, "config_update"),
+            (AuditAction::FileCopy, "file_copy"),
+            (AuditAction::FileDelete, "file_delete"),
+            (AuditAction::FileDownload, "file_download"),
+            (AuditAction::FileEdit, "file_edit"),
+            (AuditAction::FileMove, "file_move"),
+            (AuditAction::FileRename, "file_rename"),
+            (AuditAction::FileUpload, "file_upload"),
+            (AuditAction::FolderCopy, "folder_copy"),
+            (AuditAction::FolderCreate, "folder_create"),
+            (AuditAction::FolderDelete, "folder_delete"),
+            (AuditAction::FolderMove, "folder_move"),
+            (AuditAction::FolderRename, "folder_rename"),
+            (AuditAction::ShareCreate, "share_create"),
+            (AuditAction::ShareDelete, "share_delete"),
+            (AuditAction::SystemSetup, "system_setup"),
+            (AuditAction::UserLogin, "user_login"),
+            (AuditAction::UserRegister, "user_register"),
+        ];
+
+        for (action, expected) in cases {
+            assert_eq!(action.as_str(), expected);
+            assert_eq!(action.as_ref(), expected);
+            assert_eq!(action.to_string(), expected);
+        }
+    }
 }

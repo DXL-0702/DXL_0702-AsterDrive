@@ -1,0 +1,367 @@
+// Issue #37 refactor contract tests — 验证 service 层 API 契约未因重构破坏
+#[macro_use]
+mod common;
+
+use actix_web::test;
+use serde_json::Value;
+
+// ── P3: LoginResult.user_id 契约 ────────────────────────────────────
+
+/// login 成功时返回 user_id 正确，access/refresh token 非空
+/// HTTP 层（cookies）和 service 层（LoginResult.user_id）均验证
+#[actix_web::test]
+async fn test_login_returns_correct_user_id_and_tokens() {
+    // HTTP 层用的 app
+    let state_http = common::setup().await;
+    let app = create_test_app!(state_http);
+
+    // 注册
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .set_json(serde_json::json!({
+            "username": "logintest",
+            "email": "login@test.com",
+            "password": "pass1234"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // HTTP 登录验证 cookies
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .set_json(serde_json::json!({
+            "identifier": "logintest",
+            "password": "pass1234"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // service 层验证 user_id（用独立 state）
+    let state_svc = common::setup().await;
+    let user = aster_drive::services::auth_service::register(
+        &state_svc,
+        "logintest",
+        "login@test.com",
+        "pass1234",
+    )
+    .await
+    .unwrap();
+
+    let result = aster_drive::services::auth_service::login(&state_svc, "logintest", "pass1234")
+        .await
+        .unwrap();
+
+    assert_eq!(
+        result.user_id, user.id,
+        "user_id should match registered user"
+    );
+    assert!(result.user_id > 0);
+    assert!(!result.access_token.is_empty());
+    assert!(!result.refresh_token.is_empty());
+}
+
+/// 错误密码登录返回 401，不暴露 user_id
+#[actix_web::test]
+async fn test_login_wrong_password_returns_401_without_user_id() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    // 注册
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .set_json(serde_json::json!({
+            "username": "wrongpw",
+            "email": "wrongpw@test.com",
+            "password": "correctpw"
+        }))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    // 错误密码 → 401
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .set_json(serde_json::json!({
+            "identifier": "wrongpw",
+            "password": "wrongpassword"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 401);
+
+    let body: Value = test::read_body_json(resp).await;
+    // 错误响应不含 user_id
+    let has_user_id = body.get("data").and_then(|d| d.get("user_id")).is_some();
+    assert!(!has_user_id, "401 response should not contain user_id");
+
+    // service 层：错误密码返回 Err
+    let state2 = common::setup().await;
+    let err = aster_drive::services::auth_service::login(&state2, "wrongpw", "wrongpassword").await;
+    assert!(err.is_err());
+}
+
+// ── P1: Cookie 签名差异性 ──────────────────────────────────────────
+
+/// 不同 token 的签名互不相同，同一 token 签名确定
+#[actix_web::test]
+async fn test_share_cookie_signatures_are_token_specific_and_deterministic() {
+    let secret = "test-secret-key-for-integration-tests";
+
+    let sig1 = aster_drive::services::share_service::sign_share_cookie("token-alpha", secret);
+    let sig2 = aster_drive::services::share_service::sign_share_cookie("token-beta", secret);
+    let sig1_replay =
+        aster_drive::services::share_service::sign_share_cookie("token-alpha", secret);
+
+    assert_ne!(
+        sig1, sig2,
+        "different tokens should produce different signatures"
+    );
+    assert_eq!(
+        sig1, sig1_replay,
+        "same token should produce same signature (deterministic)"
+    );
+}
+
+/// 签名格式为 64 字符十六进制字符串（SHA256 输出）
+#[actix_web::test]
+async fn test_share_cookie_signature_format_is_sha256_hex() {
+    let secret = "test-secret-key-for-integration-tests";
+    let sig = aster_drive::services::share_service::sign_share_cookie("any-token", secret);
+
+    assert_eq!(sig.len(), 64, "SHA256 hex digest should be 64 characters");
+    assert!(
+        sig.chars().all(|c| c.is_ascii_hexdigit()),
+        "signature should be all hex characters"
+    );
+}
+
+/// token-A 的签名无法通过 token-B 的验证
+#[actix_web::test]
+async fn test_share_cookie_forged_signature_rejected() {
+    let secret = "test-secret-key-for-integration-tests";
+    let sig_wrong = aster_drive::services::share_service::sign_share_cookie("wrong-token", secret);
+
+    let valid = aster_drive::services::share_service::verify_share_cookie(
+        "correct-token",
+        &sig_wrong,
+        secret,
+    );
+    assert!(
+        !valid,
+        "signature for wrong token should not verify for correct token"
+    );
+}
+
+// ── P4: get_schema() 契约 ─────────────────────────────────────────────
+
+/// config_schema 返回非空数组，每个条目包含必需字段
+#[actix_web::test]
+async fn test_config_schema_returns_non_empty_with_required_fields() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    // 注册 admin
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .set_json(serde_json::json!({
+            "username": "admintk",
+            "email": "admin@tk.com",
+            "password": "admin1234"
+        }))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    // 登录获取 cookies
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .set_json(serde_json::json!({"identifier": "admintk", "password": "admin1234"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let cookies = extract_cookies(&resp);
+    assert!(!cookies.is_empty(), "login should set cookies");
+
+    // HTTP 验证 schema 非空
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/config/schema")
+        .insert_header(("Cookie", format!("aster_access={}", &cookies[0])))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let schema = &body["data"].as_array().expect("data should be array");
+    assert!(!schema.is_empty(), "schema should not be empty");
+
+    // service 层验证字段完整性
+    let full_schema = aster_drive::services::config_service::get_schema();
+    assert!(!full_schema.is_empty());
+
+    for item in &full_schema {
+        assert!(!item.key.is_empty(), "key should not be empty");
+        assert!(
+            !item.value_type.is_empty(),
+            "value_type should not be empty"
+        );
+        assert!(!item.category.is_empty(), "category should not be empty");
+    }
+
+    // HTTP 和 service 返回一致
+    assert_eq!(schema.len(), full_schema.len());
+}
+
+// ── P2: 锁跨用户权限 ─────────────────────────────────────────────────
+
+/// 用户 A 锁定的文件，用户 B 无法删除/重命名
+#[actix_web::test]
+async fn test_locked_file_blocks_other_users_delete_and_rename() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    // 用户 A 注册 + 上传 + 锁定
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .set_json(serde_json::json!({
+            "username": "locker",
+            "email": "locker@test.com",
+            "password": "pass1234"
+        }))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .set_json(serde_json::json!({"identifier": "locker", "password": "pass1234"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let cookies_a = extract_cookies(&resp);
+
+    let file_id = upload_test_file!(app, &cookies_a[0]);
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", format!("aster_access={}", &cookies_a[0])))
+        .set_json(serde_json::json!({ "locked": true }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // 用户 B 注册 + 登录
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .set_json(serde_json::json!({
+            "username": "intruder",
+            "email": "intruder@test.com",
+            "password": "pass5678"
+        }))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .set_json(serde_json::json!({"identifier": "intruder", "password": "pass5678"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let cookies_b = extract_cookies(&resp);
+
+    // 用户 B 尝试删除 → 403
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", format!("aster_access={}", &cookies_b[0])))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+
+    // 用户 B 尝试重命名 → 403
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", format!("aster_access={}", &cookies_b[0])))
+        .set_json(serde_json::json!({ "name": "hacked.txt" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+}
+
+/// 用户 A 锁定的文件夹，用户 B 无法删除
+#[actix_web::test]
+async fn test_locked_folder_blocks_other_users_delete() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    // 用户 A 创建并锁定文件夹
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .set_json(serde_json::json!({
+            "username": "folderlocker",
+            "email": "folderlocker@test.com",
+            "password": "pass1234"
+        }))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .set_json(serde_json::json!({"identifier": "folderlocker", "password": "pass1234"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let cookies_a = extract_cookies(&resp);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={}", &cookies_a[0])))
+        .set_json(serde_json::json!({ "name": "locked-folder" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/folders/{folder_id}"))
+        .insert_header(("Cookie", format!("aster_access={}", &cookies_a[0])))
+        .set_json(serde_json::json!({ "locked": true }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    // 用户 B 尝试删除被锁定的文件夹
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .set_json(serde_json::json!({
+            "username": "folderintruder",
+            "email": "folderintruder@test.com",
+            "password": "pass5678"
+        }))
+        .to_request();
+    test::call_service(&app, req).await;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .set_json(serde_json::json!({"identifier": "folderintruder", "password": "pass5678"}))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let cookies_b = extract_cookies(&resp);
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/folders/{folder_id}"))
+        .insert_header(("Cookie", format!("aster_access={}", &cookies_b[0])))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────
+
+fn extract_cookies(resp: &actix_web::dev::ServiceResponse) -> Vec<String> {
+    let access = resp
+        .response()
+        .cookies()
+        .find(|c| c.name() == "aster_access")
+        .map(|c| c.value().to_string());
+    let refresh = resp
+        .response()
+        .cookies()
+        .find(|c| c.name() == "aster_refresh")
+        .map(|c| c.value().to_string());
+    [access, refresh].into_iter().flatten().collect()
+}

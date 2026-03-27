@@ -145,7 +145,7 @@ pub async fn setup(
     audit_service::log(
         &state,
         &ctx,
-        "system_setup",
+        audit_service::AuditAction::SystemSetup,
         None,
         None,
         Some(&user.username),
@@ -187,7 +187,7 @@ pub async fn register(
     audit_service::log(
         &state,
         &ctx,
-        "user_register",
+        audit_service::AuditAction::UserRegister,
         None,
         None,
         Some(&user.username),
@@ -231,7 +231,7 @@ pub async fn login(
     audit_service::log(
         &state,
         &ctx,
-        "user_login",
+        audit_service::AuditAction::UserLogin,
         None,
         None,
         Some(&body.identifier),

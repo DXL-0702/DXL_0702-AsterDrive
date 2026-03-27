@@ -356,7 +356,7 @@ pub async fn create_user(
     audit_service::log(
         &state,
         &ctx,
-        "admin_create_user",
+        audit_service::AuditAction::AdminCreateUser,
         Some("user"),
         Some(user.id),
         Some(&user.username),
@@ -471,7 +471,7 @@ pub async fn update_user(
     audit_service::log(
         &state,
         &ctx,
-        "admin_update_user",
+        audit_service::AuditAction::AdminUpdateUser,
         Some("user"),
         Some(user.id),
         Some(&user.username),

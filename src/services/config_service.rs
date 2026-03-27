@@ -58,7 +58,7 @@ pub async fn set_with_audit(
     audit_service::log(
         state,
         audit_ctx,
-        "config_update",
+        audit_service::AuditAction::ConfigUpdate,
         None,
         None,
         Some(key),
