@@ -6,6 +6,7 @@ import { SkeletonTree } from "@/components/common/SkeletonTree";
 import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
 import {
+	DRAG_SOURCE_MIME,
 	FOLDER_TREE_DRAG_EXPAND_DELAY_MS,
 	FOLDER_TREE_INDENT_PX,
 	FOLDER_TREE_ROW_OFFSET_PX,
@@ -139,6 +140,7 @@ function TreeNode({
 			fileIds: [],
 			folderIds: [node.folder.id],
 		});
+		e.dataTransfer.setData(DRAG_SOURCE_MIME, "tree");
 		setInternalDragPreview(e, { itemCount: 1 });
 	};
 

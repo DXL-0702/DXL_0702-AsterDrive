@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FileThumbnail } from "@/components/files/FileThumbnail";
 import { Icon } from "@/components/ui/icon";
 import { ItemCheckbox } from "@/components/ui/item-checkbox";
+import { DRAG_SOURCE_MIME } from "@/lib/constants";
 import {
 	getInvalidInternalDropReason,
 	hasInternalDragData,
@@ -62,8 +63,15 @@ export function FileCard({
 	};
 
 	const handleDragOver = (e: React.DragEvent) => {
-		if (!isFolder || !hasInternalDragData(e.dataTransfer)) return;
+		if (
+			!isFolder ||
+			!hasInternalDragData(e.dataTransfer) ||
+			e.dataTransfer.types.includes(DRAG_SOURCE_MIME)
+		) {
+			return;
+		}
 		e.preventDefault();
+		e.stopPropagation();
 		e.dataTransfer.dropEffect = "move";
 		setDragOver(true);
 	};
@@ -72,8 +80,12 @@ export function FileCard({
 
 	const handleDrop = (e: React.DragEvent) => {
 		setDragOver(false);
+		if (isFolder && e.dataTransfer.types.includes(DRAG_SOURCE_MIME)) {
+			return;
+		}
 		if (!isFolder) return;
 		e.preventDefault();
+		e.stopPropagation();
 		const data = readInternalDragData(e.dataTransfer);
 		if (!data) return;
 		if (getInvalidInternalDropReason(data, item.id, targetPathIds) !== null) {
@@ -86,6 +98,7 @@ export function FileCard({
 		// biome-ignore lint/a11y/useSemanticElements: card with nested interactive checkbox cannot be a button
 		<div
 			data-drag-preview-root
+			data-folder-drop-target={isFolder ? "true" : undefined}
 			className={cn(
 				"group relative flex flex-col items-center p-3 rounded-lg border cursor-pointer transition-all duration-300 hover:bg-accent/50",
 				selected && "bg-accent border-primary",

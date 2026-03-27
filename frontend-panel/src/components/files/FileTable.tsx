@@ -2,6 +2,7 @@ import type React from "react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileContextMenu } from "@/components/files/FileContextMenu";
+import { DRAG_SOURCE_MIME } from "@/lib/constants";
 import {
 	FileNameCell,
 	FileSizeCell,
@@ -161,15 +162,25 @@ export function FileTable({
 	];
 
 	const handleFolderDragOver = (e: React.DragEvent, folderId: number) => {
-		if (!hasInternalDragData(e.dataTransfer)) return;
+		if (
+			!hasInternalDragData(e.dataTransfer) ||
+			e.dataTransfer.types.includes(DRAG_SOURCE_MIME)
+		) {
+			return;
+		}
 		e.preventDefault();
+		e.stopPropagation();
 		e.dataTransfer.dropEffect = "move";
 		setDragOverId(folderId);
 	};
 
 	const handleFolderDrop = (e: React.DragEvent, folderId: number) => {
 		setDragOverId(null);
+		if (e.dataTransfer.types.includes(DRAG_SOURCE_MIME)) {
+			return;
+		}
 		e.preventDefault();
+		e.stopPropagation();
 		const data = readInternalDragData(e.dataTransfer);
 		if (!data) return;
 		const targetPathIds = getTargetPathIds(folderId);
@@ -248,6 +259,7 @@ export function FileTable({
 						onInfo={() => onInfo?.("folder", folder.id)}
 					>
 						<TableRow
+							data-folder-drop-target="true"
 							className={cn(
 								"cursor-pointer transition-all duration-300",
 								dragOverId === folder.id && "ring-2 ring-primary bg-accent/30",
