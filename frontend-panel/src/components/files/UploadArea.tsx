@@ -374,6 +374,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 		const runDirectUpload = useCallback(
 			async (task: UploadTask) => {
+				if (!task.file) return;
 				patchTask(task.id, {
 					mode: "direct",
 					status: "uploading",
@@ -384,7 +385,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 				try {
 					const formData = new FormData();
-					formData.append("file", task.file!);
+					formData.append("file", task.file);
 					await api.client.post(buildDirectUploadPath(task), formData, {
 						headers: { "Content-Type": "multipart/form-data" },
 						signal: controller.signal,
@@ -432,6 +433,8 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				init: InitUploadResponse,
 				alreadyReceived: number[] = [],
 			) => {
+				if (!task.file) return;
+				const file = task.file;
 				const uploadId = init.upload_id as string;
 				const chunkSize = init.chunk_size as number;
 				const totalChunks = init.total_chunks as number;
@@ -457,8 +460,8 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						const chunkNumber = queue.shift();
 						if (chunkNumber === undefined) return;
 						const start = chunkNumber * chunkSize;
-						const end = Math.min(start + chunkSize, task.file!.size);
-						const blob = task.file!.slice(start, end);
+						const end = Math.min(start + chunkSize, file.size);
+						const blob = file.slice(start, end);
 
 						let lastError: Error | null = null;
 						for (let attempt = 0; attempt < CHUNK_MAX_RETRIES; attempt++) {
@@ -534,6 +537,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 
 		const runPresignedUpload = useCallback(
 			async (task: UploadTask, init: InitUploadResponse) => {
+				if (!task.file) return;
 				const uploadId = init.upload_id as string;
 				const presignedUrl = init.presigned_url as string;
 				patchTask(task.id, {
@@ -546,7 +550,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				try {
 					await uploadService.presignedUpload(
 						presignedUrl,
-						task.file!,
+						task.file,
 						(loaded, total) => {
 							patchTaskThrottled(task.id, {
 								progress: Math.round((loaded / total) * 90),
@@ -596,6 +600,8 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				init: InitUploadResponse,
 				alreadyCompleted: CompletedPart[] = [],
 			) => {
+				if (!task.file) return;
+				const file = task.file;
 				const uploadId = init.upload_id as string;
 				const chunkSize = init.chunk_size as number;
 				const totalChunks = init.total_chunks as number;
@@ -645,8 +651,8 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						if (partNum === undefined) return;
 
 						const start = (partNum - 1) * chunkSize;
-						const end = Math.min(start + chunkSize, task.file!.size);
-						const blob = task.file!.slice(start, end);
+						const end = Math.min(start + chunkSize, file.size);
+						const blob = file.slice(start, end);
 
 						let lastError: Error | null = null;
 						for (let attempt = 0; attempt < CHUNK_MAX_RETRIES; attempt++) {

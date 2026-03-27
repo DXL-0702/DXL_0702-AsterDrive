@@ -27,6 +27,11 @@ export const shareService = {
 	verifyPassword: (token: string, password: string) =>
 		api.post<null>(`/s/${token}/verify`, { password }),
 
+	downloadPath: (token: string) => `/s/${token}/download`,
+
+	downloadFolderPath: (token: string, fileId: number) =>
+		`/s/${token}/files/${fileId}/download`,
+
 	downloadUrl: (token: string) => `${config.apiBaseUrl}/s/${token}/download`,
 
 	downloadFolderFileUrl: (token: string, fileId: number) =>

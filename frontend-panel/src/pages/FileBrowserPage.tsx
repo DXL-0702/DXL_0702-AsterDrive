@@ -592,7 +592,8 @@ export default function FileBrowserPage() {
 					</>
 				}
 			/>
-			<div
+			<section
+				aria-label="File drop zone"
 				className={cn(
 					"relative min-h-0 flex-1 transition-colors",
 					contentDragOver && "bg-accent/10",
@@ -678,7 +679,7 @@ export default function FileBrowserPage() {
 						</ContextMenuItem>
 					</ContextMenuContent>
 				</ContextMenu>
-			</div>
+			</section>
 		</>
 	);
 

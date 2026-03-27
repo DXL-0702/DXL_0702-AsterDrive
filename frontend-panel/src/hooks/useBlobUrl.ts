@@ -147,6 +147,7 @@ export function useBlobUrl(path: string | null) {
 		setRetryCount((n) => n + 1);
 	};
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: retryCount is an intentional re-fetch trigger
 	useEffect(() => {
 		setBlobUrl(null);
 		setError(false);

@@ -271,8 +271,8 @@ export default function ShareViewPage() {
 					onClose={() => setPreviewFile(null)}
 					downloadPath={
 						info?.share_type === "file"
-							? shareService.downloadUrl(token)
-							: shareService.downloadFolderFileUrl(token, previewFile.id)
+							? shareService.downloadPath(token)
+							: shareService.downloadFolderPath(token, previewFile.id)
 					}
 					editable={false}
 				/>
