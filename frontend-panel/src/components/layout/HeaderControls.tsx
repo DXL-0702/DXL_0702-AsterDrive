@@ -69,7 +69,9 @@ export function HeaderControls({
 					</TooltipTrigger>
 					<TooltipContent className="max-w-64 text-left leading-relaxed">
 						<div>{t("offline:offline_mode")}</div>
-						<div className="text-background/80">{t("offline:auth_stale_detail")}</div>
+						<div className="text-background/80">
+							{t("offline:auth_stale_detail")}
+						</div>
 					</TooltipContent>
 				</Tooltip>
 			)}

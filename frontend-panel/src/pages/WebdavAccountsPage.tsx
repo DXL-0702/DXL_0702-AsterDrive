@@ -441,9 +441,7 @@ export default function WebdavAccountsPage() {
 												: undefined
 										}
 									>
-										{account.is_active
-											? t("active")
-											: t("disabled_status")}
+										{account.is_active ? t("active") : t("disabled_status")}
 									</Badge>
 								</TableCell>
 								<TableCell className="text-sm text-muted-foreground">
@@ -456,9 +454,7 @@ export default function WebdavAccountsPage() {
 											size="icon-sm"
 											onClick={() => void handleToggle(account.id)}
 											title={
-												account.is_active
-													? t("disabled_status")
-													: t("active")
+												account.is_active ? t("disabled_status") : t("active")
 											}
 										>
 											<Icon name="Power" className="h-3.5 w-3.5" />

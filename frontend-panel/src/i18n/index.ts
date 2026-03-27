@@ -33,12 +33,7 @@ const INITIAL_NAMESPACES = [
 	"offline",
 	"share",
 ] as const;
-const DEFERRED_NAMESPACES = [
-	"admin",
-	"webdav",
-	"settings",
-	"search",
-] as const;
+const DEFERRED_NAMESPACES = ["admin", "webdav", "settings", "search"] as const;
 
 type LocaleNamespace = (typeof ALL_NAMESPACES)[number];
 

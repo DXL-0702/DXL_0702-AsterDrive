@@ -1,0 +1,136 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { FileContextMenu } from "@/components/files/FileContextMenu";
+
+vi.mock("react-i18next", () => ({
+	useTranslation: () => ({
+		t: (key: string) => key,
+	}),
+}));
+
+vi.mock("@/components/ui/context-menu", () => ({
+	ContextMenu: (props: { children: React.ReactNode }) => (
+		<div>{props.children}</div>
+	),
+	ContextMenuContent: (props: { children: React.ReactNode }) => (
+		<div>{props.children}</div>
+	),
+	ContextMenuItem: (props: {
+		children: React.ReactNode;
+		className?: string;
+		disabled?: boolean;
+		onClick?: () => void;
+	}) => (
+		<button
+			type="button"
+			className={props.className}
+			disabled={props.disabled}
+			onClick={props.onClick}
+		>
+			{props.children}
+		</button>
+	),
+	ContextMenuSeparator: () => <hr />,
+	ContextMenuTrigger: (props: {
+		children?: React.ReactNode;
+		className?: string;
+		render?: React.ReactNode;
+	}) => (
+		<div className={props.className} data-testid="context-trigger">
+			{props.render ?? props.children}
+		</div>
+	),
+}));
+
+vi.mock("@/components/ui/icon", () => ({
+	Icon: () => <span>icon</span>,
+}));
+
+function renderMenu(
+	overrides: Partial<React.ComponentProps<typeof FileContextMenu>> = {},
+) {
+	const handlers = {
+		onCopy: vi.fn(),
+		onDelete: vi.fn(),
+		onDownload: vi.fn(),
+		onInfo: vi.fn(),
+		onMove: vi.fn(),
+		onRename: vi.fn(),
+		onShare: vi.fn(),
+		onToggleLock: vi.fn(),
+		onVersions: vi.fn(),
+	};
+
+	render(
+		<FileContextMenu
+			isFolder={false}
+			isLocked={false}
+			{...handlers}
+			{...overrides}
+		>
+			<div>file-row</div>
+		</FileContextMenu>,
+	);
+
+	return handlers;
+}
+
+describe("FileContextMenu", () => {
+	it("renders file actions and invokes the matching callbacks", () => {
+		const handlers = renderMenu();
+
+		fireEvent.click(screen.getByText("download"));
+		fireEvent.click(screen.getByText("share"));
+		fireEvent.click(screen.getByText("copy"));
+		fireEvent.click(screen.getByText("move"));
+		fireEvent.click(screen.getByText("rename"));
+		fireEvent.click(screen.getByText("versions"));
+		fireEvent.click(screen.getByText("info"));
+		fireEvent.click(screen.getByText("lock"));
+		fireEvent.click(screen.getByText("delete"));
+
+		expect(handlers.onDownload).toHaveBeenCalledTimes(1);
+		expect(handlers.onShare).toHaveBeenCalledTimes(1);
+		expect(handlers.onCopy).toHaveBeenCalledTimes(1);
+		expect(handlers.onMove).toHaveBeenCalledTimes(1);
+		expect(handlers.onRename).toHaveBeenCalledTimes(1);
+		expect(handlers.onVersions).toHaveBeenCalledTimes(1);
+		expect(handlers.onInfo).toHaveBeenCalledTimes(1);
+		expect(handlers.onToggleLock).toHaveBeenCalledTimes(1);
+		expect(handlers.onDelete).toHaveBeenCalledTimes(1);
+	});
+
+	it("hides file-only actions for folders and disables delete when locked", () => {
+		renderMenu({
+			isFolder: true,
+			isLocked: true,
+		});
+
+		expect(screen.queryByText("download")).not.toBeInTheDocument();
+		expect(screen.queryByText("versions")).not.toBeInTheDocument();
+		expect(screen.getByText("unlock")).toBeInTheDocument();
+		expect(screen.getByText("delete")).toBeDisabled();
+	});
+
+	it("uses renderTrigger when requested", () => {
+		render(
+			<FileContextMenu
+				isFolder={false}
+				isLocked={false}
+				onShare={vi.fn()}
+				onCopy={vi.fn()}
+				onToggleLock={vi.fn()}
+				onDelete={vi.fn()}
+				onInfo={vi.fn()}
+				renderTrigger
+			>
+				<button type="button">custom trigger</button>
+			</FileContextMenu>,
+		);
+
+		expect(screen.getByText("custom trigger")).toBeInTheDocument();
+		expect(screen.getByTestId("context-trigger")).toContainElement(
+			screen.getByText("custom trigger"),
+		);
+	});
+});

@@ -1,0 +1,93 @@
+import { fireEvent, renderHook } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import {
+	shouldIgnoreKeyboardTarget,
+	useSelectionShortcuts,
+} from "@/hooks/useSelectionShortcuts";
+
+describe("shouldIgnoreKeyboardTarget", () => {
+	it("ignores editable form controls and contenteditable targets", () => {
+		const input = document.createElement("input");
+		const textarea = document.createElement("textarea");
+		const select = document.createElement("select");
+		const editable = document.createElement("div");
+		Object.defineProperty(editable, "isContentEditable", {
+			configurable: true,
+			value: true,
+		});
+
+		expect(shouldIgnoreKeyboardTarget(input)).toBe(true);
+		expect(shouldIgnoreKeyboardTarget(textarea)).toBe(true);
+		expect(shouldIgnoreKeyboardTarget(select)).toBe(true);
+		expect(shouldIgnoreKeyboardTarget(editable)).toBe(true);
+		expect(shouldIgnoreKeyboardTarget(document.body)).toBeFalsy();
+		expect(shouldIgnoreKeyboardTarget(null)).toBeFalsy();
+	});
+});
+
+describe("useSelectionShortcuts", () => {
+	it("handles select-all and clear-selection shortcuts", () => {
+		const clearSelection = vi.fn();
+		const selectAll = vi.fn();
+
+		renderHook(() =>
+			useSelectionShortcuts({
+				selectAll,
+				clearSelection,
+			}),
+		);
+
+		fireEvent.keyDown(document, {
+			ctrlKey: true,
+			key: "a",
+		});
+		fireEvent.keyDown(document, {
+			key: "Escape",
+		});
+
+		expect(selectAll).toHaveBeenCalledTimes(1);
+		expect(clearSelection).toHaveBeenCalledTimes(1);
+	});
+
+	it("ignores shortcuts from input fields or when disabled", () => {
+		const clearSelection = vi.fn();
+		const selectAll = vi.fn();
+		const input = document.createElement("input");
+		document.body.appendChild(input);
+
+		const { unmount } = renderHook(() =>
+			useSelectionShortcuts({
+				selectAll,
+				clearSelection,
+			}),
+		);
+
+		fireEvent.keyDown(input, {
+			metaKey: true,
+			key: "a",
+		});
+		fireEvent.keyDown(input, {
+			key: "Escape",
+		});
+
+		expect(selectAll).not.toHaveBeenCalled();
+		expect(clearSelection).not.toHaveBeenCalled();
+
+		unmount();
+
+		renderHook(() =>
+			useSelectionShortcuts({
+				selectAll,
+				clearSelection,
+				enabled: false,
+			}),
+		);
+
+		fireEvent.keyDown(document, {
+			ctrlKey: true,
+			key: "a",
+		});
+
+		expect(selectAll).not.toHaveBeenCalled();
+	});
+});

@@ -141,9 +141,7 @@ export function TextCodePreview({
 			<div className="flex items-center gap-3 border-b bg-background px-4 py-2 text-xs text-muted-foreground">
 				<span>{language}</span>
 				<span>·</span>
-				<span>
-					{editable && editing ? t("edit") : t("open_with_code")}
-				</span>
+				<span>{editable && editing ? t("edit") : t("open_with_code")}</span>
 				<span>·</span>
 				<span>{dirty ? t("files:unsaved_changes") : t("active")}</span>
 				{editing ? (

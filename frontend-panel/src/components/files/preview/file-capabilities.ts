@@ -248,26 +248,38 @@ export function getFileTypeInfo(file: PreviewableFileLike): FileTypeInfo {
 		return { category: "document", ...exact };
 	}
 
-	for (const [prefix, info] of PREFIX_TYPE_INFO) {
-		if (file.mime_type.startsWith(prefix)) return info;
-	}
-
 	const { ext } = getExtension(file.name);
-	if (ext === "md" || ext === "markdown") {
+	if (
+		file.mime_type === "text/markdown" ||
+		ext === "md" ||
+		ext === "markdown"
+	) {
 		return { category: "markdown", icon: "Scroll", color: "text-sky-500" };
 	}
-	if (ext === "csv" || ext === "tsv") {
-		return { category: ext, icon: "Table", color: "text-green-600" };
+	if (file.mime_type === "text/csv" || ext === "csv") {
+		return { category: "csv", icon: "Table", color: "text-green-600" };
 	}
-	if (ext === "svg") {
-		return { category: "image", icon: "FileText", color: "text-sky-500" };
+	if (file.mime_type === "text/tab-separated-values" || ext === "tsv") {
+		return { category: "tsv", icon: "Table", color: "text-green-600" };
 	}
-	if (ext === "xml") {
+	if (
+		file.mime_type === "text/xml" ||
+		file.mime_type === "application/xml" ||
+		ext === "xml"
+	) {
 		return { category: "xml", icon: "BracketsCurly", color: "text-orange-500" };
 	}
 	if (ext === "json") {
 		return { category: "json", icon: "BracketsCurly", color: "text-amber-500" };
 	}
+	if (ext === "svg") {
+		return { category: "image", icon: "FileText", color: "text-sky-500" };
+	}
+
+	for (const [prefix, info] of PREFIX_TYPE_INFO) {
+		if (file.mime_type.startsWith(prefix)) return info;
+	}
+
 	if (TEXT_EXTENSIONS.has(ext)) {
 		return { category: "text", icon: "FileCode", color: "text-slate-500" };
 	}

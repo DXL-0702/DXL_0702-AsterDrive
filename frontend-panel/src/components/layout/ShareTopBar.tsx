@@ -14,9 +14,7 @@ export function ShareTopBar() {
 				/>
 			}
 			right={
-				<span className="text-sm text-muted-foreground">
-					{t("share")}
-				</span>
+				<span className="text-sm text-muted-foreground">{t("share")}</span>
 			}
 		/>
 	);

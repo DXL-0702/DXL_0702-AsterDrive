@@ -56,9 +56,7 @@ export function TrashTable({
 					<TableHead>{t("original_location")}</TableHead>
 					<TableHead className="w-[160px]">{t("admin:deleted_at")}</TableHead>
 					<TableHead className="w-[100px]">{t("size")}</TableHead>
-					<TableHead className="w-[180px] text-right">
-						{t("actions")}
-					</TableHead>
+					<TableHead className="w-[180px] text-right">{t("actions")}</TableHead>
 				</TableRow>
 			</TableHeader>
 			<TableBody>
@@ -103,9 +101,7 @@ export function TrashTable({
 											{item.name}
 										</p>
 										<p className="text-xs text-muted-foreground">
-											{item.entity_type === "folder"
-												? t("folder")
-												: t("file")}
+											{item.entity_type === "folder" ? t("folder") : t("file")}
 										</p>
 									</div>
 								</div>

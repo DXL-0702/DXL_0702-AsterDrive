@@ -90,9 +90,7 @@ export function TrashGrid({
 								<div className="space-y-1">
 									<p>{t("type")}</p>
 									<p className="font-medium text-foreground">
-										{item.entity_type === "folder"
-											? t("folder")
-											: t("file")}
+										{item.entity_type === "folder" ? t("folder") : t("file")}
 									</p>
 								</div>
 								<div className="space-y-1">

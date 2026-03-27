@@ -1,0 +1,48 @@
+import {
+	type ApiResponse,
+	ErrorCode,
+	type FolderContents,
+	type MeResponse,
+} from "@/types/api";
+
+export function apiResponse<T>(data: T, message = "ok"): ApiResponse<T> {
+	return {
+		code: ErrorCode.Success,
+		msg: message,
+		data,
+	};
+}
+
+export function createMeResponse(
+	overrides: Partial<MeResponse> = {},
+): MeResponse {
+	return {
+		id: 1,
+		username: "alice",
+		email: "alice@example.com",
+		role: "user",
+		status: "active",
+		preferences: {
+			theme_mode: "dark",
+			color_preset: "orange",
+			view_mode: "grid",
+			sort_by: "updated_at",
+			sort_order: "desc",
+			language: "zh",
+		},
+		...overrides,
+	} as MeResponse;
+}
+
+export function createFolderContents(
+	overrides: Partial<FolderContents> = {},
+): FolderContents {
+	return {
+		folders: [],
+		files: [],
+		folders_total: 0,
+		files_total: 0,
+		next_file_cursor: null,
+		...overrides,
+	} as FolderContents;
+}

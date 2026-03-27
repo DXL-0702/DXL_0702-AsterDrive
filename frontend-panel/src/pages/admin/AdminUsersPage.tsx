@@ -79,9 +79,7 @@ function QuotaCell({ user }: { user: UserInfo }) {
 			<div className="flex items-center justify-between gap-3 text-xs">
 				<span className="font-medium text-foreground">
 					{formatBytes(used)}
-					{quota > 0
-						? ` / ${formatBytes(quota)}`
-						: ` / ${t("core:unlimited")}`}
+					{quota > 0 ? ` / ${formatBytes(quota)}` : ` / ${t("core:unlimited")}`}
 				</span>
 				<span className="text-[11px] text-muted-foreground">
 					{quota > 0 ? `${Math.round(pct)}%` : t("quota_unlimited_short")}
@@ -460,9 +458,7 @@ export default function AdminUsersPage() {
 										<TableHead className="w-32">{t("role")}</TableHead>
 										<TableHead className="w-32">{t("core:status")}</TableHead>
 										<TableHead className="w-[220px]">{t("storage")}</TableHead>
-										<TableHead className="w-20">
-											{t("core:actions")}
-										</TableHead>
+										<TableHead className="w-20">{t("core:actions")}</TableHead>
 									</TableRow>
 								</TableHeader>
 								<TableBody>
