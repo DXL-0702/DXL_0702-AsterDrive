@@ -470,6 +470,8 @@ pub async fn move_folder(
 }
 
 /// 复制文件夹（递归复制所有文件和子文件夹）
+///
+/// `dest_parent_id = None` 表示复制到根目录。
 pub async fn copy_folder(
     state: &AppState,
     src_id: i64,
@@ -480,18 +482,27 @@ pub async fn copy_folder(
     let f = folder_repo::find_by_id(db, src_id).await?;
     crate::utils::verify_owner(f.user_id, user_id, "folder")?;
 
+    if let Some(parent_id) = dest_parent_id {
+        verify_folder_access(state, user_id, parent_id).await?;
+    }
+
     // 副本命名：目标无冲突保留原名，有冲突则递增
-    let dest = dest_parent_id.or(f.parent_id);
     let mut dest_name = f.name.clone();
-    while folder_repo::find_by_name_in_parent(db, user_id, dest, &dest_name)
+    while folder_repo::find_by_name_in_parent(db, user_id, dest_parent_id, &dest_name)
         .await?
         .is_some()
     {
         dest_name = crate::utils::next_copy_name(&dest_name);
     }
 
-    crate::services::webdav_service::recursive_copy_folder(state, user_id, src_id, dest, &dest_name)
-        .await
+    crate::services::webdav_service::recursive_copy_folder(
+        state,
+        user_id,
+        src_id,
+        dest_parent_id,
+        &dest_name,
+    )
+    .await
 }
 
 /// 列出文件夹内容（无用户校验，用于分享链接）
