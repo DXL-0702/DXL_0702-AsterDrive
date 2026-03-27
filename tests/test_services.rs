@@ -21,13 +21,13 @@ async fn test_auth_service_register_login() {
     // 第一个用户是 admin
     assert!(user.role.is_admin());
 
-    // 登录 → (access_token, refresh_token)
-    let (access, refresh) =
-        aster_drive::services::auth_service::login(&state, "alice", "password123")
-            .await
-            .unwrap();
-    assert!(!access.is_empty());
-    assert!(!refresh.is_empty());
+    // 登录 → LoginResult { access_token, refresh_token, user_id }
+    let result = aster_drive::services::auth_service::login(&state, "alice", "password123")
+        .await
+        .unwrap();
+    assert!(!result.access_token.is_empty());
+    assert!(!result.refresh_token.is_empty());
+    assert_eq!(result.user_id, user.id);
 
     // 错误密码
     let err = aster_drive::services::auth_service::login(&state, "alice", "wrongpass").await;
@@ -52,14 +52,16 @@ async fn test_auth_service_verify_token() {
         .await
         .unwrap();
 
-    let (access, _) = aster_drive::services::auth_service::login(&state, "bobb", "pass123")
+    let login_result = aster_drive::services::auth_service::login(&state, "bobb", "pass123")
         .await
         .unwrap();
 
     // 验证 access token
-    let claims =
-        aster_drive::services::auth_service::verify_token(&access, &state.config.auth.jwt_secret)
-            .unwrap();
+    let claims = aster_drive::services::auth_service::verify_token(
+        &login_result.access_token,
+        &state.config.auth.jwt_secret,
+    )
+    .unwrap();
     assert_eq!(claims.sub, claims.user_id.to_string());
 
     // 假 token

@@ -735,25 +735,13 @@ pub async fn list_config(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(configs)))
 }
 
-/// 系统配置的 schema 信息（从 ALL_CONFIGS 生成）
-#[derive(serde::Serialize, ToSchema)]
-pub struct ConfigSchemaItem {
-    pub key: String,
-    pub value_type: String,
-    pub default_value: String,
-    pub category: String,
-    pub description: String,
-    pub requires_restart: bool,
-    pub is_sensitive: bool,
-}
-
 #[utoipa::path(
     get,
     path = "/api/v1/admin/config/schema",
     tag = "admin",
     operation_id = "config_schema",
     responses(
-        (status = 200, description = "Config schema", body = inline(ApiResponse<Vec<ConfigSchemaItem>>)),
+        (status = 200, description = "Config schema", body = inline(ApiResponse<Vec<config_service::ConfigSchemaItem>>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -761,18 +749,7 @@ pub struct ConfigSchemaItem {
 )]
 pub async fn config_schema(claims: web::ReqData<Claims>) -> Result<HttpResponse> {
     require_admin(&claims)?;
-    let schema: Vec<ConfigSchemaItem> = crate::config::definitions::ALL_CONFIGS
-        .iter()
-        .map(|def| ConfigSchemaItem {
-            key: def.key.to_string(),
-            value_type: def.value_type.to_string(),
-            default_value: (def.default_fn)(),
-            category: def.category.to_string(),
-            description: def.description.to_string(),
-            requires_restart: def.requires_restart,
-            is_sensitive: def.is_sensitive,
-        })
-        .collect();
+    let schema = config_service::get_schema();
     Ok(HttpResponse::Ok().json(ApiResponse::ok(schema)))
 }
 

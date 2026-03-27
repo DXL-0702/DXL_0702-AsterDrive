@@ -84,16 +84,17 @@ pub async fn verify_password(
     path: web::Path<String>,
     body: web::Json<VerifyPasswordReq>,
 ) -> Result<HttpResponse> {
-    share_service::verify_password(&state, &path, &body.password).await?;
+    let result = share_service::verify_password_and_sign(&state, &path, &body.password).await?;
 
-    // 设置签名 cookie 标记密码已验证
-    let signature = sign_share_cookie(&path, &state.config.auth.jwt_secret);
-    let cookie = actix_web::cookie::Cookie::build(format!("aster_share_{}", &*path), signature)
-        .path("/")
-        .http_only(true)
-        .max_age(actix_web::cookie::time::Duration::hours(1))
-        .same_site(actix_web::cookie::SameSite::Lax)
-        .finish();
+    let cookie = actix_web::cookie::Cookie::build(
+        format!("aster_share_{}", &*path),
+        result.cookie_signature,
+    )
+    .path("/")
+    .http_only(true)
+    .max_age(actix_web::cookie::time::Duration::hours(1))
+    .same_site(actix_web::cookie::SameSite::Lax)
+    .finish();
 
     Ok(HttpResponse::Ok()
         .cookie(cookie)
@@ -117,7 +118,10 @@ pub async fn download_shared(
     path: web::Path<String>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
-    check_share_password_cookie(&state, &path, &req).await?;
+    let cookie_value = req
+        .cookie(&format!("aster_share_{}", &*path))
+        .map(|c| c.value().to_string());
+    share_service::check_share_password_cookie(&state, &path, cookie_value.as_deref()).await?;
 
     share_service::download_shared_file(
         &state,
@@ -150,7 +154,10 @@ pub async fn download_shared_folder_file(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, file_id) = path.into_inner();
-    check_share_password_cookie(&state, &token, &req).await?;
+    let cookie_value = req
+        .cookie(&format!("aster_share_{token}"))
+        .map(|c| c.value().to_string());
+    share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
     share_service::download_shared_folder_file(
         &state,
@@ -181,7 +188,10 @@ pub async fn list_shared_content(
     query: web::Query<FolderListQuery>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
-    check_share_password_cookie(&state, &path, &req).await?;
+    let cookie_value = req
+        .cookie(&format!("aster_share_{}", &*path))
+        .map(|c| c.value().to_string());
+    share_service::check_share_password_cookie(&state, &path, cookie_value.as_deref()).await?;
 
     let contents = share_service::list_shared_folder(
         &state,
@@ -220,7 +230,10 @@ pub async fn list_shared_subfolder_content(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, folder_id) = path.into_inner();
-    check_share_password_cookie(&state, &token, &req).await?;
+    let cookie_value = req
+        .cookie(&format!("aster_share_{token}"))
+        .map(|c| c.value().to_string());
+    share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
     let contents = share_service::list_shared_subfolder(
         &state,
@@ -254,7 +267,10 @@ pub async fn shared_thumbnail(
     path: web::Path<String>,
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
-    check_share_password_cookie(&state, &path, &req).await?;
+    let cookie_value = req
+        .cookie(&format!("aster_share_{}", &*path))
+        .map(|c| c.value().to_string());
+    share_service::check_share_password_cookie(&state, &path, cookie_value.as_deref()).await?;
 
     let data = share_service::get_shared_thumbnail(&state, &path).await?;
 
@@ -288,7 +304,10 @@ pub async fn shared_folder_file_thumbnail(
     req: actix_web::HttpRequest,
 ) -> Result<HttpResponse> {
     let (token, file_id) = path.into_inner();
-    check_share_password_cookie(&state, &token, &req).await?;
+    let cookie_value = req
+        .cookie(&format!("aster_share_{token}"))
+        .map(|c| c.value().to_string());
+    share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
     let data = share_service::get_shared_folder_file_thumbnail(&state, &token, file_id).await?;
 
@@ -299,56 +318,4 @@ pub async fn shared_folder_file_thumbnail(
             format!("public, max-age={YEAR_SECS}, immutable"),
         ))
         .body(data))
-}
-
-/// SHA256 签名：防止伪造分享密码验证 cookie
-fn sign_share_cookie(token: &str, secret: &str) -> String {
-    use sha2::{Digest, Sha256};
-
-    let mut hasher = Sha256::new();
-    hasher.update(format!("share_verified:{secret}:{token}").as_bytes());
-    crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
-}
-
-/// 验证分享密码 cookie 签名（常量时间比较）
-fn verify_share_cookie(token: &str, cookie_value: &str, secret: &str) -> bool {
-    let expected = sign_share_cookie(token, secret);
-    // 长度不同直接 false，避免泄漏长度信息
-    if expected.len() != cookie_value.len() {
-        return false;
-    }
-    // 常量时间比较
-    expected
-        .bytes()
-        .zip(cookie_value.bytes())
-        .fold(0u8, |acc, (a, b)| acc | (a ^ b))
-        == 0
-}
-
-/// 如果分享有密码，检查 cookie 签名是否有效
-async fn check_share_password_cookie(
-    state: &AppState,
-    token: &str,
-    req: &actix_web::HttpRequest,
-) -> Result<()> {
-    use crate::db::repository::share_repo;
-    use crate::errors::AsterError;
-
-    let share = share_repo::find_by_token(&state.db, token)
-        .await?
-        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
-
-    if share.password.is_some() {
-        let cookie_name = format!("aster_share_{token}");
-        let cookie = req
-            .cookie(&cookie_name)
-            .ok_or_else(|| AsterError::share_password_required("password verification required"))?;
-
-        if !verify_share_cookie(token, cookie.value(), &state.config.auth.jwt_secret) {
-            return Err(AsterError::share_password_required(
-                "invalid verification cookie",
-            ));
-        }
-    }
-    Ok(())
 }

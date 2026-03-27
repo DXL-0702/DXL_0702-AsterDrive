@@ -2,16 +2,13 @@ use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
-use crate::db::repository::file_repo;
-use crate::errors::AsterError;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{
     audit_service::{self, AuditContext},
     auth_service::Claims,
-    file_service, thumbnail_service, upload_service,
+    file_service, upload_service,
 };
-use crate::types::EntityType;
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -218,15 +215,8 @@ pub async fn get_thumbnail(
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let f = file_service::get_info(&state, *path, claims.user_id).await?;
-    if !thumbnail_service::is_supported_mime(&f.mime_type) {
-        return Err(AsterError::thumbnail_generation_failed(
-            "unsupported image type",
-        ));
-    }
-    let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
-    match thumbnail_service::get_or_enqueue(&state, &blob).await? {
-        Some(data) => Ok(HttpResponse::Ok()
+    match file_service::get_thumbnail_data(&state, *path, claims.user_id).await? {
+        Some(result) => Ok(HttpResponse::Ok()
             .content_type("image/webp")
             .insert_header((
                 "Cache-Control",
@@ -235,7 +225,7 @@ pub async fn get_thumbnail(
                     crate::api::constants::YEAR_SECS
                 ),
             ))
-            .body(data)),
+            .body(result.data)),
         None => {
             // 缩略图正在后台生成，返回 202 让前端稍后重试
             Ok(HttpResponse::Accepted()
@@ -612,21 +602,7 @@ pub async fn set_lock(
     path: web::Path<i64>,
     body: web::Json<SetLockReq>,
 ) -> Result<HttpResponse> {
-    use crate::services::lock_service;
-    if body.locked {
-        lock_service::lock(
-            &state,
-            EntityType::File,
-            *path,
-            Some(claims.user_id),
-            None,
-            None,
-        )
-        .await?;
-    } else {
-        lock_service::unlock(&state, EntityType::File, *path, claims.user_id).await?;
-    }
-    let file = file_service::get_info(&state, *path, claims.user_id).await?;
+    let file = file_service::set_lock(&state, *path, claims.user_id, body.locked).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
 }
 

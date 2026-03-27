@@ -10,6 +10,7 @@ use crate::db::repository::{file_repo, policy_repo, user_repo};
 use crate::entities::{file, file_blob, user_storage_policy};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
+use crate::services::thumbnail_service;
 
 const HASH_BUF_SIZE: usize = 65536; // 64KB
 
@@ -993,4 +994,50 @@ pub async fn create_empty(
     txn.commit().await.map_err(AsterError::from)?;
 
     Ok(created)
+}
+
+// ── Lock ─────────────────────────────────────────────────────────────
+
+/// 设置/解除文件锁，返回更新后的文件信息
+pub async fn set_lock(
+    state: &AppState,
+    file_id: i64,
+    user_id: i64,
+    locked: bool,
+) -> Result<file::Model> {
+    use crate::services::lock_service;
+    use crate::types::EntityType;
+
+    if locked {
+        lock_service::lock(state, EntityType::File, file_id, Some(user_id), None, None).await?;
+    } else {
+        lock_service::unlock(state, EntityType::File, file_id, user_id).await?;
+    }
+    get_info(state, file_id, user_id).await
+}
+
+// ── Thumbnail ────────────────────────────────────────────────────────
+
+/// 缩略图查询结果：有数据直接返回，正在生成则标记 pending
+pub struct ThumbnailResult {
+    pub data: Vec<u8>,
+}
+
+/// 获取文件缩略图。返回 `Ok(Some(data))` 直接有图；`Ok(None)` 表示正在后台生成。
+pub async fn get_thumbnail_data(
+    state: &AppState,
+    file_id: i64,
+    user_id: i64,
+) -> Result<Option<ThumbnailResult>> {
+    let f = get_info(state, file_id, user_id).await?;
+    if !thumbnail_service::is_supported_mime(&f.mime_type) {
+        return Err(AsterError::thumbnail_generation_failed(
+            "unsupported image type",
+        ));
+    }
+    let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
+    match thumbnail_service::get_or_enqueue(state, &blob).await? {
+        Some(data) => Ok(Some(ThumbnailResult { data })),
+        None => Ok(None),
+    }
 }

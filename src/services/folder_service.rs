@@ -657,3 +657,31 @@ pub async fn get_ancestors(
         .map(|(id, name)| FolderAncestorItem { id, name })
         .collect())
 }
+
+// ── Lock ─────────────────────────────────────────────────────────────
+
+/// 设置/解除文件夹锁，返回更新后的文件夹信息
+pub async fn set_lock(
+    state: &AppState,
+    folder_id: i64,
+    user_id: i64,
+    locked: bool,
+) -> Result<folder::Model> {
+    use crate::services::lock_service;
+    use crate::types::EntityType;
+
+    if locked {
+        lock_service::lock(
+            state,
+            EntityType::Folder,
+            folder_id,
+            Some(user_id),
+            None,
+            None,
+        )
+        .await?;
+    } else {
+        lock_service::unlock(state, EntityType::Folder, folder_id, user_id).await?;
+    }
+    folder_repo::find_by_id(&state.db, folder_id).await
+}

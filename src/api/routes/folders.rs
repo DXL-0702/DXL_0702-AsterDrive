@@ -10,7 +10,6 @@ use crate::services::{
     auth_service::Claims,
     folder_service,
 };
-use crate::types::EntityType;
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -278,22 +277,7 @@ pub async fn set_lock(
     path: web::Path<i64>,
     body: web::Json<SetLockReq>,
 ) -> Result<HttpResponse> {
-    use crate::services::lock_service;
-    if body.locked {
-        lock_service::lock(
-            &state,
-            EntityType::Folder,
-            *path,
-            Some(claims.user_id),
-            None,
-            None,
-        )
-        .await?;
-    } else {
-        lock_service::unlock(&state, EntityType::Folder, *path, claims.user_id).await?;
-    }
-    // 返回更新后的文件夹信息
-    let folder = crate::db::repository::folder_repo::find_by_id(&state.db, *path).await?;
+    let folder = folder_service::set_lock(&state, *path, claims.user_id, body.locked).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
 }
 

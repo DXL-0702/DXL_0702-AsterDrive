@@ -83,6 +83,52 @@ pub struct UpdatePreferencesReq {
     pub language: Option<Language>,
 }
 
+// ── MeResponse (从 auth route 迁移) ──────────────────────────────────
+
+/// 用户信息核心字段（不含 password_hash），用于 API 响应
+#[derive(Debug, Serialize, ToSchema)]
+pub struct UserCore {
+    pub id: i64,
+    pub username: String,
+    pub email: String,
+    pub role: crate::types::UserRole,
+    pub status: crate::types::UserStatus,
+    pub storage_used: i64,
+    pub storage_quota: i64,
+    #[schema(value_type = String)]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String)]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// /auth/me 响应：用户信息 + 偏好设置
+#[derive(Debug, Serialize, ToSchema)]
+pub struct MeResponse {
+    #[serde(flatten)]
+    pub user: UserCore,
+    pub preferences: Option<UserPreferences>,
+}
+
+/// 获取当前用户完整信息（含偏好设置）
+pub async fn get_me(state: &AppState, user_id: i64) -> Result<MeResponse> {
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let prefs = parse_preferences(&user);
+    Ok(MeResponse {
+        user: UserCore {
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            role: user.role,
+            status: user.status,
+            storage_used: user.storage_used,
+            storage_quota: user.storage_quota,
+            created_at: user.created_at,
+            updated_at: user.updated_at,
+        },
+        preferences: prefs,
+    })
+}
+
 pub async fn list_all(state: &AppState) -> Result<Vec<user::Model>> {
     user_repo::find_all(&state.db).await
 }

@@ -215,9 +215,16 @@ pub async fn setup(
     register(state, username, email, password).await
 }
 
-/// 登录，返回 (access_token, refresh_token)
+/// 登录结果：access/refresh tokens + user_id（用于审计）
+pub struct LoginResult {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub user_id: i64,
+}
+
+/// 登录，返回 tokens + user_id
 /// identifier 支持邮箱或用户名
-pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result<(String, String)> {
+pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result<LoginResult> {
     let db = &state.db;
     let auth_config = &state.config.auth;
 
@@ -248,7 +255,11 @@ pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result
         &auth_config.jwt_secret,
     )?;
 
-    Ok((access, refresh))
+    Ok(LoginResult {
+        access_token: access,
+        refresh_token: refresh,
+        user_id: user.id,
+    })
 }
 
 /// 用 refresh token 换 access token

@@ -1,9 +1,27 @@
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use crate::errors::Result;
+use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{file_service, folder_service};
+
+/// 单次批量操作最大条目数
+pub const MAX_BATCH_ITEMS: usize = 1000;
+
+/// 校验批量操作参数：至少一个 ID，不超过上限
+pub fn validate_batch_ids(file_ids: &[i64], folder_ids: &[i64]) -> Result<()> {
+    if file_ids.is_empty() && folder_ids.is_empty() {
+        return Err(AsterError::validation_error(
+            "at least one file or folder ID is required",
+        ));
+    }
+    if file_ids.len() + folder_ids.len() > MAX_BATCH_ITEMS {
+        return Err(AsterError::validation_error(format!(
+            "batch size cannot exceed {MAX_BATCH_ITEMS} items",
+        )));
+    }
+    Ok(())
+}
 
 #[derive(Serialize, ToSchema)]
 pub struct BatchResult {

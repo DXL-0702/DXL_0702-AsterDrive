@@ -5,6 +5,8 @@ use crate::entities::system_config;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::audit_service::{self, AuditContext};
+use serde::Serialize;
+use utoipa::ToSchema;
 
 pub async fn list_all(state: &AppState) -> Result<Vec<system_config::Model>> {
     config_repo::find_all(&state.db).await
@@ -86,4 +88,34 @@ fn validate_value_type(value_type: &str, value: &str) -> Result<()> {
         _ => {} // string 不做校验
     }
     Ok(())
+}
+
+// ── Config Schema ─────────────────────────────────────────────────────
+
+/// 系统配置的 schema 信息（从 ALL_CONFIGS 生成）
+#[derive(Serialize, ToSchema)]
+pub struct ConfigSchemaItem {
+    pub key: String,
+    pub value_type: String,
+    pub default_value: String,
+    pub category: String,
+    pub description: String,
+    pub requires_restart: bool,
+    pub is_sensitive: bool,
+}
+
+/// 返回所有系统配置的 schema 信息
+pub fn get_schema() -> Vec<ConfigSchemaItem> {
+    ALL_CONFIGS
+        .iter()
+        .map(|def| ConfigSchemaItem {
+            key: def.key.to_string(),
+            value_type: def.value_type.to_string(),
+            default_value: (def.default_fn)(),
+            category: def.category.to_string(),
+            description: def.description.to_string(),
+            requires_restart: def.requires_restart,
+            is_sensitive: def.is_sensitive,
+        })
+        .collect()
 }

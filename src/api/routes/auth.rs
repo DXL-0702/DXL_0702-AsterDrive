@@ -1,5 +1,5 @@
 use crate::api::response::ApiResponse;
-use crate::db::repository::user_repo;
+use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{audit_service, auth_service};
@@ -8,19 +8,19 @@ use actix_web::cookie::time::Duration as CookieDuration;
 use actix_web::cookie::{Cookie, SameSite};
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use utoipa::ToSchema;
 
 use crate::api::middleware::rate_limit;
-use crate::config::RateLimitConfig;
 
 // Re-export preference types from user_service for OpenAPI schema registration.
 pub use crate::services::user_service::{
-    ColorPreset, Language, PrefViewMode, ThemeMode, UpdatePreferencesReq, UserPreferences,
+    ColorPreset, Language, MeResponse, PrefViewMode, ThemeMode, UpdatePreferencesReq,
+    UserPreferences,
 };
 
 use crate::services::auth_service::Claims;
-use crate::services::user_service::{parse_preferences, update_preferences};
+use crate::services::user_service;
 
 const ACCESS_COOKIE: &str = "aster_access";
 const REFRESH_COOKIE: &str = "aster_refresh";
@@ -44,31 +44,6 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                 .route("/me", web::get().to(me))
                 .route("/preferences", web::patch().to(patch_preferences)),
         )
-}
-
-/// 用户信息核心字段（不含 password_hash），用于 API 响应。
-#[derive(Debug, Serialize, ToSchema)]
-pub struct UserCore {
-    pub id: i64,
-    pub username: String,
-    pub email: String,
-    pub role: crate::types::UserRole,
-    pub status: crate::types::UserStatus,
-    pub storage_used: i64,
-    pub storage_quota: i64,
-    #[schema(value_type = String)]
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    #[schema(value_type = String)]
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
-/// /auth/me 响应：用户信息 + 偏好设置。
-#[derive(Debug, Serialize, ToSchema)]
-#[schema(as = MeResponse)]
-pub struct MeResponse {
-    #[serde(flatten)]
-    pub user: UserCore,
-    pub preferences: Option<UserPreferences>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -238,46 +213,43 @@ pub async fn login(
     req: actix_web::HttpRequest,
     body: web::Json<LoginReq>,
 ) -> Result<HttpResponse> {
-    let (access, refresh_tok) =
-        auth_service::login(&state, &body.identifier, &body.password).await?;
+    let result = auth_service::login(&state, &body.identifier, &body.password).await?;
 
-    // 审计日志 — 从 token 解析 user_id
-    if let Ok(claims) = auth_service::verify_token(&access, &state.config.auth.jwt_secret) {
-        let ctx = audit_service::AuditContext {
-            user_id: claims.user_id,
-            ip_address: req
-                .connection_info()
-                .realip_remote_addr()
-                .map(|s| s.to_string()),
-            user_agent: req
-                .headers()
-                .get("user-agent")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string()),
-        };
-        audit_service::log(
-            &state,
-            &ctx,
-            "user_login",
-            None,
-            None,
-            Some(&body.identifier),
-            None,
-        )
-        .await;
-    }
+    // 审计日志 — 直接使用 login 返回的 user_id
+    let ctx = audit_service::AuditContext {
+        user_id: result.user_id,
+        ip_address: req
+            .connection_info()
+            .realip_remote_addr()
+            .map(|s| s.to_string()),
+        user_agent: req
+            .headers()
+            .get("user-agent")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string()),
+    };
+    audit_service::log(
+        &state,
+        &ctx,
+        "user_login",
+        None,
+        None,
+        Some(&body.identifier),
+        None,
+    )
+    .await;
 
     let secure = state.config.auth.cookie_secure;
     Ok(HttpResponse::Ok()
         .cookie(build_cookie(
             ACCESS_COOKIE,
-            &access,
+            &result.access_token,
             state.config.auth.access_token_ttl_secs as i64,
             secure,
         ))
         .cookie(build_cookie(
             REFRESH_COOKIE,
-            &refresh_tok,
+            &result.refresh_token,
             state.config.auth.refresh_token_ttl_secs as i64,
             secure,
         ))
@@ -345,22 +317,7 @@ pub async fn logout(state: web::Data<AppState>) -> HttpResponse {
     security(("bearer" = [])),
 )]
 pub async fn me(state: web::Data<AppState>, claims: web::ReqData<Claims>) -> Result<HttpResponse> {
-    let user = user_repo::find_by_id(&state.db, claims.user_id).await?;
-    let prefs = parse_preferences(&user);
-    let resp = MeResponse {
-        user: UserCore {
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            role: user.role,
-            status: user.status,
-            storage_used: user.storage_used,
-            storage_quota: user.storage_quota,
-            created_at: user.created_at,
-            updated_at: user.updated_at,
-        },
-        preferences: prefs,
-    };
+    let resp = user_service::get_me(&state, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
 }
 
@@ -385,6 +342,6 @@ pub async fn patch_preferences(
     claims: web::ReqData<Claims>,
     body: web::Json<UpdatePreferencesReq>,
 ) -> Result<HttpResponse> {
-    let prefs = update_preferences(&state, claims.user_id, body.into_inner()).await?;
+    let prefs = user_service::update_preferences(&state, claims.user_id, body.into_inner()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(prefs)))
 }

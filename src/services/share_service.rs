@@ -170,6 +170,70 @@ pub async fn verify_password(state: &AppState, token: &str, password: &str) -> R
     Ok(())
 }
 
+// ── Cookie 签名（密码验证后标记） ─────────────────────────────────────
+
+/// SHA256 签名：防止伪造分享密码验证 cookie
+pub fn sign_share_cookie(token: &str, secret: &str) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(format!("share_verified:{secret}:{token}").as_bytes());
+    crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
+}
+
+/// 验证分享密码 cookie 签名（常量时间比较）
+pub fn verify_share_cookie(token: &str, cookie_value: &str, secret: &str) -> bool {
+    let expected = sign_share_cookie(token, secret);
+    if expected.len() != cookie_value.len() {
+        return false;
+    }
+    expected
+        .bytes()
+        .zip(cookie_value.bytes())
+        .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+        == 0
+}
+
+/// 如果分享有密码，校验 cookie 签名是否有效。
+/// `cookie_value` 由路由从 `HttpRequest` 提取传入（不依赖 HTTP 类型）。
+pub async fn check_share_password_cookie(
+    state: &AppState,
+    token: &str,
+    cookie_value: Option<&str>,
+) -> Result<()> {
+    let share = share_repo::find_by_token(&state.db, token)
+        .await?
+        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+
+    if share.password.is_some() {
+        let value = cookie_value
+            .ok_or_else(|| AsterError::share_password_required("password verification required"))?;
+
+        if !verify_share_cookie(token, value, &state.config.auth.jwt_secret) {
+            return Err(AsterError::share_password_required(
+                "invalid verification cookie",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// 验证密码 + 生成 cookie 签名（verify_password handler 用）
+pub struct PasswordVerified {
+    pub cookie_signature: String,
+}
+
+pub async fn verify_password_and_sign(
+    state: &AppState,
+    token: &str,
+    password: &str,
+) -> Result<PasswordVerified> {
+    verify_password(state, token, password).await?;
+    Ok(PasswordVerified {
+        cookie_signature: sign_share_cookie(token, &state.config.auth.jwt_secret),
+    })
+}
+
 pub async fn download_shared_file(
     state: &AppState,
     token: &str,
