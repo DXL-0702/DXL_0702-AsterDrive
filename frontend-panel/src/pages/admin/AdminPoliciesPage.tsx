@@ -219,10 +219,11 @@ export default function AdminPoliciesPage() {
 			access_key: "",
 			secret_key: "",
 			base_path: p.base_path,
-			max_file_size: p.max_file_size ? String(p.max_file_size) : "",
-			chunk_size: p.chunk_size
-				? String(Math.round(p.chunk_size / 1024 / 1024))
-				: "5",
+			max_file_size: p.max_file_size != null ? String(p.max_file_size) : "",
+			chunk_size:
+				p.chunk_size != null
+					? String(Math.round(p.chunk_size / 1024 / 1024))
+					: "5",
 			is_default: p.is_default,
 			presigned_upload: opts.presigned_upload ?? false,
 		});
@@ -300,13 +301,20 @@ export default function AdminPoliciesPage() {
 				toast.success(t("policy_updated"));
 			} else {
 				const payload = {
-					...form,
+					name: form.name,
+					driver_type: form.driver_type,
+					endpoint: form.endpoint,
+					bucket: form.bucket,
+					access_key: form.access_key,
+					secret_key: form.secret_key,
+					base_path: form.base_path,
 					max_file_size: form.max_file_size
 						? Number(form.max_file_size)
 						: undefined,
 					chunk_size: form.chunk_size
 						? Number(form.chunk_size) * 1024 * 1024
 						: 0,
+					is_default: form.is_default,
 					options,
 				};
 				const created = await adminPolicyService.create(payload);

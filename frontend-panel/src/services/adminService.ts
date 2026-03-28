@@ -75,7 +75,9 @@ export const adminPolicyService = {
 		secret_key?: string;
 		base_path?: string;
 		max_file_size?: number;
+		chunk_size?: number;
 		is_default?: boolean;
+		options?: string;
 	}) => api.post<StoragePolicy>("/admin/policies", data),
 
 	update: (
@@ -88,7 +90,9 @@ export const adminPolicyService = {
 			secret_key?: string;
 			base_path?: string;
 			max_file_size?: number;
+			chunk_size?: number;
 			is_default?: boolean;
+			options?: string;
 		},
 	) => api.patch<StoragePolicy>(`/admin/policies/${id}`, data),
 

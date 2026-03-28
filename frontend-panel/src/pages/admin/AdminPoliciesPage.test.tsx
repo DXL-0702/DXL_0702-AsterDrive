@@ -445,7 +445,6 @@ describe("AdminPoliciesPage", () => {
 				max_file_size: 2048,
 				name: "Primary Local",
 				options: JSON.stringify({ presigned_upload: false }),
-				presigned_upload: false,
 				secret_key: "",
 			});
 		});
@@ -527,6 +526,29 @@ describe("AdminPoliciesPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
 	});
 
+	it("preserves zero-valued policy limits when opening the edit dialog", () => {
+		mockState.items = [
+			createPolicy({
+				id: 8,
+				name: "Direct Put S3",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				bucket: "direct-put",
+				max_file_size: 0,
+				chunk_size: 0,
+				options: '{"presigned_upload":true}',
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: "PencilSimple" }));
+
+		expect(screen.getByDisplayValue("Direct Put S3")).toBeInTheDocument();
+		expect(screen.getAllByDisplayValue("0")).toHaveLength(2);
+		expect(screen.queryByDisplayValue("5")).not.toBeInTheDocument();
+	});
+
 	it("asks for confirmation before force-saving a failing s3 create", async () => {
 		mockState.testParams.mockRejectedValueOnce(new Error("bad s3 config"));
 
@@ -578,7 +600,6 @@ describe("AdminPoliciesPage", () => {
 				max_file_size: undefined,
 				name: "Broken S3",
 				options: JSON.stringify({ presigned_upload: false }),
-				presigned_upload: false,
 				secret_key: "",
 			});
 		});

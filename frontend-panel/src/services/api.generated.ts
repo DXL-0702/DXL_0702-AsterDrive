@@ -1145,6 +1145,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/webdav-accounts/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_webdav_settings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/webdav-accounts/test": {
         parameters: {
             query?: never;
@@ -1360,6 +1376,7 @@ export interface components {
             /** Format: int64 */
             max_file_size?: number | null;
             name: string;
+            options?: string | null;
             secret_key?: string | null;
         };
         CreateShareReq: {
@@ -2276,6 +2293,9 @@ export interface components {
             root_folder_path?: string | null;
             updated_at: string;
             username: string;
+        };
+        WebdavSettingsInfo: {
+            prefix: string;
         };
     };
     responses: never;
@@ -6823,6 +6843,39 @@ export interface operations {
                             password: string;
                             root_folder_path?: string | null;
                             username: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_webdav_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current WebDAV settings for the signed-in user */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            prefix: string;
                         };
                         msg: string;
                     };

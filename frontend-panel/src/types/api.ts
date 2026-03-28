@@ -28,6 +28,7 @@ export type WebdavAccount = components["schemas"]["WebdavAccount"];
 export type WebdavAccountCreated =
 	components["schemas"]["WebdavAccountCreated"];
 export type WebdavAccountInfo = components["schemas"]["WebdavAccountInfo"];
+export type WebdavSettingsInfo = components["schemas"]["WebdavSettingsInfo"];
 
 export type TrashFileItem = components["schemas"]["TrashFileItem"];
 export type TrashFolderItem = components["schemas"]["TrashFolderItem"];

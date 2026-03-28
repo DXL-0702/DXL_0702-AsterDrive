@@ -35,13 +35,19 @@ async fn test_policy_crud() {
             "access_key": "minioadmin",
             "secret_key": "minioadmin",
             "base_path": "",
-            "max_file_size": 104857600
+            "max_file_size": 104857600,
+            "chunk_size": 8388608,
+            "options": serde_json::json!({
+                "presigned_upload": true
+            }).to_string()
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["name"], "Test S3");
+    assert_eq!(body["data"]["chunk_size"], 8_388_608);
+    assert_eq!(body["data"]["options"], r#"{"presigned_upload":true}"#);
     let policy_id = body["data"]["id"].as_i64().unwrap();
 
     // 获取单个

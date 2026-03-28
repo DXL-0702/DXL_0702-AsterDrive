@@ -112,6 +112,7 @@ pub struct CreatePolicyReq {
     pub max_file_size: Option<i64>,
     pub chunk_size: Option<i64>,
     pub is_default: Option<bool>,
+    pub options: Option<String>,
 }
 
 #[utoipa::path(
@@ -143,7 +144,9 @@ pub async fn create_policy(
         body.secret_key.as_deref().unwrap_or_default(),
         body.base_path.as_deref().unwrap_or_default(),
         body.max_file_size.unwrap_or(0),
+        body.chunk_size,
         body.is_default.unwrap_or(false),
+        body.options.clone(),
     )
     .await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(policy)))

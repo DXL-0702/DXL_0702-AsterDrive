@@ -39,7 +39,9 @@ pub async fn create(
     secret_key: &str,
     base_path: &str,
     max_file_size: i64,
+    chunk_size: Option<i64>,
     is_default: bool,
+    options: Option<String>,
 ) -> Result<storage_policy::Model> {
     // 设为默认时清除其他策略的 default
     if is_default {
@@ -57,9 +59,9 @@ pub async fn create(
         base_path: Set(base_path.to_string()),
         max_file_size: Set(max_file_size),
         allowed_types: Set("[]".to_string()),
-        options: Set("{}".to_string()),
+        options: Set(options.unwrap_or_else(|| "{}".to_string())),
         is_default: Set(is_default),
-        chunk_size: Set(5_242_880), // 5MB default
+        chunk_size: Set(chunk_size.unwrap_or(5_242_880)), // 5MB default
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()

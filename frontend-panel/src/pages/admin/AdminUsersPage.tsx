@@ -7,6 +7,7 @@ import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
+import { UserAvatarImage } from "@/components/common/UserAvatarImage";
 import {
 	getRoleBadgeClass,
 	getStatusBadgeClass,
@@ -472,6 +473,13 @@ export default function AdminUsersPage() {
 													onClick={() => setDetailDialogUserId(user.id)}
 													title={t("view_details")}
 												>
+													<UserAvatarImage
+														avatar={user.profile.avatar}
+														name={getUserDisplayName(user)}
+														alt=""
+														size="sm"
+														className="mr-3 h-7 w-7 rounded-lg text-[11px]"
+													/>
 													<div className="min-w-0">
 														<div className="truncate font-medium text-foreground">
 															{getUserDisplayName(user)}

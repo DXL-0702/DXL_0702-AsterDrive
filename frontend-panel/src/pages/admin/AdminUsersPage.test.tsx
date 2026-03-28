@@ -116,6 +116,12 @@ vi.mock("@/components/common/SkeletonTable", () => ({
 	),
 }));
 
+vi.mock("@/components/common/UserAvatarImage", () => ({
+	UserAvatarImage: ({ name }: { name: string }) => (
+		<div data-testid={`avatar:${name}`} aria-hidden="true" />
+	),
+}));
+
 vi.mock("@/components/common/UserStatusBadge", () => ({
 	getRoleBadgeClass: (role: string) => `role:${role}`,
 	getStatusBadgeClass: (status: string) => `status:${status}`,
@@ -476,6 +482,7 @@ describe("AdminUsersPage", () => {
 
 		expect(screen.getByText("entries:2/3/21")).toBeInTheDocument();
 		expect(screen.getByText("alice")).toBeInTheDocument();
+		expect(screen.getByTestId("avatar:alice")).toBeInTheDocument();
 		expect(
 			screen.getByText("bytes:5242880 / bytes:10485760"),
 		).toBeInTheDocument();

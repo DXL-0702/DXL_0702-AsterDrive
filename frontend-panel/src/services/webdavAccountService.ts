@@ -2,15 +2,12 @@ import type {
 	WebdavAccountCreated,
 	WebdavAccountInfo,
 	WebdavAccountPage,
+	WebdavSettingsInfo,
 } from "@/types/api";
 import { api } from "./http";
 
-export interface WebdavSettings {
-	prefix: string;
-}
-
 export const webdavAccountService = {
-	settings: () => api.get<WebdavSettings>("/webdav-accounts/settings"),
+	settings: () => api.get<WebdavSettingsInfo>("/webdav-accounts/settings"),
 
 	list: (params?: { limit?: number; offset?: number }) => {
 		const query = new URLSearchParams();
