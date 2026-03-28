@@ -293,20 +293,35 @@ describe("HeaderControls", () => {
 		expect(screen.queryByText("admin")).not.toBeInTheDocument();
 	});
 
-	it("navigates from the settings, home, and admin entries", () => {
+	it("navigates immediately from route entries with view transitions enabled", () => {
 		render(<HeaderControls showHomeButton homeLabel="Home" showAdminEntry />);
 
 		fireEvent.click(
 			screen.getByRole("button", { name: /translated:settings/i }),
 		);
-		fireEvent.click(screen.getAllByRole("button", { name: /Home/i })[0]);
+		expect(mockState.navigate).toHaveBeenNthCalledWith(1, "/settings", {
+			viewTransition: true,
+		});
+
+		const homeButtons = screen.getAllByRole("button", { name: /Home/i });
+		expect(homeButtons).toHaveLength(2);
+
+		fireEvent.click(homeButtons[0]);
+		expect(mockState.navigate).toHaveBeenNthCalledWith(2, "/", {
+			viewTransition: true,
+		});
+
+		fireEvent.click(homeButtons[1]);
+		expect(mockState.navigate).toHaveBeenNthCalledWith(3, "/", {
+			viewTransition: true,
+		});
+
 		fireEvent.click(
 			screen.getByRole("button", { name: /translated:admin_panel/i }),
 		);
-
-		expect(mockState.navigate).toHaveBeenNthCalledWith(1, "/settings");
-		expect(mockState.navigate).toHaveBeenNthCalledWith(2, "/");
-		expect(mockState.navigate).toHaveBeenNthCalledWith(3, "/admin");
+		expect(mockState.navigate).toHaveBeenNthCalledWith(4, "/admin", {
+			viewTransition: true,
+		});
 	});
 
 	it("updates theme and language from the account menu", () => {

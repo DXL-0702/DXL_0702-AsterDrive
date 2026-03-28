@@ -61,7 +61,11 @@ export function HeaderControls({
 	const preferenceRowClass = `${MENU_SECTION_PADDING_CLASS} flex items-center justify-between gap-3 rounded-lg py-1`;
 	const segmentedControlClass =
 		"flex items-center gap-1 rounded-lg bg-muted/35 p-1";
-	const logoutItemClass = `${MENU_SECTION_PADDING_CLASS} min-h-9 rounded-lg py-1.5 text-muted-foreground transition-colors duration-150 focus:bg-destructive/10 focus:text-destructive data-[highlighted]:bg-destructive/8 data-[highlighted]:text-destructive`;
+	const logoutButtonClass = `${MENU_SECTION_PADDING_CLASS} flex w-full cursor-default items-center gap-1.5 rounded-lg py-1.5 min-h-9 text-sm select-none text-muted-foreground transition-colors duration-150 hover:bg-destructive/8 hover:text-destructive disabled:pointer-events-none disabled:opacity-50`;
+
+	const handleRouteNavigation = (to: string) => {
+		navigate(to, { viewTransition: true });
+	};
 
 	const handleLogout = async () => {
 		try {
@@ -102,7 +106,7 @@ export function HeaderControls({
 					variant="ghost"
 					size="sm"
 					className="hidden md:inline-flex"
-					onClick={() => navigate("/")}
+					onClick={() => handleRouteNavigation("/")}
 				>
 					<Icon name="House" className="mr-1.5 h-4 w-4" />
 					{homeLabel ?? t("back")}
@@ -186,7 +190,7 @@ export function HeaderControls({
 
 						<div className={`${menuSectionClass} p-1`}>
 							<DropdownMenuItem
-								onClick={() => navigate("/settings")}
+								onClick={() => handleRouteNavigation("/settings")}
 								className={menuItemClass}
 							>
 								<Icon name="Gear" className="mr-2 h-4 w-4" />
@@ -195,7 +199,7 @@ export function HeaderControls({
 
 							{showAdminEntry && user?.role === "admin" ? (
 								<DropdownMenuItem
-									onClick={() => navigate("/admin")}
+									onClick={() => handleRouteNavigation("/admin")}
 									className={menuItemClass}
 								>
 									<Icon name="Shield" className="mr-2 h-4 w-4" />
@@ -205,7 +209,7 @@ export function HeaderControls({
 
 							{showHomeButton ? (
 								<DropdownMenuItem
-									onClick={() => navigate("/")}
+									onClick={() => handleRouteNavigation("/")}
 									className={menuItemClass}
 								>
 									<Icon name="House" className="mr-2 h-4 w-4" />
@@ -290,13 +294,15 @@ export function HeaderControls({
 						<div className="mx-2 my-1 h-px bg-border/50" />
 
 						<div className={`${dangerSectionClass} p-1`}>
-							<DropdownMenuItem
+							<button
+								type="button"
+								className={logoutButtonClass}
 								onClick={() => void handleLogout()}
-								className={logoutItemClass}
+								disabled={loggingOut}
 							>
-								<Icon name="SignOut" className="mr-2 h-4 w-4" />
+								<Icon name="SignOut" className="mr-2 h-4 w-4 shrink-0" />
 								{loggingOut ? t("loading") : t("logout")}
-							</DropdownMenuItem>
+							</button>
 						</div>
 					</div>
 				</DropdownMenuContent>
