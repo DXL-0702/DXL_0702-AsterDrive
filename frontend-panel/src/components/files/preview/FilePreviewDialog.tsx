@@ -128,6 +128,39 @@ export function FilePreviewDialog({
 	}, [onClose, pendingMode, profile.category]);
 
 	const body = (() => {
+		if (!activeMode && profile.options.length > 0) {
+			return (
+				<div className="flex flex-1 items-center justify-center p-6">
+					<div className="flex flex-col items-center gap-4">
+						<Icon
+							name="File"
+							className="h-10 w-10 text-muted-foreground"
+						/>
+						<p className="text-sm text-muted-foreground">
+							{t("files:choose_open_method")}
+						</p>
+						<div className="flex gap-3">
+							{profile.options.map((option) => (
+								<Button
+									key={option.mode}
+									variant="outline"
+									onClick={() => {
+										setMode(option.mode);
+										setStoredOpenWithPreference(
+											profile.category,
+											option.mode,
+										);
+									}}
+								>
+									<Icon name={option.icon} className="mr-2 h-4 w-4" />
+									{t(`files:${option.labelKey}`)}
+								</Button>
+							))}
+						</div>
+					</div>
+				</div>
+			);
+		}
 		if (!activeMode) return <PreviewUnavailable />;
 		if (activeMode === "pdf") {
 			return (

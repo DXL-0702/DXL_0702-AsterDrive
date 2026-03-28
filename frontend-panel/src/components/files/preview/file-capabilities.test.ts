@@ -23,6 +23,41 @@ describe("file preview capabilities", () => {
 		expect(
 			getEditorLanguage({ name: "script.tsx", mime_type: "text/typescript" }),
 		).toBe("typescript");
+		// Newly added extensions
+		expect(
+			getEditorLanguage({ name: "App.vue", mime_type: "text/plain" }),
+		).toBe("html");
+		expect(
+			getEditorLanguage({ name: "main.dart", mime_type: "text/plain" }),
+		).toBe("dart");
+		expect(
+			getEditorLanguage({ name: "buf.proto", mime_type: "text/plain" }),
+		).toBe("protobuf");
+		expect(
+			getEditorLanguage({ name: "schema.graphql", mime_type: "text/plain" }),
+		).toBe("graphql");
+		expect(
+			getEditorLanguage({ name: "main.tf", mime_type: "text/plain" }),
+		).toBe("terraform");
+		expect(
+			getEditorLanguage({ name: "build.gradle", mime_type: "text/plain" }),
+		).toBe("java");
+		expect(
+			getEditorLanguage({ name: "intro.tex", mime_type: "text/plain" }),
+		).toBe("tex");
+		expect(
+			getEditorLanguage({ name: "deploy.ps1", mime_type: "text/plain" }),
+		).toBe("powershell");
+		// Special filenames
+		expect(
+			getEditorLanguage({ name: ".dockerignore", mime_type: "text/plain" }),
+		).toBe("plaintext");
+		expect(
+			getEditorLanguage({ name: "Jenkinsfile", mime_type: "text/plain" }),
+		).toBe("groovy");
+		expect(
+			getEditorLanguage({ name: "Gemfile", mime_type: "text/plain" }),
+		).toBe("ruby");
 	});
 
 	it("maps mime types and extensions to file categories", () => {
@@ -105,7 +140,8 @@ describe("file preview capabilities", () => {
 		expect(detectFilePreviewProfile(unknown)).toMatchObject({
 			category: "unknown",
 			defaultMode: null,
-			options: [],
+			isEditableText: true,
+			options: [{ mode: "code", labelKey: "open_with_try_text" }],
 		});
 
 		expect(getAvailableOpenWithOptions(json)).toEqual([
@@ -117,5 +153,37 @@ describe("file preview capabilities", () => {
 		expect(isEditableTextFile(markdown)).toBe(true);
 		expect(isEditableTextFile(image)).toBe(false);
 		expect(isEditableTextFile(shell)).toBe(true);
+	});
+
+	it("recognizes newly added text extensions", () => {
+		const vue = { name: "App.vue", mime_type: "application/octet-stream" };
+		const dart = { name: "main.dart", mime_type: "application/octet-stream" };
+		const proto = { name: "api.proto", mime_type: "application/octet-stream" };
+		const tf = { name: "main.tf", mime_type: "application/octet-stream" };
+
+		for (const file of [vue, dart, proto, tf]) {
+			expect(isEditableTextFile(file)).toBe(true);
+			expect(getDefaultOpenWith(file)).toBe("code");
+		}
+	});
+
+	it("provides text fallback for unknown files but not for known binary types", () => {
+		const unknown = {
+			name: "mystery.xyz",
+			mime_type: "application/octet-stream",
+		};
+		const archive = {
+			name: "data.zip",
+			mime_type: "application/zip",
+		};
+
+		expect(detectFilePreviewProfile(unknown).isEditableText).toBe(true);
+		expect(detectFilePreviewProfile(unknown).options).toEqual([
+			expect.objectContaining({ mode: "code", labelKey: "open_with_try_text" }),
+		]);
+		expect(detectFilePreviewProfile(unknown).defaultMode).toBeNull();
+
+		expect(detectFilePreviewProfile(archive).isEditableText).toBe(false);
+		expect(detectFilePreviewProfile(archive).options).toEqual([]);
 	});
 });
