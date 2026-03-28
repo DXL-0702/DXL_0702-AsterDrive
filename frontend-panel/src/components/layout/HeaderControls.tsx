@@ -61,7 +61,7 @@ export function HeaderControls({
 	const preferenceRowClass = `${MENU_SECTION_PADDING_CLASS} flex items-center justify-between gap-3 rounded-lg py-1`;
 	const segmentedControlClass =
 		"flex items-center gap-1 rounded-lg bg-muted/35 p-1";
-	const logoutItemClass = `${MENU_SECTION_PADDING_CLASS} min-h-9 rounded-lg py-1.5 text-muted-foreground transition-colors duration-150 **:transition-colors **:duration-150 focus:bg-destructive/10 focus:text-destructive focus:**:text-destructive data-[highlighted]:bg-destructive/8 data-[highlighted]:text-destructive data-[highlighted]:**:text-destructive`;
+	const logoutItemClass = `${MENU_SECTION_PADDING_CLASS} min-h-9 rounded-lg py-1.5 text-muted-foreground transition-colors duration-150 focus:bg-destructive/10 focus:text-destructive data-[highlighted]:bg-destructive/8 data-[highlighted]:text-destructive`;
 
 	const handleLogout = async () => {
 		try {

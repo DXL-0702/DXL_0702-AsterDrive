@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { createContext, useContext } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SettingsPage from "@/pages/SettingsPage";
 
@@ -34,6 +35,7 @@ const mockState = vi.hoisted(() => ({
 		setViewMode: vi.fn(),
 		viewMode: "list" as "list" | "grid",
 	},
+	navigate: vi.fn(),
 	preferenceSync: vi.fn(),
 	themeStore: {
 		mode: "dark" as "light" | "dark" | "system",
@@ -50,6 +52,10 @@ vi.mock("react-i18next", () => ({
 		},
 		t: (key: string) => key,
 	}),
+}));
+
+vi.mock("react-router-dom", () => ({
+	useNavigate: () => mockState.navigate,
 }));
 
 vi.mock("@/components/common/ColorPresetPicker", () => ({
@@ -134,6 +140,64 @@ vi.mock("@/components/layout/AppLayout", () => ({
 	),
 }));
 
+const TabsContext = createContext<{
+	onValueChange?: (value: string) => void;
+	value: string;
+}>({
+	value: "",
+});
+
+vi.mock("@/components/ui/tabs", () => ({
+	Tabs: ({
+		children,
+		defaultValue,
+		onValueChange,
+		value,
+	}: {
+		children: React.ReactNode;
+		defaultValue?: string;
+		onValueChange?: (value: string) => void;
+		value?: string;
+	}) => (
+		<TabsContext.Provider
+			value={{ onValueChange, value: value ?? defaultValue ?? "" }}
+		>
+			<div>{children}</div>
+		</TabsContext.Provider>
+	),
+	TabsList: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	TabsTrigger: ({
+		children,
+		value,
+	}: {
+		children: React.ReactNode;
+		value: string;
+	}) => {
+		const context = useContext(TabsContext);
+		return (
+			<button
+				type="button"
+				data-value={value}
+				onClick={() => context.onValueChange?.(value)}
+			>
+				{children}
+			</button>
+		);
+	},
+	TabsContent: ({
+		children,
+		value,
+	}: {
+		children: React.ReactNode;
+		value: string;
+	}) => {
+		const context = useContext(TabsContext);
+		return context.value === value ? <div>{children}</div> : null;
+	},
+}));
+
 vi.mock("@/lib/preferenceSync", () => ({
 	queuePreferenceSync: (...args: unknown[]) =>
 		mockState.preferenceSync(...args),
@@ -177,6 +241,7 @@ describe("SettingsPage", () => {
 		mockState.changeLanguage.mockReset();
 		mockState.fileStore.setViewMode.mockReset();
 		mockState.fileStore.viewMode = "list";
+		mockState.navigate.mockReset();
 		mockState.preferenceSync.mockReset();
 		mockState.themeStore.mode = "dark";
 		mockState.themeStore.setMode.mockReset();
@@ -184,7 +249,7 @@ describe("SettingsPage", () => {
 	});
 
 	it("renders current descriptions from the selected theme, language, and browser mode", () => {
-		render(<SettingsPage />);
+		render(<SettingsPage section="interface" />);
 
 		expect(screen.getByTestId("app-layout")).toBeInTheDocument();
 		expect(screen.getByText("settings")).toBeInTheDocument();
@@ -198,7 +263,6 @@ describe("SettingsPage", () => {
 		expect(
 			screen.getByText("settings:settings_browser_list_desc"),
 		).toBeInTheDocument();
-		expect(screen.getByText("avatar:alice")).toBeInTheDocument();
 		expect(screen.getByText("color-preset-picker")).toBeInTheDocument();
 		expect(screen.getAllByTestId("choice-group")[0]).toHaveAttribute(
 			"data-value",
@@ -215,7 +279,7 @@ describe("SettingsPage", () => {
 	});
 
 	it("dispatches theme, language, and browser preference changes", () => {
-		render(<SettingsPage />);
+		render(<SettingsPage section="interface" />);
 
 		fireEvent.click(screen.getByRole("button", { name: "theme_light" }));
 		fireEvent.click(screen.getByRole("button", { name: "language_en" }));
@@ -227,8 +291,21 @@ describe("SettingsPage", () => {
 		expect(mockState.fileStore.setViewMode).toHaveBeenCalledWith("grid");
 	});
 
+	it("navigates between split settings sections from the top tabs", () => {
+		render(<SettingsPage section="profile" />);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "settings:settings_interface" }),
+		);
+
+		expect(mockState.navigate).toHaveBeenCalledWith("/settings/interface");
+	});
+
 	it("saves the display name through the profile endpoint", async () => {
-		render(<SettingsPage />);
+		render(<SettingsPage section="profile" />);
+
+		expect(screen.getByText("avatar:alice")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("alice@example.com")).toBeInTheDocument();
 
 		fireEvent.change(screen.getByLabelText("settings:settings_display_name"), {
 			target: { value: "Alice Chen" },

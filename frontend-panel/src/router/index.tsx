@@ -86,7 +86,18 @@ export const router = createBrowserRouter([
 			{ path: "/shares", element: <MySharesPage /> },
 			{ path: "/settings/webdav", element: <WebdavAccountsPage /> },
 			{ path: "/trash", element: <TrashPage /> },
-			{ path: "/settings", element: <SettingsPage /> },
+			{
+				path: "/settings",
+				element: <Navigate to="/settings/profile" replace />,
+			},
+			{
+				path: "/settings/profile",
+				element: <SettingsPage section="profile" />,
+			},
+			{
+				path: "/settings/interface",
+				element: <SettingsPage section="interface" />,
+			},
 		],
 	},
 	{
