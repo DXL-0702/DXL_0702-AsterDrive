@@ -173,6 +173,321 @@ async fn test_webdav_copy_move() {
 }
 
 #[actix_web::test]
+async fn test_webdav_copy_folder_recursively() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = format!("Bearer {token}");
+
+    let req = test::TestRequest::with_uri("/webdav/srcdir/")
+        .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::with_uri("/webdav/srcdir/sub/")
+        .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/srcdir/sub/nested.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("recursive copy content")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let req = test::TestRequest::with_uri("/webdav/srcdir/")
+        .method(actix_web::http::Method::from_bytes(b"COPY").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Destination", "/webdav/copied-dir/"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(
+        resp.status() == 201 || resp.status() == 204,
+        "COPY folder should return 201/204, got {}",
+        resp.status()
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/copied-dir/sub/nested.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body = test::read_body(resp).await;
+    assert_eq!(String::from_utf8_lossy(&body), "recursive copy content");
+}
+
+#[actix_web::test]
+async fn test_webdav_move_overwrites_existing_destination() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = format!("Bearer {token}");
+
+    for (path, content) in [
+        ("/webdav/source-overwrite.txt", "fresh content"),
+        ("/webdav/existing-target.txt", "stale content"),
+    ] {
+        let req = test::TestRequest::put()
+            .uri(path)
+            .insert_header(("Authorization", auth.clone()))
+            .set_payload(content)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status() == 201 || resp.status() == 204);
+    }
+
+    let req = test::TestRequest::with_uri("/webdav/source-overwrite.txt")
+        .method(actix_web::http::Method::from_bytes(b"MOVE").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Destination", "/webdav/existing-target.txt"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(
+        resp.status() == 201 || resp.status() == 204,
+        "MOVE overwrite should return 201/204, got {}",
+        resp.status()
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/source-overwrite.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404);
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/existing-target.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body = test::read_body(resp).await;
+    assert_eq!(String::from_utf8_lossy(&body), "fresh content");
+}
+
+#[actix_web::test]
+async fn test_webdav_propfind_hides_hidden_artifacts() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = format!("Bearer {token}");
+
+    for path in [
+        "/webdav/._hidden",
+        "/webdav/.DS_Store",
+        "/webdav/visible.txt",
+    ] {
+        let req = test::TestRequest::put()
+            .uri(path)
+            .insert_header(("Authorization", auth.clone()))
+            .set_payload("artifact")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status() == 201 || resp.status() == 204);
+    }
+
+    let req = test::TestRequest::with_uri("/webdav/")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Depth", "1"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+
+    assert!(
+        xml.contains("visible.txt"),
+        "visible file should be listed: {xml}"
+    );
+    assert!(
+        !xml.contains("._hidden"),
+        "._hidden should be filtered out: {xml}"
+    );
+    assert!(
+        !xml.contains(".DS_Store"),
+        ".DS_Store should be filtered out: {xml}"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_copy_overwrites_existing_destination() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = format!("Bearer {token}");
+
+    for (path, content) in [
+        ("/webdav/source-copy.txt", "copy fresh"),
+        ("/webdav/existing-copy-target.txt", "copy stale"),
+    ] {
+        let req = test::TestRequest::put()
+            .uri(path)
+            .insert_header(("Authorization", auth.clone()))
+            .set_payload(content)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert!(resp.status() == 201 || resp.status() == 204);
+    }
+
+    let req = test::TestRequest::with_uri("/webdav/source-copy.txt")
+        .method(actix_web::http::Method::from_bytes(b"COPY").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Destination", "/webdav/existing-copy-target.txt"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(
+        resp.status() == 201 || resp.status() == 204,
+        "COPY overwrite should return 201/204, got {}",
+        resp.status()
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/source-copy.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/webdav/existing-copy-target.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body = test::read_body(resp).await;
+    assert_eq!(String::from_utf8_lossy(&body), "copy fresh");
+}
+
+#[actix_web::test]
+async fn test_webdav_custom_property_roundtrip() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = format!("Bearer {token}");
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/props.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("props")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let set_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propertyupdate xmlns:D="DAV:" xmlns:A="urn:aster:">
+  <D:set>
+    <D:prop>
+      <A:color>blue</A:color>
+    </D:prop>
+  </D:set>
+</D:propertyupdate>"#;
+    let req = test::TestRequest::with_uri("/webdav/props.txt")
+        .method(actix_web::http::Method::from_bytes(b"PROPPATCH").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .set_payload(set_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+
+    let propfind_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:" xmlns:A="urn:aster:">
+  <D:prop>
+    <A:color />
+  </D:prop>
+</D:propfind>"#;
+    let req = test::TestRequest::with_uri("/webdav/props.txt")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Depth", "0"))
+        .insert_header(("Content-Type", "application/xml"))
+        .set_payload(propfind_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+    assert!(
+        xml.contains("blue"),
+        "custom property value should roundtrip: {xml}"
+    );
+
+    let remove_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propertyupdate xmlns:D="DAV:" xmlns:A="urn:aster:">
+  <D:remove>
+    <D:prop>
+      <A:color />
+    </D:prop>
+  </D:remove>
+</D:propertyupdate>"#;
+    let req = test::TestRequest::with_uri("/webdav/props.txt")
+        .method(actix_web::http::Method::from_bytes(b"PROPPATCH").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .set_payload(remove_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+
+    let req = test::TestRequest::with_uri("/webdav/props.txt")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Depth", "0"))
+        .insert_header(("Content-Type", "application/xml"))
+        .set_payload(propfind_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+    assert!(
+        !xml.contains(">blue<"),
+        "removed property should be absent: {xml}"
+    );
+}
+
+#[actix_web::test]
+async fn test_webdav_proppatch_rejects_dav_namespace_changes() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = format!("Bearer {token}");
+
+    let req = test::TestRequest::put()
+        .uri("/webdav/dav-props.txt")
+        .insert_header(("Authorization", auth.clone()))
+        .set_payload("dav")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status() == 201 || resp.status() == 204);
+
+    let body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propertyupdate xmlns:D="DAV:">
+  <D:set>
+    <D:prop>
+      <D:displayname>blocked</D:displayname>
+    </D:prop>
+  </D:set>
+</D:propertyupdate>"#;
+    let req = test::TestRequest::with_uri("/webdav/dav-props.txt")
+        .method(actix_web::http::Method::from_bytes(b"PROPPATCH").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Content-Type", "application/xml"))
+        .set_payload(body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+    let body = test::read_body(resp).await;
+    let xml = String::from_utf8_lossy(&body);
+    assert!(
+        xml.contains("403") || xml.contains("Forbidden"),
+        "DAV namespace writes should be rejected: {xml}"
+    );
+}
+
+#[actix_web::test]
 async fn test_webdav_basic_auth_root_scope() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);

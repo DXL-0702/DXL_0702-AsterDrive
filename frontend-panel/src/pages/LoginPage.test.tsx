@@ -1,0 +1,252 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import LoginPage from "@/pages/LoginPage";
+
+const mockState = vi.hoisted(() => ({
+	check: vi.fn(),
+	handleApiError: vi.fn(),
+	login: vi.fn(),
+	navigate: vi.fn(),
+	register: vi.fn(),
+	setup: vi.fn(),
+	toastSuccess: vi.fn(),
+}));
+
+vi.mock("react-i18next", () => ({
+	useTranslation: () => ({
+		t: (key: string) => key,
+	}),
+}));
+
+vi.mock("react-router-dom", () => ({
+	useNavigate: () => mockState.navigate,
+}));
+
+vi.mock("sonner", () => ({
+	toast: {
+		success: (...args: unknown[]) => mockState.toastSuccess(...args),
+	},
+}));
+
+vi.mock("@/components/ui/button", () => ({
+	Button: ({
+		children,
+		type,
+		disabled,
+		onClick,
+		className,
+	}: {
+		children: React.ReactNode;
+		type?: "button" | "submit";
+		disabled?: boolean;
+		onClick?: () => void;
+		className?: string;
+	}) => (
+		<button
+			type={type ?? "button"}
+			disabled={disabled}
+			onClick={onClick}
+			className={className}
+		>
+			{children}
+		</button>
+	),
+}));
+
+vi.mock("@/components/ui/icon", () => ({
+	Icon: ({ name }: { name: string }) => <span>{name}</span>,
+}));
+
+vi.mock("@/components/ui/input", () => ({
+	Input: ({ ...props }: React.InputHTMLAttributes<HTMLInputElement>) => (
+		<input {...props} />
+	),
+}));
+
+vi.mock("@/components/ui/label", () => ({
+	Label: ({
+		children,
+		htmlFor,
+		className,
+	}: {
+		children: React.ReactNode;
+		htmlFor?: string;
+		className?: string;
+	}) => (
+		<label htmlFor={htmlFor} className={className}>
+			{children}
+		</label>
+	),
+}));
+
+vi.mock("@/hooks/useApiError", () => ({
+	handleApiError: (...args: unknown[]) => mockState.handleApiError(...args),
+}));
+
+vi.mock("@/lib/validation", () => ({
+	emailSchema: {
+		safeParse: (value: string) =>
+			/^[^@]+@[^@]+\.[^@]+$/.test(value)
+				? { success: true }
+				: {
+						error: { issues: [{ message: "invalid-email" }] },
+						success: false,
+					},
+	},
+	passwordSchema: {
+		safeParse: (value: string) =>
+			value.length >= 6
+				? { success: true }
+				: {
+						error: { issues: [{ message: "invalid-password" }] },
+						success: false,
+					},
+	},
+	usernameSchema: {
+		safeParse: (value: string) =>
+			/^[a-zA-Z0-9_-]{4,16}$/.test(value)
+				? { success: true }
+				: {
+						error: { issues: [{ message: "invalid-username" }] },
+						success: false,
+					},
+	},
+}));
+
+vi.mock("@/services/authService", () => ({
+	authService: {
+		check: (...args: unknown[]) => mockState.check(...args),
+		register: (...args: unknown[]) => mockState.register(...args),
+		setup: (...args: unknown[]) => mockState.setup(...args),
+	},
+}));
+
+vi.mock("@/stores/authStore", () => ({
+	useAuthStore: (
+		selector: (state: { login: typeof mockState.login }) => unknown,
+	) => selector({ login: mockState.login }),
+}));
+
+describe("LoginPage", () => {
+	beforeEach(() => {
+		mockState.check.mockReset();
+		mockState.handleApiError.mockReset();
+		mockState.login.mockReset();
+		mockState.navigate.mockReset();
+		mockState.register.mockReset();
+		mockState.setup.mockReset();
+		mockState.toastSuccess.mockReset();
+		mockState.login.mockResolvedValue(undefined);
+		mockState.register.mockResolvedValue(undefined);
+		mockState.setup.mockResolvedValue(undefined);
+		mockState.check.mockResolvedValue({ exists: true, has_users: true });
+	});
+
+	it("auto-detects login mode and signs existing users in", async () => {
+		render(<LoginPage />);
+
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "user@example.com" },
+		});
+
+		await waitFor(() => {
+			expect(mockState.check).toHaveBeenCalledWith("user@example.com");
+		});
+		expect(
+			await screen.findByRole("button", { name: "sign_in" }),
+		).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("password"), {
+			target: { value: "secret123" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "sign_in" }));
+
+		await waitFor(() => {
+			expect(mockState.login).toHaveBeenCalledWith(
+				"user@example.com",
+				"secret123",
+			);
+		});
+		await waitFor(() => {
+			expect(mockState.navigate).toHaveBeenCalledWith("/", { replace: true });
+		});
+	});
+
+	it("runs initial setup for the first user and then signs them in", async () => {
+		mockState.check.mockResolvedValueOnce({ exists: false, has_users: false });
+
+		render(<LoginPage />);
+
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "admin@example.com" },
+		});
+
+		expect(await screen.findByLabelText("username")).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "create_admin" }),
+		).toBeInTheDocument();
+
+		fireEvent.change(screen.getByLabelText("username"), {
+			target: { value: "adminuser" },
+		});
+		fireEvent.change(screen.getByLabelText("password"), {
+			target: { value: "secret123" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "create_admin" }));
+
+		await waitFor(() => {
+			expect(mockState.setup).toHaveBeenCalledWith(
+				"adminuser",
+				"admin@example.com",
+				"secret123",
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("setup_complete");
+		expect(mockState.login).toHaveBeenCalledWith(
+			"admin@example.com",
+			"secret123",
+		);
+		await waitFor(() => {
+			expect(mockState.navigate).toHaveBeenCalledWith("/", { replace: true });
+		});
+	});
+
+	it("shows validation errors and reports submit failures without navigating", async () => {
+		mockState.check.mockResolvedValueOnce({ exists: true, has_users: true });
+		const error = new Error("login failed");
+		mockState.login.mockRejectedValueOnce(error);
+
+		render(<LoginPage />);
+
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "bad" },
+		});
+		fireEvent.change(screen.getByLabelText("password"), {
+			target: { value: "123" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "continue" }));
+
+		expect(screen.getByText("invalid-username")).toBeInTheDocument();
+		expect(screen.getByText("invalid-password")).toBeInTheDocument();
+		expect(mockState.check).not.toHaveBeenCalled();
+
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "user@example.com" },
+		});
+		fireEvent.change(screen.getByLabelText("password"), {
+			target: { value: "secret123" },
+		});
+
+		await waitFor(() => {
+			expect(mockState.check).toHaveBeenCalledWith("user@example.com");
+		});
+		await screen.findByRole("button", { name: "sign_in" });
+
+		fireEvent.click(screen.getByRole("button", { name: "sign_in" }));
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(error);
+		});
+		expect(mockState.navigate).not.toHaveBeenCalled();
+	});
+});

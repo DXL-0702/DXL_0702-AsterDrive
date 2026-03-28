@@ -7,6 +7,51 @@ use actix_web::test;
 use serde_json::Value;
 use tokio::task::JoinSet;
 
+async fn create_upload_session(
+    state: &aster_drive::runtime::AppState,
+    user_id: i64,
+    upload_id: &str,
+    status: aster_drive::types::UploadSessionStatus,
+    expires_at: chrono::DateTime<chrono::Utc>,
+    total_chunks: i32,
+    received_count: i32,
+    s3_temp_key: Option<&str>,
+    s3_multipart_id: Option<&str>,
+    file_id: Option<i64>,
+) {
+    use aster_drive::db::repository::{policy_repo, upload_session_repo};
+    use sea_orm::Set;
+
+    let policy = policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist in test setup");
+    let now = chrono::Utc::now();
+    upload_session_repo::create(
+        &state.db,
+        aster_drive::entities::upload_session::ActiveModel {
+            id: Set(upload_id.to_string()),
+            user_id: Set(user_id),
+            filename: Set("manual-upload.bin".to_string()),
+            total_size: Set(10),
+            chunk_size: Set(5),
+            total_chunks: Set(total_chunks),
+            received_count: Set(received_count),
+            folder_id: Set(None),
+            policy_id: Set(policy.id),
+            status: Set(status),
+            s3_temp_key: Set(s3_temp_key.map(str::to_string)),
+            s3_multipart_id: Set(s3_multipart_id.map(str::to_string)),
+            file_id: Set(file_id),
+            created_at: Set(now),
+            expires_at: Set(expires_at),
+            updated_at: Set(now),
+        },
+    )
+    .await
+    .unwrap();
+}
+
 #[actix_web::test]
 async fn test_chunked_upload_flow() {
     let state = common::setup().await;
@@ -369,6 +414,339 @@ async fn test_concurrent_chunk_upload_idempotent() {
     }
 }
 
+#[actix_web::test]
+async fn test_complete_upload_is_idempotent_after_completion() {
+    use aster_drive::db::repository::upload_session_repo;
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "idemuser", "idem@test.com", "password123")
+        .await
+        .unwrap();
+
+    let init =
+        upload_service::init_upload(&state, user.id, "idempotent.txt", 10_485_760, None, None)
+            .await
+            .unwrap();
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Chunked);
+    assert_eq!(init.total_chunks, Some(2));
+
+    let upload_id = init.upload_id.unwrap();
+    upload_service::upload_chunk(&state, &upload_id, 0, user.id, b"hello ")
+        .await
+        .unwrap();
+    upload_service::upload_chunk(&state, &upload_id, 1, user.id, b"idempotent upload")
+        .await
+        .unwrap();
+
+    let first = upload_service::complete_upload(&state, &upload_id, user.id, None)
+        .await
+        .unwrap();
+    let second = upload_service::complete_upload(&state, &upload_id, user.id, None)
+        .await
+        .unwrap();
+
+    assert_eq!(second.id, first.id);
+    assert_eq!(second.blob_id, first.blob_id);
+    assert_eq!(second.name, "idempotent.txt");
+
+    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        session.status,
+        aster_drive::types::UploadSessionStatus::Completed
+    );
+    assert_eq!(session.file_id, Some(first.id));
+}
+
+#[actix_web::test]
+async fn test_complete_upload_marks_session_failed_after_assembly_error() {
+    use aster_drive::db::repository::upload_session_repo;
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "faileduser", "failed@test.com", "password123")
+        .await
+        .unwrap();
+
+    let init = upload_service::init_upload(&state, user.id, "broken.txt", 10_485_760, None, None)
+        .await
+        .unwrap();
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Chunked);
+
+    let upload_id = init.upload_id.unwrap();
+    upload_service::upload_chunk(&state, &upload_id, 0, user.id, b"first ")
+        .await
+        .unwrap();
+    upload_service::upload_chunk(&state, &upload_id, 1, user.id, b"second")
+        .await
+        .unwrap();
+
+    tokio::fs::remove_file(format!("data/.uploads/{upload_id}/chunk_1"))
+        .await
+        .unwrap();
+
+    let err = upload_service::complete_upload(&state, &upload_id, user.id, None)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "E057");
+    assert!(err.message().contains("open chunk 1"));
+
+    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(
+        session.status,
+        aster_drive::types::UploadSessionStatus::Failed
+    );
+    assert_eq!(session.file_id, None);
+
+    let retry_err = upload_service::complete_upload(&state, &upload_id, user.id, None)
+        .await
+        .unwrap_err();
+    assert_eq!(retry_err.code(), "E057");
+    assert!(retry_err.message().contains("previously"));
+}
+
+#[actix_web::test]
+async fn test_upload_service_complete_rejects_assembling_session() {
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "assemblinguser",
+        "assembling@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let upload_id = format!("assembling-{}", uuid::Uuid::new_v4());
+    create_upload_session(
+        &state,
+        user.id,
+        &upload_id,
+        aster_drive::types::UploadSessionStatus::Assembling,
+        chrono::Utc::now() + chrono::Duration::hours(1),
+        2,
+        2,
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    let err = upload_service::complete_upload(&state, &upload_id, user.id, None)
+        .await
+        .unwrap_err();
+    assert!(err.message().contains("being processed"));
+}
+
+#[actix_web::test]
+async fn test_upload_service_complete_completed_without_file_id_returns_refresh_hint() {
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "completeuser", "complete@test.com", "password123")
+        .await
+        .unwrap();
+    let upload_id = format!("completed-{}", uuid::Uuid::new_v4());
+    create_upload_session(
+        &state,
+        user.id,
+        &upload_id,
+        aster_drive::types::UploadSessionStatus::Completed,
+        chrono::Utc::now() + chrono::Duration::hours(1),
+        0,
+        0,
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    let err = upload_service::complete_upload(&state, &upload_id, user.id, None)
+        .await
+        .unwrap_err();
+    assert!(err.message().contains("file_id not found"));
+    assert!(err.message().contains("refresh"));
+}
+
+#[actix_web::test]
+async fn test_upload_service_complete_presigned_multipart_requires_parts() {
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "partsuser",
+        "multipartparts@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let upload_id = format!("multipart-{}", uuid::Uuid::new_v4());
+    create_upload_session(
+        &state,
+        user.id,
+        &upload_id,
+        aster_drive::types::UploadSessionStatus::Presigned,
+        chrono::Utc::now() + chrono::Duration::hours(1),
+        2,
+        0,
+        Some("files/temp-key"),
+        Some("multipart-id"),
+        None,
+    )
+    .await;
+
+    let err = upload_service::complete_upload(&state, &upload_id, user.id, None)
+        .await
+        .unwrap_err();
+    assert!(err.message().contains("parts required"));
+}
+
+#[actix_web::test]
+async fn test_upload_service_get_progress_scans_and_sorts_local_chunks() {
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "progressuser", "progress@test.com", "password123")
+        .await
+        .unwrap();
+    let upload_id = format!("progress-{}", uuid::Uuid::new_v4());
+    create_upload_session(
+        &state,
+        user.id,
+        &upload_id,
+        aster_drive::types::UploadSessionStatus::Uploading,
+        chrono::Utc::now() + chrono::Duration::hours(1),
+        3,
+        2,
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    let temp_dir = format!("data/.uploads/{upload_id}");
+    tokio::fs::create_dir_all(&temp_dir).await.unwrap();
+    tokio::fs::write(format!("{temp_dir}/chunk_2"), b"two")
+        .await
+        .unwrap();
+    tokio::fs::write(format!("{temp_dir}/chunk_0"), b"zero")
+        .await
+        .unwrap();
+    tokio::fs::write(format!("{temp_dir}/chunk_bad"), b"ignored")
+        .await
+        .unwrap();
+    tokio::fs::write(format!("{temp_dir}/notes.txt"), b"ignored")
+        .await
+        .unwrap();
+
+    let progress = upload_service::get_progress(&state, &upload_id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(progress.upload_id, upload_id);
+    assert_eq!(progress.received_count, 2);
+    assert_eq!(progress.total_chunks, 3);
+    assert_eq!(progress.chunks_on_disk, vec![0, 2]);
+}
+
+#[actix_web::test]
+async fn test_upload_service_presign_parts_rejects_non_multipart_session() {
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "presignuser", "presign@test.com", "password123")
+        .await
+        .unwrap();
+    let upload_id = format!("presign-{}", uuid::Uuid::new_v4());
+    create_upload_session(
+        &state,
+        user.id,
+        &upload_id,
+        aster_drive::types::UploadSessionStatus::Presigned,
+        chrono::Utc::now() + chrono::Duration::hours(1),
+        1,
+        0,
+        Some("files/temp-key"),
+        None,
+        None,
+    )
+    .await;
+
+    let err = upload_service::presign_parts(&state, &upload_id, user.id, vec![1])
+        .await
+        .unwrap_err();
+    assert!(err.message().contains("not a multipart upload session"));
+}
+
+#[actix_web::test]
+async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
+    use aster_drive::db::repository::upload_session_repo;
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "cleanupuser", "cleanup@test.com", "password123")
+        .await
+        .unwrap();
+
+    let expired_id = format!("expired-{}", uuid::Uuid::new_v4());
+    create_upload_session(
+        &state,
+        user.id,
+        &expired_id,
+        aster_drive::types::UploadSessionStatus::Uploading,
+        chrono::Utc::now() - chrono::Duration::minutes(5),
+        2,
+        1,
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    let completed_id = format!("completed-{}", uuid::Uuid::new_v4());
+    create_upload_session(
+        &state,
+        user.id,
+        &completed_id,
+        aster_drive::types::UploadSessionStatus::Completed,
+        chrono::Utc::now() - chrono::Duration::minutes(5),
+        0,
+        0,
+        None,
+        None,
+        Some(123),
+    )
+    .await;
+
+    let expired_dir = format!("data/.uploads/{expired_id}");
+    tokio::fs::create_dir_all(&expired_dir).await.unwrap();
+    tokio::fs::write(format!("{expired_dir}/chunk_0"), b"temp")
+        .await
+        .unwrap();
+
+    let cleaned = upload_service::cleanup_expired(&state).await.unwrap();
+    assert_eq!(cleaned, 1);
+    assert!(
+        upload_session_repo::find_by_id(&state.db, &expired_id)
+            .await
+            .is_err()
+    );
+    assert!(
+        upload_session_repo::find_by_id(&state.db, &completed_id)
+            .await
+            .is_ok()
+    );
+    assert!(
+        !std::path::Path::new(&expired_dir).exists(),
+        "expired temp dir should be removed"
+    );
+}
+
 /// S3 presigned upload 端到端测试（需要 testcontainers + rustfs）
 #[tokio::test]
 async fn test_presigned_upload_s3_e2e() {
@@ -539,4 +917,182 @@ async fn test_presigned_upload_s3_e2e() {
         .unwrap();
     assert_eq!(blob1.ref_count, 1);
     assert_eq!(blob2.ref_count, 1);
+}
+
+/// S3 presigned multipart 上传端到端测试：覆盖 presign_parts / progress / complete 排序分支
+#[tokio::test]
+async fn test_presigned_multipart_upload_s3_e2e() {
+    use aster_drive::db::repository::{file_repo, policy_repo};
+    use aster_drive::services::{auth_service, upload_service};
+    use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
+
+    let container = GenericImage::new("rustfs/rustfs", "latest")
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
+        .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
+        .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
+        .start()
+        .await
+        .expect("failed to start rustfs container");
+
+    let port = container.get_host_port_ipv4(9000).await.unwrap();
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let bucket = "test-presigned-multipart";
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    {
+        let credentials = aws_credential_types::Credentials::new(
+            "rustfsadmin",
+            "rustfsadmin123",
+            None,
+            None,
+            "test",
+        );
+        let config = aws_sdk_s3::Config::builder()
+            .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
+            .region(aws_sdk_s3::config::Region::new("us-east-1"))
+            .credentials_provider(credentials)
+            .endpoint_url(&endpoint)
+            .force_path_style(true)
+            .build();
+        let client = aws_sdk_s3::Client::from_conf(config);
+        let _ = client.create_bucket().bucket(bucket).send().await;
+    }
+
+    let state = common::setup().await;
+
+    use chrono::Utc;
+    use sea_orm::Set;
+    let now = Utc::now();
+    let s3_policy = policy_repo::create(
+        &state.db,
+        aster_drive::entities::storage_policy::ActiveModel {
+            name: Set("Test S3 Multipart".to_string()),
+            driver_type: Set(aster_drive::types::DriverType::S3),
+            endpoint: Set(endpoint),
+            bucket: Set(bucket.to_string()),
+            access_key: Set("rustfsadmin".to_string()),
+            secret_key: Set("rustfsadmin123".to_string()),
+            base_path: Set("uploads".to_string()),
+            max_file_size: Set(0),
+            allowed_types: Set("[]".to_string()),
+            options: Set(r#"{"presigned_upload":true}"#.to_string()),
+            is_default: Set(false),
+            chunk_size: Set(5_242_880),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let user = auth_service::register(&state, "s3multipartuser", "s3multipart@test.com", "pass123")
+        .await
+        .unwrap();
+
+    policy_repo::clear_user_default(&state.db, user.id)
+        .await
+        .unwrap();
+    let _ = policy_repo::create_user_policy(
+        &state.db,
+        aster_drive::entities::user_storage_policy::ActiveModel {
+            user_id: Set(user.id),
+            policy_id: Set(s3_policy.id),
+            is_default: Set(true),
+            quota_bytes: Set(0),
+            created_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let mut data = vec![b'A'; 5_242_880];
+    data.extend_from_slice(b"multipart tail");
+    let (part1, part2) = data.split_at(5_242_880);
+
+    let init = upload_service::init_upload(
+        &state,
+        user.id,
+        "multipart.bin",
+        data.len() as i64,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        init.mode,
+        aster_drive::types::UploadMode::PresignedMultipart
+    );
+    assert_eq!(init.total_chunks, Some(2));
+    assert!(init.presigned_url.is_none());
+
+    let upload_id = init.upload_id.unwrap();
+    let urls = upload_service::presign_parts(&state, &upload_id, user.id, vec![2, 1])
+        .await
+        .unwrap();
+    assert_eq!(urls.len(), 2);
+
+    let client = reqwest::Client::new();
+    let resp1 = client
+        .put(urls.get(&1).unwrap())
+        .header(reqwest::header::CONTENT_LENGTH, part1.len())
+        .body(part1.to_vec())
+        .send()
+        .await
+        .unwrap();
+    assert!(resp1.status().is_success());
+    let etag1 = resp1
+        .headers()
+        .get(reqwest::header::ETAG)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+        .expect("part 1 etag missing");
+
+    let resp2 = client
+        .put(urls.get(&2).unwrap())
+        .header(reqwest::header::CONTENT_LENGTH, part2.len())
+        .body(part2.to_vec())
+        .send()
+        .await
+        .unwrap();
+    assert!(resp2.status().is_success());
+    let etag2 = resp2
+        .headers()
+        .get(reqwest::header::ETAG)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+        .expect("part 2 etag missing");
+
+    let progress = upload_service::get_progress(&state, &upload_id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        progress.status,
+        aster_drive::types::UploadSessionStatus::Presigned
+    );
+    assert_eq!(progress.total_chunks, 2);
+    assert_eq!(progress.chunks_on_disk, vec![1, 2]);
+
+    let file = upload_service::complete_upload(
+        &state,
+        &upload_id,
+        user.id,
+        Some(vec![(2, etag2), (1, etag1)]),
+    )
+    .await
+    .unwrap();
+    assert_eq!(file.name, "multipart.bin");
+
+    let policy = policy_repo::find_by_id(&state.db, s3_policy.id)
+        .await
+        .unwrap();
+    let driver = state.driver_registry.get_driver(&policy).unwrap();
+    let blob = file_repo::find_blob_by_id(&state.db, file.blob_id)
+        .await
+        .unwrap();
+    let stored = driver.get(&blob.storage_path).await.unwrap();
+    assert_eq!(stored, data);
 }

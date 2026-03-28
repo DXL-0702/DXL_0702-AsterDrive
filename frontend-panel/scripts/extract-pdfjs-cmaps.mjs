@@ -33,7 +33,7 @@ const manifestPath = path.join(targetVersionDir, "asset-manifest.json");
 
 fs.writeFileSync(
 	manifestPath,
-	JSON.stringify(
+	`${JSON.stringify(
 		{
 			cMapCount,
 			cMapUrl: `/pdfjs/${pdfjsVersion}/cmaps/`,
@@ -41,7 +41,7 @@ fs.writeFileSync(
 		},
 		null,
 		2,
-	) + "\n",
+	)}\n`,
 );
 
 console.log(

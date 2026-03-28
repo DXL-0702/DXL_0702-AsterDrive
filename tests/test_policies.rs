@@ -182,6 +182,54 @@ async fn test_system_policy_default_uniqueness() {
     );
 }
 
+#[actix_web::test]
+async fn test_patch_policy_promotes_existing_policy_to_default() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Patch To Default",
+            "driver_type": "local",
+            "base_path": "/tmp/test-patch-default",
+            "max_file_size": 0,
+            "is_default": false
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/admin/policies/{policy_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "is_default": true }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["is_default"], true);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let policies = body["data"]["items"].as_array().unwrap();
+    let default_ids: Vec<i64> = policies
+        .iter()
+        .filter(|policy| policy["is_default"] == true)
+        .map(|policy| policy["id"].as_i64().unwrap())
+        .collect();
+
+    assert_eq!(default_ids, vec![policy_id]);
+}
+
 // ── 不能删除唯一的默认系统策略 ──────────────────────────────
 
 #[actix_web::test]
@@ -404,6 +452,82 @@ async fn test_can_delete_non_default_user_policy_with_multiple_assignments() {
     assert_eq!(policies[0]["is_default"], true);
 }
 
+#[actix_web::test]
+async fn test_patch_user_policy_switches_default_assignment() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Patch User Default",
+            "driver_type": "local",
+            "base_path": "/tmp/test-user-default-switch",
+            "max_file_size": 0,
+            "is_default": false
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "policy_id": policy_id,
+            "is_default": false,
+            "quota_bytes": 1234
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let assignment_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!(
+            "/api/v1/admin/users/{user_id}/policies/{assignment_id}"
+        ))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "is_default": true,
+            "quota_bytes": 4321
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["is_default"], true);
+    assert_eq!(body["data"]["quota_bytes"], 4321);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/users/{user_id}/policies"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let policies = body["data"]["items"].as_array().unwrap();
+    let default_ids: Vec<i64> = policies
+        .iter()
+        .filter(|policy| policy["is_default"] == true)
+        .map(|policy| policy["id"].as_i64().unwrap())
+        .collect();
+
+    assert_eq!(default_ids, vec![assignment_id]);
+}
+
 // ── 不能取消用户唯一默认策略 ────────────────────────────────
 
 #[actix_web::test]
@@ -498,4 +622,106 @@ async fn test_cannot_delete_last_user_policy() {
         "should reject deleting only user policy, got {}",
         resp.status()
     );
+}
+
+#[actix_web::test]
+async fn test_policy_delete_clears_folder_policy_reference() {
+    use aster_drive::db::repository::folder_repo;
+
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Folder Override Policy",
+            "driver_type": "local",
+            "base_path": "/tmp/test-folder-override-policy",
+            "max_file_size": 0,
+            "is_default": false
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "override-folder" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/folders/{folder_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "policy_id": policy_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let folder = folder_repo::find_by_id(&db, folder_id).await.unwrap();
+    assert_eq!(folder.policy_id, Some(policy_id));
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/admin/policies/{policy_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let folder = folder_repo::find_by_id(&db, folder_id).await.unwrap();
+    assert_eq!(folder.policy_id, None);
+}
+
+#[actix_web::test]
+async fn test_policy_connection_endpoints_for_local_driver() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let stored_base_path = format!("/tmp/test-policy-connection-{}", uuid::Uuid::new_v4());
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Connection Test Policy",
+            "driver_type": "local",
+            "base_path": stored_base_path,
+            "max_file_size": 0,
+            "is_default": false
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/admin/policies/{policy_id}/test"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert!(!std::path::Path::new(&format!("{stored_base_path}/_aster_connection_test")).exists());
+
+    let temp_base_path = format!("/tmp/test-policy-params-{}", uuid::Uuid::new_v4());
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies/test")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "driver_type": "local",
+            "base_path": temp_base_path
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert!(!std::path::Path::new(&format!("{temp_base_path}/_aster_connection_test")).exists());
 }

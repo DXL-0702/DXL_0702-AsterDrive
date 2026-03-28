@@ -1,0 +1,172 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import SettingsPage from "@/pages/SettingsPage";
+
+const mockState = vi.hoisted(() => ({
+	changeLanguage: vi.fn(),
+	fileStore: {
+		setViewMode: vi.fn(),
+		viewMode: "list" as "list" | "grid",
+	},
+	preferenceSync: vi.fn(),
+	themeStore: {
+		mode: "dark" as "light" | "dark" | "system",
+		setMode: vi.fn(),
+	},
+	translationLanguage: "zh-CN",
+}));
+
+vi.mock("react-i18next", () => ({
+	useTranslation: () => ({
+		i18n: {
+			changeLanguage: mockState.changeLanguage,
+			language: mockState.translationLanguage,
+		},
+		t: (key: string) => key,
+	}),
+}));
+
+vi.mock("@/components/common/ColorPresetPicker", () => ({
+	ColorPresetPicker: () => <div>color-preset-picker</div>,
+}));
+
+vi.mock("@/components/common/SettingsScaffold", () => ({
+	SettingsPageIntro: ({
+		title,
+		description,
+	}: {
+		title: string;
+		description?: string;
+	}) => (
+		<div>
+			<h1>{title}</h1>
+			<p>{description}</p>
+		</div>
+	),
+	SettingsSection: ({
+		title,
+		description,
+		children,
+	}: {
+		title: string;
+		description?: string;
+		children: React.ReactNode;
+	}) => (
+		<section>
+			<h2>{title}</h2>
+			<p>{description}</p>
+			{children}
+		</section>
+	),
+	SettingsRow: ({
+		label,
+		description,
+		children,
+	}: {
+		label: string;
+		description?: string;
+		children: React.ReactNode;
+	}) => (
+		<div>
+			<div>{label}</div>
+			<div>{description}</div>
+			{children}
+		</div>
+	),
+	SettingsChoiceGroup: ({
+		options,
+		value,
+		onChange,
+	}: {
+		options: Array<{ label: string; value: string }>;
+		value: string;
+		onChange: (value: never) => void;
+	}) => (
+		<div data-testid="choice-group" data-value={value}>
+			{options.map((option) => (
+				<button
+					key={option.value}
+					type="button"
+					onClick={() => onChange(option.value as never)}
+				>
+					{option.label}
+				</button>
+			))}
+		</div>
+	),
+}));
+
+vi.mock("@/components/layout/AppLayout", () => ({
+	AppLayout: ({ children }: { children: React.ReactNode }) => (
+		<div data-testid="app-layout">{children}</div>
+	),
+}));
+
+vi.mock("@/lib/preferenceSync", () => ({
+	queuePreferenceSync: (...args: unknown[]) =>
+		mockState.preferenceSync(...args),
+}));
+
+vi.mock("@/stores/fileStore", () => ({
+	useFileStore: (selector: (state: typeof mockState.fileStore) => unknown) =>
+		selector(mockState.fileStore),
+}));
+
+vi.mock("@/stores/themeStore", () => ({
+	useThemeStore: () => mockState.themeStore,
+}));
+
+describe("SettingsPage", () => {
+	beforeEach(() => {
+		mockState.changeLanguage.mockReset();
+		mockState.fileStore.setViewMode.mockReset();
+		mockState.fileStore.viewMode = "list";
+		mockState.preferenceSync.mockReset();
+		mockState.themeStore.mode = "dark";
+		mockState.themeStore.setMode.mockReset();
+		mockState.translationLanguage = "zh-CN";
+	});
+
+	it("renders current descriptions from the selected theme, language, and browser mode", () => {
+		render(<SettingsPage />);
+
+		expect(screen.getByTestId("app-layout")).toBeInTheDocument();
+		expect(screen.getByText("settings")).toBeInTheDocument();
+		expect(screen.getByText("settings:settings_page_desc")).toBeInTheDocument();
+		expect(
+			screen.getByText("settings:settings_theme_dark_desc"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("settings:settings_language_zh_desc"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("settings:settings_browser_list_desc"),
+		).toBeInTheDocument();
+		expect(screen.getByText("color-preset-picker")).toBeInTheDocument();
+		expect(screen.getAllByTestId("choice-group")[0]).toHaveAttribute(
+			"data-value",
+			"dark",
+		);
+		expect(screen.getAllByTestId("choice-group")[1]).toHaveAttribute(
+			"data-value",
+			"zh",
+		);
+		expect(screen.getAllByTestId("choice-group")[2]).toHaveAttribute(
+			"data-value",
+			"list",
+		);
+	});
+
+	it("dispatches theme, language, and browser preference changes", () => {
+		render(<SettingsPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: "theme_light" }));
+		fireEvent.click(screen.getByRole("button", { name: "language_en" }));
+		fireEvent.click(screen.getByRole("button", { name: "files:grid_view" }));
+
+		expect(mockState.themeStore.setMode).toHaveBeenCalledWith("light");
+		expect(mockState.changeLanguage).toHaveBeenCalledWith("en");
+		expect(mockState.preferenceSync).toHaveBeenCalledWith({ language: "en" });
+		expect(mockState.fileStore.setViewMode).toHaveBeenCalledWith("grid");
+	});
+});

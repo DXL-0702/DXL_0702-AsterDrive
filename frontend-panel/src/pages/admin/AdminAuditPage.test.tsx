@@ -1,0 +1,322 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import AdminAuditPage from "@/pages/admin/AdminAuditPage";
+
+const mockState = vi.hoisted(() => ({
+	handleApiError: vi.fn(),
+	list: vi.fn(),
+}));
+
+vi.mock("react-i18next", () => ({
+	useTranslation: () => ({
+		t: (key: string, options?: Record<string, unknown>) => {
+			if (key === "entries_page") {
+				return `entries:${options?.current}/${options?.pages}/${options?.total}`;
+			}
+			return key;
+		},
+	}),
+}));
+
+vi.mock("@/components/common/EmptyState", () => ({
+	EmptyState: ({ title, icon }: { title: string; icon?: React.ReactNode }) => (
+		<div>
+			<div>{title}</div>
+			<div>{icon}</div>
+		</div>
+	),
+}));
+
+vi.mock("@/components/common/SkeletonTable", () => ({
+	SkeletonTable: ({ columns, rows }: { columns: number; rows: number }) => (
+		<div>{`skeleton:${columns}:${rows}`}</div>
+	),
+}));
+
+vi.mock("@/components/layout/AdminLayout", () => ({
+	AdminLayout: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+}));
+
+vi.mock("@/components/layout/AdminPageHeader", () => ({
+	AdminPageHeader: ({
+		title,
+		description,
+		toolbar,
+	}: {
+		title: string;
+		description: string;
+		toolbar?: React.ReactNode;
+	}) => (
+		<div>
+			<h1>{title}</h1>
+			<p>{description}</p>
+			<div>{toolbar}</div>
+		</div>
+	),
+}));
+
+vi.mock("@/components/layout/AdminPageShell", () => ({
+	AdminPageShell: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+}));
+
+vi.mock("@/components/layout/AdminSurface", () => ({
+	AdminSurface: ({ children }: { children: React.ReactNode }) => (
+		<div data-testid="admin-surface">{children}</div>
+	),
+}));
+
+vi.mock("@/components/ui/button", () => ({
+	Button: ({
+		children,
+		disabled,
+		onClick,
+	}: {
+		children: React.ReactNode;
+		disabled?: boolean;
+		onClick?: () => void;
+	}) => (
+		<button type="button" disabled={disabled} onClick={onClick}>
+			{children}
+		</button>
+	),
+}));
+
+vi.mock("@/components/ui/icon", () => ({
+	Icon: ({ name }: { name: string }) => <span>{name}</span>,
+}));
+
+vi.mock("@/components/ui/input", () => ({
+	Input: ({
+		className,
+		onChange,
+		placeholder,
+		value,
+	}: {
+		className?: string;
+		onChange?: (event: { target: { value: string } }) => void;
+		placeholder?: string;
+		value?: string;
+	}) => (
+		<input
+			className={className}
+			onChange={(event) =>
+				onChange?.({ target: { value: event.target.value } })
+			}
+			placeholder={placeholder}
+			value={value}
+		/>
+	),
+}));
+
+vi.mock("@/components/ui/scroll-area", () => ({
+	ScrollArea: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => <div className={className}>{children}</div>,
+}));
+
+vi.mock("@/components/ui/select", () => ({
+	Select: ({
+		children,
+		onValueChange,
+		value,
+	}: {
+		children: React.ReactNode;
+		onValueChange?: (value: string) => void;
+		value?: string;
+	}) => (
+		<div>
+			<div>{`select:${value}`}</div>
+			<button type="button" onClick={() => onValueChange?.("__all__")}>
+				select-all
+			</button>
+			<button type="button" onClick={() => onValueChange?.("file")}>
+				select-file
+			</button>
+			<button type="button" onClick={() => onValueChange?.("folder")}>
+				select-folder
+			</button>
+			{children}
+		</div>
+	),
+	SelectContent: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	SelectItem: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	SelectTrigger: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => <div className={className}>{children}</div>,
+	SelectValue: () => <span>select-value</span>,
+}));
+
+vi.mock("@/components/ui/table", () => ({
+	Table: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+	TableBody: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	TableCell: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	TableHead: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	TableHeader: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	TableRow: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+}));
+
+vi.mock("@/hooks/useApiError", () => ({
+	handleApiError: (...args: unknown[]) => mockState.handleApiError(...args),
+}));
+
+vi.mock("@/lib/format", () => ({
+	formatDateAbsolute: (value: string) => `date:${value}`,
+}));
+
+vi.mock("@/services/auditService", () => ({
+	auditService: {
+		list: (...args: unknown[]) => mockState.list(...args),
+	},
+}));
+
+function createEntry(overrides: Record<string, unknown> = {}) {
+	return {
+		action: "upload",
+		created_at: "2026-03-28T00:00:00Z",
+		entity_name: "report.pdf",
+		entity_type: "file",
+		id: 1,
+		ip_address: "127.0.0.1",
+		user_id: 9,
+		...overrides,
+	};
+}
+
+describe("AdminAuditPage", () => {
+	beforeEach(() => {
+		mockState.handleApiError.mockReset();
+		mockState.list.mockReset();
+		mockState.list.mockResolvedValue({
+			items: [createEntry()],
+			total: 1,
+		});
+	});
+
+	it("shows a loading skeleton while the audit request is pending", () => {
+		mockState.list.mockImplementationOnce(() => new Promise(() => undefined));
+
+		render(<AdminAuditPage />);
+
+		expect(screen.getByText("skeleton:6:8")).toBeInTheDocument();
+	});
+
+	it("renders the empty state when there are no audit entries", async () => {
+		mockState.list.mockResolvedValueOnce({
+			items: [],
+			total: 0,
+		});
+
+		render(<AdminAuditPage />);
+
+		expect(await screen.findByText("no_audit_logs")).toBeInTheDocument();
+		expect(screen.getByText("Scroll")).toBeInTheDocument();
+	});
+
+	it("renders entries, paginates, and refetches when filters change", async () => {
+		mockState.list
+			.mockResolvedValueOnce({
+				items: [createEntry()],
+				total: 21,
+			})
+			.mockResolvedValueOnce({
+				items: [createEntry({ id: 2, entity_name: null, ip_address: null })],
+				total: 21,
+			})
+			.mockResolvedValueOnce({
+				items: [createEntry({ id: 3, action: "delete" })],
+				total: 1,
+			})
+			.mockResolvedValueOnce({
+				items: [createEntry({ id: 4, entity_type: "folder" })],
+				total: 1,
+			});
+
+		render(<AdminAuditPage />);
+
+		await waitFor(() => {
+			expect(mockState.list).toHaveBeenNthCalledWith(1, {
+				action: undefined,
+				entity_type: undefined,
+				limit: 20,
+				offset: 0,
+			});
+		});
+		expect(screen.getByText("report.pdf")).toBeInTheDocument();
+		expect(screen.getByText("date:2026-03-28T00:00:00Z")).toBeInTheDocument();
+		expect(screen.getByText("entries:1/2/21")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "CaretRight" }));
+
+		await waitFor(() => {
+			expect(mockState.list).toHaveBeenNthCalledWith(2, {
+				action: undefined,
+				entity_type: undefined,
+				limit: 20,
+				offset: 20,
+			});
+		});
+		expect(screen.getAllByText("---")).toHaveLength(2);
+
+		fireEvent.change(screen.getByPlaceholderText("audit_filter_action"), {
+			target: { value: "delete" },
+		});
+
+		await waitFor(() => {
+			expect(mockState.list).toHaveBeenNthCalledWith(3, {
+				action: "delete",
+				entity_type: undefined,
+				limit: 20,
+				offset: 0,
+			});
+		});
+		expect(screen.getByText("delete")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "select-folder" }));
+
+		await waitFor(() => {
+			expect(mockState.list).toHaveBeenNthCalledWith(4, {
+				action: "delete",
+				entity_type: "folder",
+				limit: 20,
+				offset: 0,
+			});
+		});
+	});
+
+	it("routes loading failures through handleApiError", async () => {
+		const error = new Error("audit failed");
+		mockState.list.mockRejectedValueOnce(error);
+
+		render(<AdminAuditPage />);
+
+		await waitFor(() => {
+			expect(mockState.handleApiError).toHaveBeenCalledWith(error);
+		});
+	});
+});

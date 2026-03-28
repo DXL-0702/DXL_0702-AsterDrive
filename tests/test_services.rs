@@ -235,6 +235,126 @@ async fn test_lock_service_force_unlock() {
     assert!(!f.is_locked);
 }
 
+#[actix_web::test]
+async fn test_lock_service_unlock_by_token_clears_file_lock_state() {
+    use aster_drive::db::repository::{file_repo, lock_repo};
+    use aster_drive::services::{auth_service, file_service, lock_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "tokunlock", "tokunlock@example.com", "pass123")
+        .await
+        .unwrap();
+
+    let temp_dir = format!("/tmp/asterdrive-lock-token-test-{}", uuid::Uuid::new_v4());
+    std::fs::create_dir_all(&temp_dir).unwrap();
+    let temp_path = format!("{temp_dir}/locked.txt");
+    std::fs::write(&temp_path, "lock by token").unwrap();
+
+    let file = file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "locked.txt",
+        &temp_path,
+        "lock by token".len() as i64,
+        None,
+        false,
+    )
+    .await
+    .unwrap();
+
+    let lock = lock_service::lock(
+        &state,
+        aster_drive::types::EntityType::File,
+        file.id,
+        Some(user.id),
+        None,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let locked = file_repo::find_by_id(&state.db, file.id).await.unwrap();
+    assert!(locked.is_locked);
+
+    lock_service::unlock_by_token(&state, &lock.token)
+        .await
+        .unwrap();
+
+    let unlocked = file_repo::find_by_id(&state.db, file.id).await.unwrap();
+    assert!(!unlocked.is_locked);
+    assert!(
+        lock_repo::find_by_token(&state.db, &lock.token)
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[actix_web::test]
+async fn test_lock_service_cleanup_expired_unlocks_only_expired_resources() {
+    use aster_drive::db::repository::{folder_repo, lock_repo};
+    use aster_drive::services::{auth_service, folder_service, lock_service};
+    use chrono::Duration;
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "lockcleanup", "lockcleanup@example.com", "pass123")
+        .await
+        .unwrap();
+
+    let expired_folder = folder_service::create(&state, user.id, "ExpiredLock", None)
+        .await
+        .unwrap();
+    let active_folder = folder_service::create(&state, user.id, "ActiveLock", None)
+        .await
+        .unwrap();
+
+    let expired_lock = lock_service::lock(
+        &state,
+        aster_drive::types::EntityType::Folder,
+        expired_folder.id,
+        Some(user.id),
+        None,
+        Some(Duration::seconds(-1)),
+    )
+    .await
+    .unwrap();
+    let active_lock = lock_service::lock(
+        &state,
+        aster_drive::types::EntityType::Folder,
+        active_folder.id,
+        Some(user.id),
+        None,
+        Some(Duration::minutes(10)),
+    )
+    .await
+    .unwrap();
+
+    let cleaned = lock_service::cleanup_expired(&state).await.unwrap();
+    assert_eq!(cleaned, 1);
+
+    let expired = folder_repo::find_by_id(&state.db, expired_folder.id)
+        .await
+        .unwrap();
+    let active = folder_repo::find_by_id(&state.db, active_folder.id)
+        .await
+        .unwrap();
+    assert!(!expired.is_locked);
+    assert!(active.is_locked);
+    assert!(
+        lock_repo::find_by_token(&state.db, &expired_lock.token)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        lock_repo::find_by_token(&state.db, &active_lock.token)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
 // ─── Version Service ──────────────────────────────────────────────
 
 #[actix_web::test]

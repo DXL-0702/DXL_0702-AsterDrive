@@ -21,14 +21,18 @@ macro_rules! fetch_audit_items {
 }
 
 fn assert_action_present<'a>(items: &'a [Value], action: &str) -> &'a Value {
-    items.iter().find(|item| item["action"] == action).unwrap_or_else(|| {
-        panic!(
-            "audit log should contain {action}, got {:?}",
-            items.iter()
-                .map(|item| item["action"].as_str().unwrap_or("<non-string>"))
-                .collect::<Vec<_>>()
-        )
-    })
+    items
+        .iter()
+        .find(|item| item["action"] == action)
+        .unwrap_or_else(|| {
+            panic!(
+                "audit log should contain {action}, got {:?}",
+                items
+                    .iter()
+                    .map(|item| item["action"].as_str().unwrap_or("<non-string>"))
+                    .collect::<Vec<_>>()
+            )
+        })
 }
 
 #[actix_web::test]

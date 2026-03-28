@@ -147,10 +147,7 @@ export default defineConfig(({ command }) => {
 							return "vendor-editor";
 						}
 
-						if (
-							packageName === "react-pdf" ||
-							packageName === "pdfjs-dist"
-						) {
+						if (packageName === "react-pdf" || packageName === "pdfjs-dist") {
 							return "vendor-pdf";
 						}
 

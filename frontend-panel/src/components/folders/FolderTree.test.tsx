@@ -1,0 +1,392 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	FOLDER_LIMIT,
+	FOLDER_TREE_DRAG_EXPAND_DELAY_MS,
+} from "@/lib/constants";
+
+const mockState = vi.hoisted(() => ({
+	getInvalidInternalDropReason: vi.fn(),
+	handleApiError: vi.fn(),
+	hasInternalDragData: vi.fn(),
+	listFolder: vi.fn(),
+	listRoot: vi.fn(),
+	navigate: vi.fn(),
+	readInternalDragData: vi.fn(),
+	setInternalDragPreview: vi.fn(),
+	auth: {
+		user: {
+			id: 7,
+		},
+	},
+	fileStore: {
+		breadcrumb: [{ id: null, name: "Root" }] as Array<{
+			id: number | null;
+			name: string;
+		}>,
+		currentFolderId: null as number | null,
+		folders: [] as Array<{ id: number; name: string }>,
+		loading: false,
+		moveToFolder: vi.fn(),
+	},
+	pathname: "/",
+	writeInternalDragData: vi.fn(),
+}));
+
+vi.mock("react-i18next", () => ({
+	useTranslation: () => ({
+		t: (key: string) => key,
+	}),
+}));
+
+vi.mock("react-router-dom", () => ({
+	useLocation: () => ({
+		pathname: mockState.pathname,
+	}),
+	useNavigate: () => mockState.navigate,
+}));
+
+vi.mock("@/components/common/SkeletonTree", () => ({
+	SkeletonTree: ({ count }: { count: number }) => (
+		<div>{`skeleton:${count}`}</div>
+	),
+}));
+
+vi.mock("@/components/ui/icon", () => ({
+	Icon: ({ name }: { name: string }) => <span>{name}</span>,
+}));
+
+vi.mock("@/hooks/useApiError", () => ({
+	handleApiError: (...args: unknown[]) => mockState.handleApiError(...args),
+}));
+
+vi.mock("@/lib/dragDrop", () => ({
+	getInvalidInternalDropReason: (...args: unknown[]) =>
+		mockState.getInvalidInternalDropReason(...args),
+	hasInternalDragData: (...args: unknown[]) =>
+		mockState.hasInternalDragData(...args),
+	readInternalDragData: (...args: unknown[]) =>
+		mockState.readInternalDragData(...args),
+	setInternalDragPreview: (...args: unknown[]) =>
+		mockState.setInternalDragPreview(...args),
+	writeInternalDragData: (...args: unknown[]) =>
+		mockState.writeInternalDragData(...args),
+}));
+
+vi.mock("@/services/fileService", () => ({
+	fileService: {
+		listFolder: (...args: unknown[]) => mockState.listFolder(...args),
+		listRoot: (...args: unknown[]) => mockState.listRoot(...args),
+	},
+}));
+
+vi.mock("@/stores/authStore", () => ({
+	useAuthStore: <T,>(selector: (state: typeof mockState.auth) => T) =>
+		selector(mockState.auth),
+}));
+
+vi.mock("@/stores/fileStore", () => ({
+	useFileStore: <T,>(selector: (state: typeof mockState.fileStore) => T) =>
+		selector(mockState.fileStore),
+}));
+
+function createFolder(id: number, name: string) {
+	return {
+		created_at: "2026-03-28T00:00:00Z",
+		id,
+		is_locked: false,
+		name,
+		updated_at: "2026-03-28T00:00:00Z",
+	};
+}
+
+interface FolderTreeProps {
+	onMoveToFolder?: (
+		fileIds: number[],
+		folderIds: number[],
+		targetFolderId: number | null,
+	) => Promise<void> | void;
+}
+
+async function renderTree(props?: FolderTreeProps) {
+	const { FolderTree } = await import("@/components/folders/FolderTree");
+	return render(<FolderTree {...props} />);
+}
+
+describe("FolderTree", () => {
+	beforeEach(() => {
+		vi.resetModules();
+		vi.useRealTimers();
+
+		mockState.getInvalidInternalDropReason.mockReset();
+		mockState.handleApiError.mockReset();
+		mockState.hasInternalDragData.mockReset();
+		mockState.listFolder.mockReset();
+		mockState.listRoot.mockReset();
+		mockState.navigate.mockReset();
+		mockState.readInternalDragData.mockReset();
+		mockState.setInternalDragPreview.mockReset();
+		mockState.writeInternalDragData.mockReset();
+		mockState.fileStore.moveToFolder.mockReset();
+
+		mockState.auth.user = { id: 7 };
+		mockState.fileStore.breadcrumb = [{ id: null, name: "Root" }];
+		mockState.fileStore.currentFolderId = null;
+		mockState.fileStore.folders = [];
+		mockState.fileStore.loading = false;
+		mockState.fileStore.moveToFolder.mockResolvedValue(undefined);
+		mockState.pathname = "/";
+
+		mockState.getInvalidInternalDropReason.mockReturnValue(null);
+		mockState.hasInternalDragData.mockReturnValue(false);
+		mockState.listFolder.mockResolvedValue({ folders: [] });
+		mockState.listRoot.mockResolvedValue({ folders: [] });
+		mockState.readInternalDragData.mockReturnValue(null);
+	});
+
+	it("shows a skeleton while the root folder list is pending", async () => {
+		mockState.listRoot.mockImplementationOnce(
+			() => new Promise(() => undefined),
+		);
+
+		await renderTree();
+
+		expect(screen.getByText("skeleton:4")).toBeInTheDocument();
+	});
+
+	it("loads root folders and reuses the cached snapshot on remount", async () => {
+		mockState.fileStore.folders = [
+			createFolder(1, "Alpha"),
+			createFolder(2, "Beta"),
+		];
+		mockState.listRoot.mockResolvedValue({
+			folders: [createFolder(1, "Alpha"), createFolder(2, "Beta")],
+		});
+
+		const firstView = await renderTree();
+
+		expect(await screen.findByText("Alpha")).toBeInTheDocument();
+		expect(screen.getByText("Beta")).toBeInTheDocument();
+		expect(mockState.listRoot).toHaveBeenCalledWith({
+			file_limit: 0,
+			folder_limit: FOLDER_LIMIT,
+		});
+		expect(mockState.listRoot).toHaveBeenCalledTimes(1);
+
+		firstView.unmount();
+
+		await renderTree();
+
+		expect(screen.getByText("Alpha")).toBeInTheDocument();
+		expect(screen.getByText("Beta")).toBeInTheDocument();
+		expect(screen.queryByText("skeleton:4")).not.toBeInTheDocument();
+		expect(mockState.listRoot).toHaveBeenCalledTimes(1);
+	});
+
+	it("loads children while navigating by click and keyboard", async () => {
+		mockState.fileStore.folders = [createFolder(1, "Alpha Root")];
+		mockState.listRoot.mockResolvedValue({
+			folders: [createFolder(1, "Alpha Root")],
+		});
+		mockState.listFolder.mockImplementation(async (id: number) => {
+			if (id === 1) {
+				return {
+					folders: [createFolder(2, "Project Space")],
+				};
+			}
+
+			return { folders: [] };
+		});
+
+		await renderTree();
+
+		const alphaRow = (await screen.findByText("Alpha Root")).closest(
+			'[role="button"]',
+		);
+		if (!alphaRow) {
+			throw new Error("Alpha Root row not found");
+		}
+
+		fireEvent.click(alphaRow);
+
+		await waitFor(() => {
+			expect(mockState.listFolder).toHaveBeenCalledWith(1, {
+				file_limit: 0,
+				folder_limit: FOLDER_LIMIT,
+			});
+		});
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			"/folder/1?name=Alpha%20Root",
+		);
+		expect(await screen.findByText("Project Space")).toBeInTheDocument();
+
+		const childRow = screen
+			.getByText("Project Space")
+			.closest('[role="button"]');
+		if (!childRow) {
+			throw new Error("Project Space row not found");
+		}
+
+		fireEvent.keyDown(childRow, { key: "Enter" });
+
+		await waitFor(() => {
+			expect(mockState.listFolder).toHaveBeenCalledWith(2, {
+				file_limit: 0,
+				folder_limit: FOLDER_LIMIT,
+			});
+		});
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			"/folder/2?name=Project%20Space",
+		);
+	});
+
+	it("accepts valid drops on the root target and ignores invalid ones", async () => {
+		const onMoveToFolder = vi.fn();
+		const dataTransfer = {
+			dropEffect: "copy",
+			types: ["application/x-asterdrive-move"],
+		} as unknown as DataTransfer;
+
+		mockState.fileStore.folders = [createFolder(1, "Alpha")];
+		mockState.listRoot.mockResolvedValue({
+			folders: [createFolder(1, "Alpha")],
+		});
+		mockState.hasInternalDragData.mockReturnValue(true);
+		mockState.readInternalDragData.mockReturnValue({
+			fileIds: [9],
+			folderIds: [8],
+		});
+
+		await renderTree({ onMoveToFolder });
+
+		const rootButton = await screen.findByRole("button", { name: /root/i });
+
+		fireEvent.dragOver(rootButton, { dataTransfer });
+
+		expect(dataTransfer.dropEffect).toBe("move");
+
+		fireEvent.drop(rootButton, { dataTransfer });
+
+		expect(mockState.getInvalidInternalDropReason).toHaveBeenCalledWith(
+			{ fileIds: [9], folderIds: [8] },
+			null,
+			[],
+		);
+		expect(onMoveToFolder).toHaveBeenCalledWith([9], [8], null);
+
+		mockState.getInvalidInternalDropReason.mockReturnValueOnce("descendant");
+		fireEvent.drop(rootButton, { dataTransfer });
+		expect(onMoveToFolder).toHaveBeenCalledTimes(1);
+	});
+
+	it("expands a hovered folder after the drag delay and drops into it", async () => {
+		const dataTransfer = {
+			dropEffect: "copy",
+			types: ["application/x-asterdrive-move"],
+		} as unknown as DataTransfer;
+
+		mockState.fileStore.folders = [createFolder(1, "Alpha")];
+		mockState.listRoot.mockResolvedValue({
+			folders: [createFolder(1, "Alpha")],
+		});
+		mockState.listFolder.mockResolvedValue({
+			folders: [createFolder(2, "Beta")],
+		});
+		mockState.hasInternalDragData.mockReturnValue(true);
+		mockState.readInternalDragData.mockReturnValue({
+			fileIds: [3],
+			folderIds: [4],
+		});
+
+		await renderTree();
+
+		const alphaRow = (await screen.findByText("Alpha")).closest(
+			'[role="button"]',
+		);
+		if (!alphaRow) {
+			throw new Error("Alpha row not found");
+		}
+
+		vi.useFakeTimers();
+
+		fireEvent.dragOver(alphaRow, { dataTransfer });
+
+		expect(dataTransfer.dropEffect).toBe("move");
+		await vi.advanceTimersByTimeAsync(FOLDER_TREE_DRAG_EXPAND_DELAY_MS);
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(mockState.listFolder).toHaveBeenCalledWith(1, {
+			file_limit: 0,
+			folder_limit: FOLDER_LIMIT,
+		});
+		vi.useRealTimers();
+		expect(await screen.findByText("Beta")).toBeInTheDocument();
+
+		fireEvent.drop(alphaRow, { dataTransfer });
+
+		expect(mockState.getInvalidInternalDropReason).toHaveBeenCalledWith(
+			{ fileIds: [3], folderIds: [4] },
+			1,
+			[1],
+		);
+		expect(mockState.fileStore.moveToFolder).toHaveBeenCalledWith([3], [4], 1);
+
+		mockState.getInvalidInternalDropReason.mockReturnValueOnce("self");
+		fireEvent.drop(alphaRow, { dataTransfer });
+		expect(mockState.fileStore.moveToFolder).toHaveBeenCalledTimes(1);
+	});
+
+	it("refreshes affected parents when a folder-tree-move event is dispatched", async () => {
+		mockState.fileStore.folders = [createFolder(1, "Alpha")];
+		mockState.listRoot.mockResolvedValue({
+			folders: [createFolder(1, "Alpha")],
+		});
+		mockState.listFolder.mockImplementation(async (id: number) => {
+			if (id === 1) {
+				return {
+					folders: [createFolder(2, "Child")],
+				};
+			}
+
+			return { folders: [] };
+		});
+
+		await renderTree();
+
+		const alphaRow = (await screen.findByText("Alpha")).closest(
+			'[role="button"]',
+		);
+		if (!alphaRow) {
+			throw new Error("Alpha row not found");
+		}
+
+		const toggleButton = alphaRow.querySelector("button");
+		if (!toggleButton) {
+			throw new Error("Toggle button not found");
+		}
+
+		fireEvent.click(toggleButton);
+
+		await screen.findByText("Child");
+
+		mockState.listRoot.mockClear();
+		mockState.listFolder.mockClear();
+
+		document.dispatchEvent(
+			new CustomEvent("folder-tree-move", {
+				detail: { folderIds: [2], targetFolderId: 1 },
+			}),
+		);
+
+		await waitFor(() => {
+			expect(mockState.listRoot).toHaveBeenCalledWith({
+				file_limit: 0,
+				folder_limit: FOLDER_LIMIT,
+			});
+		});
+		expect(mockState.listFolder).toHaveBeenCalledWith(1, {
+			file_limit: 0,
+			folder_limit: FOLDER_LIMIT,
+		});
+	});
+});
