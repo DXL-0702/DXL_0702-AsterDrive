@@ -45,6 +45,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                 .wrap(crate::api::middleware::auth::JwtAuth)
                 .route("/me", web::get().to(me))
                 .route("/preferences", web::patch().to(patch_preferences))
+                .route("/profile", web::patch().to(patch_profile))
                 .route("/profile/avatar/upload", web::post().to(upload_avatar))
                 .route("/profile/avatar/source", web::put().to(put_avatar_source))
                 .route("/profile/avatar/{size}", web::get().to(get_self_avatar)),
@@ -85,6 +86,11 @@ pub struct LoginReq {
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateAvatarSourceReq {
     pub source: AvatarSource,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateProfileReq {
+    pub display_name: Option<String>,
 }
 
 /// 构建 HttpOnly cookie
@@ -360,6 +366,29 @@ pub async fn patch_preferences(
 ) -> Result<HttpResponse> {
     let prefs = user_service::update_preferences(&state, claims.user_id, body.into_inner()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(prefs)))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/v1/auth/profile",
+    tag = "auth",
+    operation_id = "update_profile",
+    request_body = UpdateProfileReq,
+    responses(
+        (status = 200, description = "Profile updated", body = inline(ApiResponse<UserProfileInfo>)),
+        (status = 400, description = "Invalid profile input"),
+        (status = 401, description = "Not authenticated"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn patch_profile(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    body: web::Json<UpdateProfileReq>,
+) -> Result<HttpResponse> {
+    let profile =
+        profile_service::update_profile(&state, claims.user_id, body.display_name.clone()).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(profile)))
 }
 
 #[utoipa::path(

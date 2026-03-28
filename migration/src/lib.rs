@@ -22,6 +22,7 @@ mod m20260325_000001_upload_session_file_id;
 mod m20260327_000001_add_share_lookup_indexes;
 mod m20260327_000002_add_user_preferences;
 mod m20260329_000001_create_user_profiles;
+mod m20260329_000002_add_user_profile_display_name;
 
 pub struct Migrator;
 
@@ -51,6 +52,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260327_000001_add_share_lookup_indexes::Migration),
             Box::new(m20260327_000002_add_user_preferences::Migration),
             Box::new(m20260329_000001_create_user_profiles::Migration),
+            Box::new(m20260329_000002_add_user_profile_display_name::Migration),
         ]
     }
 }

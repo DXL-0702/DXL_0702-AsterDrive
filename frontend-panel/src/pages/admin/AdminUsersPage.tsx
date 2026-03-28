@@ -57,6 +57,7 @@ import {
 	ADMIN_ICON_BUTTON_CLASS,
 } from "@/lib/constants";
 import { formatBytes } from "@/lib/format";
+import { getNormalizedDisplayName, getUserDisplayName } from "@/lib/user";
 import { emailSchema, passwordSchema, usernameSchema } from "@/lib/validation";
 import { adminUserService } from "@/services/adminService";
 import type {
@@ -473,8 +474,15 @@ export default function AdminUsersPage() {
 												>
 													<div className="min-w-0">
 														<div className="truncate font-medium text-foreground">
-															{user.username}
+															{getUserDisplayName(user)}
 														</div>
+														{getNormalizedDisplayName(
+															user.profile.display_name,
+														) && getUserDisplayName(user) !== user.username ? (
+															<div className="truncate text-xs text-muted-foreground">
+																@{user.username}
+															</div>
+														) : null}
 													</div>
 												</button>
 											</TableCell>

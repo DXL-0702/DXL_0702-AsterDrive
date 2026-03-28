@@ -42,6 +42,7 @@ describe("authService", () => {
 		authService.logout();
 		authService.me();
 		authService.updatePreferences(prefs);
+		authService.updateProfile({ display_name: "Alice" });
 		authService.setAvatarSource("gravatar");
 
 		expect(mockState.post).toHaveBeenNthCalledWith(1, "/auth/check", {
@@ -63,7 +64,14 @@ describe("authService", () => {
 		});
 		expect(mockState.post).toHaveBeenNthCalledWith(5, "/auth/logout");
 		expect(mockState.get).toHaveBeenCalledWith("/auth/me");
-		expect(mockState.patch).toHaveBeenCalledWith("/auth/preferences", prefs);
+		expect(mockState.patch).toHaveBeenNthCalledWith(
+			1,
+			"/auth/preferences",
+			prefs,
+		);
+		expect(mockState.patch).toHaveBeenNthCalledWith(2, "/auth/profile", {
+			display_name: "Alice",
+		});
 		expect(mockState.put).toHaveBeenCalledWith("/auth/profile/avatar/source", {
 			source: "gravatar",
 		});

@@ -37,6 +37,7 @@ export type TrashContents = components["schemas"]["TrashContents"];
 export type UserPreferences = components["schemas"]["UserPreferences"];
 export type UpdatePreferencesRequest =
 	components["schemas"]["UpdatePreferencesReq"];
+export type UpdateProfileRequest = components["schemas"]["UpdateProfileReq"];
 export type UpdateAvatarSourceRequest =
 	components["schemas"]["UpdateAvatarSourceReq"];
 

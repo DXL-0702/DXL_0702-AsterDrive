@@ -169,6 +169,72 @@ async fn test_admin_can_read_uploaded_user_avatar() {
 }
 
 #[actix_web::test]
+async fn test_admin_can_read_user_display_name() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "named-user",
+            "email": "named-user@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "named-user",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let user_token = common::extract_cookie(&resp, "aster_access").unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/profile")
+        .insert_header(("Cookie", format!("aster_access={user_token}")))
+        .set_json(serde_json::json!({
+            "display_name": "Named User"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/users")
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let listed_user = body["data"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["id"] == user_id)
+        .expect("created user should be listed");
+    assert_eq!(listed_user["profile"]["display_name"], "Named User");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/users/{user_id}"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["profile"]["display_name"], "Named User");
+}
+
+#[actix_web::test]
 async fn test_admin_create_user() {
     let state = common::setup().await;
     let app = create_test_app!(state);

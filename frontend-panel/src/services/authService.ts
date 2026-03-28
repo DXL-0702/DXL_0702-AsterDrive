@@ -4,6 +4,7 @@ import type {
 	CheckResp,
 	MeResponse,
 	UpdatePreferencesRequest,
+	UpdateProfileRequest,
 	UserInfo,
 	UserPreferences,
 	UserProfileInfo,
@@ -30,6 +31,9 @@ export const authService = {
 
 	updatePreferences: (prefs: UpdatePreferencesRequest) =>
 		api.patch<UserPreferences>("/auth/preferences", prefs),
+
+	updateProfile: (profile: UpdateProfileRequest) =>
+		api.patch<UserProfileInfo>("/auth/profile", profile),
 
 	setAvatarSource: (source: Extract<AvatarSource, "none" | "gravatar">) =>
 		api.put<UserProfileInfo>("/auth/profile/avatar/source", { source }),

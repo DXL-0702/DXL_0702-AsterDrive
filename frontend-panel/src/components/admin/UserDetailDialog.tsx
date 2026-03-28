@@ -37,6 +37,7 @@ import {
 import { handleApiError } from "@/hooks/useApiError";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { formatBytes, formatDateAbsolute } from "@/lib/format";
+import { getNormalizedDisplayName, getUserDisplayName } from "@/lib/user";
 import {
 	adminPolicyService,
 	adminUserPolicyService,
@@ -140,6 +141,10 @@ export function UserDetailDialog({
 	const used = user.storage_used ?? 0;
 	const pct = quota > 0 ? Math.min((used / quota) * 100, 100) : 0;
 	const isInitialAdmin = user.id === 1;
+	const displayName = getUserDisplayName(user);
+	const showUsernameSecondary =
+		getNormalizedDisplayName(user.profile.display_name) !== null &&
+		displayName !== user.username;
 
 	const handleProfileSave = async () => {
 		const mb = Number.parseInt(quotaValue, 10);
@@ -259,14 +264,19 @@ export function UserDetailDialog({
 						<div className="space-y-3">
 							<UserAvatarImage
 								avatar={user.profile.avatar}
-								name={user.username}
+								name={displayName}
 								size="xl"
 								className="aspect-square w-full max-w-[220px]"
 							/>
 							<div className="space-y-1">
 								<h3 className="text-lg font-semibold text-foreground">
-									{user.username}
+									{displayName}
 								</h3>
+								{showUsernameSecondary ? (
+									<p className="text-sm text-muted-foreground">
+										@{user.username}
+									</p>
+								) : null}
 								<p className="text-sm text-muted-foreground">{user.email}</p>
 							</div>
 							<div className="flex flex-wrap gap-2">

@@ -290,7 +290,7 @@ describe("LoginPage", () => {
 			expect(screen.getByRole("button", { name: "sign_up" })).toBeDisabled();
 		});
 
-		fireEvent.change(screen.getByLabelText("username"), {
+		fireEvent.change(await screen.findByLabelText("username"), {
 			target: { value: "newuser" },
 		});
 

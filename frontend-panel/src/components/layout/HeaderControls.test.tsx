@@ -16,6 +16,7 @@ const mockState = vi.hoisted(() => ({
 		user: {
 			email: "alice@example.com",
 			profile: {
+				display_name: null,
 				avatar: {
 					source: "none",
 					url_512: null,
@@ -82,15 +83,25 @@ vi.mock("@/components/ui/badge", () => ({
 
 vi.mock("@/components/ui/button", () => ({
 	Button: ({
+		"aria-label": ariaLabel,
 		children,
 		className,
 		onClick,
+		title,
 	}: {
+		"aria-label"?: string;
 		children?: React.ReactNode;
 		className?: string;
 		onClick?: () => void;
+		title?: string;
 	}) => (
-		<button type="button" className={className} onClick={onClick}>
+		<button
+			type="button"
+			aria-label={ariaLabel}
+			className={className}
+			onClick={onClick}
+			title={title}
+		>
 			{children}
 		</button>
 	),
@@ -179,6 +190,7 @@ describe("HeaderControls", () => {
 		mockState.auth.user = {
 			email: "alice@example.com",
 			profile: {
+				display_name: null,
 				avatar: {
 					source: "none",
 					url_512: null,
@@ -239,10 +251,21 @@ describe("HeaderControls", () => {
 		expect(screen.getAllByRole("button", { name: /Home/i })).toHaveLength(2);
 	});
 
+	it("prefers display_name when rendering the account trigger and menu card", () => {
+		mockState.auth.user.profile.display_name = "Alice Chen";
+
+		render(<HeaderControls />);
+
+		expect(screen.getAllByText("Alice Chen")).toHaveLength(3);
+		expect(screen.getByText("@alice")).toBeInTheDocument();
+		expect(screen.getAllByText("avatar:Alice Chen")).toHaveLength(2);
+	});
+
 	it("hides the admin menu entry for non-admin users", () => {
 		mockState.auth.user = {
 			email: "bob@example.com",
 			profile: {
+				display_name: null,
 				avatar: {
 					source: "none",
 					url_512: null,

@@ -1,9 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SettingsPage from "@/pages/SettingsPage";
 
 const mockState = vi.hoisted(() => ({
 	authService: {
+		updateProfile: vi.fn(),
 		setAvatarSource: vi.fn(),
 		uploadAvatar: vi.fn(),
 	},
@@ -13,6 +14,7 @@ const mockState = vi.hoisted(() => ({
 			email: "alice@example.com",
 			id: 1,
 			profile: {
+				display_name: null,
 				avatar: {
 					source: "none",
 					url_512: null,
@@ -143,6 +145,8 @@ vi.mock("@/hooks/useApiError", () => ({
 
 vi.mock("@/services/authService", () => ({
 	authService: {
+		updateProfile: (...args: unknown[]) =>
+			mockState.authService.updateProfile(...args),
 		setAvatarSource: (...args: unknown[]) =>
 			mockState.authService.setAvatarSource(...args),
 		uploadAvatar: (...args: unknown[]) =>
@@ -168,6 +172,7 @@ describe("SettingsPage", () => {
 	beforeEach(() => {
 		mockState.authService.setAvatarSource.mockReset();
 		mockState.authService.uploadAvatar.mockReset();
+		mockState.authService.updateProfile.mockReset();
 		mockState.authStore.refreshUser.mockReset();
 		mockState.changeLanguage.mockReset();
 		mockState.fileStore.setViewMode.mockReset();
@@ -220,5 +225,23 @@ describe("SettingsPage", () => {
 		expect(mockState.changeLanguage).toHaveBeenCalledWith("en");
 		expect(mockState.preferenceSync).toHaveBeenCalledWith({ language: "en" });
 		expect(mockState.fileStore.setViewMode).toHaveBeenCalledWith("grid");
+	});
+
+	it("saves the display name through the profile endpoint", async () => {
+		render(<SettingsPage />);
+
+		fireEvent.change(screen.getByLabelText("settings:settings_display_name"), {
+			target: { value: "Alice Chen" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "save" }));
+
+		await waitFor(() =>
+			expect(mockState.authService.updateProfile).toHaveBeenCalledWith({
+				display_name: "Alice Chen",
+			}),
+		);
+		await waitFor(() =>
+			expect(mockState.authStore.refreshUser).toHaveBeenCalledTimes(1),
+		);
 	});
 });

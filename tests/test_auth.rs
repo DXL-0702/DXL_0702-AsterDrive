@@ -126,6 +126,7 @@ async fn test_auth_me() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["username"], "testuser");
     assert!(body["data"]["password_hash"].is_null());
+    assert!(body["data"]["profile"]["display_name"].is_null());
     assert_eq!(body["data"]["profile"]["avatar"]["source"], "none");
 }
 
@@ -479,6 +480,137 @@ async fn test_patch_preferences_sort_by_type() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["sort_by"], "type");
+}
+
+#[actix_web::test]
+async fn test_patch_profile_display_name_round_trip_and_clear() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/profile")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "display_name": "  Test User  "
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["display_name"], "Test User");
+    assert_eq!(body["data"]["avatar"]["source"], "none");
+
+    let (boundary, payload) = avatar_upload_payload();
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/profile/avatar/upload")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["display_name"], "Test User");
+    assert_eq!(body["data"]["avatar"]["source"], "upload");
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/profile")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "display_name": "   "
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert!(body["data"]["display_name"].is_null());
+    assert_eq!(body["data"]["avatar"]["source"], "upload");
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert!(body["data"]["profile"]["display_name"].is_null());
+    assert_eq!(body["data"]["profile"]["avatar"]["source"], "upload");
+}
+
+#[actix_web::test]
+async fn test_patch_profile_rejects_overlong_display_name() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/profile")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "display_name": "a".repeat(65)
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert!(body["data"]["profile"]["display_name"].is_null());
+}
+
+#[actix_web::test]
+async fn test_display_name_survives_avatar_source_switches() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/profile")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "display_name": "Avatar User"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let (boundary, payload) = avatar_upload_payload();
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/profile/avatar/upload")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["display_name"], "Avatar User");
+    assert_eq!(body["data"]["avatar"]["source"], "upload");
+
+    for source in ["gravatar", "none"] {
+        let req = test::TestRequest::put()
+            .uri("/api/v1/auth/profile/avatar/source")
+            .insert_header(("Cookie", format!("aster_access={token}")))
+            .set_json(serde_json::json!({ "source": source }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(body["data"]["display_name"], "Avatar User");
+        assert_eq!(body["data"]["avatar"]["source"], source);
+    }
 }
 
 #[actix_web::test]

@@ -42,6 +42,7 @@ pub struct AvatarInfo {
 
 #[derive(Debug, Clone, Serialize, ToSchema)]
 pub struct UserProfileInfo {
+    pub display_name: Option<String>,
     pub avatar: AvatarInfo,
 }
 
@@ -73,6 +74,22 @@ fn avatar_object_key(prefix: &str, size: u32) -> String {
 
 fn upload_prefix(user_id: i64, version: i32) -> String {
     format!("profile/avatar/{user_id}/v{version}")
+}
+
+fn normalize_display_name(value: &str) -> Result<Option<String>> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+
+    let char_count = trimmed.chars().count();
+    if char_count > 64 {
+        return Err(AsterError::validation_error(
+            "display name must be 64 characters or fewer",
+        ));
+    }
+
+    Ok(Some(trimmed.to_string()))
 }
 
 fn encode_webp(img: &DynamicImage) -> Result<Vec<u8>> {
@@ -232,6 +249,7 @@ pub fn build_profile_info(
     audience: AvatarAudience,
 ) -> UserProfileInfo {
     UserProfileInfo {
+        display_name: profile.and_then(|p| p.display_name.clone()),
         avatar: build_avatar_info(user, profile, audience),
     }
 }
@@ -305,6 +323,7 @@ pub async fn upload_avatar(
                 &state.db,
                 user_profile::ActiveModel {
                     user_id: Set(user_id),
+                    display_name: Set(None),
                     avatar_source: Set(AvatarSource::Upload),
                     avatar_policy_id: Set(Some(policy.id)),
                     avatar_key: Set(Some(prefix.clone())),
@@ -372,6 +391,7 @@ pub async fn set_avatar_source(
                 &state.db,
                 user_profile::ActiveModel {
                     user_id: Set(user_id),
+                    display_name: Set(None),
                     avatar_source: Set(source),
                     avatar_policy_id: Set(None),
                     avatar_key: Set(None),
@@ -387,6 +407,65 @@ pub async fn set_avatar_source(
     if let Some(previous) = existing.as_ref() {
         delete_upload_objects(state, previous).await;
     }
+
+    Ok(build_profile_info(
+        &user,
+        Some(&saved),
+        AvatarAudience::SelfUser,
+    ))
+}
+
+pub async fn update_profile(
+    state: &AppState,
+    user_id: i64,
+    display_name: Option<String>,
+) -> Result<UserProfileInfo> {
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
+
+    let Some(display_name) = display_name else {
+        return Ok(build_profile_info(
+            &user,
+            existing.as_ref(),
+            AvatarAudience::SelfUser,
+        ));
+    };
+
+    let normalized = normalize_display_name(&display_name)?;
+    let now = Utc::now();
+
+    let saved = match existing {
+        Some(current) => {
+            if current.display_name == normalized {
+                current
+            } else {
+                let mut active: user_profile::ActiveModel = current.into();
+                active.display_name = Set(normalized);
+                active.updated_at = Set(now);
+                user_profile_repo::update(&state.db, active).await?
+            }
+        }
+        None => {
+            if normalized.is_none() {
+                return Ok(build_profile_info(&user, None, AvatarAudience::SelfUser));
+            }
+
+            user_profile_repo::create(
+                &state.db,
+                user_profile::ActiveModel {
+                    user_id: Set(user_id),
+                    display_name: Set(normalized),
+                    avatar_source: Set(AvatarSource::None),
+                    avatar_policy_id: Set(None),
+                    avatar_key: Set(None),
+                    avatar_version: Set(0),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                },
+            )
+            .await?
+        }
+    };
 
     Ok(build_profile_info(
         &user,

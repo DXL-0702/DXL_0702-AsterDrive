@@ -1,4 +1,10 @@
-import { type ChangeEvent, useRef, useState } from "react";
+import {
+	type ChangeEvent,
+	type FormEvent,
+	useEffect,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { ColorPresetPicker } from "@/components/common/ColorPresetPicker";
@@ -12,8 +18,10 @@ import { UserAvatarImage } from "@/components/common/UserAvatarImage";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import type { IconName } from "@/components/ui/icon";
+import { Input } from "@/components/ui/input";
 import { handleApiError } from "@/hooks/useApiError";
 import { queuePreferenceSync } from "@/lib/preferenceSync";
+import { getNormalizedDisplayName, getUserDisplayName } from "@/lib/user";
 import { authService } from "@/services/authService";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
@@ -31,6 +39,8 @@ export default function SettingsPage() {
 	const refreshUser = useAuthStore((s) => s.refreshUser);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const [avatarBusy, setAvatarBusy] = useState(false);
+	const [profileBusy, setProfileBusy] = useState(false);
+	const [displayNameValue, setDisplayNameValue] = useState("");
 
 	const themeOptions: Array<{
 		value: ThemeMode;
@@ -60,6 +70,10 @@ export default function SettingsPage() {
 		{ value: "grid", label: t("files:grid_view"), icon: "Grid" },
 	];
 	const currentLanguage = i18n.language?.startsWith("zh") ? "zh" : "en";
+	const currentDisplayName =
+		getNormalizedDisplayName(user?.profile.display_name) ?? "";
+	const previewDisplayName =
+		getNormalizedDisplayName(displayNameValue) ?? getUserDisplayName(user);
 	const themeDescriptions: Record<ThemeMode, string> = {
 		light: t("settings:settings_theme_light_desc"),
 		dark: t("settings:settings_theme_dark_desc"),
@@ -80,6 +94,11 @@ export default function SettingsPage() {
 			: avatarSource === "upload"
 				? t("settings:settings_avatar_upload_desc")
 				: t("settings:settings_avatar_none_desc");
+	const displayNameChanged = displayNameValue.trim() !== currentDisplayName;
+
+	useEffect(() => {
+		setDisplayNameValue(user?.profile.display_name ?? "");
+	}, [user?.profile.display_name]);
 
 	const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
 		const file = event.target.files?.[0];
@@ -110,6 +129,21 @@ export default function SettingsPage() {
 		}
 	};
 
+	const handleProfileSubmit = async (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		if (!user || !displayNameChanged) return;
+		try {
+			setProfileBusy(true);
+			await authService.updateProfile({ display_name: displayNameValue });
+			await refreshUser();
+			toast.success(t("settings:settings_profile_updated"));
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setProfileBusy(false);
+		}
+	};
+
 	return (
 		<AppLayout>
 			<div className="min-h-0 flex-1 overflow-auto">
@@ -125,13 +159,48 @@ export default function SettingsPage() {
 							description={t("settings:settings_profile_desc")}
 						>
 							<SettingsRow
+								label={t("settings:settings_display_name")}
+								description={t("settings:settings_display_name_desc")}
+							>
+								<form
+									className="flex flex-col gap-3 rounded-2xl border bg-muted/20 p-4"
+									onSubmit={(event) => void handleProfileSubmit(event)}
+								>
+									<Input
+										value={displayNameValue}
+										maxLength={64}
+										disabled={profileBusy}
+										aria-label={t("settings:settings_display_name")}
+										placeholder={t(
+											"settings:settings_display_name_placeholder",
+										)}
+										onChange={(event) =>
+											setDisplayNameValue(event.target.value)
+										}
+									/>
+									<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+										<p className="text-xs text-muted-foreground">
+											{t("settings:settings_display_name_hint", {
+												username: user?.username ?? "",
+											})}
+										</p>
+										<Button
+											type="submit"
+											disabled={profileBusy || !displayNameChanged}
+										>
+											{t("save")}
+										</Button>
+									</div>
+								</form>
+							</SettingsRow>
+							<SettingsRow
 								label={t("settings:settings_avatar")}
 								description={avatarDescription}
 							>
 								<div className="flex flex-col gap-4 rounded-2xl border bg-muted/20 p-4 md:flex-row md:items-center">
 									<UserAvatarImage
 										avatar={user?.profile.avatar ?? null}
-										name={user?.username ?? "user"}
+										name={previewDisplayName}
 										size="lg"
 									/>
 									<div className="flex flex-wrap gap-2">

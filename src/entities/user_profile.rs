@@ -10,6 +10,7 @@ use crate::types::AvatarSource;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub user_id: i64,
+    pub display_name: Option<String>,
     pub avatar_source: AvatarSource,
     pub avatar_policy_id: Option<i64>,
     pub avatar_key: Option<String>,
