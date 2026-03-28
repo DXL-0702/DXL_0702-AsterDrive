@@ -5,6 +5,90 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.9] - 2026-03-28
+
+### Release Highlights
+
+- 新增**服务端用户偏好持久化**（主题、色板、视图模式、排序、语言），支持多设备自动同步
+- 新增**"我的分享"页面**，支持分享状态追踪（active / expired / exhausted / deleted）与分页管理
+- 文件和文件夹列表新增**分享与锁定状态标识**，一眼区分资源状态
+- 集成 **devicon 语言图标**，代码预览与文件类型图标全面升级
+- **拖放交互增强**：文件夹树支持跨组件拖拽、防止文件夹拖入自身或后代目录
+- **i18n 命名空间拆分**：common → core / errors / validation / offline + 按需加载 share / settings / webdav
+- **大规模前后端测试覆盖补充**，新增 4000+ 行单元测试 + 集成测试
+
+### Added
+
+- **服务端用户偏好持久化**
+  - 新增 `PATCH /api/v1/auth/preferences` 端点
+  - 支持主题模式、色板、视图模式、排序、语言等偏好
+  - 前端 debounce 同步，多设备登录自动同步
+  - 数据库 migration: users.config JSON 字段
+- **"我的分享"页面**
+  - 新增 `/my-shares` 路由，支持分享列表浏览与管理
+  - 后端 `ShareStatus` 枚举（active / expired / exhausted / deleted）
+  - `MyShareInfo` DTO 含资源名称、状态、剩余下载次数等
+- **文件/文件夹状态标识**
+  - 列表和网格视图新增分享状态与锁定状态图标
+  - `FileItemStatusIndicators` 组件
+- **devicon 语言图标集成**
+  - 新增 `language-icon.tsx` 组件，基于 devicon 图标库
+  - 代码预览文件类型图标升级
+  - 新增 CMap 提取脚本，PDF 中文显示支持
+- **拖放增强**
+  - 文件夹树支持拖拽到文件浏览器
+  - 防止文件夹拖入自身或后代目录
+  - 拖放逻辑提取到 `lib/dragDrop.ts` 公共模块
+- **代码预览 minimap**
+  - TextCodePreview 启用 minimap 功能
+- **分享查找索引**
+  - migration 新增 share 表查询索引，优化 token 和 resource 查询性能
+
+### Changed
+
+- **审计动作类型安全**
+  - 审计日志从字符串字面量重构为 `AuditAction` 枚举
+- **路由层逻辑下沉**
+  - auth、share_public、files、folders、batch 等路由层业务逻辑下沉至 service 层
+- **i18n 命名空间拆分**
+  - `common` 拆分为 `core`、`errors`、`validation`、`offline`
+  - 新增 `settings`、`share`、`webdav` 独立命名空间
+  - 初始加载与延迟加载分层优化
+- **错误日志分级**
+  - 5xx → `tracing::error`，4xx → `tracing::warn`
+  - 静默忽略的错误统一替换为 warn 日志
+- **前端公共模块提取**
+  - `ToolbarBar` 通用工具栏组件
+  - `AdminTableList` 通用管理后台列表组件
+  - 多个 hooks / utils 去重
+- **admin 用户更新优化**
+  - 合并为单次批量修改（role + status + quota）
+  - 补充审计日志
+- **分享页面布局重构**
+  - 提取 `ShareTopBar`、`ToolbarBar` 通用组件
+
+### Fixed
+
+- 修复分享下载链接使用相对路径导致下载失败的问题
+- 修复复制操作中 null 目标路径未正确解析为根目录的问题
+- 修复 fire-and-forget 操作中静默忽略的错误（改为 warn 日志）
+- 修复前端非空断言导致的潜在运行时错误
+- 修复布局滚动区域样式问题
+- 消除多处无障碍访问问题
+
+### Breaking Changes
+
+- **API**：`GET /api/v1/shares` 响应体从 `share::Model` 改为 `MyShareInfo` 分页对象，包含 `status` 枚举、`resource_name`、`remaining_downloads` 等新字段
+- **API**：`GET /api/v1/auth/me` 响应体从 `UserInfo` 改为 `MeResponse`，新增 `preferences` 字段
+- **API**：新增 `PATCH /api/v1/auth/preferences` 端点
+- **Frontend**：i18n 命名空间 `common` 已拆分为 `core` / `errors` / `validation` / `offline`，自定义前端需同步更新翻译引用
+
+---
+
+**统计数据**：
+- 291 files changed, 28,047 insertions(+), 2,216 deletions(-)
+- 24 commits
+
 ## [v0.0.1-alpha.8] - 2026-03-27
 
 ### Release Highlights
@@ -586,7 +670,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.8...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.9...HEAD
+[v0.0.1-alpha.9]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.8...v0.0.1-alpha.9
 [v0.0.1-alpha.8]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.7...v0.0.1-alpha.8
 [v0.0.1-alpha.7]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.6...v0.0.1-alpha.7
 [v0.0.1-alpha.6]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.5...v0.0.1-alpha.6

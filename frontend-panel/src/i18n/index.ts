@@ -75,7 +75,6 @@ i18n.use(initReactI18next).init({
 	fallbackLng: "en",
 	defaultNS: "core",
 	interpolation: { escapeValue: false },
-	showSupportNotice: false,
 });
 
 void ensureNamespaces(lang, DEFERRED_NAMESPACES);
