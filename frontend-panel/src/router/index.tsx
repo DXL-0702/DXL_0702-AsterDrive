@@ -28,10 +28,13 @@ function Loading() {
 function ProtectedRoute() {
 	const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 	const isChecking = useAuthStore((s) => s.isChecking);
-	if (isChecking) return <Loading />;
+	if (!isAuthenticated && isChecking) return <Loading />;
 	if (!isAuthenticated) return <Navigate to="/login" replace />;
 	return (
-		<div className="animate-in fade-in duration-300">
+		<div
+			className="animate-in fade-in duration-300"
+			aria-busy={isChecking || undefined}
+		>
 			<Suspense fallback={<Loading />}>
 				<Outlet />
 			</Suspense>
@@ -43,21 +46,24 @@ function AdminRoute() {
 	const user = useAuthStore((s) => s.user);
 	const isChecking = useAuthStore((s) => s.isChecking);
 	const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-	if (isChecking) return <Loading />;
+	if (!isAuthenticated && isChecking) return <Loading />;
 	if (!isAuthenticated) return <Navigate to="/login" replace />;
+	if (!user && isChecking) return <Loading />;
 	if (user?.role !== "admin") return <Navigate to="/" replace />;
 	return (
-		<Suspense fallback={<Loading />}>
-			<Outlet />
-		</Suspense>
+		<div aria-busy={isChecking || undefined}>
+			<Suspense fallback={<Loading />}>
+				<Outlet />
+			</Suspense>
+		</div>
 	);
 }
 
 function LoginGuard() {
 	const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 	const isChecking = useAuthStore((s) => s.isChecking);
-	if (isChecking) return <Loading />;
 	if (isAuthenticated) return <Navigate to="/" replace />;
+	if (isChecking) return <Loading />;
 	return (
 		<Suspense fallback={<Loading />}>
 			<Outlet />

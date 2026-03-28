@@ -30,7 +30,13 @@ export function FileThumbnail({
 						className="h-4 w-4"
 					/>
 				) : (
-					<img src={blobUrl} alt="" className="h-full w-full object-cover" />
+					<img
+						src={blobUrl}
+						alt=""
+						loading="lazy"
+						decoding="async"
+						className="h-full w-full object-cover"
+					/>
 				)}
 			</div>
 		);
@@ -47,6 +53,12 @@ export function FileThumbnail({
 	}
 
 	return (
-		<img src={blobUrl} alt="" className="h-full w-auto shrink-0 max-w-none" />
+		<img
+			src={blobUrl}
+			alt=""
+			loading="lazy"
+			decoding="async"
+			className="h-full w-auto shrink-0 max-w-none"
+		/>
 	);
 }

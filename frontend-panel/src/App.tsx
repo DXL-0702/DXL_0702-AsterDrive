@@ -3,7 +3,6 @@ import { RouterProvider } from "react-router-dom";
 import { Toaster } from "sonner";
 import { OfflineBootFallback } from "@/components/layout/OfflineBootFallback";
 import { usePwaUpdate } from "@/hooks/usePwaUpdate";
-import { warmupRouteChunks } from "@/lib/pwaWarmup";
 import { router } from "@/router";
 import { useAuthStore } from "@/stores/authStore";
 import { useThemeStore } from "@/stores/themeStore";
@@ -31,7 +30,17 @@ function App() {
 
 	useEffect(() => {
 		if (isChecking || !isAuthenticated) return;
-		warmupRouteChunks(userRole === "admin" ? "admin" : "user");
+
+		let cancelled = false;
+
+		void import("@/lib/pwaWarmup").then(({ warmupRouteChunks }) => {
+			if (cancelled) return;
+			warmupRouteChunks(userRole === "admin" ? "admin" : "user");
+		});
+
+		return () => {
+			cancelled = true;
+		};
 	}, [isAuthenticated, isChecking, userRole]);
 
 	return (

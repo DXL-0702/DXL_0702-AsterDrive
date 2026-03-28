@@ -1,5 +1,6 @@
+import { useVirtualizer } from "@tanstack/react-virtual";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileContextMenu } from "@/components/files/FileContextMenu";
 import {
@@ -35,6 +36,7 @@ import type { FileListItem, FolderListItem } from "@/types/api";
 interface FileTableProps {
 	folders: FolderListItem[];
 	files: FileListItem[];
+	scrollElement?: HTMLDivElement | null;
 	breadcrumbPathIds?: number[];
 	onFolderOpen: (id: number, name: string) => void;
 	onFileClick: (file: FileListItem) => void;
@@ -60,6 +62,13 @@ interface FileTableProps {
 	fadingFolderIds?: Set<number>;
 }
 
+type TableRowItem =
+	| { type: "folder"; item: FolderListItem }
+	| { type: "file"; item: FileListItem };
+
+const TABLE_COLUMN_COUNT = 4;
+const TABLE_ROW_ESTIMATE = 52;
+
 function SortIcon({
 	column,
 	current,
@@ -80,6 +89,7 @@ function SortIcon({
 export function FileTable({
 	folders,
 	files,
+	scrollElement,
 	breadcrumbPathIds = [],
 	onFolderOpen,
 	onFileClick,
@@ -190,6 +200,172 @@ export function FileTable({
 		onMoveToFolder?.(data.fileIds, data.folderIds, folderId);
 	};
 
+	const renderFolderRow = (folder: FolderListItem) => (
+		<FileContextMenu
+			renderTrigger
+			key={`folder-${folder.id}`}
+			isFolder
+			isLocked={folder.is_locked ?? false}
+			onShare={() =>
+				onShare({
+					folderId: folder.id,
+					name: folder.name,
+				})
+			}
+			onCopy={() => onCopy("folder", folder.id)}
+			onMove={onMove ? () => onMove("folder", folder.id) : undefined}
+			onRename={
+				onRename ? () => onRename("folder", folder.id, folder.name) : undefined
+			}
+			onToggleLock={() =>
+				onToggleLock("folder", folder.id, folder.is_locked ?? false)
+			}
+			onDelete={() => onDelete("folder", folder.id)}
+			onInfo={() => onInfo?.("folder", folder.id)}
+		>
+			<TableRow
+				data-folder-drop-target="true"
+				className={cn(
+					"cursor-pointer transition-all duration-300",
+					dragOverId === folder.id && "ring-2 ring-primary bg-accent/30",
+					fadingFolderIds?.has(folder.id) && "opacity-0 scale-95",
+				)}
+				draggable
+				onDragStart={(e) => handleDragStart(e, folder.id, true)}
+				onDragOver={(e) => handleFolderDragOver(e, folder.id)}
+				onDragLeave={() => setDragOverId(null)}
+				onDrop={(e) => handleFolderDrop(e, folder.id)}
+				onClick={() => onFolderOpen(folder.id, folder.name)}
+			>
+				<TableCell
+					className="w-12 pl-3 pr-0"
+					onClick={(e) => e.stopPropagation()}
+				>
+					<div className="flex justify-center">
+						<ItemCheckbox
+							checked={selectedFolderIds.has(folder.id)}
+							onChange={() => toggleFolderSelection(folder.id)}
+						/>
+					</div>
+				</TableCell>
+				<FolderNameCell folder={folder} />
+				<FolderSizeCell />
+				<UpdatedAtCell updatedAt={folder.updated_at} />
+			</TableRow>
+		</FileContextMenu>
+	);
+
+	const renderFileRow = (file: FileListItem) => (
+		<FileContextMenu
+			renderTrigger
+			key={`file-${file.id}`}
+			isFolder={false}
+			isLocked={file.is_locked ?? false}
+			onDownload={() => onDownload(file.id, file.name)}
+			onShare={() => onShare({ fileId: file.id, name: file.name })}
+			onCopy={() => onCopy("file", file.id)}
+			onMove={onMove ? () => onMove("file", file.id) : undefined}
+			onRename={
+				onRename ? () => onRename("file", file.id, file.name) : undefined
+			}
+			onToggleLock={() =>
+				onToggleLock("file", file.id, file.is_locked ?? false)
+			}
+			onDelete={() => onDelete("file", file.id)}
+			onVersions={onVersions ? () => onVersions(file.id) : undefined}
+			onInfo={() => onInfo?.("file", file.id)}
+		>
+			<TableRow
+				className={cn(
+					"cursor-pointer transition-all duration-300",
+					fadingFileIds?.has(file.id) && "opacity-0 scale-95",
+				)}
+				draggable
+				onDragStart={(e) => handleDragStart(e, file.id, false)}
+				onClick={() => onFileClick(file)}
+			>
+				<TableCell
+					className="w-12 pl-3 pr-0"
+					onClick={(e) => e.stopPropagation()}
+				>
+					<div className="flex justify-center">
+						<ItemCheckbox
+							checked={selectedFileIds.has(file.id)}
+							onChange={() => toggleFileSelection(file.id)}
+						/>
+					</div>
+				</TableCell>
+				<FileNameCell file={file} />
+				<FileSizeCell size={file.size} />
+				<UpdatedAtCell updatedAt={file.updated_at} />
+			</TableRow>
+		</FileContextMenu>
+	);
+
+	const tableRows = useMemo<TableRowItem[]>(
+		() => [
+			...folders.map((item) => ({ type: "folder", item }) as const),
+			...files.map((item) => ({ type: "file", item }) as const),
+		],
+		[files, folders],
+	);
+
+	const virtualizer = useVirtualizer({
+		count: scrollElement ? tableRows.length : 0,
+		getScrollElement: () => scrollElement ?? null,
+		estimateSize: () => TABLE_ROW_ESTIMATE,
+		overscan: 10,
+	});
+
+	useEffect(() => {
+		if (!scrollElement) return;
+		virtualizer.measure();
+	}, [scrollElement, tableRows.length, virtualizer]);
+
+	const renderSpacerRow = (key: string, height: number) => (
+		<TableRow key={key} aria-hidden className="border-0 hover:bg-transparent">
+			<TableCell
+				colSpan={TABLE_COLUMN_COUNT}
+				className="p-0"
+				style={{ height }}
+			/>
+		</TableRow>
+	);
+
+	const renderRows = () => {
+		if (!scrollElement) {
+			return (
+				<>
+					{folders.map(renderFolderRow)}
+					{files.map(renderFileRow)}
+				</>
+			);
+		}
+
+		const virtualRows = virtualizer.getVirtualItems();
+		const firstVirtualRow = virtualRows[0];
+		const lastVirtualRow = virtualRows[virtualRows.length - 1];
+		const paddingTop = firstVirtualRow?.start ?? 0;
+		const paddingBottom = Math.max(
+			0,
+			virtualizer.getTotalSize() - (lastVirtualRow?.end ?? 0),
+		);
+
+		return (
+			<>
+				{paddingTop > 0 && renderSpacerRow("spacer-top", paddingTop)}
+				{virtualRows.map((virtualRow) => {
+					const row = tableRows[virtualRow.index];
+					if (!row) return null;
+					return row.type === "folder"
+						? renderFolderRow(row.item)
+						: renderFileRow(row.item);
+				})}
+				{paddingBottom > 0 && renderSpacerRow("spacer-bottom", paddingBottom)}
+			</>
+		);
+	};
+
 	return (
 		<Table>
 			<TableHeader>
@@ -232,110 +408,7 @@ export function FileTable({
 					</TableHead>
 				</TableRow>
 			</TableHeader>
-			<TableBody>
-				{folders.map((folder) => (
-					<FileContextMenu
-						renderTrigger
-						key={`folder-${folder.id}`}
-						isFolder
-						isLocked={folder.is_locked ?? false}
-						onShare={() =>
-							onShare({
-								folderId: folder.id,
-								name: folder.name,
-							})
-						}
-						onCopy={() => onCopy("folder", folder.id)}
-						onMove={onMove ? () => onMove("folder", folder.id) : undefined}
-						onRename={
-							onRename
-								? () => onRename("folder", folder.id, folder.name)
-								: undefined
-						}
-						onToggleLock={() =>
-							onToggleLock("folder", folder.id, folder.is_locked ?? false)
-						}
-						onDelete={() => onDelete("folder", folder.id)}
-						onInfo={() => onInfo?.("folder", folder.id)}
-					>
-						<TableRow
-							data-folder-drop-target="true"
-							className={cn(
-								"cursor-pointer transition-all duration-300",
-								dragOverId === folder.id && "ring-2 ring-primary bg-accent/30",
-								fadingFolderIds?.has(folder.id) && "opacity-0 scale-95",
-							)}
-							draggable
-							onDragStart={(e) => handleDragStart(e, folder.id, true)}
-							onDragOver={(e) => handleFolderDragOver(e, folder.id)}
-							onDragLeave={() => setDragOverId(null)}
-							onDrop={(e) => handleFolderDrop(e, folder.id)}
-							onClick={() => onFolderOpen(folder.id, folder.name)}
-						>
-							<TableCell
-								className="w-12 pl-3 pr-0"
-								onClick={(e) => e.stopPropagation()}
-							>
-								<div className="flex justify-center">
-									<ItemCheckbox
-										checked={selectedFolderIds.has(folder.id)}
-										onChange={() => toggleFolderSelection(folder.id)}
-									/>
-								</div>
-							</TableCell>
-							<FolderNameCell folder={folder} />
-							<FolderSizeCell />
-							<UpdatedAtCell updatedAt={folder.updated_at} />
-						</TableRow>
-					</FileContextMenu>
-				))}
-				{files.map((file) => (
-					<FileContextMenu
-						renderTrigger
-						key={`file-${file.id}`}
-						isFolder={false}
-						isLocked={file.is_locked ?? false}
-						onDownload={() => onDownload(file.id, file.name)}
-						onShare={() => onShare({ fileId: file.id, name: file.name })}
-						onCopy={() => onCopy("file", file.id)}
-						onMove={onMove ? () => onMove("file", file.id) : undefined}
-						onRename={
-							onRename ? () => onRename("file", file.id, file.name) : undefined
-						}
-						onToggleLock={() =>
-							onToggleLock("file", file.id, file.is_locked ?? false)
-						}
-						onDelete={() => onDelete("file", file.id)}
-						onVersions={onVersions ? () => onVersions(file.id) : undefined}
-						onInfo={() => onInfo?.("file", file.id)}
-					>
-						<TableRow
-							className={cn(
-								"cursor-pointer transition-all duration-300",
-								fadingFileIds?.has(file.id) && "opacity-0 scale-95",
-							)}
-							draggable
-							onDragStart={(e) => handleDragStart(e, file.id, false)}
-							onClick={() => onFileClick(file)}
-						>
-							<TableCell
-								className="w-12 pl-3 pr-0"
-								onClick={(e) => e.stopPropagation()}
-							>
-								<div className="flex justify-center">
-									<ItemCheckbox
-										checked={selectedFileIds.has(file.id)}
-										onChange={() => toggleFileSelection(file.id)}
-									/>
-								</div>
-							</TableCell>
-							<FileNameCell file={file} />
-							<FileSizeCell size={file.size} />
-							<UpdatedAtCell updatedAt={file.updated_at} />
-						</TableRow>
-					</FileContextMenu>
-				))}
-			</TableBody>
+			<TableBody>{renderRows()}</TableBody>
 		</Table>
 	);
 }

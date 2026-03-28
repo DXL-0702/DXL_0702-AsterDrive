@@ -4,7 +4,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-function getNodeModulePackageName(id: string) {
+function getNodeModuleInfo(id: string) {
 	const normalizedId = id.replaceAll("\\", "/");
 	const nodeModulesSegment = "/node_modules/";
 	const nodeModulesIndex = normalizedId.lastIndexOf(nodeModulesSegment);
@@ -14,15 +14,70 @@ function getNodeModulePackageName(id: string) {
 	const modulePath = normalizedId.slice(
 		nodeModulesIndex + nodeModulesSegment.length,
 	);
-	const [scopeOrName, maybeName] = modulePath.split("/");
+	const [scopeOrName, maybeName, ...rest] = modulePath.split("/");
 
 	if (!scopeOrName) return null;
 	if (scopeOrName.startsWith("@")) {
-		return maybeName ? `${scopeOrName}/${maybeName}` : null;
+		if (!maybeName) return null;
+		return {
+			packageName: `${scopeOrName}/${maybeName}`,
+			subPath: rest.join("/"),
+		};
 	}
 
-	return scopeOrName;
+	return {
+		packageName: scopeOrName,
+		subPath: [maybeName, ...rest].filter(Boolean).join("/"),
+	};
 }
+
+const BASE_UI_FORM_MODULES = new Set([
+	"button",
+	"checkbox",
+	"checkbox-group",
+	"field",
+	"fieldset",
+	"form",
+	"input",
+	"number-field",
+	"radio",
+	"radio-group",
+	"toggle",
+	"toggle-group",
+]);
+
+const BASE_UI_OVERLAY_MODULES = new Set([
+	"alert-dialog",
+	"autocomplete",
+	"combobox",
+	"context-menu",
+	"dialog",
+	"drawer",
+	"floating-ui-react",
+	"menu",
+	"menubar",
+	"popover",
+	"preview-card",
+	"select",
+	"toast",
+	"tooltip",
+]);
+
+const BASE_UI_CONTROL_MODULES = new Set([
+	"accordion",
+	"avatar",
+	"collapsible",
+	"composite",
+	"meter",
+	"navigation-menu",
+	"progress",
+	"scroll-area",
+	"separator",
+	"slider",
+	"switch",
+	"tabs",
+	"toolbar",
+]);
 
 export default defineConfig(({ command }) => {
 	const isDevServer = command === "serve";
@@ -130,8 +185,11 @@ export default defineConfig(({ command }) => {
 			rollupOptions: {
 				output: {
 					manualChunks(id) {
-						const packageName = getNodeModulePackageName(id);
-						if (!packageName) return;
+						const moduleInfo = getNodeModuleInfo(id);
+						if (!moduleInfo) return;
+
+						const { packageName, subPath } = moduleInfo;
+						const baseUiModule = subPath.split("/")[0];
 
 						if (
 							packageName === "react" ||
@@ -148,34 +206,44 @@ export default defineConfig(({ command }) => {
 							return "vendor-router";
 						}
 
-						if (
-							packageName === "@base-ui/react" ||
-							packageName === "@floating-ui/react-dom"
-						) {
-							return "vendor-ui";
+						if (packageName === "@base-ui/react") {
+							if (BASE_UI_FORM_MODULES.has(baseUiModule)) {
+								return "vendor-ui-forms";
+							}
+							if (BASE_UI_OVERLAY_MODULES.has(baseUiModule)) {
+								return "vendor-ui-overlays";
+							}
+							if (BASE_UI_CONTROL_MODULES.has(baseUiModule)) {
+								return "vendor-ui-controls";
+							}
+							return "vendor-ui-base";
+						}
+
+						if (packageName === "@floating-ui/react-dom") {
+							return "vendor-ui-overlays";
 						}
 
 						if (packageName === "i18next" || packageName === "react-i18next") {
 							return "vendor-i18n";
 						}
 
-						if (
-							packageName === "react-icons" ||
-							packageName === "@devicon/react" ||
-							packageName === "react-devicons"
-						) {
-							return "vendor-icons";
+						if (packageName === "react-icons") {
+							return "vendor-react-icons";
 						}
 
 						if (
-							packageName === "react-markdown" ||
-							packageName === "remark-gfm" ||
-							packageName === "rehype-sanitize" ||
-							packageName === "prism-react-renderer" ||
-							packageName === "papaparse" ||
-							packageName === "xml-formatter"
+							packageName === "@devicon/react" ||
+							packageName === "react-devicons"
 						) {
-							return "vendor-preview";
+							return "vendor-devicons";
+						}
+
+						if (packageName === "papaparse") {
+							return "preview-data";
+						}
+
+						if (packageName === "xml-formatter") {
+							return "preview-xml";
 						}
 					},
 				},

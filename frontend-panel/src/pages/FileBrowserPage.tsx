@@ -136,25 +136,26 @@ export default function FileBrowserPage() {
 
 	const uploadAreaRef = useRef<UploadAreaHandle | null>(null);
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
-	const scrollAreaRef = useRef<HTMLDivElement | null>(null);
+	const [scrollViewport, setScrollViewport] = useState<HTMLDivElement | null>(
+		null,
+	);
 
 	// Infinite scroll: load more files when sentinel is visible
 	useEffect(() => {
 		if (isSearching || !hasMoreFiles() || loadingMore) return;
 		const el = sentinelRef.current;
 		if (!el) return;
-		// scrollAreaRef.current is the Viewport element (via forwardRef)
 		const observer = new IntersectionObserver(
 			(entries) => {
 				if (entries[0].isIntersecting) {
 					void loadMoreFiles();
 				}
 			},
-			{ root: scrollAreaRef.current ?? null, rootMargin: "200px" },
+			{ root: scrollViewport, rootMargin: "200px" },
 		);
 		observer.observe(el);
 		return () => observer.disconnect();
-	}, [isSearching, hasMoreFiles, loadingMore, loadMoreFiles]);
+	}, [isSearching, hasMoreFiles, loadingMore, loadMoreFiles, scrollViewport]);
 	const [createFolderOpen, setCreateFolderOpen] = useState(false);
 	const [createFileOpen, setCreateFileOpen] = useState(false);
 	const [fadingFileIds, setFadingFileIds] = useState<Set<number>>(new Set());
@@ -464,6 +465,7 @@ export default function FileBrowserPage() {
 	const sharedProps = {
 		folders: displayFolders,
 		files: displayFiles,
+		scrollElement: scrollViewport,
 		breadcrumbPathIds,
 		onFolderOpen: (id: number, name: string) =>
 			navigate(`/folder/${id}?name=${encodeURIComponent(name)}`),
@@ -509,6 +511,9 @@ export default function FileBrowserPage() {
 		},
 		[],
 	);
+	const handleScrollViewportRef = useCallback((node: HTMLDivElement | null) => {
+		setScrollViewport(node);
+	}, []);
 	const pageCore = (
 		<>
 			{/* Breadcrumb / local controls */}
@@ -621,7 +626,10 @@ export default function FileBrowserPage() {
 				)}
 				<ContextMenu>
 					<ContextMenuTrigger className="flex min-h-0 flex-1 flex-col">
-						<ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1">
+						<ScrollArea
+							ref={handleScrollViewportRef}
+							className="min-h-0 flex-1"
+						>
 							{loading ? (
 								viewMode === "grid" ? (
 									<SkeletonFileGrid />

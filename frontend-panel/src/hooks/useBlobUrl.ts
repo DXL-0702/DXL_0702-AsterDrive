@@ -11,7 +11,32 @@ interface BlobCacheEntry {
 }
 
 const BLOB_URL_REVOKE_DELAY = 30_000;
+const MAX_CONCURRENT_BLOB_FETCHES = 6;
 const blobUrlCache = new Map<string, BlobCacheEntry>();
+const pendingBlobFetches: Array<() => void> = [];
+let activeBlobFetches = 0;
+
+function scheduleBlobFetch<T>(task: () => Promise<T>) {
+	return new Promise<T>((resolve, reject) => {
+		const run = () => {
+			activeBlobFetches += 1;
+			task()
+				.then(resolve, reject)
+				.finally(() => {
+					activeBlobFetches = Math.max(0, activeBlobFetches - 1);
+					const next = pendingBlobFetches.shift();
+					next?.();
+				});
+		};
+
+		if (activeBlobFetches < MAX_CONCURRENT_BLOB_FETCHES) {
+			run();
+			return;
+		}
+
+		pendingBlobFetches.push(run);
+	});
+}
 
 function revokeEntry(path: string, entry: BlobCacheEntry) {
 	if (entry.revokeTimer) {
@@ -51,12 +76,14 @@ async function acquireBlobUrl(path: string): Promise<string> {
 	const MAX_RETRIES = 5;
 
 	const fetchWithRetry = async (attempt: number): Promise<string> => {
-		const response = await api.client.get(path, {
-			headers,
-			responseType: "blob",
-			validateStatus: (status) =>
-				status === 200 || status === 304 || status === 202,
-		});
+		const response = await scheduleBlobFetch(() =>
+			api.client.get(path, {
+				headers,
+				responseType: "blob",
+				validateStatus: (status) =>
+					status === 200 || status === 304 || status === 202,
+			}),
+		);
 
 		// 202 = 缩略图正在后台生成，稍后重试
 		if (response.status === 202) {
