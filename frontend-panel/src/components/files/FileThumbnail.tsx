@@ -47,6 +47,6 @@ export function FileThumbnail({
 	}
 
 	return (
-		<img src={blobUrl} alt="" className="h-20 w-20 rounded object-cover" />
+		<img src={blobUrl} alt="" className="h-full w-auto shrink-0 max-w-none" />
 	);
 }

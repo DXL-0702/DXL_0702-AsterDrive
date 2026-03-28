@@ -22,6 +22,11 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 	import.meta.url,
 ).toString();
 
+const pdfDocumentOptions = {
+	cMapUrl: `${import.meta.env.BASE_URL}pdfjs/${pdfjs.version}/cmaps/`,
+	cMapPacked: true,
+} satisfies NonNullable<ComponentProps<typeof Document>["options"]>;
+
 const MIN_ZOOM = 50;
 const MAX_ZOOM = 250;
 const ZOOM_STEP = 25;
@@ -478,6 +483,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 			>
 				<Document
 					file={blobUrl}
+					options={pdfDocumentOptions}
 					onLoadSuccess={onDocumentLoadSuccess}
 					onLoadError={onDocumentLoadError}
 					loading={

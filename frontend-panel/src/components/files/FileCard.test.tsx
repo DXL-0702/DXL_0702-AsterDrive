@@ -149,7 +149,7 @@ describe("FileCard", () => {
 	});
 
 	it("renders file thumbnails and compact status indicators for files", () => {
-		render(
+		const { container } = render(
 			<FileCard
 				item={file as never}
 				isFolder={false}
@@ -179,6 +179,9 @@ describe("FileCard", () => {
 		expect(screen.getByTestId("status-indicators")).toHaveAttribute(
 			"data-compact",
 			"true",
+		);
+		expect(container.querySelector("[data-drag-preview-media]")).toHaveClass(
+			"overflow-hidden",
 		);
 	});
 

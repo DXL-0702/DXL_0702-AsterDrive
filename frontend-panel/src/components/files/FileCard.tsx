@@ -135,7 +135,7 @@ export function FileCard({
 
 			<div
 				data-drag-preview-media
-				className="mb-2 flex h-20 w-full items-center justify-center rounded-lg bg-muted/40"
+				className="mb-2 flex h-20 w-full items-center justify-center overflow-hidden rounded-lg bg-muted/40"
 			>
 				{isFolder ? (
 					<Icon name="Folder" className="h-12 w-12 text-amber-500" />

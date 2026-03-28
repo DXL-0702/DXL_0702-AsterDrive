@@ -4,7 +4,10 @@
 	"version": "0.0.0",
 	"type": "module",
 	"scripts": {
+		"extract:pdfjs-cmaps": "node ./scripts/extract-pdfjs-cmaps.mjs",
+		"predev": "bun run extract:pdfjs-cmaps",
 		"dev": "vite",
+		"prebuild": "bun run extract:pdfjs-cmaps",
 		"build": "tsgo -b && vite build",
 		"generate-api": "openapi-typescript ./generated/openapi.json -o ./src/services/api.generated.ts",
 		"check": "biome check .",
@@ -16,6 +19,7 @@
 	},
 	"dependencies": {
 		"@base-ui/react": "^1.3.0",
+		"@devicon/react": "^0.0.3",
 		"@fontsource-variable/geist": "^5.2.8",
 		"@monaco-editor/react": "^4.7.0",
 		"@tailwindcss/typography": "^0.5.19",
@@ -56,6 +60,7 @@
 		"@types/react-dom": "^19.2.3",
 		"@typescript/native-preview": "^7.0.0-dev.20260327.2",
 		"@vitejs/plugin-react": "^6.0.1",
+		"@vitest/coverage-v8": "^4.1.2",
 		"jsdom": "^29.0.1",
 		"msw": "^2.12.14",
 		"openapi-fetch": "^0.17.0",

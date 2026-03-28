@@ -132,10 +132,7 @@ export function FilePreviewDialog({
 			return (
 				<div className="flex flex-1 items-center justify-center p-6">
 					<div className="flex flex-col items-center gap-4">
-						<Icon
-							name="File"
-							className="h-10 w-10 text-muted-foreground"
-						/>
+						<Icon name="File" className="h-10 w-10 text-muted-foreground" />
 						<p className="text-sm text-muted-foreground">
 							{t("files:choose_open_method")}
 						</p>
@@ -146,10 +143,7 @@ export function FilePreviewDialog({
 									variant="outline"
 									onClick={() => {
 										setMode(option.mode);
-										setStoredOpenWithPreference(
-											profile.category,
-											option.mode,
-										);
+										setStoredOpenWithPreference(profile.category, option.mode);
 									}}
 								>
 									<Icon name={option.icon} className="mr-2 h-4 w-4" />

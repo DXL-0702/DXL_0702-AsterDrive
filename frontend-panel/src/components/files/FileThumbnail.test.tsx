@@ -98,9 +98,10 @@ describe("FileThumbnail", () => {
 
 		expect(container.querySelector("img")).toHaveAttribute("src", "blob:2");
 		expect(container.querySelector("img")).toHaveClass(
-			"h-20",
-			"w-20",
-			"rounded",
+			"h-full",
+			"w-auto",
+			"shrink-0",
+			"max-w-none",
 		);
 	});
 });

@@ -4,6 +4,26 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
+function getNodeModulePackageName(id: string) {
+	const normalizedId = id.replaceAll("\\", "/");
+	const nodeModulesSegment = "/node_modules/";
+	const nodeModulesIndex = normalizedId.lastIndexOf(nodeModulesSegment);
+
+	if (nodeModulesIndex === -1) return null;
+
+	const modulePath = normalizedId.slice(
+		nodeModulesIndex + nodeModulesSegment.length,
+	);
+	const [scopeOrName, maybeName] = modulePath.split("/");
+
+	if (!scopeOrName) return null;
+	if (scopeOrName.startsWith("@")) {
+		return maybeName ? `${scopeOrName}/${maybeName}` : null;
+	}
+
+	return scopeOrName;
+}
+
 export default defineConfig(({ command }) => {
 	const isDevServer = command === "serve";
 
@@ -43,7 +63,7 @@ export default defineConfig(({ command }) => {
 				workbox: {
 					globPatterns: isDevServer
 						? []
-						: ["**/*.{html,js,css,ico,png,svg,woff2,mjs}"],
+						: ["**/*.{html,js,css,ico,png,svg,woff2,mjs,bcmap}"],
 					navigateFallback: "index.html",
 					navigateFallbackDenylist: [/^\/api\//, /^\/health\//],
 					runtimeCaching: [
@@ -84,18 +104,66 @@ export default defineConfig(({ command }) => {
 			rollupOptions: {
 				output: {
 					manualChunks(id) {
-						if (!id.includes("node_modules")) return;
+						const packageName = getNodeModulePackageName(id);
+						if (!packageName) return;
+
 						if (
-							id.includes("/react-dom/") ||
-							id.includes("/react/") ||
-							id.includes("/scheduler/")
-						)
+							packageName === "react" ||
+							packageName === "react-dom" ||
+							packageName === "scheduler"
+						) {
 							return "vendor-react";
-						if (id.includes("/react-router")) return "vendor-router";
-						if (id.includes("/@base-ui/")) return "vendor-ui";
-						if (id.includes("/i18next") || id.includes("/react-i18next/"))
+						}
+
+						if (
+							packageName === "react-router" ||
+							packageName === "react-router-dom"
+						) {
+							return "vendor-router";
+						}
+
+						if (
+							packageName === "@base-ui/react" ||
+							packageName === "@floating-ui/react-dom"
+						) {
+							return "vendor-ui";
+						}
+
+						if (packageName === "i18next" || packageName === "react-i18next") {
 							return "vendor-i18n";
-						if (id.includes("/react-icons/")) return "vendor-icons";
+						}
+
+						if (
+							packageName === "react-icons" ||
+							packageName === "@devicon/react"
+						) {
+							return "vendor-icons";
+						}
+
+						if (
+							packageName === "@monaco-editor/react" ||
+							packageName === "monaco-editor"
+						) {
+							return "vendor-editor";
+						}
+
+						if (
+							packageName === "react-pdf" ||
+							packageName === "pdfjs-dist"
+						) {
+							return "vendor-pdf";
+						}
+
+						if (
+							packageName === "react-markdown" ||
+							packageName === "remark-gfm" ||
+							packageName === "rehype-sanitize" ||
+							packageName === "prism-react-renderer" ||
+							packageName === "papaparse" ||
+							packageName === "xml-formatter"
+						) {
+							return "vendor-preview";
+						}
 					},
 				},
 			},

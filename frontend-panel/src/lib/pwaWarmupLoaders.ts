@@ -13,6 +13,11 @@ const loginRouteWarmupLoader = {
 export const userRouteWarmupLoaders = [
 	loginRouteWarmupLoader,
 	{
+		key: "route:my-shares",
+		label: "MySharesPage",
+		load: () => import("@/pages/MySharesPage"),
+	},
+	{
 		key: "route:trash",
 		label: "TrashPage",
 		load: () => import("@/pages/TrashPage"),
@@ -67,6 +72,14 @@ export const userFeatureWarmupLoaders = [
 		key: "feature:file-preview",
 		label: "FilePreview",
 		load: () => import("@/components/files/FilePreview"),
+	},
+	{
+		key: "feature:language-icons",
+		label: "LanguageIcons",
+		load: () =>
+			import("@/components/ui/language-icon").then((module) =>
+				module.loadLanguageIcons(),
+			),
 	},
 	{
 		key: "feature:upload-area",

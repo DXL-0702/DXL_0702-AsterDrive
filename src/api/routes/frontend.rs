@@ -71,6 +71,17 @@ impl FrontendService {
         }
     }
 
+    pub async fn handle_pdfjs_assets(req: HttpRequest) -> HttpResponse {
+        let path = req.match_info().query("path");
+        let asset_path = format!("pdfjs/{path}");
+        let content_type = Self::get_content_type(path);
+
+        match Self::load_file(&asset_path).await {
+            Some(data) => HttpResponse::Ok().content_type(content_type).body(data),
+            None => HttpResponse::NotFound().body("File not found"),
+        }
+    }
+
     pub async fn handle_favicon(_req: HttpRequest) -> HttpResponse {
         match Self::load_file("favicon.svg").await {
             Some(data) => HttpResponse::Ok().content_type("image/svg+xml").body(data),
@@ -107,6 +118,7 @@ impl FrontendService {
             Some("woff") => "font/woff",
             Some("woff2") => "font/woff2",
             Some("ttf") => "font/ttf",
+            Some("bcmap") => "application/octet-stream",
             _ => "application/octet-stream",
         }
     }
@@ -123,6 +135,10 @@ pub fn routes() -> actix_web::Scope {
         .route(
             "/static/{path:.*}",
             web::get().to(FrontendService::handle_static),
+        )
+        .route(
+            "/pdfjs/{path:.*}",
+            web::get().to(FrontendService::handle_pdfjs_assets),
         )
         .route(
             "/favicon.svg",
@@ -143,4 +159,22 @@ pub fn routes() -> actix_web::Scope {
             "/{path:.*}",
             web::get().to(FrontendService::handle_spa_fallback),
         )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::routes;
+    use actix_web::{App, http::StatusCode, test};
+
+    #[actix_web::test]
+    async fn pdfjs_requests_do_not_fall_back_to_spa() {
+        let app = test::init_service(App::new().service(routes())).await;
+        let req = test::TestRequest::get()
+            .uri("/pdfjs/test/cmaps/__missing_test_asset__.bcmap")
+            .to_request();
+
+        let resp = test::call_service(&app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
 }
