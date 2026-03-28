@@ -26,6 +26,8 @@ function getNodeModulePackageName(id: string) {
 
 export default defineConfig(({ command }) => {
 	const isDevServer = command === "serve";
+	const rootReactPath = path.resolve(__dirname, "./node_modules/react");
+	const rootReactDomPath = path.resolve(__dirname, "./node_modules/react-dom");
 
 	return {
 		plugins: [
@@ -89,7 +91,15 @@ export default defineConfig(({ command }) => {
 		resolve: {
 			alias: {
 				"@": path.resolve(__dirname, "./src"),
+				"react/jsx-dev-runtime": path.resolve(
+					rootReactPath,
+					"./jsx-dev-runtime.js",
+				),
+				"react/jsx-runtime": path.resolve(rootReactPath, "./jsx-runtime.js"),
+				"react-dom": rootReactDomPath,
+				react: rootReactPath,
 			},
+			dedupe: ["react", "react-dom"],
 		},
 		server: {
 			proxy: {
@@ -135,7 +145,8 @@ export default defineConfig(({ command }) => {
 
 						if (
 							packageName === "react-icons" ||
-							packageName === "@devicon/react"
+							packageName === "@devicon/react" ||
+							packageName === "react-devicons"
 						) {
 							return "vendor-icons";
 						}
@@ -169,6 +180,11 @@ export default defineConfig(({ command }) => {
 			environment: "jsdom",
 			setupFiles: "./src/test/setup.ts",
 			restoreMocks: true,
+			server: {
+				deps: {
+					inline: [/^react-devicons(?:\/|$)/],
+				},
+			},
 		},
 	};
 });

@@ -1,3 +1,5 @@
+import { render } from "@testing-library/react";
+import { createElement } from "react";
 import { describe, expect, it } from "vitest";
 import { checkHasIcon, resolveIcon } from "@/components/ui/language-icons-map";
 
@@ -20,5 +22,16 @@ describe("language-icons-map", () => {
 		expect(checkHasIcon("Gemfile")).toBe(true);
 		expect(checkHasIcon("README.unknown")).toBe(false);
 		expect(resolveIcon("README.unknown")).toBeNull();
+	});
+
+	it("renders imported icons with the app React runtime", () => {
+		const Icon = resolveIcon("main.ts");
+
+		expect(Icon).toEqual(expect.any(Function));
+		const renderIcon = () =>
+			render(Icon ? createElement(Icon, { size: "1.5rem" }) : null);
+
+		expect(renderIcon).not.toThrow();
+		expect(renderIcon().container.querySelector("svg")).not.toBeNull();
 	});
 });
