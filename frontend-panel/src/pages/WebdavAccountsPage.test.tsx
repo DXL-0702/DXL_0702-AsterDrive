@@ -6,6 +6,7 @@ const mockState = vi.hoisted(() => ({
 	create: vi.fn(),
 	fileListRoot: vi.fn(),
 	handleApiError: vi.fn(),
+	getSettings: vi.fn(),
 	reload: vi.fn(),
 	requestConfirm: vi.fn(),
 	testConnection: vi.fn(),
@@ -250,6 +251,7 @@ vi.mock("@/services/webdavAccountService", () => ({
 		create: (...args: unknown[]) => mockState.create(...args),
 		delete: vi.fn(),
 		list: vi.fn(),
+		settings: (...args: unknown[]) => mockState.getSettings(...args),
 		test: (...args: unknown[]) => mockState.testConnection(...args),
 		toggle: (...args: unknown[]) => mockState.toggle(...args),
 	},
@@ -271,6 +273,7 @@ describe("WebdavAccountsPage", () => {
 		mockState.create.mockReset();
 		mockState.fileListRoot.mockReset();
 		mockState.handleApiError.mockReset();
+		mockState.getSettings.mockReset();
 		mockState.reload.mockReset();
 		mockState.requestConfirm.mockReset();
 		mockState.testConnection.mockReset();
@@ -282,6 +285,9 @@ describe("WebdavAccountsPage", () => {
 
 		mockState.fileListRoot.mockResolvedValue({
 			folders: [{ id: 5, name: "Docs" }],
+		});
+		mockState.getSettings.mockResolvedValue({
+			prefix: "/dav",
 		});
 		mockState.useApiList.mockReturnValue({
 			items: [createAccount()],
@@ -320,7 +326,7 @@ describe("WebdavAccountsPage", () => {
 
 		await waitFor(() => {
 			expect(mockState.writeText).toHaveBeenCalledWith(
-				expect.stringContaining("/webdav/"),
+				expect.stringContaining("/dav/"),
 			);
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("copied_to_clipboard");

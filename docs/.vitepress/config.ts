@@ -20,7 +20,7 @@ const VERSION = getVersion()
 
 export default defineConfig({
   title: 'AsterDrive',
-  description: 'AsterDrive 部署与使用手册，按当前版本的实际页面和配置编写',
+  description: 'AsterDrive 部署、使用与维护手册，按当前版本的实际页面和配置编写',
 
   locales: {
     root: {
@@ -30,10 +30,10 @@ export default defineConfig({
         nav: [
           { text: '首页', link: '/' },
           { text: '快速开始', link: '/guide/getting-started' },
-          { text: '用户手册', link: '/guide/user-guide' },
+          { text: '使用手册', link: '/guide/user-guide' },
           { text: '管理后台', link: '/guide/admin-console' },
-          { text: '配置', link: '/config/' },
-          { text: '部署', link: '/deployment/' },
+          { text: '管理员配置', link: '/config/' },
+          { text: '部署与升级', link: '/deployment/' },
           {
             text: `v${VERSION}`,
             items: [
@@ -78,24 +78,24 @@ export default defineConfig({
     sidebar: {
       '/guide/': [
         {
-          text: '使用指南',
+          text: '使用手册',
           items: [
-            { text: '安装部署', link: '/guide/installation' },
             { text: '快速开始', link: '/guide/getting-started' },
+            { text: '安装部署', link: '/guide/installation' },
             { text: '用户手册', link: '/guide/user-guide' },
             { text: '常用流程', link: '/guide/core-workflows' },
-            { text: '分享', link: '/guide/sharing' },
-            { text: '上传与大文件', link: '/guide/upload-modes' },
+            { text: '分享与公开访问', link: '/guide/sharing' },
             { text: '文件编辑', link: '/guide/editing' },
+            { text: '上传与大文件', link: '/guide/upload-modes' },
             { text: '管理后台', link: '/guide/admin-console' }
           ]
         }
       ],
       '/config/': [
         {
-          text: '配置',
+          text: '管理员配置',
           items: [
-            { text: '配置概览', link: '/config/' },
+            { text: '配置总览', link: '/config/' },
             { text: '服务器', link: '/config/server' },
             { text: '数据库', link: '/config/database' },
             { text: '登录与会话', link: '/config/auth' },
@@ -110,13 +110,13 @@ export default defineConfig({
       ],
       '/deployment/': [
         {
-          text: '部署',
+          text: '部署与升级',
           items: [
             { text: '部署概览', link: '/deployment/' },
-            { text: 'Docker', link: '/deployment/docker' },
+            { text: 'Docker 部署', link: '/deployment/docker' },
             { text: 'systemd', link: '/deployment/systemd' },
             { text: '反向代理', link: '/deployment/proxy' },
-            { text: '首次启动', link: '/deployment/runtime-behavior' },
+            { text: '首次启动检查', link: '/deployment/runtime-behavior' },
             { text: '升级与浏览器缓存', link: '/deployment/frontend-assets' }
           ]
         }

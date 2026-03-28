@@ -5,7 +5,13 @@ import type {
 } from "@/types/api";
 import { api } from "./http";
 
+export interface WebdavSettings {
+	prefix: string;
+}
+
 export const webdavAccountService = {
+	settings: () => api.get<WebdavSettings>("/webdav-accounts/settings"),
+
 	list: (params?: { limit?: number; offset?: number }) => {
 		const query = new URLSearchParams();
 		if (params?.limit != null) query.set("limit", String(params.limit));

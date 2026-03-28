@@ -97,6 +97,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::trash::purge_all,
         // webdav accounts
         crate::api::routes::webdav_accounts::list_accounts,
+        crate::api::routes::webdav_accounts::get_settings,
         crate::api::routes::webdav_accounts::create_account,
         crate::api::routes::webdav_accounts::delete_account,
         crate::api::routes::webdav_accounts::toggle_account,
@@ -194,6 +195,7 @@ use utoipa::{Modify, OpenApi};
             crate::entities::webdav_account::Model,
             crate::services::webdav_account_service::WebdavAccountCreated,
             crate::services::webdav_account_service::WebdavAccountInfo,
+            crate::api::routes::webdav_accounts::WebdavSettingsInfo,
             crate::api::routes::webdav_accounts::CreateWebdavAccountReq,
             crate::services::trash_service::TrashContents,
             crate::services::trash_service::TrashFileItem,

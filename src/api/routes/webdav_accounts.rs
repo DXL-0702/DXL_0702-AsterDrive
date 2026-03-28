@@ -22,7 +22,30 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("", web::post().to(create_account))
         .route("/{id}", web::delete().to(delete_account))
         .route("/{id}/toggle", web::post().to(toggle_account))
+        .route("/settings", web::get().to(get_settings))
         .route("/test", web::post().to(test_connection))
+}
+
+#[derive(serde::Serialize, ToSchema)]
+pub struct WebdavSettingsInfo {
+    pub prefix: String,
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/webdav-accounts/settings",
+    tag = "webdav",
+    operation_id = "get_webdav_settings",
+    responses(
+        (status = 200, description = "Current WebDAV settings for the signed-in user", body = inline(ApiResponse<WebdavSettingsInfo>)),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_settings(state: web::Data<AppState>) -> Result<HttpResponse> {
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(WebdavSettingsInfo {
+        prefix: state.config.webdav.prefix.clone(),
+    })))
 }
 
 #[derive(Deserialize, ToSchema)]

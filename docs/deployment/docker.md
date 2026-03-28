@@ -54,6 +54,8 @@ docker run -d \
   ghcr.io/apts-1547/asterdrive:latest
 ```
 
+如果你不挂载 `config.toml`，容器第一次启动时也会自动生成一份默认配置，但它默认留在容器内部。临时试跑可以这样做，长期部署不建议。
+
 ## Compose 示例
 
 ```yaml
@@ -80,6 +82,7 @@ volumes:
 - 如果暂时是纯 HTTP 测试，`auth.cookie_secure` 是否是 `false`
 - WebDAV 路径是否符合预期
 - 数据库和上传目录是否确实落在持久化卷里
+- 如果以后要走 S3 / MinIO，是否已经计划好对象存储的 CORS 和密钥管理
 
 ## 查看运行状态
 

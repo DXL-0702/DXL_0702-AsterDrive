@@ -1,6 +1,7 @@
 # 快速开始
 
-这套流程按 Docker 编写，适合第一次把 AsterDrive 跑起来，先确认它能正常登录、上传、分享和 WebDAV 连接。
+这套流程按 Docker 编写，适合第一次把 AsterDrive 跑起来。
+目标不是把所有配置一次改完，而是先确认四件事已经可用：登录、上传、分享、WebDAV。
 
 ## 1. 启动服务
 
@@ -12,7 +13,7 @@ docker run -d \
   -e ASTER__AUTH__COOKIE_SECURE=false \
   -e ASTER__DATABASE__URL="sqlite:///data/asterdrive.db?mode=rwc" \
   -v asterdrive-data:/data \
-  ghcr.io/apts-1547/asterdrive:latest
+ghcr.io/apts-1547/asterdrive:latest
 ```
 
 第一次成功启动后，AsterDrive 会自动完成下面这些准备工作：
@@ -35,8 +36,9 @@ http://服务器地址:3000
 ## 2. 打开页面并创建第一个账号
 
 1. 在浏览器打开 `http://服务器地址:3000`
-2. 按页面提示输入用户名、邮箱和密码
-3. 提交后会自动进入系统
+2. 在登录页输入一个用户名或邮箱
+3. 页面会自动判断当前应该是“登录”“注册”还是“首次安装创建管理员”
+4. 按页面提示输入密码并完成提交
 
 第一个创建出来的账号会自动成为管理员。
 
@@ -47,6 +49,7 @@ http://服务器地址:3000
 - 创建一个测试文件夹
 - 上传一个文件
 - 打开它，确认可以预览或下载
+- 再把它移动到回收站并恢复一次
 
 ## 4. 试一次分享
 
@@ -62,7 +65,7 @@ http://服务器地址:3000
 
 如果你要在 Finder、Windows 资源管理器、rclone 或其他客户端里使用 AsterDrive：
 
-1. 打开 `WebDAV`
+1. 打开左侧的 `WebDAV`
 2. 创建一个专用 WebDAV 账号
 3. 复制 WebDAV 地址、用户名和密码
 4. 在客户端里做一次真实连接和读写测试
@@ -85,6 +88,7 @@ http://服务器地址:3000
 - 回收站保留天数和历史版本数量是否符合预期
 - WebDAV 是否需要保持开启
 - 文件是继续放本地磁盘，还是改到 S3 / MinIO
+- 如果你要用头像功能，`gravatar_base_url` 是否需要改成你所在网络可访问的地址
 
 ## 7. 做一次上线前验收
 

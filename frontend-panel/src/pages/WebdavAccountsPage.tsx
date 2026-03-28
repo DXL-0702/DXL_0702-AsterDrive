@@ -64,6 +64,16 @@ function CopyField({
 	);
 }
 
+function normalizeWebdavPrefix(prefix: string): string {
+	const trimmed = prefix.trim();
+	if (!trimmed) return "/webdav";
+	const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+	if (withLeadingSlash === "/") return "/";
+	return withLeadingSlash.endsWith("/")
+		? withLeadingSlash.slice(0, -1)
+		: withLeadingSlash;
+}
+
 export default function WebdavAccountsPage() {
 	const { t } = useTranslation(["core", "admin", "auth", "webdav", "errors"]);
 	const {
@@ -86,6 +96,7 @@ export default function WebdavAccountsPage() {
 	const [testResult, setTestResult] = useState<boolean | null>(null);
 	const [createDialogOpen, setCreateDialogOpen] = useState(false);
 	const [credentialsDialogOpen, setCredentialsDialogOpen] = useState(false);
+	const [webdavPrefix, setWebdavPrefix] = useState("/webdav");
 
 	const fetchFolders = useCallback(async () => {
 		try {
@@ -99,14 +110,28 @@ export default function WebdavAccountsPage() {
 		}
 	}, []);
 
+	const fetchWebdavSettings = useCallback(async () => {
+		try {
+			const data = await webdavAccountService.settings();
+			setWebdavPrefix(normalizeWebdavPrefix(data.prefix));
+		} catch (err) {
+			handleApiError(err);
+		}
+	}, []);
+
 	useEffect(() => {
 		void fetchFolders();
 	}, [fetchFolders]);
 
+	useEffect(() => {
+		void fetchWebdavSettings();
+	}, [fetchWebdavSettings]);
+
+	const endpointPath = webdavPrefix === "/" ? "/" : `${webdavPrefix}/`;
 	const endpointUrl =
 		typeof window === "undefined"
-			? "/webdav/"
-			: `${window.location.origin}/webdav/`;
+			? endpointPath
+			: `${window.location.origin}${endpointPath}`;
 	const sortedAccounts = useMemo(
 		() =>
 			[...accounts].sort(
@@ -353,7 +378,7 @@ export default function WebdavAccountsPage() {
 
 			<div className="min-h-0 flex-1 overflow-auto">
 				<div
-					className={`flex flex-col gap-4 py-4 md:py-6 ${PAGE_SECTION_PADDING_CLASS}`}
+					className={`mx-auto flex w-full max-w-7xl flex-col gap-4 py-4 md:py-6 ${PAGE_SECTION_PADDING_CLASS}`}
 				>
 					{/* Page Header */}
 					<div className="flex items-start justify-between gap-4">
