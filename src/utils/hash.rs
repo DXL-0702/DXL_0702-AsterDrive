@@ -27,14 +27,19 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
 pub fn sha256_hex(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(data);
-    sha256_digest_to_hex(&hasher.finalize())
+    bytes_to_hex(&hasher.finalize())
+}
+
+/// 将任意字节切片编码为小写 hex
+pub fn bytes_to_hex(bytes: &[u8]) -> String {
+    let mut hex = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        let _ = write!(&mut hex, "{byte:02x}");
+    }
+    hex
 }
 
 /// 将 SHA-256 digest 编码为小写 hex
 pub fn sha256_digest_to_hex(digest: &[u8]) -> String {
-    let mut hex = String::with_capacity(digest.len() * 2);
-    for byte in digest {
-        let _ = write!(&mut hex, "{byte:02x}");
-    }
-    hex
+    bytes_to_hex(digest)
 }

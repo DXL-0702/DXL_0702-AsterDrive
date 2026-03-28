@@ -1,11 +1,15 @@
 import type {
+	ApiResponse,
+	AvatarSource,
 	CheckResp,
 	MeResponse,
 	UpdatePreferencesRequest,
 	UserInfo,
 	UserPreferences,
+	UserProfileInfo,
 } from "@/types/api";
-import { api } from "./http";
+import { ErrorCode } from "@/types/api";
+import { ApiError, api } from "./http";
 
 export const authService = {
 	check: (identifier: string) =>
@@ -26,4 +30,25 @@ export const authService = {
 
 	updatePreferences: (prefs: UpdatePreferencesRequest) =>
 		api.patch<UserPreferences>("/auth/preferences", prefs),
+
+	setAvatarSource: (source: Extract<AvatarSource, "none" | "gravatar">) =>
+		api.put<UserProfileInfo>("/auth/profile/avatar/source", { source }),
+
+	uploadAvatar: async (file: File) => {
+		const formData = new FormData();
+		formData.set("file", file);
+		const { data: resp } = await api.client.post<ApiResponse<UserProfileInfo>>(
+			"/auth/profile/avatar/upload",
+			formData,
+			{
+				headers: {
+					"Content-Type": "multipart/form-data",
+				},
+			},
+		);
+		if (resp.code !== ErrorCode.Success) {
+			throw new ApiError(resp.code, resp.msg);
+		}
+		return resp.data as UserProfileInfo;
+	},
 };

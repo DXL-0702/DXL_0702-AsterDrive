@@ -4,6 +4,8 @@ import type { components } from "@/services/api.generated";
 // Schema types
 export type UserInfo = components["schemas"]["UserInfo"];
 export type MeResponse = components["schemas"]["MeResponse"];
+export type AvatarInfo = components["schemas"]["AvatarInfo"];
+export type UserProfileInfo = components["schemas"]["UserProfileInfo"];
 export type FileInfo = components["schemas"]["FileInfo"];
 export type FolderInfo = components["schemas"]["FolderInfo"];
 export type FileListItem = components["schemas"]["FileListItem"];
@@ -15,6 +17,7 @@ export type FolderAncestorItem = components["schemas"]["FolderAncestorItem"];
 export type ErrorCode = components["schemas"]["ErrorCode"];
 export type UserRole = components["schemas"]["UserRole"];
 export type UserStatus = components["schemas"]["UserStatus"];
+export type AvatarSource = components["schemas"]["AvatarSource"];
 export type DriverType = components["schemas"]["DriverType"];
 export type ShareInfo = components["schemas"]["ShareInfo"];
 export type MyShareInfo = components["schemas"]["MyShareInfo"];
@@ -34,6 +37,8 @@ export type TrashContents = components["schemas"]["TrashContents"];
 export type UserPreferences = components["schemas"]["UserPreferences"];
 export type UpdatePreferencesRequest =
 	components["schemas"]["UpdatePreferencesReq"];
+export type UpdateAvatarSourceRequest =
+	components["schemas"]["UpdateAvatarSourceReq"];
 
 export type TrashItem =
 	| (TrashFileItem & { entity_type: "file" })

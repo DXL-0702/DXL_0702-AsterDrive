@@ -45,7 +45,6 @@ export function Sidebar({
 		{ to: "/shares", icon: "Link", label: t("share:my_shares_title") },
 		{ to: "/trash", icon: "Trash", label: t("trash") },
 		{ to: "/settings/webdav", icon: "HardDrive", label: t("webdav") },
-		{ to: "/settings", icon: "Gear", label: t("settings") },
 	];
 
 	const handleTrashDragOver = (e: DragEvent<HTMLAnchorElement>) => {

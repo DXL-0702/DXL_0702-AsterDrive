@@ -3,6 +3,30 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import SettingsPage from "@/pages/SettingsPage";
 
 const mockState = vi.hoisted(() => ({
+	authService: {
+		setAvatarSource: vi.fn(),
+		uploadAvatar: vi.fn(),
+	},
+	authStore: {
+		refreshUser: vi.fn(),
+		user: {
+			email: "alice@example.com",
+			id: 1,
+			profile: {
+				avatar: {
+					source: "none",
+					url_512: null,
+					url_1024: null,
+					version: 0,
+				},
+			},
+			role: "user",
+			status: "active",
+			storage_quota: 0,
+			storage_used: 0,
+			username: "alice",
+		},
+	},
 	changeLanguage: vi.fn(),
 	fileStore: {
 		setViewMode: vi.fn(),
@@ -28,6 +52,12 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@/components/common/ColorPresetPicker", () => ({
 	ColorPresetPicker: () => <div>color-preset-picker</div>,
+}));
+
+vi.mock("@/components/common/UserAvatarImage", () => ({
+	UserAvatarImage: ({ name }: { name: string }) => (
+		<div>{`avatar:${name}`}</div>
+	),
 }));
 
 vi.mock("@/components/common/SettingsScaffold", () => ({
@@ -107,6 +137,24 @@ vi.mock("@/lib/preferenceSync", () => ({
 		mockState.preferenceSync(...args),
 }));
 
+vi.mock("@/hooks/useApiError", () => ({
+	handleApiError: vi.fn(),
+}));
+
+vi.mock("@/services/authService", () => ({
+	authService: {
+		setAvatarSource: (...args: unknown[]) =>
+			mockState.authService.setAvatarSource(...args),
+		uploadAvatar: (...args: unknown[]) =>
+			mockState.authService.uploadAvatar(...args),
+	},
+}));
+
+vi.mock("@/stores/authStore", () => ({
+	useAuthStore: (selector: (state: typeof mockState.authStore) => unknown) =>
+		selector(mockState.authStore),
+}));
+
 vi.mock("@/stores/fileStore", () => ({
 	useFileStore: (selector: (state: typeof mockState.fileStore) => unknown) =>
 		selector(mockState.fileStore),
@@ -118,6 +166,9 @@ vi.mock("@/stores/themeStore", () => ({
 
 describe("SettingsPage", () => {
 	beforeEach(() => {
+		mockState.authService.setAvatarSource.mockReset();
+		mockState.authService.uploadAvatar.mockReset();
+		mockState.authStore.refreshUser.mockReset();
 		mockState.changeLanguage.mockReset();
 		mockState.fileStore.setViewMode.mockReset();
 		mockState.fileStore.viewMode = "list";
@@ -142,6 +193,7 @@ describe("SettingsPage", () => {
 		expect(
 			screen.getByText("settings:settings_browser_list_desc"),
 		).toBeInTheDocument();
+		expect(screen.getByText("avatar:alice")).toBeInTheDocument();
 		expect(screen.getByText("color-preset-picker")).toBeInTheDocument();
 		expect(screen.getAllByTestId("choice-group")[0]).toHaveAttribute(
 			"data-value",

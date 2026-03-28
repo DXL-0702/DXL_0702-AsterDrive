@@ -3,6 +3,31 @@ mod common;
 
 use actix_web::test;
 use serde_json::Value;
+use std::io::Cursor;
+
+fn avatar_upload_payload() -> (String, Vec<u8>) {
+    let boundary = "----AsterAvatarBoundary".to_string();
+    let image = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+        8,
+        8,
+        image::Rgba([0, 160, 255, 255]),
+    ));
+    let mut png = Cursor::new(Vec::new());
+    image.write_to(&mut png, image::ImageFormat::Png).unwrap();
+
+    let mut body = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\n\
+             Content-Disposition: form-data; name=\"file\"; filename=\"avatar.png\"\r\n\
+             Content-Type: image/png\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(&png.into_inner());
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (boundary, body)
+}
 
 #[actix_web::test]
 async fn test_admin_locks() {
@@ -74,6 +99,73 @@ async fn test_admin_users() {
     assert_eq!(users.len(), 2);
     assert_eq!(users[0]["username"], "user2");
     assert_eq!(users[1]["username"], "user3");
+    assert_eq!(users[0]["profile"]["avatar"]["source"], "none");
+}
+
+#[actix_web::test]
+async fn test_admin_can_read_uploaded_user_avatar() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "avatar-user",
+            "email": "avatar-user@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "avatar-user",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let user_token = common::extract_cookie(&resp, "aster_access").unwrap();
+
+    let (boundary, payload) = avatar_upload_payload();
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/profile/avatar/upload")
+        .insert_header(("Cookie", format!("aster_access={user_token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/users/{user_id}"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["profile"]["avatar"]["source"], "upload");
+    assert_eq!(
+        body["data"]["profile"]["avatar"]["url_512"],
+        format!("/admin/users/{user_id}/avatar/512?v=1")
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/users/{user_id}/avatar/512"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.headers().get("content-type").unwrap(), "image/webp");
 }
 
 #[actix_web::test]

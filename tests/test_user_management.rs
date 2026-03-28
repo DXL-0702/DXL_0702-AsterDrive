@@ -4,6 +4,30 @@ mod common;
 use actix_web::test;
 use serde_json::Value;
 
+fn avatar_upload_payload() -> (String, Vec<u8>) {
+    let boundary = "----AsterAvatarBoundary".to_string();
+    let image = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+        8,
+        8,
+        image::Rgba([255, 120, 0, 255]),
+    ));
+    let mut png = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut png, image::ImageFormat::Png).unwrap();
+
+    let mut body = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\n\
+             Content-Disposition: form-data; name=\"file\"; filename=\"avatar.png\"\r\n\
+             Content-Type: image/png\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(&png.into_inner());
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (boundary, body)
+}
+
 // ── 策略删除保护：有 blob 引用则拒绝 ───────────────────────
 
 #[actix_web::test]
@@ -43,6 +67,11 @@ async fn test_policy_delete_with_blobs_rejected() {
 #[actix_web::test]
 async fn test_force_delete_user() {
     let state = common::setup().await;
+    let avatar_base_path = aster_drive::db::repository::policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist")
+        .base_path;
     let app = create_test_app!(state);
 
     // 注册第一个用户（admin，id=1）
@@ -60,6 +89,8 @@ async fn test_force_delete_user() {
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let victim_id = body["data"]["id"].as_i64().unwrap();
 
     // 登录第二个用户
     let req = test::TestRequest::post()
@@ -77,7 +108,34 @@ async fn test_force_delete_user() {
     // 用第二个用户上传文件
     let _file_id = upload_test_file!(app, victim_token);
 
-    // 获取第二个用户 ID
+    // 用第二个用户上传头像
+    let (boundary, payload) = avatar_upload_payload();
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/profile/avatar/upload")
+        .insert_header(("Cookie", format!("aster_access={victim_token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let avatar_512 = std::path::PathBuf::from(&avatar_base_path)
+        .join(format!("profile/avatar/{victim_id}/v1/512.webp"));
+    let avatar_1024 = std::path::PathBuf::from(&avatar_base_path)
+        .join(format!("profile/avatar/{victim_id}/v1/1024.webp"));
+    assert!(
+        avatar_512.exists(),
+        "avatar 512 should exist before force delete"
+    );
+    assert!(
+        avatar_1024.exists(),
+        "avatar 1024 should exist before force delete"
+    );
+
+    // 确认第二个用户可以在 admin 列表中看到
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/users")
         .insert_header(("Cookie", format!("aster_access={admin_token}")))
@@ -85,9 +143,7 @@ async fn test_force_delete_user() {
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
     let users = body["data"]["items"].as_array().unwrap();
-    let victim_id = users.iter().find(|u| u["username"] == "victim").unwrap()["id"]
-        .as_i64()
-        .unwrap();
+    assert!(users.iter().any(|u| u["id"].as_i64() == Some(victim_id)));
 
     // admin 强制删除第二个用户
     let req = test::TestRequest::delete()
@@ -109,6 +165,134 @@ async fn test_force_delete_user() {
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
+    assert!(
+        !avatar_512.exists(),
+        "avatar 512 should be deleted during force delete"
+    );
+    assert!(
+        !avatar_1024.exists(),
+        "avatar 1024 should be deleted during force delete"
+    );
+}
+
+#[actix_web::test]
+async fn test_force_delete_user_with_gravatar_profile() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "gravatar-victim",
+            "email": "gravatar-victim@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let victim_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "gravatar-victim",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    let victim_token =
+        common::extract_cookie(&resp, "aster_access").expect("access cookie missing");
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/auth/profile/avatar/source")
+        .insert_header(("Cookie", format!("aster_access={victim_token}")))
+        .set_json(serde_json::json!({
+            "source": "gravatar"
+        }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/admin/users/{victim_id}"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_force_delete_user_tolerates_missing_avatar_object() {
+    let state = common::setup().await;
+    let avatar_base_path = aster_drive::db::repository::policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist")
+        .base_path;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "missavatar",
+            "email": "missavatar@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let victim_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "missavatar",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    let victim_token =
+        common::extract_cookie(&resp, "aster_access").expect("access cookie missing");
+
+    let (boundary, payload) = avatar_upload_payload();
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/profile/avatar/upload")
+        .insert_header(("Cookie", format!("aster_access={victim_token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let avatar_512 = std::path::PathBuf::from(&avatar_base_path)
+        .join(format!("profile/avatar/{victim_id}/v1/512.webp"));
+    let avatar_1024 = std::path::PathBuf::from(&avatar_base_path)
+        .join(format!("profile/avatar/{victim_id}/v1/1024.webp"));
+    assert!(avatar_512.exists());
+    assert!(avatar_1024.exists());
+
+    std::fs::remove_file(&avatar_512).unwrap();
+    assert!(!avatar_512.exists());
+    assert!(avatar_1024.exists());
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/admin/users/{victim_id}"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert!(!avatar_1024.exists());
 }
 
 // ── 不能删除初始管理员 id=1 ────────────────────────────────

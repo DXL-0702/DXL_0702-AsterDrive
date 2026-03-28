@@ -22,6 +22,14 @@ export function createMeResponse(
 		email: "alice@example.com",
 		role: "user",
 		status: "active",
+		profile: {
+			avatar: {
+				source: "none",
+				url_512: null,
+				url_1024: null,
+				version: 0,
+			},
+		},
 		preferences: {
 			theme_mode: "dark",
 			color_preset: "orange",

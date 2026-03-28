@@ -6,8 +6,8 @@ use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{
-    audit_service, auth_service::Claims, config_service, policy_service, share_service,
-    user_service,
+    audit_service, auth_service::Claims, config_service, policy_service, profile_service,
+    share_service, user_service,
 };
 use crate::types::{DriverType, UserRole, UserStatus};
 use actix_governor::Governor;
@@ -39,6 +39,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/users/{id}", web::get().to(get_user))
         .route("/users/{id}", web::patch().to(update_user))
         .route("/users/{id}", web::delete().to(force_delete_user))
+        .route("/users/{id}/avatar/{size}", web::get().to(get_user_avatar))
         // user storage policies
         .route(
             "/users/{user_id}/policies",
@@ -337,7 +338,7 @@ pub struct CreateUserReq {
     operation_id = "create_user",
     request_body = CreateUserReq,
     responses(
-        (status = 201, description = "User created", body = inline(ApiResponse<crate::entities::user::Model>)),
+        (status = 201, description = "User created", body = inline(ApiResponse<crate::services::user_service::UserInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 400, description = "Validation error"),
@@ -378,7 +379,7 @@ pub async fn create_user(
     operation_id = "list_users",
     params(LimitOffsetQuery, AdminUserListQuery),
     responses(
-        (status = 200, description = "List users", body = inline(ApiResponse<OffsetPage<crate::entities::user::Model>>)),
+        (status = 200, description = "List users", body = inline(ApiResponse<OffsetPage<crate::services::user_service::UserInfo>>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -410,7 +411,7 @@ pub async fn list_users(
     operation_id = "get_user",
     params(("id" = i64, Path, description = "User ID")),
     responses(
-        (status = 200, description = "User details", body = inline(ApiResponse<crate::entities::user::Model>)),
+        (status = 200, description = "User details", body = inline(ApiResponse<crate::services::user_service::UserInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "User not found"),
@@ -442,7 +443,7 @@ pub struct PatchUserReq {
     params(("id" = i64, Path, description = "User ID")),
     request_body = PatchUserReq,
     responses(
-        (status = 200, description = "User updated", body = inline(ApiResponse<crate::entities::user::Model>)),
+        (status = 200, description = "User updated", body = inline(ApiResponse<crate::services::user_service::UserInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "User not found"),
@@ -508,6 +509,34 @@ pub async fn force_delete_user(
     require_admin(&claims)?;
     user_service::force_delete(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/users/{id}/avatar/{size}",
+    tag = "admin",
+    operation_id = "get_user_avatar",
+    params(
+        ("id" = i64, Path, description = "User ID"),
+        ("size" = u32, Path, description = "Avatar size (512 or 1024)")
+    ),
+    responses(
+        (status = 200, description = "Avatar image (WebP)"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Avatar not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_user_avatar(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<(i64, u32)>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let (user_id, size) = path.into_inner();
+    let bytes = profile_service::get_avatar_bytes(&state, user_id, size).await?;
+    Ok(profile_service::avatar_image_response(bytes))
 }
 
 // ── User Storage Policies ───────────────────────────────────────────

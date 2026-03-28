@@ -6,6 +6,7 @@ pub mod file_service;
 pub mod folder_service;
 pub mod lock_service;
 pub mod policy_service;
+pub mod profile_service;
 pub mod property_service;
 pub mod search_service;
 pub mod share_service;

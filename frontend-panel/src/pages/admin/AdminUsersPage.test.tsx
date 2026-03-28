@@ -400,6 +400,14 @@ function createUser(overrides: Record<string, unknown> = {}) {
 		created_at: "2026-03-28T00:00:00Z",
 		email: "alice@example.com",
 		id: 11,
+		profile: {
+			avatar: {
+				source: "none",
+				url_512: null,
+				url_1024: null,
+				version: 0,
+			},
+		},
 		role: "user",
 		status: "active",
 		storage_quota: 10 * 1024 * 1024,

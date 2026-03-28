@@ -40,6 +40,21 @@ impl UserStatus {
     }
 }
 
+/// 用户头像来源
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize, ToSchema,
+)]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(16))")]
+#[serde(rename_all = "snake_case")]
+pub enum AvatarSource {
+    #[sea_orm(string_value = "none")]
+    None,
+    #[sea_orm(string_value = "gravatar")]
+    Gravatar,
+    #[sea_orm(string_value = "upload")]
+    Upload,
+}
+
 /// 存储驱动类型
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize, ToSchema,

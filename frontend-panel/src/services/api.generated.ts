@@ -244,6 +244,22 @@ export interface paths {
         patch: operations["update_user"];
         trace?: never;
     };
+    "/api/v1/admin/users/{id}/avatar/{size}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_user_avatar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users/{user_id}/policies": {
         parameters: {
             query?: never;
@@ -359,6 +375,54 @@ export interface paths {
          *     preferences. Returns the full updated preferences object.
          */
         patch: operations["update_preferences"];
+        trace?: never;
+    };
+    "/api/v1/auth/profile/avatar/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["set_avatar_source"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/profile/avatar/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["upload_avatar"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/profile/avatar/{size}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_self_avatar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/auth/refresh": {
@@ -1171,6 +1235,18 @@ export interface components {
             /** Format: int64 */
             user_id: number;
         };
+        AvatarInfo: {
+            source: components["schemas"]["AvatarSource"];
+            url_1024?: string | null;
+            url_512?: string | null;
+            /** Format: int32 */
+            version: number;
+        };
+        /**
+         * @description 用户头像来源
+         * @enum {string}
+         */
+        AvatarSource: "none" | "gravatar" | "upload";
         BatchCopyReq: {
             file_ids?: number[];
             folder_ids?: number[];
@@ -1478,8 +1554,21 @@ export interface components {
             password: string;
         };
         /** @description /auth/me 响应：用户信息 + 偏好设置 */
-        MeResponse: components["schemas"]["UserCore"] & {
+        MeResponse: {
+            created_at: string;
+            email: string;
+            /** Format: int64 */
+            id: number;
             preferences?: null | components["schemas"]["UserPreferences"];
+            profile: components["schemas"]["UserProfileInfo"];
+            role: components["schemas"]["UserRole"];
+            status: components["schemas"]["UserStatus"];
+            /** Format: int64 */
+            storage_quota: number;
+            /** Format: int64 */
+            storage_used: number;
+            updated_at: string;
+            username: string;
         };
         MyShareInfo: {
             created_at: string;
@@ -1673,6 +1762,7 @@ export interface components {
                 email: string;
                 /** Format: int64 */
                 id: number;
+                profile: components["schemas"]["UserProfileInfo"];
                 role: components["schemas"]["UserRole"];
                 status: components["schemas"]["UserStatus"];
                 /** Format: int64 */
@@ -2001,6 +2091,9 @@ export interface components {
             /** Format: int64 */
             id: number;
         };
+        UpdateAvatarSourceReq: {
+            source: components["schemas"]["AvatarSource"];
+        };
         /** @description PATCH request — only non-null fields are merged into existing preferences. */
         UpdatePreferencesReq: {
             color_preset?: null | components["schemas"]["ColorPreset"];
@@ -2074,11 +2167,13 @@ export interface components {
             updated_at: string;
             username: string;
         };
+        /** @description 通用用户响应：核心字段 + profile */
         UserInfo: {
             created_at: string;
             email: string;
             /** Format: int64 */
             id: number;
+            profile: components["schemas"]["UserProfileInfo"];
             role: components["schemas"]["UserRole"];
             status: components["schemas"]["UserStatus"];
             /** Format: int64 */
@@ -2099,6 +2194,9 @@ export interface components {
             sort_order?: null | components["schemas"]["SortOrder"];
             theme_mode?: null | components["schemas"]["ThemeMode"];
             view_mode?: null | components["schemas"]["PrefViewMode"];
+        };
+        UserProfileInfo: {
+            avatar: components["schemas"]["AvatarInfo"];
         };
         /**
          * @description 用户角色
@@ -3160,6 +3258,7 @@ export interface operations {
                                 email: string;
                                 /** Format: int64 */
                                 id: number;
+                                profile: components["schemas"]["UserProfileInfo"];
                                 role: components["schemas"]["UserRole"];
                                 status: components["schemas"]["UserStatus"];
                                 /** Format: int64 */
@@ -3217,11 +3316,13 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description 通用用户响应：核心字段 + profile */
                         data?: {
                             created_at: string;
                             email: string;
                             /** Format: int64 */
                             id: number;
+                            profile: components["schemas"]["UserProfileInfo"];
                             role: components["schemas"]["UserRole"];
                             status: components["schemas"]["UserStatus"];
                             /** Format: int64 */
@@ -3278,11 +3379,13 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description 通用用户响应：核心字段 + profile */
                         data?: {
                             created_at: string;
                             email: string;
                             /** Format: int64 */
                             id: number;
+                            profile: components["schemas"]["UserProfileInfo"];
                             role: components["schemas"]["UserRole"];
                             status: components["schemas"]["UserStatus"];
                             /** Format: int64 */
@@ -3392,11 +3495,13 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description 通用用户响应：核心字段 + profile */
                         data?: {
                             created_at: string;
                             email: string;
                             /** Format: int64 */
                             id: number;
+                            profile: components["schemas"]["UserProfileInfo"];
                             role: components["schemas"]["UserRole"];
                             status: components["schemas"]["UserStatus"];
                             /** Format: int64 */
@@ -3425,6 +3530,50 @@ export interface operations {
                 content?: never;
             };
             /** @description User not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_user_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description User ID */
+                id: number;
+                /** @description Avatar size (512 or 1024) */
+                size: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Avatar image (WebP) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Avatar not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -3764,8 +3913,21 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         /** @description /auth/me 响应：用户信息 + 偏好设置 */
-                        data?: components["schemas"]["UserCore"] & {
+                        data?: {
+                            created_at: string;
+                            email: string;
+                            /** Format: int64 */
+                            id: number;
                             preferences?: null | components["schemas"]["UserPreferences"];
+                            profile: components["schemas"]["UserProfileInfo"];
+                            role: components["schemas"]["UserRole"];
+                            status: components["schemas"]["UserStatus"];
+                            /** Format: int64 */
+                            storage_quota: number;
+                            /** Format: int64 */
+                            storage_used: number;
+                            updated_at: string;
+                            username: string;
                         };
                         msg: string;
                     };
@@ -3826,6 +3988,130 @@ export interface operations {
             };
         };
     };
+    set_avatar_source: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateAvatarSourceReq"];
+            };
+        };
+        responses: {
+            /** @description Avatar source updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            avatar: components["schemas"]["AvatarInfo"];
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid avatar source */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    upload_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Avatar image to upload */
+        requestBody: {
+            content: {
+                "multipart/form-data": string;
+            };
+        };
+        responses: {
+            /** @description Avatar uploaded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            avatar: components["schemas"]["AvatarInfo"];
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid image upload */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_self_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Avatar size (512 or 1024) */
+                size: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Avatar image (WebP) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Avatar not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     refresh: {
         parameters: {
             query?: never;
@@ -3872,11 +4158,13 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description 通用用户响应：核心字段 + profile */
                         data?: {
                             created_at: string;
                             email: string;
                             /** Format: int64 */
                             id: number;
+                            profile: components["schemas"]["UserProfileInfo"];
                             role: components["schemas"]["UserRole"];
                             status: components["schemas"]["UserStatus"];
                             /** Format: int64 */
@@ -3920,11 +4208,13 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description 通用用户响应：核心字段 + profile */
                         data?: {
                             created_at: string;
                             email: string;
                             /** Format: int64 */
                             id: number;
+                            profile: components["schemas"]["UserProfileInfo"];
                             role: components["schemas"]["UserRole"];
                             status: components["schemas"]["UserStatus"];
                             /** Format: int64 */

@@ -10,15 +10,37 @@ import { HeaderControls } from "@/components/layout/HeaderControls";
 
 const mockState = vi.hoisted(() => ({
 	navigate: vi.fn(),
+	changeLanguage: vi.fn(),
+	queuePreferenceSync: vi.fn(),
 	auth: {
-		user: { username: "alice", role: "admin" },
+		user: {
+			email: "alice@example.com",
+			profile: {
+				avatar: {
+					source: "none",
+					url_512: null,
+					url_1024: null,
+					version: 0,
+				},
+			},
+			role: "admin",
+			username: "alice",
+		},
 		isAuthStale: false,
 		logout: vi.fn(),
+	},
+	theme: {
+		mode: "dark" as "light" | "dark" | "system",
+		setMode: vi.fn(),
 	},
 }));
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
+		i18n: {
+			changeLanguage: mockState.changeLanguage,
+			language: "en",
+		},
 		t: (key: string) => `translated:${key}`,
 	}),
 }));
@@ -32,12 +54,20 @@ vi.mock("@/stores/authStore", () => ({
 		selector(mockState.auth),
 }));
 
-vi.mock("@/components/common/LanguageSwitcher", () => ({
-	LanguageSwitcher: () => <div>LanguageSwitcher</div>,
+vi.mock("@/stores/themeStore", () => ({
+	useThemeStore: (selector: (state: typeof mockState.theme) => unknown) =>
+		selector(mockState.theme),
 }));
 
-vi.mock("@/components/common/ThemeSwitcher", () => ({
-	ThemeSwitcher: () => <div>ThemeSwitcher</div>,
+vi.mock("@/lib/preferenceSync", () => ({
+	queuePreferenceSync: (...args: unknown[]) =>
+		mockState.queuePreferenceSync(...args),
+}));
+
+vi.mock("@/components/common/UserAvatarImage", () => ({
+	UserAvatarImage: ({ name }: { name: string }) => (
+		<div>{`avatar:${name}`}</div>
+	),
 }));
 
 vi.mock("@/components/ui/badge", () => ({
@@ -91,6 +121,12 @@ vi.mock("@/components/ui/dropdown-menu", () => ({
 	DropdownMenuContent: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
+	DropdownMenuGroup: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
 	DropdownMenuItem: ({
 		children,
 		onClick,
@@ -137,10 +173,27 @@ function deferredPromise() {
 describe("HeaderControls", () => {
 	beforeEach(() => {
 		mockState.navigate.mockReset();
-		mockState.auth.user = { username: "alice", role: "admin" };
+		mockState.changeLanguage.mockReset();
+		mockState.changeLanguage.mockResolvedValue(undefined);
+		mockState.queuePreferenceSync.mockReset();
+		mockState.auth.user = {
+			email: "alice@example.com",
+			profile: {
+				avatar: {
+					source: "none",
+					url_512: null,
+					url_1024: null,
+					version: 0,
+				},
+			},
+			role: "admin",
+			username: "alice",
+		};
 		mockState.auth.isAuthStale = false;
 		mockState.auth.logout.mockReset();
 		mockState.auth.logout.mockResolvedValue(undefined);
+		mockState.theme.mode = "dark";
+		mockState.theme.setMode.mockReset();
 	});
 
 	it("renders actions, stale auth messaging, and admin controls", () => {
@@ -156,8 +209,6 @@ describe("HeaderControls", () => {
 		);
 
 		expect(screen.getByRole("button", { name: "Refresh" })).toBeInTheDocument();
-		expect(screen.getByText("ThemeSwitcher")).toBeInTheDocument();
-		expect(screen.getByText("LanguageSwitcher")).toBeInTheDocument();
 		expect(
 			screen.getByText("translated:offline:offline_status_short"),
 		).toBeInTheDocument();
@@ -167,36 +218,89 @@ describe("HeaderControls", () => {
 		expect(
 			screen.getByText("translated:offline:auth_stale_detail"),
 		).toBeInTheDocument();
-		expect(screen.getByText("alice")).toBeInTheDocument();
-		expect(screen.getByText("admin")).toBeInTheDocument();
+		expect(screen.getAllByText("alice")).toHaveLength(3);
+		expect(screen.getByText("alice@example.com")).toBeInTheDocument();
+		expect(screen.getAllByText("avatar:alice")).toHaveLength(2);
+		expect(screen.getAllByText("admin")).toHaveLength(2);
+		expect(
+			screen.getByRole("button", { name: /translated:settings/i }),
+		).toBeInTheDocument();
 		expect(
 			screen.getByRole("button", { name: /translated:admin_panel/i }),
+		).toBeInTheDocument();
+		expect(screen.getByText("translated:theme")).toBeInTheDocument();
+		expect(screen.getByText("translated:language")).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: /translated:theme_dark/i }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: /translated:language_en/i }),
 		).toBeInTheDocument();
 		expect(screen.getAllByRole("button", { name: /Home/i })).toHaveLength(2);
 	});
 
 	it("hides the admin menu entry for non-admin users", () => {
-		mockState.auth.user = { username: "bob", role: "user" };
+		mockState.auth.user = {
+			email: "bob@example.com",
+			profile: {
+				avatar: {
+					source: "none",
+					url_512: null,
+					url_1024: null,
+					version: 0,
+				},
+			},
+			role: "user",
+			username: "bob",
+		};
 
 		render(<HeaderControls showAdminEntry />);
 
-		expect(screen.getByText("bob")).toBeInTheDocument();
+		expect(screen.getAllByText("bob")).toHaveLength(3);
+		expect(screen.getAllByText("avatar:bob")).toHaveLength(2);
+		expect(
+			screen.getByRole("button", { name: /translated:settings/i }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: /translated:theme_dark/i }),
+		).toBeInTheDocument();
 		expect(
 			screen.queryByRole("button", { name: /translated:admin_panel/i }),
 		).not.toBeInTheDocument();
 		expect(screen.queryByText("admin")).not.toBeInTheDocument();
 	});
 
-	it("navigates from the home and admin entries", () => {
+	it("navigates from the settings, home, and admin entries", () => {
 		render(<HeaderControls showHomeButton homeLabel="Home" showAdminEntry />);
 
+		fireEvent.click(
+			screen.getByRole("button", { name: /translated:settings/i }),
+		);
 		fireEvent.click(screen.getAllByRole("button", { name: /Home/i })[0]);
 		fireEvent.click(
 			screen.getByRole("button", { name: /translated:admin_panel/i }),
 		);
 
-		expect(mockState.navigate).toHaveBeenNthCalledWith(1, "/");
-		expect(mockState.navigate).toHaveBeenNthCalledWith(2, "/admin");
+		expect(mockState.navigate).toHaveBeenNthCalledWith(1, "/settings");
+		expect(mockState.navigate).toHaveBeenNthCalledWith(2, "/");
+		expect(mockState.navigate).toHaveBeenNthCalledWith(3, "/admin");
+	});
+
+	it("updates theme and language from the account menu", () => {
+		render(<HeaderControls />);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: /translated:theme_light/i }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: /translated:language_zh/i }),
+		);
+
+		expect(mockState.theme.setMode).toHaveBeenCalledWith("light");
+		expect(mockState.changeLanguage).toHaveBeenCalledWith("zh");
+		expect(mockState.queuePreferenceSync).toHaveBeenCalledWith({
+			language: "zh",
+		});
 	});
 
 	it("shows loading during logout and redirects to login on success", async () => {

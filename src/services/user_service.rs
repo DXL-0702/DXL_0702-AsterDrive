@@ -11,7 +11,7 @@ use crate::db::repository::{
 use crate::entities::user;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::services::auth_service;
+use crate::services::{auth_service, profile_service};
 use crate::types::{UserRole, UserStatus};
 
 /// Theme mode for the UI.
@@ -104,28 +104,121 @@ pub struct UserCore {
 /// /auth/me 响应：用户信息 + 偏好设置
 #[derive(Debug, Serialize, ToSchema)]
 pub struct MeResponse {
-    #[serde(flatten)]
-    pub user: UserCore,
+    pub id: i64,
+    pub username: String,
+    pub email: String,
+    pub role: crate::types::UserRole,
+    pub status: crate::types::UserStatus,
+    pub storage_used: i64,
+    pub storage_quota: i64,
+    #[schema(value_type = String)]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String)]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
     pub preferences: Option<UserPreferences>,
+    pub profile: profile_service::UserProfileInfo,
 }
 
-/// 获取当前用户完整信息（含偏好设置）
-pub async fn get_me(state: &AppState, user_id: i64) -> Result<MeResponse> {
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
-    let prefs = parse_preferences(&user);
-    Ok(MeResponse {
-        user: UserCore {
+/// 通用用户响应：核心字段 + profile
+#[derive(Debug, Serialize, ToSchema)]
+pub struct UserInfo {
+    pub id: i64,
+    pub username: String,
+    pub email: String,
+    pub role: crate::types::UserRole,
+    pub status: crate::types::UserStatus,
+    pub storage_used: i64,
+    pub storage_quota: i64,
+    #[schema(value_type = String)]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[schema(value_type = String)]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub profile: profile_service::UserProfileInfo,
+}
+
+fn user_core(user: &user::Model) -> UserCore {
+    UserCore {
+        id: user.id,
+        username: user.username.clone(),
+        email: user.email.clone(),
+        role: user.role,
+        status: user.status,
+        storage_used: user.storage_used,
+        storage_quota: user.storage_quota,
+        created_at: user.created_at,
+        updated_at: user.updated_at,
+    }
+}
+
+pub async fn to_user_info(
+    state: &AppState,
+    user: &user::Model,
+    audience: profile_service::AvatarAudience,
+) -> Result<UserInfo> {
+    let core = user_core(user);
+    Ok(UserInfo {
+        id: core.id,
+        username: core.username,
+        email: core.email,
+        role: core.role,
+        status: core.status,
+        storage_used: core.storage_used,
+        storage_quota: core.storage_quota,
+        created_at: core.created_at,
+        updated_at: core.updated_at,
+        profile: profile_service::get_profile_info(state, user, audience).await?,
+    })
+}
+
+pub async fn to_user_infos(
+    state: &AppState,
+    users: Vec<user::Model>,
+    audience: profile_service::AvatarAudience,
+) -> Result<Vec<UserInfo>> {
+    let profile_map = profile_service::get_profile_info_map(state, &users, audience).await?;
+
+    Ok(users
+        .into_iter()
+        .map(|user| UserInfo {
             id: user.id,
-            username: user.username,
-            email: user.email,
+            username: user.username.clone(),
+            email: user.email.clone(),
             role: user.role,
             status: user.status,
             storage_used: user.storage_used,
             storage_quota: user.storage_quota,
             created_at: user.created_at,
             updated_at: user.updated_at,
-        },
+            profile: profile_map
+                .get(&user.id)
+                .cloned()
+                .unwrap_or_else(|| profile_service::build_profile_info(&user, None, audience)),
+        })
+        .collect())
+}
+
+/// 获取当前用户完整信息（含偏好设置）
+pub async fn get_me(state: &AppState, user_id: i64) -> Result<MeResponse> {
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let prefs = parse_preferences(&user);
+    let core = user_core(&user);
+    Ok(MeResponse {
+        id: core.id,
+        username: core.username,
+        email: core.email,
+        role: core.role,
+        status: core.status,
+        storage_used: core.storage_used,
+        storage_quota: core.storage_quota,
+        created_at: core.created_at,
+        updated_at: core.updated_at,
         preferences: prefs,
+        profile: profile_service::get_profile_info(
+            state,
+            &user,
+            profile_service::AvatarAudience::SelfUser,
+        )
+        .await?,
     })
 }
 
@@ -140,15 +233,28 @@ pub async fn list_paginated(
     keyword: Option<&str>,
     role: Option<UserRole>,
     status: Option<UserStatus>,
-) -> Result<OffsetPage<user::Model>> {
-    load_offset_page(limit, offset, 100, |limit, offset| async move {
+) -> Result<OffsetPage<UserInfo>> {
+    let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
         user_repo::find_paginated(&state.db, limit, offset, keyword, role, status).await
     })
-    .await
+    .await?;
+
+    Ok(OffsetPage::new(
+        to_user_infos(
+            state,
+            page.items,
+            profile_service::AvatarAudience::AdminUser,
+        )
+        .await?,
+        page.total,
+        page.limit,
+        page.offset,
+    ))
 }
 
-pub async fn get(state: &AppState, id: i64) -> Result<user::Model> {
-    user_repo::find_by_id(&state.db, id).await
+pub async fn get(state: &AppState, id: i64) -> Result<UserInfo> {
+    let user = user_repo::find_by_id(&state.db, id).await?;
+    to_user_info(state, &user, profile_service::AvatarAudience::AdminUser).await
 }
 
 pub async fn create(
@@ -156,8 +262,9 @@ pub async fn create(
     username: &str,
     email: &str,
     password: &str,
-) -> Result<user::Model> {
-    auth_service::create_user_by_admin(state, username, email, password).await
+) -> Result<UserInfo> {
+    let user = auth_service::create_user_by_admin(state, username, email, password).await?;
+    to_user_info(state, &user, profile_service::AvatarAudience::AdminUser).await
 }
 
 pub async fn update(
@@ -166,7 +273,7 @@ pub async fn update(
     role: Option<UserRole>,
     status: Option<UserStatus>,
     storage_quota: Option<i64>,
-) -> Result<user::Model> {
+) -> Result<UserInfo> {
     if id == 1 {
         if let Some(ref status) = status
             && !status.is_active()
@@ -198,7 +305,7 @@ pub async fn update(
     active.updated_at = Set(Utc::now());
     let updated = active.update(&state.db).await.map_err(AsterError::from)?;
     state.cache.delete(&format!("user_status:{id}")).await;
-    Ok(updated)
+    to_user_info(state, &updated, profile_service::AvatarAudience::AdminUser).await
 }
 
 /// 强制删除用户及其所有数据（不可逆）
@@ -208,10 +315,11 @@ pub async fn update(
 /// 2. 删除所有文件夹（+ 属性）
 /// 3. 删除所有分享链接
 /// 4. 删除所有 WebDAV 账号
-/// 5. 删除用户存储策略分配
-/// 6. 清理上传 session 和临时文件
-/// 7. 清理资源锁
-/// 8. 删除用户记录
+/// 5. 删除头像上传对象
+/// 6. 删除用户存储策略分配
+/// 7. 清理上传 session 和临时文件
+/// 8. 清理资源锁
+/// 9. 删除用户记录
 pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     let db = &state.db;
     let user = user_repo::find_by_id(db, target_user_id).await?;
@@ -263,13 +371,18 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     // 4. 删除所有 WebDAV 账号
     webdav_account_repo::delete_all_by_user(db, target_user_id).await?;
 
-    // 5. 删除用户存储策略分配
+    // 5. 删除头像上传对象
+    if let Err(e) = profile_service::cleanup_avatar_upload(state, target_user_id).await {
+        tracing::warn!("cleanup avatar upload for user #{target_user_id} failed: {e}");
+    }
+
+    // 6. 删除用户存储策略分配
     policy_repo::delete_user_policies_by_user(db, target_user_id).await?;
 
-    // 6. 清理上传 session
+    // 7. 清理上传 session
     upload_session_repo::delete_all_by_user(db, target_user_id).await?;
 
-    // 7. 清理用户持有的资源锁
+    // 8. 清理用户持有的资源锁
     let locks = lock_repo::find_by_owner(db, target_user_id).await?;
     for lock in &locks {
         if let Err(e) = crate::services::lock_service::set_entity_locked(
@@ -288,7 +401,7 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     }
     lock_repo::delete_all_by_owner(db, target_user_id).await?;
 
-    // 8. 删除用户记录
+    // 9. 删除用户记录
     user::Entity::delete_by_id(target_user_id)
         .exec(db)
         .await

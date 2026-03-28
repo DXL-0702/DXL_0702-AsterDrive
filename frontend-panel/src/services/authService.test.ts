@@ -2,16 +2,29 @@ import { describe, expect, it, vi } from "vitest";
 import { authService } from "@/services/authService";
 
 const mockState = vi.hoisted(() => ({
+	clientPost: vi.fn(),
 	get: vi.fn(),
 	patch: vi.fn(),
 	post: vi.fn(),
+	put: vi.fn(),
 }));
 
 vi.mock("@/services/http", () => ({
 	api: {
+		client: {
+			post: mockState.clientPost,
+		},
 		get: mockState.get,
 		patch: mockState.patch,
 		post: mockState.post,
+		put: mockState.put,
+	},
+	ApiError: class ApiError extends Error {
+		code: number;
+		constructor(code: number, message: string) {
+			super(message);
+			this.code = code;
+		}
 	},
 }));
 
@@ -29,6 +42,7 @@ describe("authService", () => {
 		authService.logout();
 		authService.me();
 		authService.updatePreferences(prefs);
+		authService.setAvatarSource("gravatar");
 
 		expect(mockState.post).toHaveBeenNthCalledWith(1, "/auth/check", {
 			identifier: "alice@example.com",
@@ -50,5 +64,8 @@ describe("authService", () => {
 		expect(mockState.post).toHaveBeenNthCalledWith(5, "/auth/logout");
 		expect(mockState.get).toHaveBeenCalledWith("/auth/me");
 		expect(mockState.patch).toHaveBeenCalledWith("/auth/preferences", prefs);
+		expect(mockState.put).toHaveBeenCalledWith("/auth/profile/avatar/source", {
+			source: "gravatar",
+		});
 	});
 });

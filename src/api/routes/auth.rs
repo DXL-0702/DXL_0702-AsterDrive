@@ -2,7 +2,7 @@ use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{audit_service, auth_service};
+use crate::services::{audit_service, auth_service, profile_service};
 use actix_governor::Governor;
 use actix_web::cookie::time::Duration as CookieDuration;
 use actix_web::cookie::{Cookie, SameSite};
@@ -15,12 +15,14 @@ use crate::api::middleware::rate_limit;
 
 // Re-export preference types from user_service for OpenAPI schema registration.
 pub use crate::services::user_service::{
-    ColorPreset, Language, MeResponse, PrefViewMode, ThemeMode, UpdatePreferencesReq,
+    ColorPreset, Language, MeResponse, PrefViewMode, ThemeMode, UpdatePreferencesReq, UserInfo,
     UserPreferences,
 };
 
 use crate::services::auth_service::Claims;
+pub use crate::services::profile_service::{AvatarInfo, UserProfileInfo};
 use crate::services::user_service;
+pub use crate::types::AvatarSource;
 
 const ACCESS_COOKIE: &str = "aster_access";
 const REFRESH_COOKIE: &str = "aster_refresh";
@@ -42,7 +44,10 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
             web::scope("")
                 .wrap(crate::api::middleware::auth::JwtAuth)
                 .route("/me", web::get().to(me))
-                .route("/preferences", web::patch().to(patch_preferences)),
+                .route("/preferences", web::patch().to(patch_preferences))
+                .route("/profile/avatar/upload", web::post().to(upload_avatar))
+                .route("/profile/avatar/source", web::put().to(put_avatar_source))
+                .route("/profile/avatar/{size}", web::get().to(get_self_avatar)),
         )
 }
 
@@ -75,6 +80,11 @@ pub struct SetupReq {
 pub struct LoginReq {
     pub identifier: String,
     pub password: String,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct UpdateAvatarSourceReq {
+    pub source: AvatarSource,
 }
 
 /// 构建 HttpOnly cookie
@@ -120,7 +130,7 @@ pub async fn check(state: web::Data<AppState>, body: web::Json<CheckReq>) -> Res
     operation_id = "setup",
     request_body = SetupReq,
     responses(
-        (status = 201, description = "Admin account created", body = inline(ApiResponse<crate::entities::user::Model>)),
+        (status = 201, description = "Admin account created", body = inline(ApiResponse<UserInfo>)),
         (status = 400, description = "System already initialized"),
     ),
 )]
@@ -130,6 +140,9 @@ pub async fn setup(
     body: web::Json<SetupReq>,
 ) -> Result<HttpResponse> {
     let user = auth_service::setup(&state, &body.username, &body.email, &body.password).await?;
+    let user_info =
+        user_service::to_user_info(&state, &user, profile_service::AvatarAudience::SelfUser)
+            .await?;
     let ctx = audit_service::AuditContext {
         user_id: user.id,
         ip_address: req
@@ -152,7 +165,7 @@ pub async fn setup(
         None,
     )
     .await;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(user)))
+    Ok(HttpResponse::Created().json(ApiResponse::ok(user_info)))
 }
 
 #[utoipa::path(
@@ -162,7 +175,7 @@ pub async fn setup(
     operation_id = "register",
     request_body = RegisterReq,
     responses(
-        (status = 201, description = "Registration successful", body = inline(ApiResponse<crate::entities::user::Model>)),
+        (status = 201, description = "Registration successful", body = inline(ApiResponse<UserInfo>)),
         (status = 400, description = "Validation error"),
     ),
 )]
@@ -172,6 +185,9 @@ pub async fn register(
     body: web::Json<RegisterReq>,
 ) -> Result<HttpResponse> {
     let user = auth_service::register(&state, &body.username, &body.email, &body.password).await?;
+    let user_info =
+        user_service::to_user_info(&state, &user, profile_service::AvatarAudience::SelfUser)
+            .await?;
     let ctx = audit_service::AuditContext {
         user_id: user.id,
         ip_address: req
@@ -194,7 +210,7 @@ pub async fn register(
         None,
     )
     .await;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(user)))
+    Ok(HttpResponse::Created().json(ApiResponse::ok(user_info)))
 }
 
 #[utoipa::path(
@@ -344,4 +360,70 @@ pub async fn patch_preferences(
 ) -> Result<HttpResponse> {
     let prefs = user_service::update_preferences(&state, claims.user_id, body.into_inner()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(prefs)))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/auth/profile/avatar/upload",
+    tag = "auth",
+    operation_id = "upload_avatar",
+    request_body(content = String, content_type = "multipart/form-data", description = "Avatar image to upload"),
+    responses(
+        (status = 200, description = "Avatar uploaded", body = inline(ApiResponse<UserProfileInfo>)),
+        (status = 400, description = "Invalid image upload"),
+        (status = 401, description = "Not authenticated"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn upload_avatar(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    mut payload: actix_multipart::Multipart,
+) -> Result<HttpResponse> {
+    let profile = profile_service::upload_avatar(&state, claims.user_id, &mut payload).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(profile)))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1/auth/profile/avatar/source",
+    tag = "auth",
+    operation_id = "set_avatar_source",
+    request_body = UpdateAvatarSourceReq,
+    responses(
+        (status = 200, description = "Avatar source updated", body = inline(ApiResponse<UserProfileInfo>)),
+        (status = 400, description = "Invalid avatar source"),
+        (status = 401, description = "Not authenticated"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn put_avatar_source(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    body: web::Json<UpdateAvatarSourceReq>,
+) -> Result<HttpResponse> {
+    let profile = profile_service::set_avatar_source(&state, claims.user_id, body.source).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(profile)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/auth/profile/avatar/{size}",
+    tag = "auth",
+    operation_id = "get_self_avatar",
+    params(("size" = u32, Path, description = "Avatar size (512 or 1024)")),
+    responses(
+        (status = 200, description = "Avatar image (WebP)"),
+        (status = 401, description = "Not authenticated"),
+        (status = 404, description = "Avatar not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_self_avatar(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<u32>,
+) -> Result<HttpResponse> {
+    let bytes = profile_service::get_avatar_bytes(&state, claims.user_id, *path).await?;
+    Ok(profile_service::avatar_image_response(bytes))
 }

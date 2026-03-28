@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
+import { UserAvatarImage } from "@/components/common/UserAvatarImage";
 import {
 	getRoleBadgeClass,
 	getStatusBadgeClass,
@@ -256,11 +257,12 @@ export function UserDetailDialog({
 				<div className="grid gap-0 lg:grid-cols-[320px_minmax(0,1fr)]">
 					<aside className="space-y-5 border-b bg-muted/20 p-6 lg:border-r lg:border-b-0">
 						<div className="space-y-3">
-							<div className="aspect-square w-full max-w-[220px] overflow-hidden rounded-2xl bg-muted/60 text-muted-foreground">
-								<div className="flex h-full w-full items-center justify-center">
-									<Icon name="Info" className="h-12 w-12" />
-								</div>
-							</div>
+							<UserAvatarImage
+								avatar={user.profile.avatar}
+								name={user.username}
+								size="xl"
+								className="aspect-square w-full max-w-[220px]"
+							/>
 							<div className="space-y-1">
 								<h3 className="text-lg font-semibold text-foreground">
 									{user.username}

@@ -3,6 +3,31 @@ mod common;
 
 use actix_web::test;
 use serde_json::Value;
+use std::io::Cursor;
+
+fn avatar_upload_payload() -> (String, Vec<u8>) {
+    let boundary = "----AsterAvatarBoundary".to_string();
+    let image = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+        8,
+        8,
+        image::Rgba([255, 120, 0, 255]),
+    ));
+    let mut png = Cursor::new(Vec::new());
+    image.write_to(&mut png, image::ImageFormat::Png).unwrap();
+
+    let mut body = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\n\
+             Content-Disposition: form-data; name=\"file\"; filename=\"avatar.png\"\r\n\
+             Content-Type: image/png\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(&png.into_inner());
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (boundary, body)
+}
 
 #[actix_web::test]
 async fn test_register_and_login() {
@@ -101,6 +126,7 @@ async fn test_auth_me() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["username"], "testuser");
     assert!(body["data"]["password_hash"].is_null());
+    assert_eq!(body["data"]["profile"]["avatar"]["source"], "none");
 }
 
 /// 注册时自动分配系统默认存储策略
@@ -453,6 +479,224 @@ async fn test_patch_preferences_sort_by_type() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["sort_by"], "type");
+}
+
+#[actix_web::test]
+async fn test_avatar_upload_and_source_switch() {
+    let state = common::setup().await;
+    let avatar_base_path = aster_drive::db::repository::policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist")
+        .base_path;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["id"].as_i64().unwrap();
+
+    let (boundary, payload) = avatar_upload_payload();
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/profile/avatar/upload")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["avatar"]["source"], "upload");
+    assert_eq!(body["data"]["avatar"]["version"], 1);
+    assert_eq!(
+        body["data"]["avatar"]["url_512"],
+        "/auth/profile/avatar/512?v=1"
+    );
+    let avatar_v1_512 = std::path::PathBuf::from(&avatar_base_path)
+        .join(format!("profile/avatar/{user_id}/v1/512.webp"));
+    let avatar_v1_1024 = std::path::PathBuf::from(&avatar_base_path)
+        .join(format!("profile/avatar/{user_id}/v1/1024.webp"));
+    assert!(avatar_v1_512.exists());
+    assert!(avatar_v1_1024.exists());
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/profile/avatar/512")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.headers().get("content-type").unwrap(), "image/webp");
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/auth/profile/avatar/source")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "source": "gravatar"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["avatar"]["source"], "gravatar");
+    assert_eq!(body["data"]["avatar"]["version"], 2);
+    assert!(
+        body["data"]["avatar"]["url_512"]
+            .as_str()
+            .unwrap()
+            .contains("gravatar.com/avatar/")
+    );
+    assert!(!avatar_v1_512.exists());
+    assert!(!avatar_v1_1024.exists());
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/profile/avatar/512")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404);
+}
+
+#[actix_web::test]
+async fn test_avatar_reupload_replaces_previous_objects() {
+    let state = common::setup().await;
+    let avatar_base_path = aster_drive::db::repository::policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist")
+        .base_path;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["id"].as_i64().unwrap();
+
+    let (boundary, payload) = avatar_upload_payload();
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/profile/avatar/upload")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let avatar_v1_512 = std::path::PathBuf::from(&avatar_base_path)
+        .join(format!("profile/avatar/{user_id}/v1/512.webp"));
+    let avatar_v1_1024 = std::path::PathBuf::from(&avatar_base_path)
+        .join(format!("profile/avatar/{user_id}/v1/1024.webp"));
+    assert!(avatar_v1_512.exists());
+    assert!(avatar_v1_1024.exists());
+
+    let (boundary, payload) = avatar_upload_payload();
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/profile/avatar/upload")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["avatar"]["source"], "upload");
+    assert_eq!(body["data"]["avatar"]["version"], 2);
+    assert_eq!(
+        body["data"]["avatar"]["url_512"],
+        "/auth/profile/avatar/512?v=2"
+    );
+
+    let avatar_v2_512 = std::path::PathBuf::from(&avatar_base_path)
+        .join(format!("profile/avatar/{user_id}/v2/512.webp"));
+    let avatar_v2_1024 = std::path::PathBuf::from(&avatar_base_path)
+        .join(format!("profile/avatar/{user_id}/v2/1024.webp"));
+    assert!(!avatar_v1_512.exists());
+    assert!(!avatar_v1_1024.exists());
+    assert!(avatar_v2_512.exists());
+    assert!(avatar_v2_1024.exists());
+}
+
+#[actix_web::test]
+async fn test_avatar_switch_to_none_deletes_uploaded_objects() {
+    let state = common::setup().await;
+    let avatar_base_path = aster_drive::db::repository::policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist")
+        .base_path;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["id"].as_i64().unwrap();
+
+    let (boundary, payload) = avatar_upload_payload();
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/profile/avatar/upload")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let avatar_v1_512 = std::path::PathBuf::from(&avatar_base_path)
+        .join(format!("profile/avatar/{user_id}/v1/512.webp"));
+    let avatar_v1_1024 = std::path::PathBuf::from(&avatar_base_path)
+        .join(format!("profile/avatar/{user_id}/v1/1024.webp"));
+    assert!(avatar_v1_512.exists());
+    assert!(avatar_v1_1024.exists());
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/auth/profile/avatar/source")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "source": "none"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["avatar"]["source"], "none");
+    assert_eq!(body["data"]["avatar"]["version"], 2);
+    assert!(body["data"]["avatar"]["url_512"].is_null());
+
+    assert!(!avatar_v1_512.exists());
+    assert!(!avatar_v1_1024.exists());
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/profile/avatar/512")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404);
 }
 
 /// Unauthenticated requests to PATCH /preferences should be rejected.

@@ -21,6 +21,7 @@ export const ADMIN_TABLE_ACTIONS_WIDTH_CLASS = "w-24";
 /** 侧栏 / 列表内边距 */
 export const SIDEBAR_SECTION_PADDING_CLASS = "px-2";
 export const PAGE_SECTION_PADDING_CLASS = "px-4 md:px-6";
+export const MENU_SECTION_PADDING_CLASS = "px-3";
 
 /** FolderTree 视觉节奏 */
 export const FOLDER_TREE_INDENT_PX = 16;

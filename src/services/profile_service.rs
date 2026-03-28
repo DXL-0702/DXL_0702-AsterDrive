@@ -1,0 +1,444 @@
+use std::collections::HashMap;
+use std::io::Cursor;
+
+use actix_multipart::Multipart;
+use actix_web::HttpResponse;
+use chrono::Utc;
+use futures::StreamExt;
+use image::ImageFormat;
+use image::imageops::FilterType;
+use image::{DynamicImage, GenericImageView, ImageReader, Limits};
+use md5::{Digest, Md5};
+use sea_orm::Set;
+use serde::Serialize;
+use utoipa::ToSchema;
+
+use crate::api::constants::YEAR_SECS;
+use crate::db::repository::{policy_repo, user_profile_repo, user_repo};
+use crate::entities::{user, user_profile};
+use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::runtime::AppState;
+use crate::services::file_service;
+use crate::types::AvatarSource;
+
+const MAX_AVATAR_UPLOAD_SIZE: usize = 10 * 1024 * 1024;
+const MAX_AVATAR_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
+const AVATAR_SIZE_SM: u32 = 512;
+const AVATAR_SIZE_LG: u32 = 1024;
+
+#[derive(Debug, Clone, Copy)]
+pub enum AvatarAudience {
+    SelfUser,
+    AdminUser,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct AvatarInfo {
+    pub source: AvatarSource,
+    pub url_512: Option<String>,
+    pub url_1024: Option<String>,
+    pub version: i32,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct UserProfileInfo {
+    pub avatar: AvatarInfo,
+}
+
+fn gravatar_hash(email: &str) -> String {
+    let normalized = email.trim().to_lowercase();
+    let mut hasher = Md5::new();
+    hasher.update(normalized.as_bytes());
+    crate::utils::hash::bytes_to_hex(&hasher.finalize())
+}
+
+// TODO: 允许用户自定义 Gravatar 代理 URL
+fn gravatar_url(email: &str, size: u32) -> String {
+    let hash = gravatar_hash(email);
+    format!("https://www.gravatar.com/avatar/{hash}?d=identicon&s={size}&r=g")
+}
+
+fn avatar_api_path(user_id: i64, version: i32, size: u32, audience: AvatarAudience) -> String {
+    match audience {
+        AvatarAudience::SelfUser => format!("/auth/profile/avatar/{size}?v={version}"),
+        AvatarAudience::AdminUser => {
+            format!("/admin/users/{user_id}/avatar/{size}?v={version}")
+        }
+    }
+}
+
+fn avatar_object_key(prefix: &str, size: u32) -> String {
+    format!("{prefix}/{size}.webp")
+}
+
+fn upload_prefix(user_id: i64, version: i32) -> String {
+    format!("profile/avatar/{user_id}/v{version}")
+}
+
+fn encode_webp(img: &DynamicImage) -> Result<Vec<u8>> {
+    let mut buf = Cursor::new(Vec::new());
+    img.write_to(&mut buf, ImageFormat::WebP)
+        .map_aster_err_ctx("encode webp", AsterError::file_upload_failed)?;
+    Ok(buf.into_inner())
+}
+
+fn process_avatar_image(data: Vec<u8>) -> Result<(Vec<u8>, Vec<u8>)> {
+    let mut reader = ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_aster_err_ctx("guess avatar format", AsterError::file_type_not_allowed)?;
+
+    let mut limits = Limits::default();
+    limits.max_alloc = Some(MAX_AVATAR_DECODE_ALLOC);
+    reader.limits(limits);
+
+    let img = reader
+        .decode()
+        .map_aster_err_ctx("decode avatar", AsterError::file_type_not_allowed)?;
+
+    let (width, height) = img.dimensions();
+    if width == 0 || height == 0 {
+        return Err(AsterError::validation_error("empty image"));
+    }
+
+    let side = width.min(height);
+    let left = (width - side) / 2;
+    let top = (height - side) / 2;
+    let square = img.crop_imm(left, top, side, side);
+
+    let large = square.resize_exact(AVATAR_SIZE_LG, AVATAR_SIZE_LG, FilterType::Triangle);
+    let small = square.resize_exact(AVATAR_SIZE_SM, AVATAR_SIZE_SM, FilterType::Triangle);
+
+    let large_bytes = encode_webp(&large)?;
+    let small_bytes = encode_webp(&small)?;
+    Ok((small_bytes, large_bytes))
+}
+
+async fn read_avatar_upload(payload: &mut Multipart) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    let mut saw_file = false;
+
+    while let Some(field) = payload.next().await {
+        let mut field = field.map_aster_err(AsterError::file_upload_failed)?;
+        let has_filename = field
+            .content_disposition()
+            .and_then(|cd| cd.get_filename())
+            .is_some();
+        if !has_filename {
+            while let Some(chunk) = field.next().await {
+                chunk.map_aster_err(AsterError::file_upload_failed)?;
+            }
+            continue;
+        }
+
+        saw_file = true;
+        while let Some(chunk) = field.next().await {
+            let chunk = chunk.map_aster_err(AsterError::file_upload_failed)?;
+            if bytes.len() + chunk.len() > MAX_AVATAR_UPLOAD_SIZE {
+                return Err(AsterError::file_too_large(format!(
+                    "avatar upload exceeds {} bytes",
+                    MAX_AVATAR_UPLOAD_SIZE
+                )));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        break;
+    }
+
+    if !saw_file || bytes.is_empty() {
+        return Err(AsterError::validation_error("avatar file is required"));
+    }
+
+    Ok(bytes)
+}
+
+async fn delete_upload_objects(state: &AppState, profile: &user_profile::Model) {
+    if profile.avatar_source != AvatarSource::Upload {
+        return;
+    }
+
+    let Some(policy_id) = profile.avatar_policy_id else {
+        return;
+    };
+    let Some(prefix) = profile.avatar_key.as_deref() else {
+        return;
+    };
+
+    let Ok(policy) = policy_repo::find_by_id(&state.db, policy_id).await else {
+        return;
+    };
+    let Ok(driver) = state.driver_registry.get_driver(&policy) else {
+        return;
+    };
+
+    for size in [AVATAR_SIZE_SM, AVATAR_SIZE_LG] {
+        let path = avatar_object_key(prefix, size);
+        if let Err(e) = driver.delete(&path).await {
+            tracing::warn!("failed to delete avatar object {path}: {e}");
+        }
+    }
+}
+
+pub async fn cleanup_avatar_upload(state: &AppState, user_id: i64) -> Result<()> {
+    let profile = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
+    if let Some(profile) = profile.as_ref() {
+        delete_upload_objects(state, profile).await;
+    }
+    Ok(())
+}
+
+fn build_avatar_info(
+    user: &user::Model,
+    profile: Option<&user_profile::Model>,
+    audience: AvatarAudience,
+) -> AvatarInfo {
+    let source = profile
+        .map(|p| p.avatar_source)
+        .unwrap_or(AvatarSource::None);
+    let version = profile.map(|p| p.avatar_version).unwrap_or(0);
+
+    match source {
+        AvatarSource::None => AvatarInfo {
+            source,
+            url_512: None,
+            url_1024: None,
+            version,
+        },
+        AvatarSource::Gravatar => AvatarInfo {
+            source,
+            url_512: Some(gravatar_url(&user.email, AVATAR_SIZE_SM)),
+            url_1024: Some(gravatar_url(&user.email, AVATAR_SIZE_LG)),
+            version,
+        },
+        AvatarSource::Upload => {
+            let has_upload = profile
+                .map(|p| p.avatar_policy_id.is_some() && p.avatar_key.is_some())
+                .unwrap_or(false);
+
+            AvatarInfo {
+                source,
+                url_512: has_upload
+                    .then(|| avatar_api_path(user.id, version, AVATAR_SIZE_SM, audience)),
+                url_1024: has_upload
+                    .then(|| avatar_api_path(user.id, version, AVATAR_SIZE_LG, audience)),
+                version,
+            }
+        }
+    }
+}
+
+pub fn build_profile_info(
+    user: &user::Model,
+    profile: Option<&user_profile::Model>,
+    audience: AvatarAudience,
+) -> UserProfileInfo {
+    UserProfileInfo {
+        avatar: build_avatar_info(user, profile, audience),
+    }
+}
+
+pub async fn get_profile_info(
+    state: &AppState,
+    user: &user::Model,
+    audience: AvatarAudience,
+) -> Result<UserProfileInfo> {
+    let profile = user_profile_repo::find_by_user_id(&state.db, user.id).await?;
+    Ok(build_profile_info(user, profile.as_ref(), audience))
+}
+
+pub async fn get_profile_info_map(
+    state: &AppState,
+    users: &[user::Model],
+    audience: AvatarAudience,
+) -> Result<HashMap<i64, UserProfileInfo>> {
+    let user_ids: Vec<i64> = users.iter().map(|user| user.id).collect();
+    let profiles = user_profile_repo::find_by_user_ids(&state.db, &user_ids).await?;
+
+    Ok(users
+        .iter()
+        .map(|user| {
+            (
+                user.id,
+                build_profile_info(user, profiles.get(&user.id), audience),
+            )
+        })
+        .collect())
+}
+
+pub async fn upload_avatar(
+    state: &AppState,
+    user_id: i64,
+    payload: &mut Multipart,
+) -> Result<UserProfileInfo> {
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
+    let upload_data = read_avatar_upload(payload).await?;
+    let (small_bytes, large_bytes) = process_avatar_image(upload_data)?;
+    let policy = file_service::resolve_policy(state, user_id, None).await?;
+    let driver = state.driver_registry.get_driver(&policy)?;
+    let version = existing
+        .as_ref()
+        .map(|profile| profile.avatar_version.saturating_add(1))
+        .unwrap_or(1);
+    let prefix = upload_prefix(user_id, version);
+    let small_path = avatar_object_key(&prefix, AVATAR_SIZE_SM);
+    let large_path = avatar_object_key(&prefix, AVATAR_SIZE_LG);
+
+    driver.put(&small_path, &small_bytes).await?;
+    if let Err(e) = driver.put(&large_path, &large_bytes).await {
+        let _ = driver.delete(&small_path).await;
+        return Err(e);
+    }
+
+    let now = Utc::now();
+    let saved = match existing.clone() {
+        Some(current) => {
+            let mut active: user_profile::ActiveModel = current.into();
+            active.avatar_source = Set(AvatarSource::Upload);
+            active.avatar_policy_id = Set(Some(policy.id));
+            active.avatar_key = Set(Some(prefix.clone()));
+            active.avatar_version = Set(version);
+            active.updated_at = Set(now);
+            user_profile_repo::update(&state.db, active).await
+        }
+        None => {
+            user_profile_repo::create(
+                &state.db,
+                user_profile::ActiveModel {
+                    user_id: Set(user_id),
+                    avatar_source: Set(AvatarSource::Upload),
+                    avatar_policy_id: Set(Some(policy.id)),
+                    avatar_key: Set(Some(prefix.clone())),
+                    avatar_version: Set(version),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                },
+            )
+            .await
+        }
+    };
+
+    let saved = match saved {
+        Ok(model) => model,
+        Err(err) => {
+            let _ = driver.delete(&small_path).await;
+            let _ = driver.delete(&large_path).await;
+            return Err(err);
+        }
+    };
+
+    if let Some(previous) = existing.as_ref() {
+        delete_upload_objects(state, previous).await;
+    }
+
+    Ok(build_profile_info(
+        &user,
+        Some(&saved),
+        AvatarAudience::SelfUser,
+    ))
+}
+
+pub async fn set_avatar_source(
+    state: &AppState,
+    user_id: i64,
+    source: AvatarSource,
+) -> Result<UserProfileInfo> {
+    if source == AvatarSource::Upload {
+        return Err(AsterError::validation_error(
+            "upload avatar source must use the upload endpoint",
+        ));
+    }
+
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
+
+    if existing.is_none() && source == AvatarSource::None {
+        return Ok(build_profile_info(&user, None, AvatarAudience::SelfUser));
+    }
+
+    let now = Utc::now();
+    let saved = match existing.clone() {
+        Some(current) => {
+            let next_version = current.avatar_version.saturating_add(1);
+            let mut active: user_profile::ActiveModel = current.into();
+            active.avatar_source = Set(source);
+            active.avatar_policy_id = Set(None);
+            active.avatar_key = Set(None);
+            active.avatar_version = Set(next_version);
+            active.updated_at = Set(now);
+            user_profile_repo::update(&state.db, active).await?
+        }
+        None => {
+            user_profile_repo::create(
+                &state.db,
+                user_profile::ActiveModel {
+                    user_id: Set(user_id),
+                    avatar_source: Set(source),
+                    avatar_policy_id: Set(None),
+                    avatar_key: Set(None),
+                    avatar_version: Set(0),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                },
+            )
+            .await?
+        }
+    };
+
+    if let Some(previous) = existing.as_ref() {
+        delete_upload_objects(state, previous).await;
+    }
+
+    Ok(build_profile_info(
+        &user,
+        Some(&saved),
+        AvatarAudience::SelfUser,
+    ))
+}
+
+fn validate_avatar_size(size: u32) -> Result<u32> {
+    match size {
+        AVATAR_SIZE_SM | AVATAR_SIZE_LG => Ok(size),
+        _ => Err(AsterError::validation_error(
+            "avatar size must be 512 or 1024",
+        )),
+    }
+}
+
+pub async fn get_avatar_bytes(state: &AppState, user_id: i64, size: u32) -> Result<Vec<u8>> {
+    let size = validate_avatar_size(size)?;
+    user_repo::find_by_id(&state.db, user_id).await?;
+    let profile = user_profile_repo::find_by_user_id(&state.db, user_id)
+        .await?
+        .ok_or_else(|| AsterError::record_not_found(format!("profile for user #{user_id}")))?;
+
+    if profile.avatar_source != AvatarSource::Upload {
+        return Err(AsterError::record_not_found(format!(
+            "user #{user_id} does not have an uploaded avatar"
+        )));
+    }
+
+    let prefix = profile
+        .avatar_key
+        .as_deref()
+        .ok_or_else(|| AsterError::record_not_found("avatar key missing"))?;
+    let policy_id = profile
+        .avatar_policy_id
+        .ok_or_else(|| AsterError::record_not_found("avatar policy missing"))?;
+    let policy = policy_repo::find_by_id(&state.db, policy_id).await?;
+    let driver = state.driver_registry.get_driver(&policy)?;
+    let path = avatar_object_key(prefix, size);
+    driver
+        .get(&path)
+        .await
+        .map_err(|_| AsterError::record_not_found(format!("avatar object {path}")))
+}
+
+pub fn avatar_image_response(bytes: Vec<u8>) -> HttpResponse {
+    HttpResponse::Ok()
+        .content_type("image/webp")
+        .insert_header((
+            "Cache-Control",
+            format!("public, max-age={YEAR_SECS}, immutable"),
+        ))
+        .body(bytes)
+}
