@@ -1,0 +1,208 @@
+import { fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Sidebar } from "@/components/layout/Sidebar";
+
+const mockState = vi.hoisted(() => ({
+	pathname: "/",
+	auth: {
+		user: {
+			storage_quota: 100,
+			storage_used: 25,
+		},
+	},
+	hasInternalDragData: vi.fn(),
+	readInternalDragData: vi.fn(),
+}));
+
+vi.mock("react-i18next", () => ({
+	useTranslation: () => ({
+		t: (key: string, options?: Record<string, string>) => {
+			if (key === "files:storage_quota") {
+				return `${key}:${options?.used}/${options?.quota}`;
+			}
+			if (key === "files:storage_used") {
+				return `${key}:${options?.used}`;
+			}
+			return `translated:${key}`;
+		},
+	}),
+}));
+
+vi.mock("react-router-dom", () => ({
+	Link: ({
+		children,
+		onClick,
+		onDragOver,
+		onDragLeave,
+		onDrop,
+		className,
+	}: {
+		children: React.ReactNode;
+		onClick?: () => void;
+		onDragOver?: (event: React.DragEvent<HTMLButtonElement>) => void;
+		onDragLeave?: (event: React.DragEvent<HTMLButtonElement>) => void;
+		onDrop?: (event: React.DragEvent<HTMLButtonElement>) => void;
+		className?: string;
+	}) => (
+		<button
+			type="button"
+			className={className}
+			onClick={onClick}
+			onDragOver={onDragOver}
+			onDragLeave={onDragLeave}
+			onDrop={onDrop}
+		>
+			{children}
+		</button>
+	),
+	useLocation: () => ({
+		pathname: mockState.pathname,
+	}),
+}));
+
+vi.mock("@/stores/authStore", () => ({
+	useAuthStore: (selector: (state: typeof mockState.auth) => unknown) =>
+		selector(mockState.auth),
+}));
+
+vi.mock("@/components/folders/FolderTree", () => ({
+	FolderTree: ({ onMoveToFolder }: { onMoveToFolder?: unknown }) => (
+		<div
+			data-testid="folder-tree"
+			data-has-move={String(Boolean(onMoveToFolder))}
+		>
+			FolderTree
+		</div>
+	),
+}));
+
+vi.mock("@/components/ui/icon", () => ({
+	Icon: ({ name }: { name: string }) => (
+		<span data-testid="icon" data-name={name} />
+	),
+}));
+
+vi.mock("@/components/ui/progress", () => ({
+	Progress: ({ value }: { value: number }) => (
+		<div data-testid="progress" data-value={String(value)} />
+	),
+}));
+
+vi.mock("@/components/ui/scroll-area", () => ({
+	ScrollArea: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+}));
+
+vi.mock("@/components/ui/separator", () => ({
+	Separator: () => <hr />,
+}));
+
+vi.mock("@/lib/format", () => ({
+	formatBytes: (value: number) => `formatted:${value}`,
+}));
+
+vi.mock("@/lib/dragDrop", () => ({
+	hasInternalDragData: (dataTransfer: DataTransfer | null) =>
+		mockState.hasInternalDragData(dataTransfer),
+	readInternalDragData: (dataTransfer: DataTransfer | null) =>
+		mockState.readInternalDragData(dataTransfer),
+}));
+
+describe("Sidebar", () => {
+	beforeEach(() => {
+		mockState.pathname = "/";
+		mockState.auth.user = {
+			storage_quota: 100,
+			storage_used: 25,
+		};
+		mockState.hasInternalDragData.mockReset();
+		mockState.readInternalDragData.mockReset();
+		mockState.hasInternalDragData.mockReturnValue(false);
+		mockState.readInternalDragData.mockReturnValue(null);
+	});
+
+	it("renders navigation, folder tree, and storage quota usage", () => {
+		render(<Sidebar mobileOpen={false} onMobileClose={vi.fn()} />);
+
+		expect(screen.getByTestId("folder-tree")).toHaveAttribute(
+			"data-has-move",
+			"false",
+		);
+		expect(
+			screen.getByRole("button", { name: /translated:share:my_shares_title/i }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: /translated:trash/i }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: /translated:webdav/i }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("translated:files:storage_space"),
+		).toBeInTheDocument();
+		expect(screen.getByTestId("progress")).toHaveAttribute("data-value", "25");
+		expect(
+			screen.getByText("files:storage_quota:formatted:25/formatted:100"),
+		).toBeInTheDocument();
+	});
+
+	it("renders storage used copy when no quota is configured", () => {
+		mockState.auth.user = {
+			storage_quota: 0,
+			storage_used: 25,
+		};
+
+		render(<Sidebar mobileOpen={false} onMobileClose={vi.fn()} />);
+
+		expect(screen.getByTestId("progress")).toHaveAttribute("data-value", "0");
+		expect(
+			screen.getByText("files:storage_used:formatted:25"),
+		).toBeInTheDocument();
+	});
+
+	it("renders and closes the mobile overlay", () => {
+		const onMobileClose = vi.fn();
+
+		render(<Sidebar mobileOpen onMobileClose={onMobileClose} />);
+
+		fireEvent.click(screen.getByRole("button", { name: "Close sidebar" }));
+
+		expect(onMobileClose).toHaveBeenCalledTimes(1);
+	});
+
+	it("handles trash drag and drop for internal move payloads", () => {
+		const onTrashDrop = vi.fn();
+		const dataTransfer = { dropEffect: "copy" } as DataTransfer;
+		mockState.hasInternalDragData.mockReturnValue(true);
+		mockState.readInternalDragData.mockReturnValue({
+			fileIds: [1],
+			folderIds: [2],
+		});
+
+		render(
+			<Sidebar
+				mobileOpen={false}
+				onMobileClose={vi.fn()}
+				onTrashDrop={onTrashDrop}
+			/>,
+		);
+
+		const trashButton = screen.getByRole("button", {
+			name: /translated:trash/i,
+		});
+
+		fireEvent.dragOver(trashButton, { dataTransfer });
+
+		expect(dataTransfer.dropEffect).toBe("move");
+		expect(trashButton.className).toContain("bg-destructive/10");
+
+		fireEvent.drop(trashButton, { dataTransfer });
+
+		expect(onTrashDrop).toHaveBeenCalledWith({
+			fileIds: [1],
+			folderIds: [2],
+		});
+		expect(trashButton.className).not.toContain("bg-destructive/10");
+	});
+});

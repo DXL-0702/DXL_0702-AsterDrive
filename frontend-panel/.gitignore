@@ -12,6 +12,8 @@ dist
 dist-ssr
 *.local
 generated/
+dev-dist/
+public/pdfjs/
 
 # Editor directories and files
 .vscode/*
