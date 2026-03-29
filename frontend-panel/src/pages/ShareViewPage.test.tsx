@@ -26,7 +26,9 @@ const mockState = vi.hoisted(() => ({
 			return `downloads:${opts?.count}/${opts?.max}`;
 		}
 		if (key === "share:n_downloads") return `downloads:${opts?.count}`;
-		if (key === "share:shared_by") return `shared-by:${opts?.name}`;
+		if (key === "share:shared_with_you") {
+			return `shared-with-you:${opts?.name}:${opts?.resource}`;
+		}
 		if (key === "share:password_verified") return "password-verified";
 		return key;
 	},
@@ -51,6 +53,18 @@ vi.mock("sonner", () => ({
 
 vi.mock("@/components/common/SkeletonCard", () => ({
 	SkeletonCard: () => <div>skeleton-card</div>,
+}));
+
+vi.mock("@/components/common/UserAvatarImage", () => ({
+	UserAvatarImage: ({
+		avatar,
+		name,
+	}: {
+		avatar?: { url_512?: string | null; url_1024?: string | null } | null;
+		name: string;
+	}) => (
+		<div>{`avatar:${name}:${avatar?.url_512 ?? avatar?.url_1024 ?? "none"}`}</div>
+	),
 }));
 
 vi.mock("@/components/common/ToolbarBar", () => ({
@@ -322,6 +336,15 @@ describe("ShareViewPage", () => {
 		mockState.getInfo.mockResolvedValueOnce({
 			has_password: true,
 			name: "Secret Folder",
+			shared_by: {
+				avatar: {
+					source: "upload",
+					url_512: "/s/share-token/avatar/512?v=1",
+					url_1024: "/s/share-token/avatar/1024?v=1",
+					version: 1,
+				},
+				name: "Alice Example",
+			},
 			share_type: "folder",
 		} as never);
 		mockState.listContent.mockResolvedValueOnce({
@@ -352,6 +375,9 @@ describe("ShareViewPage", () => {
 		expect(
 			await screen.findByRole("button", { name: "folder:Docs" }),
 		).toBeInTheDocument();
+		expect(
+			screen.getByText("shared-with-you:Alice Example:Secret Folder"),
+		).toBeInTheDocument();
 	});
 
 	it("renders file shares with preview and download actions", async () => {
@@ -362,7 +388,15 @@ describe("ShareViewPage", () => {
 			max_downloads: 5,
 			mime_type: "application/pdf",
 			name: "Manual.pdf",
-			owner_info: "Alice Example",
+			shared_by: {
+				avatar: {
+					source: "upload",
+					url_512: "/s/share-token/avatar/512?v=1",
+					url_1024: "/s/share-token/avatar/1024?v=1",
+					version: 1,
+				},
+				name: "Alice Example",
+			},
 			share_type: "file",
 			size: 256,
 		} as never);
@@ -373,7 +407,12 @@ describe("ShareViewPage", () => {
 		const metadata = screen.getByText("Manual.pdf").parentElement;
 		expect(metadata).toHaveTextContent("downloads:3/5");
 		expect(metadata).toHaveTextContent("expires:fmt:2026-04-01T00:00:00Z");
-		expect(screen.getByText("shared-by:Alice Example")).toBeInTheDocument();
+		expect(
+			screen.getByText("shared-with-you:Alice Example:Manual.pdf"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("avatar:Alice Example:/s/share-token/avatar/512?v=1"),
+		).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: /files:preview/i }));
 
@@ -399,7 +438,15 @@ describe("ShareViewPage", () => {
 		mockState.getInfo.mockResolvedValueOnce({
 			has_password: false,
 			name: "Shared Root",
-			owner_info: "Alice Example",
+			shared_by: {
+				avatar: {
+					source: "gravatar",
+					url_512: "https://www.gravatar.com/avatar/hash?s=512",
+					url_1024: "https://www.gravatar.com/avatar/hash?s=1024",
+					version: 2,
+				},
+				name: "Alice Example",
+			},
 			share_type: "folder",
 		} as never);
 		mockState.listContent.mockResolvedValueOnce({
@@ -416,7 +463,12 @@ describe("ShareViewPage", () => {
 		render(<ShareViewPage />);
 
 		expect(
-			await screen.findByText("shared-by:Alice Example"),
+			await screen.findByText("shared-with-you:Alice Example:Shared Root"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"avatar:Alice Example:https://www.gravatar.com/avatar/hash?s=512",
+			),
 		).toBeInTheDocument();
 		fireEvent.click(await screen.findByRole("button", { name: "folder:Docs" }));
 

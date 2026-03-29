@@ -12,6 +12,7 @@ import { useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { SkeletonCard } from "@/components/common/SkeletonCard";
 import { ToolbarBar } from "@/components/common/ToolbarBar";
+import { UserAvatarImage } from "@/components/common/UserAvatarImage";
 import { ViewToggle } from "@/components/common/ViewToggle";
 import { ReadOnlyFileCollection } from "@/components/files/ReadOnlyFileCollection";
 import { ShareTopBar } from "@/components/layout/ShareTopBar";
@@ -36,7 +37,6 @@ import { Input } from "@/components/ui/input";
 import { handleApiError } from "@/hooks/useApiError";
 import { FOLDER_LIMIT, PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { formatDateShort } from "@/lib/format";
-import { getNormalizedDisplayName } from "@/lib/user";
 import { ApiError } from "@/services/http";
 import { shareService } from "@/services/shareService";
 import type { FileInfo, FolderContents, SharePublicInfo } from "@/types/api";
@@ -53,60 +53,21 @@ const sharePageParams = {
 	file_limit: SHARE_PAGE_SIZE,
 };
 
-interface ShareOwnerUserLike {
-	display_name?: string | null;
-	email?: string | null;
-	profile?: {
-		display_name?: string | null;
-	} | null;
-	username?: string | null;
-}
-
-interface ShareOwnerSource {
-	display_name?: string | null;
-	email?: string | null;
-	owner?: ShareOwnerUserLike | null;
-	owner_info?: string | null;
-	shared_by?: string | null;
-	user?: ShareOwnerUserLike | null;
-	username?: string | null;
-}
-
-function getFirstNonEmpty(
-	values: Array<string | null | undefined>,
-): string | null {
-	for (const value of values) {
-		const normalized = getNormalizedDisplayName(value);
-		if (normalized) return normalized;
-	}
-
-	return null;
-}
-
-function getShareOwnerLabel(info: SharePublicInfo): string | null {
-	const source = info as SharePublicInfo & ShareOwnerSource;
-
-	return getFirstNonEmpty([
-		source.shared_by,
-		source.owner_info,
-		source.display_name,
-		source.username,
-		source.email,
-		source.owner?.profile?.display_name,
-		source.owner?.display_name,
-		source.owner?.username,
-		source.owner?.email,
-		source.user?.profile?.display_name,
-		source.user?.display_name,
-		source.user?.username,
-		source.user?.email,
-	]);
-}
-
-function ShareOwnerBanner({ text }: { text: string }) {
+function ShareOwnerBanner({
+	owner,
+	text,
+}: {
+	owner: SharePublicInfo["shared_by"];
+	text: string;
+}) {
 	return (
-		<div className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
-			<Icon name="Info" className="h-4 w-4 shrink-0" />
+		<div className="flex max-w-full items-center gap-3 rounded-xl border border-border/70 bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
+			<UserAvatarImage
+				avatar={owner.avatar}
+				name={owner.name}
+				size="sm"
+				className="rounded-xl"
+			/>
 			<span className="min-w-0 truncate">{text}</span>
 		</div>
 	);
@@ -378,10 +339,10 @@ export default function ShareViewPage() {
 
 	if (!info) return null;
 
-	const shareOwnerLabel = getShareOwnerLabel(info);
-	const shareOwnerText = shareOwnerLabel
-		? t("share:shared_by", { name: shareOwnerLabel })
-		: null;
+	const shareOwnerText = t("share:shared_with_you", {
+		name: info.shared_by.name,
+		resource: info.name,
+	});
 
 	if (needsPassword && !passwordVerified) {
 		return (
@@ -482,9 +443,10 @@ export default function ShareViewPage() {
 										</Button>
 									</div>
 								</div>
-								{shareOwnerText ? (
-									<ShareOwnerBanner text={shareOwnerText} />
-								) : null}
+								<ShareOwnerBanner
+									owner={info.shared_by}
+									text={shareOwnerText}
+								/>
 							</div>
 						</CardHeader>
 					</Card>
@@ -513,13 +475,11 @@ export default function ShareViewPage() {
 				}
 				right={<ViewToggle value={viewMode} onChange={setViewMode} />}
 			/>
-			{shareOwnerText ? (
-				<div className="border-b border-border/70 bg-background/80">
-					<div className={`${PAGE_SECTION_PADDING_CLASS} py-3`}>
-						<ShareOwnerBanner text={shareOwnerText} />
-					</div>
+			<div className="border-b border-border/70 bg-background/80">
+				<div className={`${PAGE_SECTION_PADDING_CLASS} py-3`}>
+					<ShareOwnerBanner owner={info.shared_by} text={shareOwnerText} />
 				</div>
-			) : null}
+			</div>
 			<div className="min-h-0 flex-1 overflow-auto">
 				{navigating ? (
 					<div className="p-6">

@@ -6,11 +6,11 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
-use crate::db::repository::{file_repo, folder_repo, share_repo};
+use crate::db::repository::{file_repo, folder_repo, share_repo, user_profile_repo, user_repo};
 use crate::entities::share;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::services::{file_service, folder_service};
+use crate::services::{file_service, folder_service, profile_service};
 use crate::types::EntityType;
 use crate::utils::{hash, id};
 
@@ -46,6 +46,13 @@ pub struct MyShareInfo {
 }
 
 /// 公开返回给前端的分享信息（不含密码哈希和内部 ID）
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct SharePublicOwnerInfo {
+    pub name: String,
+    pub avatar: profile_service::AvatarInfo,
+}
+
+/// 公开返回给前端的分享信息（不含密码哈希和内部 ID）
 #[derive(Serialize, ToSchema)]
 pub struct SharePublicInfo {
     pub token: String,
@@ -59,6 +66,7 @@ pub struct SharePublicInfo {
     pub max_downloads: i64,
     pub mime_type: Option<String>,
     pub size: Option<i64>,
+    pub shared_by: SharePublicOwnerInfo,
 }
 
 pub async fn create_share(
@@ -137,6 +145,7 @@ pub async fn get_share_info(state: &AppState, token: &str) -> Result<SharePublic
     }
 
     let (name, share_type, mime_type, size) = resolve_share_name(db, &share).await?;
+    let shared_by = resolve_share_owner_info(state, &share).await?;
 
     let is_expired = share.expires_at.is_some_and(|exp| exp < Utc::now());
 
@@ -152,7 +161,44 @@ pub async fn get_share_info(state: &AppState, token: &str) -> Result<SharePublic
         max_downloads: share.max_downloads,
         mime_type,
         size,
+        shared_by,
     })
+}
+
+fn resolve_share_owner_name(
+    user: &crate::entities::user::Model,
+    profile: Option<&crate::entities::user_profile::Model>,
+) -> String {
+    profile
+        .and_then(|p| p.display_name.as_deref())
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| user.username.clone())
+}
+
+async fn resolve_share_owner_info(
+    state: &AppState,
+    share: &share::Model,
+) -> Result<SharePublicOwnerInfo> {
+    let user = user_repo::find_by_id(&state.db, share.user_id).await?;
+    let profile = user_profile_repo::find_by_user_id(&state.db, share.user_id).await?;
+    let gravatar_base_url = profile_service::resolve_gravatar_base_url(&state.db).await;
+
+    Ok(SharePublicOwnerInfo {
+        name: resolve_share_owner_name(&user, profile.as_ref()),
+        avatar: profile_service::build_share_public_avatar_info(
+            &user,
+            profile.as_ref(),
+            &share.token,
+            &gravatar_base_url,
+        ),
+    })
+}
+
+pub async fn get_share_avatar_bytes(state: &AppState, token: &str, size: u32) -> Result<Vec<u8>> {
+    let share = load_valid_share(state, token).await?;
+    profile_service::get_avatar_bytes(state, share.user_id, size).await
 }
 
 pub async fn verify_password(state: &AppState, token: &str, password: &str) -> Result<()> {

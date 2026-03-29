@@ -3,6 +3,31 @@ mod common;
 
 use actix_web::test;
 use serde_json::Value;
+use std::io::Cursor;
+
+fn avatar_upload_payload() -> (String, Vec<u8>) {
+    let boundary = "----AsterShareAvatarBoundary".to_string();
+    let image = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
+        8,
+        8,
+        image::Rgba([255, 120, 0, 255]),
+    ));
+    let mut png = Cursor::new(Vec::new());
+    image.write_to(&mut png, image::ImageFormat::Png).unwrap();
+
+    let mut body = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\n\
+             Content-Disposition: form-data; name=\"file\"; filename=\"avatar.png\"\r\n\
+             Content-Type: image/png\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(&png.into_inner());
+    body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (boundary, body)
+}
 
 #[actix_web::test]
 async fn test_shares_crud() {
@@ -52,6 +77,10 @@ async fn test_shares_crud() {
     assert_eq!(body["data"]["name"], "test.txt");
     assert_eq!(body["data"]["mime_type"], "text/plain");
     assert!(body["data"]["size"].as_i64().unwrap() > 0);
+    assert_eq!(body["data"]["shared_by"]["name"], "testuser");
+    assert_eq!(body["data"]["shared_by"]["avatar"]["source"], "none");
+    assert!(body["data"]["shared_by"].get("email").is_none());
+    assert!(body["data"]["shared_by"].get("username").is_none());
 
     // 公开下载
     let req = test::TestRequest::get()
@@ -253,6 +282,7 @@ async fn test_share_folder() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["share_type"], "folder");
+    assert_eq!(body["data"]["shared_by"]["name"], "testuser");
 
     // 公开列出文件夹内容
     let req = test::TestRequest::get()
@@ -267,6 +297,133 @@ async fn test_share_folder() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_public_share_info_prefers_display_name_and_exposes_gravatar_avatar() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/profile")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "display_name": "Test User"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/auth/profile/avatar/source")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "source": "gravatar"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let file_id = upload_test_file!(app, token);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "file_id": file_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["shared_by"]["name"], "Test User");
+    assert_eq!(body["data"]["shared_by"]["avatar"]["source"], "gravatar");
+    assert!(
+        body["data"]["shared_by"]["avatar"]["url_512"]
+            .as_str()
+            .unwrap()
+            .contains("gravatar.com/avatar/")
+    );
+    assert!(body["data"]["shared_by"].get("email").is_none());
+    assert!(body["data"]["shared_by"].get("username").is_none());
+}
+
+#[actix_web::test]
+async fn test_share_avatar_route_serves_uploaded_avatar_and_requires_password_cookie() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let (boundary, payload) = avatar_upload_payload();
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/profile/avatar/upload")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let file_id = upload_test_file!(app, token);
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "file_id": file_id,
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["shared_by"]["avatar"]["source"], "upload");
+    assert_eq!(
+        body["data"]["shared_by"]["avatar"]["url_512"],
+        format!("/s/{share_token}/avatar/512?v=1")
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/avatar/512"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/s/{share_token}/verify"))
+        .set_json(serde_json::json!({ "password": "secret123" }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let signed_cookie = common::extract_cookie(&resp, &format!("aster_share_{share_token}"))
+        .expect("share password cookie should be set");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/avatar/512"))
+        .insert_header((
+            "Cookie",
+            format!("aster_share_{share_token}={signed_cookie}"),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.headers().get("content-type").unwrap(), "image/webp");
 }
 
 /// 伪造 cookie 不能绕过密码验证

@@ -5,7 +5,7 @@ use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::share_service;
+use crate::services::{profile_service, share_service};
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
@@ -39,6 +39,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
             "/{token}/files/{file_id}/thumbnail",
             web::get().to(shared_folder_file_thumbnail),
         )
+        .route("/{token}/avatar/{size}", web::get().to(shared_avatar))
 }
 
 #[utoipa::path(
@@ -248,6 +249,36 @@ pub async fn list_shared_subfolder_content(
     )
     .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/s/{token}/avatar/{size}",
+    tag = "shares",
+    operation_id = "shared_avatar",
+    params(
+        ("token" = String, Path, description = "Share token"),
+        ("size" = u32, Path, description = "Avatar size (512 or 1024)"),
+    ),
+    responses(
+        (status = 200, description = "Share owner avatar image (WebP)"),
+        (status = 403, description = "Password required"),
+        (status = 404, description = "Share or avatar not found"),
+    )
+)]
+pub async fn shared_avatar(
+    state: web::Data<AppState>,
+    path: web::Path<(String, u32)>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse> {
+    let (token, size) = path.into_inner();
+    let cookie_value = req
+        .cookie(&format!("aster_share_{token}"))
+        .map(|c| c.value().to_string());
+    share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
+
+    let bytes = share_service::get_share_avatar_bytes(&state, &token, size).await?;
+    Ok(profile_service::avatar_image_response(bytes))
 }
 
 #[utoipa::path(

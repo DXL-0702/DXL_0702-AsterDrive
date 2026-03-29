@@ -921,6 +921,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/s/{token}/avatar/{size}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["shared_avatar"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/s/{token}/content": {
         parameters: {
             query?: never;
@@ -2023,11 +2039,17 @@ export interface components {
             mime_type?: string | null;
             name: string;
             share_type: string;
+            shared_by: components["schemas"]["SharePublicOwnerInfo"];
             /** Format: int64 */
             size?: number | null;
             token: string;
             /** Format: int64 */
             view_count: number;
+        };
+        /** @description 公开返回给前端的分享信息（不含密码哈希和内部 ID） */
+        SharePublicOwnerInfo: {
+            avatar: components["schemas"]["AvatarInfo"];
+            name: string;
         };
         /** @enum {string} */
         ShareStatus: "active" | "expired" | "exhausted" | "deleted";
@@ -6082,6 +6104,7 @@ export interface operations {
                             mime_type?: string | null;
                             name: string;
                             share_type: string;
+                            shared_by: components["schemas"]["SharePublicOwnerInfo"];
                             /** Format: int64 */
                             size?: number | null;
                             token: string;
@@ -6101,6 +6124,43 @@ export interface operations {
             };
             /** @description Share expired */
             410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    shared_avatar: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Share token */
+                token: string;
+                /** @description Avatar size (512 or 1024) */
+                size: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Share owner avatar image (WebP) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Password required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Share or avatar not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -77,6 +77,10 @@ fn avatar_api_path(user_id: i64, version: i32, size: u32, audience: AvatarAudien
     }
 }
 
+fn share_public_avatar_api_path(share_token: &str, version: i32, size: u32) -> String {
+    format!("/s/{share_token}/avatar/{size}?v={version}")
+}
+
 fn avatar_object_key(prefix: &str, size: u32) -> String {
     format!("{prefix}/{size}.webp")
 }
@@ -262,6 +266,47 @@ pub fn build_profile_info(
     UserProfileInfo {
         display_name: profile.and_then(|p| p.display_name.clone()),
         avatar: build_avatar_info(user, profile, audience, gravatar_base_url),
+    }
+}
+
+pub fn build_share_public_avatar_info(
+    user: &user::Model,
+    profile: Option<&user_profile::Model>,
+    share_token: &str,
+    gravatar_base_url: &str,
+) -> AvatarInfo {
+    let source = profile
+        .map(|p| p.avatar_source)
+        .unwrap_or(AvatarSource::None);
+    let version = profile.map(|p| p.avatar_version).unwrap_or(0);
+
+    match source {
+        AvatarSource::None => AvatarInfo {
+            source,
+            url_512: None,
+            url_1024: None,
+            version,
+        },
+        AvatarSource::Gravatar => AvatarInfo {
+            source,
+            url_512: Some(gravatar_url(&user.email, AVATAR_SIZE_SM, gravatar_base_url)),
+            url_1024: Some(gravatar_url(&user.email, AVATAR_SIZE_LG, gravatar_base_url)),
+            version,
+        },
+        AvatarSource::Upload => {
+            let has_upload = profile
+                .map(|p| p.avatar_policy_id.is_some() && p.avatar_key.is_some())
+                .unwrap_or(false);
+
+            AvatarInfo {
+                source,
+                url_512: has_upload
+                    .then(|| share_public_avatar_api_path(share_token, version, AVATAR_SIZE_SM)),
+                url_1024: has_upload
+                    .then(|| share_public_avatar_api_path(share_token, version, AVATAR_SIZE_LG)),
+                version,
+            }
+        }
     }
 }
 

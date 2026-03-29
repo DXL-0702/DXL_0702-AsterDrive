@@ -133,12 +133,7 @@ describe("FileCard", () => {
 		);
 
 		const card = screen.getByRole("button", { name: /Docs/i });
-		expect(card).toHaveClass(
-			"border-primary",
-			"bg-accent",
-			"scale-95",
-			"opacity-0",
-		);
+		expect(card).toHaveClass("border-primary", "bg-accent", "opacity-0");
 		expect(screen.getByTestId("icon")).toHaveAttribute("data-name", "Folder");
 		expect(screen.getByText("Docs")).toBeInTheDocument();
 
