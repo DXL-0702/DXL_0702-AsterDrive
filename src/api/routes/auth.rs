@@ -44,6 +44,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
             web::scope("")
                 .wrap(crate::api::middleware::auth::JwtAuth)
                 .route("/me", web::get().to(me))
+                .route("/password", web::put().to(put_password))
                 .route("/preferences", web::patch().to(patch_preferences))
                 .route("/profile", web::patch().to(patch_profile))
                 .route("/profile/avatar/upload", web::post().to(upload_avatar))
@@ -91,6 +92,12 @@ pub struct UpdateAvatarSourceReq {
 #[derive(Deserialize, ToSchema)]
 pub struct UpdateProfileReq {
     pub display_name: Option<String>,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ChangePasswordReq {
+    pub current_password: String,
+    pub new_password: String,
 }
 
 /// 构建 HttpOnly cookie
@@ -341,6 +348,48 @@ pub async fn logout(state: web::Data<AppState>) -> HttpResponse {
 pub async fn me(state: web::Data<AppState>, claims: web::ReqData<Claims>) -> Result<HttpResponse> {
     let resp = user_service::get_me(&state, claims.user_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1/auth/password",
+    tag = "auth",
+    operation_id = "change_password",
+    request_body = ChangePasswordReq,
+    responses(
+        (status = 200, description = "Password updated"),
+        (status = 400, description = "Invalid new password"),
+        (status = 401, description = "Current password is invalid"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn put_password(
+    state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
+    claims: web::ReqData<Claims>,
+    body: web::Json<ChangePasswordReq>,
+) -> Result<HttpResponse> {
+    auth_service::change_password(
+        &state,
+        claims.user_id,
+        &body.current_password,
+        &body.new_password,
+    )
+    .await?;
+
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::UserChangePassword,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await;
+
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
 /// Update the current user's preferences.

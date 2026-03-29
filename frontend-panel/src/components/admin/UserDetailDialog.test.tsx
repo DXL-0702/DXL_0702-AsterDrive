@@ -9,6 +9,7 @@ const mockState = vi.hoisted(() => ({
 	listPolicies: vi.fn(),
 	onUpdate: vi.fn(),
 	remove: vi.fn(),
+	resetPassword: vi.fn(),
 	toastError: vi.fn(),
 	toastSuccess: vi.fn(),
 	updateAssignment: vi.fn(),
@@ -78,9 +79,13 @@ vi.mock("@/components/ui/button", () => ({
 vi.mock("@/components/ui/dialog", () => ({
 	Dialog: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
 		open ? <div>{children}</div> : null,
-	DialogContent: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
+	DialogContent: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => <div className={className}>{children}</div>,
 	DialogFooter: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
@@ -243,6 +248,9 @@ vi.mock("@/lib/format", () => ({
 }));
 
 vi.mock("@/services/adminService", () => ({
+	adminUserService: {
+		resetPassword: (...args: unknown[]) => mockState.resetPassword(...args),
+	},
 	adminPolicyService: {
 		list: (...args: unknown[]) => mockState.listPolicies(...args),
 	},
@@ -316,6 +324,7 @@ describe("UserDetailDialog", () => {
 		mockState.listPolicies.mockReset();
 		mockState.onUpdate.mockReset();
 		mockState.remove.mockReset();
+		mockState.resetPassword.mockReset();
 		mockState.toastError.mockReset();
 		mockState.toastSuccess.mockReset();
 		mockState.updateAssignment.mockReset();
@@ -331,6 +340,7 @@ describe("UserDetailDialog", () => {
 		});
 		mockState.onUpdate.mockResolvedValue(undefined);
 		mockState.remove.mockResolvedValue(undefined);
+		mockState.resetPassword.mockResolvedValue(undefined);
 		mockState.updateAssignment.mockResolvedValue(undefined);
 	});
 
@@ -513,5 +523,57 @@ describe("UserDetailDialog", () => {
 		).toBeDisabled();
 		expect(screen.queryByRole("button", { name: /save_changes/i })).toBeNull();
 		expect(screen.getByText("no_policies_assigned")).toBeInTheDocument();
+	});
+
+	it("caps the dialog height and keeps the detail column scrollable", async () => {
+		const { container } = render(
+			<UserDetailDialog
+				user={createUser()}
+				open
+				onOpenChange={vi.fn()}
+				onUpdate={mockState.onUpdate}
+			/>,
+		);
+
+		await screen.findByText("Primary");
+
+		expect(
+			container.querySelector(
+				".overflow-hidden.max-h-\\[min\\(880px\\,calc\\(100vh-2rem\\)\\)\\]",
+			),
+		).not.toBeNull();
+		expect(container.querySelector(".overflow-y-auto.p-6")).not.toBeNull();
+	});
+
+	it("resets the user's password from the detail dialog", async () => {
+		render(
+			<UserDetailDialog
+				user={createUser()}
+				open
+				onOpenChange={vi.fn()}
+				onUpdate={mockState.onUpdate}
+			/>,
+		);
+
+		await screen.findByText("Primary");
+
+		fireEvent.change(screen.getByLabelText("password"), {
+			target: { value: "newsecret456" },
+		});
+		fireEvent.change(screen.getByLabelText("confirm_password"), {
+			target: { value: "newsecret456" },
+		});
+		fireEvent.click(
+			screen.getAllByRole("button", { name: "reset_password" })[0],
+		);
+
+		await waitFor(() => {
+			expect(mockState.resetPassword).toHaveBeenCalledWith(2, {
+				password: "newsecret456",
+			});
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"password_reset_success",
+		);
 	});
 });

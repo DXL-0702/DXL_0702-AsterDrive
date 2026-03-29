@@ -38,9 +38,11 @@ import { handleApiError } from "@/hooks/useApiError";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { formatBytes, formatDateAbsolute } from "@/lib/format";
 import { getNormalizedDisplayName, getUserDisplayName } from "@/lib/user";
+import { passwordSchema } from "@/lib/validation";
 import {
 	adminPolicyService,
 	adminUserPolicyService,
+	adminUserService,
 } from "@/services/adminService";
 import type {
 	StoragePolicy,
@@ -69,9 +71,16 @@ export function UserDetailDialog({
 	onUpdate,
 }: UserDetailDialogProps) {
 	const { t } = useTranslation("admin");
+	const [confirmPasswordValue, setConfirmPasswordValue] = useState("");
 	const [quotaValue, setQuotaValue] = useState("");
 	const [draftRole, setDraftRole] = useState<UserRole>("user");
 	const [draftStatus, setDraftStatus] = useState<UserStatus>("active");
+	const [passwordValue, setPasswordValue] = useState("");
+	const [passwordErrors, setPasswordErrors] = useState<{
+		confirm?: string;
+		password?: string;
+	}>({});
+	const [savingPassword, setSavingPassword] = useState(false);
 	const [savingProfile, setSavingProfile] = useState(false);
 	const [assignments, setAssignments] = useState<UserStoragePolicy[]>([]);
 	const [policies, setPolicies] = useState<StoragePolicy[]>([]);
@@ -86,9 +95,13 @@ export function UserDetailDialog({
 
 	useEffect(() => {
 		if (!user) {
+			setConfirmPasswordValue("");
 			setQuotaValue("");
 			setDraftRole("user");
 			setDraftStatus("active");
+			setPasswordValue("");
+			setPasswordErrors({});
+			setSavingPassword(false);
 			setSavingProfile(false);
 			setAssignments([]);
 			setPolicies([]);
@@ -105,8 +118,11 @@ export function UserDetailDialog({
 				? String(Math.round(user.storage_quota / 1024 / 1024))
 				: "0",
 		);
+		setConfirmPasswordValue("");
 		setDraftRole(user.role);
 		setDraftStatus(user.status);
+		setPasswordValue("");
+		setPasswordErrors({});
 	}, [user]);
 
 	const loadPolicies = useCallback(async () => {
@@ -163,6 +179,34 @@ export function UserDetailDialog({
 			await onUpdate(user.id, data);
 		} finally {
 			setSavingProfile(false);
+		}
+	};
+
+	const handlePasswordReset = async () => {
+		const nextErrors: { confirm?: string; password?: string } = {};
+		const passwordResult = passwordSchema.safeParse(passwordValue);
+		if (!passwordResult.success) {
+			nextErrors.password = passwordResult.error.issues[0]?.message ?? "";
+		}
+		if (confirmPasswordValue !== passwordValue) {
+			nextErrors.confirm = t("password_confirm_mismatch");
+		}
+		setPasswordErrors(nextErrors);
+		if (Object.keys(nextErrors).length > 0) return;
+
+		try {
+			setSavingPassword(true);
+			await adminUserService.resetPassword(user.id, {
+				password: passwordValue,
+			});
+			setPasswordValue("");
+			setConfirmPasswordValue("");
+			setPasswordErrors({});
+			toast.success(t("password_reset_success"));
+		} catch (e) {
+			handleApiError(e);
+		} finally {
+			setSavingPassword(false);
 		}
 	};
 
@@ -255,11 +299,11 @@ export function UserDetailDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="max-h-[calc(100vh-2rem)] gap-0 overflow-y-auto sm:max-w-[min(1100px,calc(100vw-2rem))] p-0">
+			<DialogContent className="flex max-h-[min(880px,calc(100vh-2rem))] flex-col gap-0 overflow-hidden sm:max-w-[min(1100px,calc(100vw-2rem))] p-0">
 				<DialogHeader className="flex items-center justify-center px-6 pt-5 pb-0 text-center">
 					<DialogTitle className="text-lg">{t("user_details")}</DialogTitle>
 				</DialogHeader>
-				<div className="grid gap-0 lg:grid-cols-[320px_minmax(0,1fr)]">
+				<div className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[320px_minmax(0,1fr)]">
 					<aside className="space-y-5 border-b bg-muted/20 p-6 lg:border-r lg:border-b-0">
 						<div className="space-y-3">
 							<UserAvatarImage
@@ -330,306 +374,385 @@ export function UserDetailDialog({
 						</div>
 					</aside>
 
-					<div className="min-w-0 space-y-5 p-6">
-						<section className="rounded-2xl border bg-background/60 p-6">
-							<div className="mb-5">
-								<h4 className="text-base font-semibold text-foreground">
-									{t("user_details")}
-								</h4>
-								<p className="mt-1 text-sm text-muted-foreground">
-									{t("storage_quota_settings_desc")}
-								</p>
-							</div>
-							<div className="grid gap-5 md:grid-cols-2">
-								<div className="space-y-2">
-									<Label>{t("email")}</Label>
-									<Input
-										value={user.email}
-										readOnly
-										className={ADMIN_CONTROL_HEIGHT_CLASS}
-									/>
-								</div>
-								<div className="space-y-2">
-									<Label>{t("username")}</Label>
-									<Input
-										value={user.username}
-										readOnly
-										className={ADMIN_CONTROL_HEIGHT_CLASS}
-									/>
-								</div>
-								<div className="space-y-2">
-									<div className="flex items-center justify-between gap-2">
-										<Label>{t("core:status")}</Label>
-										{isInitialAdmin ? (
-											<span className="text-xs text-muted-foreground">
-												{t("initial_admin_protected")}
-											</span>
-										) : null}
-									</div>
-									<TooltipProvider>
-										<Tooltip>
-											<TooltipTrigger>
-												<div>
-													<Select
-														value={draftStatus}
-														onValueChange={(value) =>
-															setDraftStatus(value as UserStatus)
-														}
-														disabled={isInitialAdmin || savingProfile}
-													>
-														<SelectTrigger
-															className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
-														>
-															<SelectValue />
-														</SelectTrigger>
-														<SelectContent>
-															<SelectItem value="active">
-																{t("core:active")}
-															</SelectItem>
-															<SelectItem value="disabled">
-																{t("core:disabled_status")}
-															</SelectItem>
-														</SelectContent>
-													</Select>
-												</div>
-											</TooltipTrigger>
-											{isInitialAdmin ? (
-												<TooltipContent>
-													{t("initial_admin_status_blocked")}
-												</TooltipContent>
-											) : null}
-										</Tooltip>
-									</TooltipProvider>
-								</div>
-								<div className="space-y-2">
-									<div className="flex items-center justify-between gap-2">
-										<Label>{t("role")}</Label>
-										{isInitialAdmin ? (
-											<span className="text-xs text-muted-foreground">
-												{t("initial_admin_protected")}
-											</span>
-										) : null}
-									</div>
-									<TooltipProvider>
-										<Tooltip>
-											<TooltipTrigger>
-												<div>
-													<Select
-														value={draftRole}
-														onValueChange={(value) =>
-															setDraftRole(value as UserRole)
-														}
-														disabled={isInitialAdmin || savingProfile}
-													>
-														<SelectTrigger
-															className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
-														>
-															<SelectValue />
-														</SelectTrigger>
-														<SelectContent>
-															<SelectItem value="admin">
-																{t("role_admin")}
-															</SelectItem>
-															<SelectItem value="user">
-																{t("role_user")}
-															</SelectItem>
-														</SelectContent>
-													</Select>
-												</div>
-											</TooltipTrigger>
-											{isInitialAdmin ? (
-												<TooltipContent>
-													{t("initial_admin_role_blocked")}
-												</TooltipContent>
-											) : null}
-										</Tooltip>
-									</TooltipProvider>
-								</div>
-								<div className="space-y-2 md:col-span-2">
-									<Label htmlFor="user-storage-quota">{t("quota_mb")}</Label>
-									<div className="flex gap-3">
-										<Input
-											id="user-storage-quota"
-											type="number"
-											value={quotaValue}
-											onChange={(e) => setQuotaValue(e.target.value)}
-											placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
-											className={ADMIN_CONTROL_HEIGHT_CLASS}
-											disabled={savingProfile}
-										/>
-									</div>
-								</div>
-							</div>
-						</section>
-
-						<section className="rounded-2xl border bg-background/60 p-6">
-							<div className="mb-5 flex items-center justify-between gap-3">
-								<div>
+					<div className="min-h-0 min-w-0 overflow-y-auto p-6">
+						<div className="space-y-5">
+							<section className="rounded-2xl border bg-background/60 p-6">
+								<div className="mb-5">
 									<h4 className="text-base font-semibold text-foreground">
-										{t("storage_policy_assignments")}
+										{t("user_details")}
 									</h4>
 									<p className="mt-1 text-sm text-muted-foreground">
-										{t("storage_policy_assignments_desc")}
+										{t("storage_quota_settings_desc")}
 									</p>
 								</div>
-								<Button
-									variant="ghost"
-									size="sm"
-									className={ADMIN_CONTROL_HEIGHT_CLASS}
-									onClick={() => void loadPolicies()}
-									disabled={policiesLoading}
-								>
-									<Icon
-										name={policiesLoading ? "Spinner" : "ArrowsClockwise"}
-										className={`mr-1 h-3.5 w-3.5 ${policiesLoading ? "animate-spin" : ""}`}
-									/>
-									{t("refresh")}
-								</Button>
-							</div>
-
-							{policiesLoading ? (
-								<SkeletonTable columns={4} rows={4} />
-							) : assignments.length === 0 ? (
-								<p className="text-sm text-muted-foreground">
-									{t("no_policies_assigned")}
-								</p>
-							) : (
-								<div className="space-y-2">
-									{assignments.map((a) => (
-										<div
-											key={a.id}
-											className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3"
-										>
-											<div className="min-w-0 flex-1">
-												<div className="text-sm font-medium text-foreground">
-													{policyName(a.policy_id)}
-												</div>
-												{editingAssignmentId === a.id ? (
-													<div className="mt-2 flex items-center gap-2">
-														<Input
-															type="number"
-															value={editingAssignmentQuota}
-															onChange={(e) =>
-																setEditingAssignmentQuota(e.target.value)
-															}
-															placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
-															className="h-8 max-w-[180px]"
-														/>
-														<Button
-															size="sm"
-															onClick={() => void saveAssignmentQuota(a)}
-														>
-															{t("core:save")}
-														</Button>
-														<Button
-															variant="ghost"
-															size="sm"
-															onClick={() => {
-																setEditingAssignmentId(null);
-																setEditingAssignmentQuota("");
-															}}
-														>
-															{t("core:cancel")}
-														</Button>
-													</div>
-												) : (
-													<div className="text-xs text-muted-foreground">
-														{t("quota")}:{" "}
-														{a.quota_bytes > 0
-															? formatBytes(a.quota_bytes)
-															: t("core:unlimited")}
-													</div>
-												)}
-											</div>
-											<div className="flex items-center gap-2">
-												{a.is_default ? (
-													<Badge className="border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-700 dark:bg-blue-900 dark:text-blue-300">
-														{t("is_default")}
-													</Badge>
-												) : null}
-												<Button
-													variant="ghost"
-													size="sm"
-													onClick={() => void handleSetDefault(a)}
-													disabled={a.is_default}
-												>
-													{a.is_default
-														? t("default_selected")
-														: t("set_default")}
-												</Button>
-												<Button
-													variant="ghost"
-													size="sm"
-													onClick={() => startEditAssignmentQuota(a)}
-												>
-													{t("edit_quota")}
-												</Button>
-												<Button
-													variant="ghost"
-													size="icon"
-													className="h-8 w-8 text-destructive"
-													onClick={() => void handleRemove(a)}
-												>
-													<Icon name="Trash" className="h-3.5 w-3.5" />
-												</Button>
-											</div>
-										</div>
-									))}
-								</div>
-							)}
-
-							{availablePolicies.length > 0 ? (
-								<div className="mt-5 space-y-4 rounded-xl border bg-muted/10 p-4">
-									<Label className="text-sm font-medium">
-										{t("assign_policy")}
-									</Label>
-									{!hasDefaultPolicy ? (
-										<p className="text-xs text-amber-600 dark:text-amber-400">
-											{t("default_policy_required")}
-										</p>
-									) : null}
-									<div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto] md:items-center">
-										<Select
-											value={addPolicyId != null ? String(addPolicyId) : ""}
-											onValueChange={(v) =>
-												setAddPolicyId(v ? Number(v) : null)
-											}
-										>
-											<SelectTrigger>
-												<SelectValue placeholder={t("select_policy")} />
-											</SelectTrigger>
-											<SelectContent>
-												{availablePolicies.map((p) => (
-													<SelectItem key={p.id} value={String(p.id)}>
-														{p.name} ({p.driver_type})
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
+								<div className="grid gap-5 md:grid-cols-2">
+									<div className="space-y-2">
+										<Label>{t("email")}</Label>
 										<Input
-											placeholder={`${t("quota")} (MB, 0=${t("core:unlimited").toLowerCase()})`}
-											value={addQuota}
-											onChange={(e) => setAddQuota(e.target.value)}
+											value={user.email}
+											readOnly
+											className={ADMIN_CONTROL_HEIGHT_CLASS}
 										/>
-										<div className="flex items-center justify-between gap-3 md:justify-end">
-											<div className="flex items-center gap-2">
-												<Switch
-													checked={addDefault}
-													onCheckedChange={setAddDefault}
-												/>
-												<span className="text-xs">{t("is_default")}</span>
-											</div>
-											<Button
-												disabled={!addPolicyId}
-												onClick={() => void handleAssign()}
-											>
-												{t("core:confirm")}
-											</Button>
+									</div>
+									<div className="space-y-2">
+										<Label>{t("username")}</Label>
+										<Input
+											value={user.username}
+											readOnly
+											className={ADMIN_CONTROL_HEIGHT_CLASS}
+										/>
+									</div>
+									<div className="space-y-2">
+										<div className="flex items-center justify-between gap-2">
+											<Label>{t("core:status")}</Label>
+											{isInitialAdmin ? (
+												<span className="text-xs text-muted-foreground">
+													{t("initial_admin_protected")}
+												</span>
+											) : null}
+										</div>
+										<TooltipProvider>
+											<Tooltip>
+												<TooltipTrigger>
+													<div>
+														<Select
+															value={draftStatus}
+															onValueChange={(value) =>
+																setDraftStatus(value as UserStatus)
+															}
+															disabled={isInitialAdmin || savingProfile}
+														>
+															<SelectTrigger
+																className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
+															>
+																<SelectValue />
+															</SelectTrigger>
+															<SelectContent>
+																<SelectItem value="active">
+																	{t("core:active")}
+																</SelectItem>
+																<SelectItem value="disabled">
+																	{t("core:disabled_status")}
+																</SelectItem>
+															</SelectContent>
+														</Select>
+													</div>
+												</TooltipTrigger>
+												{isInitialAdmin ? (
+													<TooltipContent>
+														{t("initial_admin_status_blocked")}
+													</TooltipContent>
+												) : null}
+											</Tooltip>
+										</TooltipProvider>
+									</div>
+									<div className="space-y-2">
+										<div className="flex items-center justify-between gap-2">
+											<Label>{t("role")}</Label>
+											{isInitialAdmin ? (
+												<span className="text-xs text-muted-foreground">
+													{t("initial_admin_protected")}
+												</span>
+											) : null}
+										</div>
+										<TooltipProvider>
+											<Tooltip>
+												<TooltipTrigger>
+													<div>
+														<Select
+															value={draftRole}
+															onValueChange={(value) =>
+																setDraftRole(value as UserRole)
+															}
+															disabled={isInitialAdmin || savingProfile}
+														>
+															<SelectTrigger
+																className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
+															>
+																<SelectValue />
+															</SelectTrigger>
+															<SelectContent>
+																<SelectItem value="admin">
+																	{t("role_admin")}
+																</SelectItem>
+																<SelectItem value="user">
+																	{t("role_user")}
+																</SelectItem>
+															</SelectContent>
+														</Select>
+													</div>
+												</TooltipTrigger>
+												{isInitialAdmin ? (
+													<TooltipContent>
+														{t("initial_admin_role_blocked")}
+													</TooltipContent>
+												) : null}
+											</Tooltip>
+										</TooltipProvider>
+									</div>
+									<div className="space-y-2 md:col-span-2">
+										<Label htmlFor="user-storage-quota">{t("quota_mb")}</Label>
+										<div className="flex gap-3">
+											<Input
+												id="user-storage-quota"
+												type="number"
+												value={quotaValue}
+												onChange={(e) => setQuotaValue(e.target.value)}
+												placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
+												className={ADMIN_CONTROL_HEIGHT_CLASS}
+												disabled={savingProfile}
+											/>
 										</div>
 									</div>
 								</div>
-							) : null}
-						</section>
+							</section>
+
+							<section className="rounded-2xl border bg-background/60 p-6">
+								<div className="mb-5">
+									<h4 className="text-base font-semibold text-foreground">
+										{t("reset_password")}
+									</h4>
+									<p className="mt-1 text-sm text-muted-foreground">
+										{t("reset_password_desc")}
+									</p>
+								</div>
+								<div className="grid gap-5 md:grid-cols-2">
+									<div className="space-y-2">
+										<Label htmlFor="user-reset-password">{t("password")}</Label>
+										<Input
+											id="user-reset-password"
+											type="password"
+											value={passwordValue}
+											onChange={(e) => {
+												setPasswordValue(e.target.value);
+												setPasswordErrors((prev) => ({
+													...prev,
+													password: undefined,
+												}));
+											}}
+											className={ADMIN_CONTROL_HEIGHT_CLASS}
+											disabled={savingPassword}
+											aria-invalid={passwordErrors.password ? true : undefined}
+										/>
+										<p className="text-xs text-muted-foreground">
+											{t("reset_password_hint")}
+										</p>
+										{passwordErrors.password ? (
+											<p className="text-xs text-destructive">
+												{passwordErrors.password}
+											</p>
+										) : null}
+									</div>
+									<div className="space-y-2">
+										<Label htmlFor="user-reset-password-confirm">
+											{t("confirm_password")}
+										</Label>
+										<Input
+											id="user-reset-password-confirm"
+											type="password"
+											value={confirmPasswordValue}
+											onChange={(e) => {
+												setConfirmPasswordValue(e.target.value);
+												setPasswordErrors((prev) => ({
+													...prev,
+													confirm: undefined,
+												}));
+											}}
+											className={ADMIN_CONTROL_HEIGHT_CLASS}
+											disabled={savingPassword}
+											aria-invalid={passwordErrors.confirm ? true : undefined}
+										/>
+										{passwordErrors.confirm ? (
+											<p className="text-xs text-destructive">
+												{passwordErrors.confirm}
+											</p>
+										) : null}
+									</div>
+								</div>
+								<div className="mt-5 flex justify-end border-t pt-4">
+									<Button
+										type="button"
+										onClick={() => void handlePasswordReset()}
+										disabled={
+											savingPassword ||
+											passwordValue.length === 0 ||
+											confirmPasswordValue.length === 0
+										}
+									>
+										{t("reset_password")}
+									</Button>
+								</div>
+							</section>
+
+							<section className="rounded-2xl border bg-background/60 p-6">
+								<div className="mb-5 flex items-center justify-between gap-3">
+									<div>
+										<h4 className="text-base font-semibold text-foreground">
+											{t("storage_policy_assignments")}
+										</h4>
+										<p className="mt-1 text-sm text-muted-foreground">
+											{t("storage_policy_assignments_desc")}
+										</p>
+									</div>
+									<Button
+										variant="ghost"
+										size="sm"
+										className={ADMIN_CONTROL_HEIGHT_CLASS}
+										onClick={() => void loadPolicies()}
+										disabled={policiesLoading}
+									>
+										<Icon
+											name={policiesLoading ? "Spinner" : "ArrowsClockwise"}
+											className={`mr-1 h-3.5 w-3.5 ${policiesLoading ? "animate-spin" : ""}`}
+										/>
+										{t("refresh")}
+									</Button>
+								</div>
+
+								{policiesLoading ? (
+									<SkeletonTable columns={4} rows={4} />
+								) : assignments.length === 0 ? (
+									<p className="text-sm text-muted-foreground">
+										{t("no_policies_assigned")}
+									</p>
+								) : (
+									<div className="space-y-2">
+										{assignments.map((a) => (
+											<div
+												key={a.id}
+												className="flex items-center justify-between gap-3 rounded-lg border bg-muted/20 p-3"
+											>
+												<div className="min-w-0 flex-1">
+													<div className="text-sm font-medium text-foreground">
+														{policyName(a.policy_id)}
+													</div>
+													{editingAssignmentId === a.id ? (
+														<div className="mt-2 flex items-center gap-2">
+															<Input
+																type="number"
+																value={editingAssignmentQuota}
+																onChange={(e) =>
+																	setEditingAssignmentQuota(e.target.value)
+																}
+																placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
+																className="h-8 max-w-[180px]"
+															/>
+															<Button
+																size="sm"
+																onClick={() => void saveAssignmentQuota(a)}
+															>
+																{t("core:save")}
+															</Button>
+															<Button
+																variant="ghost"
+																size="sm"
+																onClick={() => {
+																	setEditingAssignmentId(null);
+																	setEditingAssignmentQuota("");
+																}}
+															>
+																{t("core:cancel")}
+															</Button>
+														</div>
+													) : (
+														<div className="text-xs text-muted-foreground">
+															{t("quota")}:{" "}
+															{a.quota_bytes > 0
+																? formatBytes(a.quota_bytes)
+																: t("core:unlimited")}
+														</div>
+													)}
+												</div>
+												<div className="flex items-center gap-2">
+													{a.is_default ? (
+														<Badge className="border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-700 dark:bg-blue-900 dark:text-blue-300">
+															{t("is_default")}
+														</Badge>
+													) : null}
+													<Button
+														variant="ghost"
+														size="sm"
+														onClick={() => void handleSetDefault(a)}
+														disabled={a.is_default}
+													>
+														{a.is_default
+															? t("default_selected")
+															: t("set_default")}
+													</Button>
+													<Button
+														variant="ghost"
+														size="sm"
+														onClick={() => startEditAssignmentQuota(a)}
+													>
+														{t("edit_quota")}
+													</Button>
+													<Button
+														variant="ghost"
+														size="icon"
+														className="h-8 w-8 text-destructive"
+														onClick={() => void handleRemove(a)}
+													>
+														<Icon name="Trash" className="h-3.5 w-3.5" />
+													</Button>
+												</div>
+											</div>
+										))}
+									</div>
+								)}
+
+								{availablePolicies.length > 0 ? (
+									<div className="mt-5 space-y-4 rounded-xl border bg-muted/10 p-4">
+										<Label className="text-sm font-medium">
+											{t("assign_policy")}
+										</Label>
+										{!hasDefaultPolicy ? (
+											<p className="text-xs text-amber-600 dark:text-amber-400">
+												{t("default_policy_required")}
+											</p>
+										) : null}
+										<div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto] md:items-center">
+											<Select
+												value={addPolicyId != null ? String(addPolicyId) : ""}
+												onValueChange={(v) =>
+													setAddPolicyId(v ? Number(v) : null)
+												}
+											>
+												<SelectTrigger>
+													<SelectValue placeholder={t("select_policy")} />
+												</SelectTrigger>
+												<SelectContent>
+													{availablePolicies.map((p) => (
+														<SelectItem key={p.id} value={String(p.id)}>
+															{p.name} ({p.driver_type})
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+											<Input
+												placeholder={`${t("quota")} (MB, 0=${t("core:unlimited").toLowerCase()})`}
+												value={addQuota}
+												onChange={(e) => setAddQuota(e.target.value)}
+											/>
+											<div className="flex items-center justify-between gap-3 md:justify-end">
+												<div className="flex items-center gap-2">
+													<Switch
+														checked={addDefault}
+														onCheckedChange={setAddDefault}
+													/>
+													<span className="text-xs">{t("is_default")}</span>
+												</div>
+												<Button
+													disabled={!addPolicyId}
+													onClick={() => void handleAssign()}
+												>
+													{t("core:confirm")}
+												</Button>
+											</div>
+										</div>
+									</div>
+								) : null}
+							</section>
+						</div>
 					</div>
 				</div>
 				<DialogFooter className="mx-0 mb-0 rounded-b-xl px-6 py-3 sm:flex-row sm:items-center sm:justify-end">

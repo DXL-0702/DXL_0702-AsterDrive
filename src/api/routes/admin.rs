@@ -39,6 +39,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/users", web::post().to(create_user))
         .route("/users/{id}", web::get().to(get_user))
         .route("/users/{id}", web::patch().to(update_user))
+        .route("/users/{id}/password", web::put().to(reset_user_password))
         .route("/users/{id}", web::delete().to(force_delete_user))
         .route("/users/{id}/avatar/{size}", web::get().to(get_user_avatar))
         // user storage policies
@@ -468,6 +469,11 @@ pub struct PatchUserReq {
     pub storage_quota: Option<i64>,
 }
 
+#[derive(Deserialize, ToSchema)]
+pub struct ResetUserPasswordReq {
+    pub password: String,
+}
+
 #[utoipa::path(
     patch,
     path = "/api/v1/admin/users/{id}",
@@ -517,6 +523,45 @@ pub async fn update_user(
     )
     .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
+}
+
+#[utoipa::path(
+    put,
+    path = "/api/v1/admin/users/{id}/password",
+    tag = "admin",
+    operation_id = "reset_user_password",
+    params(("id" = i64, Path, description = "User ID")),
+    request_body = ResetUserPasswordReq,
+    responses(
+        (status = 200, description = "User password reset"),
+        (status = 400, description = "Validation error"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "User not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn reset_user_password(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: actix_web::HttpRequest,
+    path: web::Path<i64>,
+    body: web::Json<ResetUserPasswordReq>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let user = crate::services::auth_service::set_password(&state, *path, &body.password).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::AdminResetUserPassword,
+        Some("user"),
+        Some(user.id),
+        Some(&user.username),
+        None,
+    )
+    .await;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
 #[utoipa::path(

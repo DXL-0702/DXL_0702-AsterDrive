@@ -99,6 +99,7 @@ describe("adminService", () => {
 			password: "secret",
 		});
 		adminUserService.update(5, { storage_quota: 1024 });
+		adminUserService.resetPassword(5, { password: "newsecret" });
 		adminUserService.delete(5);
 
 		adminPolicyService.get(3);
@@ -142,6 +143,13 @@ describe("adminService", () => {
 		expect(mockState.patch).toHaveBeenNthCalledWith(1, "/admin/users/5", {
 			storage_quota: 1024,
 		});
+		expect(mockState.put).toHaveBeenNthCalledWith(
+			1,
+			"/admin/users/5/password",
+			{
+				password: "newsecret",
+			},
+		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(1, "/admin/users/5");
 
 		expect(mockState.get).toHaveBeenNthCalledWith(3, "/admin/policies/3");

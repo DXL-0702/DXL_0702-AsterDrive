@@ -10,6 +10,7 @@ export type MemoryStatsResponse = components["schemas"]["MemoryStatsResponse"];
 export type AvatarInfo = components["schemas"]["AvatarInfo"];
 export type AvatarSource = components["schemas"]["AvatarSource"];
 export type CheckResp = components["schemas"]["CheckResp"];
+export type ChangePasswordRequest = components["schemas"]["ChangePasswordReq"];
 export type CreateUserReq = components["schemas"]["CreateUserReq"];
 export type MeResponse = components["schemas"]["MeResponse"];
 export type UpdateAvatarSourceRequest =
@@ -65,6 +66,8 @@ export type DriverType = components["schemas"]["DriverType"];
 export type LockPage = components["schemas"]["OffsetPage_ResourceLock"];
 export type RemovedCountResponse =
 	components["schemas"]["RemovedCountResponse"];
+export type ResetUserPasswordRequest =
+	components["schemas"]["ResetUserPasswordReq"];
 export type StoragePolicy = components["schemas"]["StoragePolicy"];
 export type StoragePolicyPage =
 	components["schemas"]["OffsetPage_StoragePolicy"];

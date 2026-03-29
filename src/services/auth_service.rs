@@ -1,6 +1,6 @@
 use chrono::Utc;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use sea_orm::Set;
+use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 use serde::{Deserialize, Serialize};
 
 use crate::db::repository::{config_repo, policy_repo, user_repo};
@@ -260,6 +260,41 @@ pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result
         refresh_token: refresh,
         user_id: user.id,
     })
+}
+
+pub async fn change_password(
+    state: &AppState,
+    user_id: i64,
+    current_password: &str,
+    new_password: &str,
+) -> Result<()> {
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+
+    if !user.status.is_active() {
+        return Err(AsterError::auth_forbidden("account is disabled"));
+    }
+
+    if !hash::verify_password(current_password, &user.password_hash)? {
+        return Err(AsterError::auth_invalid_credentials("wrong password"));
+    }
+
+    set_password(state, user.id, new_password).await?;
+
+    Ok(())
+}
+
+pub async fn set_password(
+    state: &AppState,
+    user_id: i64,
+    new_password: &str,
+) -> Result<user::Model> {
+    validate_password(new_password)?;
+
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    let mut active = user.into_active_model();
+    active.password_hash = Set(hash::hash_password(new_password)?);
+    active.updated_at = Set(Utc::now());
+    active.update(&state.db).await.map_err(AsterError::from)
 }
 
 /// 用 refresh token 换 access token

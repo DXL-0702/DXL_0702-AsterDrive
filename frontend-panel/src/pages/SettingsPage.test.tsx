@@ -5,6 +5,7 @@ import SettingsPage from "@/pages/SettingsPage";
 
 const mockState = vi.hoisted(() => ({
 	authService: {
+		changePassword: vi.fn(),
 		updateProfile: vi.fn(),
 		setAvatarSource: vi.fn(),
 		uploadAvatar: vi.fn(),
@@ -209,6 +210,8 @@ vi.mock("@/hooks/useApiError", () => ({
 
 vi.mock("@/services/authService", () => ({
 	authService: {
+		changePassword: (...args: unknown[]) =>
+			mockState.authService.changePassword(...args),
 		updateProfile: (...args: unknown[]) =>
 			mockState.authService.updateProfile(...args),
 		setAvatarSource: (...args: unknown[]) =>
@@ -234,6 +237,7 @@ vi.mock("@/stores/themeStore", () => ({
 
 describe("SettingsPage", () => {
 	beforeEach(() => {
+		mockState.authService.changePassword.mockReset();
 		mockState.authService.setAvatarSource.mockReset();
 		mockState.authService.uploadAvatar.mockReset();
 		mockState.authService.updateProfile.mockReset();
@@ -301,6 +305,34 @@ describe("SettingsPage", () => {
 		expect(mockState.navigate).toHaveBeenCalledWith("/settings/interface", {
 			viewTransition: true,
 		});
+	});
+
+	it("saves the password through the security endpoint", async () => {
+		render(<SettingsPage section="security" />);
+
+		fireEvent.change(
+			screen.getByLabelText("settings:settings_password_current"),
+			{
+				target: { value: "password123" },
+			},
+		);
+		fireEvent.change(screen.getByLabelText("settings:settings_password_new"), {
+			target: { value: "newsecret456" },
+		});
+		fireEvent.change(
+			screen.getByLabelText("settings:settings_password_confirm"),
+			{
+				target: { value: "newsecret456" },
+			},
+		);
+		fireEvent.click(screen.getByRole("button", { name: "save" }));
+
+		await waitFor(() =>
+			expect(mockState.authService.changePassword).toHaveBeenCalledWith({
+				current_password: "password123",
+				new_password: "newsecret456",
+			}),
+		);
 	});
 
 	it("saves the display name through the profile endpoint", async () => {

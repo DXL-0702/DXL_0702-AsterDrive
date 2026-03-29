@@ -99,6 +99,10 @@ export const router = createBrowserRouter([
 				path: "/settings/interface",
 				element: <SettingsPage section="interface" />,
 			},
+			{
+				path: "/settings/security",
+				element: <SettingsPage section="security" />,
+			},
 		],
 	},
 	{

@@ -45,6 +45,65 @@ async fn test_auth_service_register_login() {
 }
 
 #[actix_web::test]
+async fn test_auth_service_change_password() {
+    let state = common::setup().await;
+
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "alice",
+        "alice@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    aster_drive::services::auth_service::change_password(
+        &state,
+        user.id,
+        "password123",
+        "newpass456",
+    )
+    .await
+    .unwrap();
+
+    let old_login =
+        aster_drive::services::auth_service::login(&state, "alice", "password123").await;
+    assert!(old_login.is_err());
+
+    let new_login = aster_drive::services::auth_service::login(&state, "alice", "newpass456")
+        .await
+        .unwrap();
+    assert_eq!(new_login.user_id, user.id);
+}
+
+#[actix_web::test]
+async fn test_auth_service_set_password() {
+    let state = common::setup().await;
+
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "alice",
+        "alice@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    aster_drive::services::auth_service::set_password(&state, user.id, "resetpass789")
+        .await
+        .unwrap();
+
+    let old_login =
+        aster_drive::services::auth_service::login(&state, "alice", "password123").await;
+    assert!(old_login.is_err());
+
+    let new_login = aster_drive::services::auth_service::login(&state, "alice", "resetpass789")
+        .await
+        .unwrap();
+    assert_eq!(new_login.user_id, user.id);
+}
+
+#[actix_web::test]
 async fn test_auth_service_verify_token() {
     let state = common::setup().await;
 

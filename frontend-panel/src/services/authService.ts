@@ -1,6 +1,7 @@
 import type {
 	ApiResponse,
 	AvatarSource,
+	ChangePasswordRequest,
 	CheckResp,
 	MeResponse,
 	UpdatePreferencesRequest,
@@ -31,6 +32,9 @@ export const authService = {
 
 	updatePreferences: (prefs: UpdatePreferencesRequest) =>
 		api.patch<UserPreferences>("/auth/preferences", prefs),
+
+	changePassword: (payload: ChangePasswordRequest) =>
+		api.put<null>("/auth/password", payload),
 
 	updateProfile: (profile: UpdateProfileRequest) =>
 		api.patch<UserProfileInfo>("/auth/profile", profile),

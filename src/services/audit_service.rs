@@ -25,6 +25,7 @@ pub struct AuditContext {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuditAction {
     AdminCreateUser,
+    AdminResetUserPassword,
     AdminUpdateUser,
     BatchCopy,
     BatchDelete,
@@ -47,6 +48,7 @@ pub enum AuditAction {
     ShareDelete,
     ShareUpdate,
     SystemSetup,
+    UserChangePassword,
     UserLogin,
     UserRegister,
 }
@@ -55,6 +57,7 @@ impl AuditAction {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::AdminCreateUser => "admin_create_user",
+            Self::AdminResetUserPassword => "admin_reset_user_password",
             Self::AdminUpdateUser => "admin_update_user",
             Self::BatchCopy => "batch_copy",
             Self::BatchDelete => "batch_delete",
@@ -77,6 +80,7 @@ impl AuditAction {
             Self::ShareDelete => "share_delete",
             Self::ShareUpdate => "share_update",
             Self::SystemSetup => "system_setup",
+            Self::UserChangePassword => "user_change_password",
             Self::UserLogin => "user_login",
             Self::UserRegister => "user_register",
         }
@@ -302,6 +306,10 @@ mod tests {
     fn audit_action_strings_match_existing_contract() {
         let cases = [
             (AuditAction::AdminCreateUser, "admin_create_user"),
+            (
+                AuditAction::AdminResetUserPassword,
+                "admin_reset_user_password",
+            ),
             (AuditAction::AdminUpdateUser, "admin_update_user"),
             (AuditAction::BatchCopy, "batch_copy"),
             (AuditAction::BatchDelete, "batch_delete"),
@@ -324,6 +332,7 @@ mod tests {
             (AuditAction::ShareDelete, "share_delete"),
             (AuditAction::ShareUpdate, "share_update"),
             (AuditAction::SystemSetup, "system_setup"),
+            (AuditAction::UserChangePassword, "user_change_password"),
             (AuditAction::UserLogin, "user_login"),
             (AuditAction::UserRegister, "user_register"),
         ];

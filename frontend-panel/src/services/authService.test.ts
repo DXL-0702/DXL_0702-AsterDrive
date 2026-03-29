@@ -42,6 +42,10 @@ describe("authService", () => {
 		authService.logout();
 		authService.me();
 		authService.updatePreferences(prefs);
+		authService.changePassword({
+			current_password: "secret",
+			new_password: "newsecret",
+		});
 		authService.updateProfile({ display_name: "Alice" });
 		authService.setAvatarSource("gravatar");
 
@@ -69,11 +73,19 @@ describe("authService", () => {
 			"/auth/preferences",
 			prefs,
 		);
+		expect(mockState.put).toHaveBeenNthCalledWith(1, "/auth/password", {
+			current_password: "secret",
+			new_password: "newsecret",
+		});
 		expect(mockState.patch).toHaveBeenNthCalledWith(2, "/auth/profile", {
 			display_name: "Alice",
 		});
-		expect(mockState.put).toHaveBeenCalledWith("/auth/profile/avatar/source", {
-			source: "gravatar",
-		});
+		expect(mockState.put).toHaveBeenNthCalledWith(
+			2,
+			"/auth/profile/avatar/source",
+			{
+				source: "gravatar",
+			},
+		);
 	});
 });

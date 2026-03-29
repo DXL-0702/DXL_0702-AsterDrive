@@ -4,10 +4,11 @@ import { SettingsPageIntro } from "@/components/common/SettingsScaffold";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { InterfaceSettingsView } from "@/components/settings/InterfaceSettingsView";
 import { ProfileSettingsView } from "@/components/settings/ProfileSettingsView";
+import { SecuritySettingsView } from "@/components/settings/SecuritySettingsView";
 import { Icon } from "@/components/ui/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-type SettingsTabKey = "profile" | "interface";
+type SettingsTabKey = "profile" | "interface" | "security";
 
 export default function SettingsPage({
 	section = "profile",
@@ -18,7 +19,10 @@ export default function SettingsPage({
 	const navigate = useNavigate();
 
 	const handleSectionChange = (value: string) => {
-		if ((value === "profile" || value === "interface") && value !== section) {
+		if (
+			(value === "profile" || value === "interface" || value === "security") &&
+			value !== section
+		) {
 			navigate(`/settings/${value}`, { viewTransition: true });
 		}
 	};
@@ -55,6 +59,13 @@ export default function SettingsPage({
 								<Icon name="Monitor" className="h-4 w-4" />
 								<span>{t("settings:settings_interface")}</span>
 							</TabsTrigger>
+							<TabsTrigger
+								value="security"
+								className="h-10 flex-none rounded-none px-0"
+							>
+								<Icon name="Shield" className="h-4 w-4" />
+								<span>{t("settings:settings_security")}</span>
+							</TabsTrigger>
 						</TabsList>
 
 						<TabsContent value="profile" className="outline-none">
@@ -63,6 +74,10 @@ export default function SettingsPage({
 
 						<TabsContent value="interface" className="outline-none">
 							<InterfaceSettingsView />
+						</TabsContent>
+
+						<TabsContent value="security" className="outline-none">
+							<SecuritySettingsView />
 						</TabsContent>
 					</Tabs>
 				</div>

@@ -4,6 +4,7 @@ import type {
 	DriverType,
 	LockPage,
 	RemovedCountResponse,
+	ResetUserPasswordRequest,
 	ShareInfo,
 	StoragePolicy,
 	StoragePolicyPage,
@@ -68,6 +69,9 @@ export const adminUserService = {
 		id: number,
 		data: { role?: UserRole; status?: UserStatus; storage_quota?: number },
 	) => api.patch<UserInfo>(`/admin/users/${id}`, data),
+
+	resetPassword: (id: number, data: ResetUserPasswordRequest) =>
+		api.put<null>(`/admin/users/${id}/password`, data),
 
 	delete: (id: number) => api.delete<void>(`/admin/users/${id}`),
 };
