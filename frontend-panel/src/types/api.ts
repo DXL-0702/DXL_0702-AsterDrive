@@ -57,6 +57,10 @@ export type ShareStatus = components["schemas"]["ShareStatus"];
 // Admin, storage, and WebDAV
 export type AuditLogEntry = components["schemas"]["AuditLogEntry"];
 export type AuditLogPage = components["schemas"]["OffsetPage_AuditLogEntry"];
+export type AdminOverview = components["schemas"]["AdminOverview"];
+export type AdminOverviewDailyReport =
+	components["schemas"]["AdminOverviewDailyReport"];
+export type AdminOverviewStats = components["schemas"]["AdminOverviewStats"];
 export type DriverType = components["schemas"]["DriverType"];
 export type LockPage = components["schemas"]["OffsetPage_ResourceLock"];
 export type RemovedCountResponse =

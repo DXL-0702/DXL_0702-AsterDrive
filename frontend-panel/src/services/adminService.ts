@@ -1,4 +1,5 @@
 import type {
+	AdminOverview,
 	AdminSharePage,
 	DriverType,
 	LockPage,
@@ -16,6 +17,25 @@ import type {
 	UserStoragePolicyPage,
 } from "@/types/api";
 import { api } from "./http";
+
+export const adminOverviewService = {
+	get: (params?: {
+		days?: number;
+		timezone?: string;
+		event_limit?: number;
+	}) => {
+		const query = new URLSearchParams();
+		if (params?.days != null) query.set("days", String(params.days));
+		if (params?.timezone) query.set("timezone", params.timezone);
+		if (params?.event_limit != null) {
+			query.set("event_limit", String(params.event_limit));
+		}
+		const suffix = query.toString();
+		return api.get<AdminOverview>(
+			suffix ? `/admin/overview?${suffix}` : "/admin/overview",
+		);
+	},
+};
 
 // --- Users ---
 

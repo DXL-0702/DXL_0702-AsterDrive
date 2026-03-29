@@ -9,9 +9,11 @@ describe("utils", () => {
 	});
 
 	it("builds active and inactive sidebar nav item classes", () => {
+		expect(sidebarNavItemClass(true, "custom")).toContain("select-none");
 		expect(sidebarNavItemClass(true, "custom")).toContain(
 			"bg-accent text-accent-foreground font-medium custom",
 		);
+		expect(sidebarNavItemClass(false)).toContain("select-none");
 		expect(sidebarNavItemClass(false)).toContain(
 			"text-muted-foreground hover:bg-accent/50 hover:text-foreground",
 		);

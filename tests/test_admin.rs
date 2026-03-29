@@ -103,6 +103,95 @@ async fn test_admin_users() {
 }
 
 #[actix_web::test]
+async fn test_admin_overview() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "overview-user",
+            "email": "overview-user@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "file_id": file_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/overview?days=3&timezone=Asia/Shanghai&event_limit=1")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let data = &body["data"];
+
+    assert_eq!(data["timezone"], "Asia/Shanghai");
+    assert_eq!(data["days"], 3);
+    assert_eq!(data["stats"]["total_users"], 2);
+    assert_eq!(data["stats"]["active_users"], 2);
+    assert_eq!(data["stats"]["disabled_users"], 0);
+    assert_eq!(data["stats"]["total_files"], 1);
+    assert_eq!(data["stats"]["total_blobs"], 1);
+    assert_eq!(data["stats"]["total_shares"], 1);
+    assert!(data["stats"]["total_file_bytes"].as_i64().unwrap() > 0);
+    assert!(data["stats"]["total_blob_bytes"].as_i64().unwrap() > 0);
+    assert_eq!(
+        data["stats"]["total_file_bytes"],
+        data["stats"]["total_blob_bytes"]
+    );
+    assert!(data["stats"]["audit_events_today"].as_u64().unwrap() >= 5);
+    assert_eq!(data["stats"]["new_users_today"], 2);
+    assert_eq!(data["stats"]["uploads_today"], 1);
+    assert_eq!(data["stats"]["shares_today"], 1);
+
+    let reports = data["daily_reports"].as_array().unwrap();
+    assert_eq!(reports.len(), 3);
+    assert_eq!(
+        reports[0]["date"],
+        chrono::Utc::now()
+            .with_timezone(&chrono_tz::Asia::Shanghai)
+            .format("%Y-%m-%d")
+            .to_string()
+    );
+    assert_eq!(reports[0]["new_users"], 2);
+    assert_eq!(reports[0]["sign_ins"], 1);
+    assert_eq!(reports[0]["uploads"], 1);
+    assert_eq!(reports[0]["share_creations"], 1);
+
+    let events = data["recent_events"].as_array().unwrap();
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["action"], "share_create");
+}
+
+#[actix_web::test]
+async fn test_admin_overview_rejects_invalid_timezone() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/overview?timezone=Not/AZone")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+}
+
+#[actix_web::test]
 async fn test_admin_can_read_uploaded_user_avatar() {
     let state = common::setup().await;
     let app = create_test_app!(state);

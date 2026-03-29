@@ -6,8 +6,8 @@ use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{
-    audit_service, auth_service::Claims, config_service, policy_service, profile_service,
-    share_service, user_service,
+    admin_service, audit_service, auth_service::Claims, config_service, policy_service,
+    profile_service, share_service, user_service,
 };
 use crate::types::{DriverType, UserRole, UserStatus};
 use actix_governor::Governor;
@@ -22,6 +22,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
     web::scope("/admin")
         .wrap(JwtAuth)
         .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
+        .route("/overview", web::get().to(get_overview))
         // policies
         .route("/policies", web::get().to(list_policies))
         .route("/policies", web::post().to(create_policy))
@@ -75,6 +76,35 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
 }
 
 // ── Policies ─────────────────────────────────────────────────────────
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/overview",
+    tag = "admin",
+    operation_id = "get_admin_overview",
+    params(admin_service::AdminOverviewQuery),
+    responses(
+        (status = 200, description = "Admin overview", body = inline(ApiResponse<crate::services::admin_service::AdminOverview>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_overview(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    query: web::Query<admin_service::AdminOverviewQuery>,
+) -> Result<HttpResponse> {
+    require_admin(&claims)?;
+    let overview = admin_service::get_overview(
+        &state,
+        query.days_or_default(),
+        query.timezone_name(),
+        query.event_limit_or_default(),
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(overview)))
+}
 
 #[utoipa::path(
     get,

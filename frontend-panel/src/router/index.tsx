@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/authStore";
 
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
 const FileBrowserPage = lazy(() => import("@/pages/FileBrowserPage"));
+const AdminOverviewPage = lazy(() => import("@/pages/admin/AdminOverviewPage"));
 const AdminUsersPage = lazy(() => import("@/pages/admin/AdminUsersPage"));
 const AdminPoliciesPage = lazy(() => import("@/pages/admin/AdminPoliciesPage"));
 const AdminSettingsPage = lazy(() => import("@/pages/admin/AdminSettingsPage"));
@@ -114,7 +115,8 @@ export const router = createBrowserRouter([
 		element: <AdminRoute />,
 		errorElement: <ErrorPage />,
 		children: [
-			{ path: "/admin", element: <Navigate to="/admin/users" replace /> },
+			{ path: "/admin", element: <Navigate to="/admin/overview" replace /> },
+			{ path: "/admin/overview", element: <AdminOverviewPage /> },
 			{ path: "/admin/users", element: <AdminUsersPage /> },
 			{ path: "/admin/policies", element: <AdminPoliciesPage /> },
 			{ path: "/admin/shares", element: <AdminSharesPage /> },

@@ -24,6 +24,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 	}, []);
 
 	const navItems: { to: string; label: string; icon: IconName }[] = [
+		{ to: "/admin/overview", label: t("overview"), icon: "Presentation" },
 		{ to: "/admin/users", label: t("users"), icon: "Shield" },
 		{ to: "/admin/policies", label: t("policies"), icon: "HardDrive" },
 		{ to: "/admin/shares", label: t("shares"), icon: "Link" },

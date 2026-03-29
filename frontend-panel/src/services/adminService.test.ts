@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	adminConfigService,
 	adminLockService,
+	adminOverviewService,
 	adminPolicyService,
 	adminShareService,
 	adminUserPolicyService,
@@ -86,6 +87,11 @@ describe("adminService", () => {
 	});
 
 	it("uses the expected detail and mutation endpoints", () => {
+		adminOverviewService.get({
+			days: 30,
+			timezone: "Asia/Shanghai",
+			event_limit: 16,
+		});
 		adminUserService.get(5);
 		adminUserService.create({
 			username: "alice",
@@ -123,7 +129,11 @@ describe("adminService", () => {
 		adminConfigService.set("mail.host", "smtp.example.com");
 		adminConfigService.delete("mail.host");
 
-		expect(mockState.get).toHaveBeenNthCalledWith(1, "/admin/users/5");
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			1,
+			"/admin/overview?days=30&timezone=Asia%2FShanghai&event_limit=16",
+		);
+		expect(mockState.get).toHaveBeenNthCalledWith(2, "/admin/users/5");
 		expect(mockState.post).toHaveBeenNthCalledWith(1, "/admin/users", {
 			username: "alice",
 			email: "alice@example.com",
@@ -134,7 +144,7 @@ describe("adminService", () => {
 		});
 		expect(mockState.delete).toHaveBeenNthCalledWith(1, "/admin/users/5");
 
-		expect(mockState.get).toHaveBeenNthCalledWith(2, "/admin/policies/3");
+		expect(mockState.get).toHaveBeenNthCalledWith(3, "/admin/policies/3");
 		expect(mockState.post).toHaveBeenNthCalledWith(2, "/admin/policies", {
 			name: "Primary",
 			driver_type: "s3",
@@ -174,8 +184,8 @@ describe("adminService", () => {
 		expect(mockState.delete).toHaveBeenNthCalledWith(5, "/admin/locks/12");
 		expect(mockState.delete).toHaveBeenNthCalledWith(6, "/admin/locks/expired");
 
-		expect(mockState.get).toHaveBeenNthCalledWith(3, "/admin/config/schema");
-		expect(mockState.get).toHaveBeenNthCalledWith(4, "/admin/config/mail.host");
+		expect(mockState.get).toHaveBeenNthCalledWith(4, "/admin/config/schema");
+		expect(mockState.get).toHaveBeenNthCalledWith(5, "/admin/config/mail.host");
 		expect(mockState.put).toHaveBeenCalledWith("/admin/config/mail.host", {
 			value: "smtp.example.com",
 		});
