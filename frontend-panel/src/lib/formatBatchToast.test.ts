@@ -16,7 +16,7 @@ describe("formatBatchToast", () => {
 			}),
 		).toEqual({
 			variant: "success",
-			title: 'batch_copy_success:{"count":3}',
+			title: 'files:batch_copy_success:{"count":3}',
 		});
 	});
 
@@ -33,17 +33,17 @@ describe("formatBatchToast", () => {
 		});
 
 		expect(toast.variant).toBe("error");
-		expect(toast.title).toBe("batch_delete_failed");
+		expect(toast.title).toBe("files:batch_delete_failed");
 		expect(toast.description).toContain(
-			'batch_error_detail:{"entityType":"file"',
+			'files:batch_error_detail:{"entityType":"core:file"',
 		);
 		expect(toast.description).toContain(
-			'batch_error_detail:{"entityType":"folder"',
+			'files:batch_error_detail:{"entityType":"core:folder"',
 		);
 		expect(toast.description).toContain(
-			'batch_error_detail:{"entityType":"other"',
+			'files:batch_error_detail:{"entityType":"other"',
 		);
-		expect(toast.description).toContain('batch_error_more:{"count":1}');
+		expect(toast.description).toContain('files:batch_error_more:{"count":1}');
 	});
 
 	it("returns a partial-success toast when both success and failures exist", () => {
@@ -55,9 +55,9 @@ describe("formatBatchToast", () => {
 			}),
 		).toEqual({
 			variant: "success",
-			title: 'batch_restore_partial:{"succeeded":2,"failed":1}',
+			title: 'files:batch_restore_partial:{"succeeded":2,"failed":1}',
 			description:
-				'batch_error_detail:{"entityType":"file","entityId":1,"error":"denied"}',
+				'files:batch_error_detail:{"entityType":"core:file","entityId":1,"error":"denied"}',
 		});
 	});
 });

@@ -160,10 +160,22 @@ async fn test_admin_overview() {
 
     let reports = data["daily_reports"].as_array().unwrap();
     assert_eq!(reports.len(), 3);
+    let shanghai_today = chrono::Utc::now()
+        .with_timezone(&chrono_tz::Asia::Shanghai)
+        .date_naive();
     assert_eq!(
         reports[0]["date"],
-        chrono::Utc::now()
-            .with_timezone(&chrono_tz::Asia::Shanghai)
+        shanghai_today.format("%Y-%m-%d").to_string()
+    );
+    assert_eq!(
+        reports[1]["date"],
+        (shanghai_today - chrono::Duration::days(1))
+            .format("%Y-%m-%d")
+            .to_string()
+    );
+    assert_eq!(
+        reports[2]["date"],
+        (shanghai_today - chrono::Duration::days(2))
             .format("%Y-%m-%d")
             .to_string()
     );
@@ -505,19 +517,37 @@ async fn test_admin_policies() {
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
-    // 列出策略（应有 1 个默认策略）
-    let req = test::TestRequest::get()
+    let req = test::TestRequest::post()
         .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({
+            "name": "Archive S3",
+            "driver_type": "s3",
+            "endpoint": "https://s3.example.com",
+            "bucket": "archive",
+            "access_key": "ak",
+            "secret_key": "sk",
+            "base_path": "backups"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    // 列出策略分页（应有 2 个策略，当前取第 2 个）
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/policies?limit=1&offset=1")
         .insert_header(("Cookie", format!("aster_access={token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     let policies = body["data"]["items"].as_array().unwrap();
-    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["limit"], 1);
+    assert_eq!(body["data"]["offset"], 1);
+    assert_eq!(body["data"]["total"], 2);
     assert_eq!(policies.len(), 1);
-    assert_eq!(policies[0]["name"], "Test Local");
-    assert_eq!(policies[0]["is_default"], true);
+    assert_eq!(policies[0]["name"], "Archive S3");
+    assert_eq!(policies[0]["is_default"], false);
 }
 
 #[actix_web::test]

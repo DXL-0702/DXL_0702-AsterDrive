@@ -7,7 +7,13 @@ describe("AdminPageShell", () => {
 		const { container } = render(<AdminPageShell>Body</AdminPageShell>);
 
 		expect(screen.getByText("Body")).toBeInTheDocument();
-		expect(container.firstChild).toHaveClass("flex", "gap-4", "p-4");
+		expect(container.firstChild).toHaveClass(
+			"flex",
+			"flex-col",
+			"gap-4",
+			"px-4",
+			"py-4",
+		);
 	});
 
 	it("merges additional class names", () => {

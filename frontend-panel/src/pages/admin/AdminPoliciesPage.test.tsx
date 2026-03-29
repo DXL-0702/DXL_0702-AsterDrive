@@ -9,10 +9,21 @@ const mockState = vi.hoisted(() => ({
 	handleApiError: vi.fn(),
 	items: [] as Array<Record<string, unknown>>,
 	loading: false,
+	reload: vi.fn(),
+	searchParams: "",
+	setSearchParams: vi.fn(),
 	testConnection: vi.fn(),
 	testParams: vi.fn(),
+	total: 0,
 	toastSuccess: vi.fn(),
 	update: vi.fn(),
+}));
+
+vi.mock("react-router-dom", () => ({
+	useSearchParams: () => [
+		new URLSearchParams(mockState.searchParams),
+		mockState.setSearchParams,
+	],
 }));
 
 vi.mock("react-i18next", () => ({
@@ -171,6 +182,12 @@ vi.mock("@/components/ui/dialog", () => ({
 	DialogContent: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
+	DialogDescription: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	DialogFooter: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
 	DialogHeader: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
@@ -185,25 +202,34 @@ vi.mock("@/components/ui/icon", () => ({
 
 vi.mock("@/components/ui/input", () => ({
 	Input: ({
+		"aria-invalid": ariaInvalid,
+		className,
 		id,
 		onChange,
+		onBlur,
 		placeholder,
 		required,
 		type,
 		value,
 	}: {
+		"aria-invalid"?: boolean;
+		className?: string;
 		id?: string;
 		onChange?: (event: { target: { value: string } }) => void;
+		onBlur?: () => void;
 		placeholder?: string;
 		required?: boolean;
 		type?: string;
 		value?: string;
 	}) => (
 		<input
+			aria-invalid={ariaInvalid}
+			className={className}
 			id={id}
 			onChange={(event) =>
 				onChange?.({ target: { value: event.target.value } })
 			}
+			onBlur={onBlur}
 			placeholder={placeholder}
 			required={required}
 			type={type}
@@ -297,6 +323,25 @@ vi.mock("@/components/ui/switch", () => ({
 	),
 }));
 
+vi.mock("@/components/ui/tooltip", () => ({
+	Tooltip: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	TooltipContent: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	TooltipProvider: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	TooltipTrigger: ({
+		children,
+		render,
+	}: {
+		children?: React.ReactNode;
+		render?: React.ReactNode;
+	}) => render ?? children,
+}));
+
 vi.mock("@/components/ui/table", () => ({
 	TableCell: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
@@ -319,7 +364,16 @@ vi.mock("@/hooks/useApiError", () => ({
 vi.mock("@/hooks/useApiList", () => ({
 	useApiList: () => {
 		const [items, setItems] = useState(mockState.items);
-		return { items, loading: mockState.loading, setItems };
+		return {
+			items,
+			loading: mockState.loading,
+			reload: async () => {
+				await mockState.reload();
+				setItems(mockState.items);
+			},
+			setItems,
+			total: mockState.total || items.length,
+		};
 	},
 }));
 
@@ -360,8 +414,12 @@ describe("AdminPoliciesPage", () => {
 		mockState.handleApiError.mockReset();
 		mockState.items = [];
 		mockState.loading = false;
+		mockState.reload.mockReset();
+		mockState.searchParams = "";
+		mockState.setSearchParams.mockReset();
 		mockState.testConnection.mockReset();
 		mockState.testParams.mockReset();
+		mockState.total = 0;
 		mockState.toastSuccess.mockReset();
 		mockState.update.mockReset();
 
@@ -371,7 +429,10 @@ describe("AdminPoliciesPage", () => {
 				id: 99,
 			}),
 		);
-		mockState.deletePolicy.mockResolvedValue(undefined);
+		mockState.deletePolicy.mockImplementation(async (id: number) => {
+			mockState.items = mockState.items.filter((policy) => policy.id !== id);
+		});
+		mockState.reload.mockResolvedValue(undefined);
 		mockState.testConnection.mockResolvedValue(undefined);
 		mockState.testParams.mockResolvedValue(undefined);
 		mockState.update.mockImplementation(async (id, payload) =>
@@ -486,6 +547,7 @@ describe("AdminPoliciesPage", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "PencilSimple" }));
 
+		expect(screen.getByText("s3_endpoint_hint")).toBeInTheDocument();
 		expect(screen.getByDisplayValue("Archive S3")).toBeInTheDocument();
 		expect(screen.getByDisplayValue("tenant-a")).toBeInTheDocument();
 		expect(screen.getByDisplayValue("4096")).toBeInTheDocument();
@@ -541,6 +603,45 @@ describe("AdminPoliciesPage", () => {
 		expect(payload).toHaveProperty("access_key", "NEWKEY");
 		expect(payload).not.toHaveProperty("secret_key");
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
+	});
+
+	it("splits an R2 bucket path into the endpoint and bucket inputs on blur", () => {
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
+		fireEvent.click(screen.getByRole("button", { name: "select-item:s3" }));
+
+		const endpointInput = screen.getByLabelText("endpoint");
+		fireEvent.change(endpointInput, {
+			target: {
+				value: "https://demo-account.r2.cloudflarestorage.com/photos",
+			},
+		});
+		fireEvent.blur(endpointInput);
+
+		expect(
+			screen.getByDisplayValue("https://demo-account.r2.cloudflarestorage.com"),
+		).toBeInTheDocument();
+		expect(screen.getByDisplayValue("photos")).toBeInTheDocument();
+	});
+
+	it("marks public r2.dev endpoints as invalid", () => {
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
+		fireEvent.click(screen.getByRole("button", { name: "select-item:s3" }));
+
+		const endpointInput = screen.getByLabelText("endpoint");
+		fireEvent.change(endpointInput, {
+			target: {
+				value: "https://pub-dsaifhoiuahfas.r2.dev/aster-drive",
+			},
+		});
+
+		expect(endpointInput).toHaveAttribute("aria-invalid", "true");
+		expect(
+			screen.getByText("s3_endpoint_public_r2_dev_error"),
+		).toBeInTheDocument();
 	});
 
 	it("displays legacy presigned_upload true as presigned strategy", async () => {

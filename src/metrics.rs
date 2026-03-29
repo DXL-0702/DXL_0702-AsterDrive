@@ -126,7 +126,6 @@ mod inner {
 
     fn query_kind_from_sql(sql: &str) -> &'static str {
         let token = sql
-            .trim_start()
             .split_whitespace()
             .next()
             .unwrap_or_default()

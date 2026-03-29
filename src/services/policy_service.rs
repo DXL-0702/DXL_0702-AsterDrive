@@ -6,6 +6,7 @@ use crate::db::repository::policy_repo;
 use crate::entities::{storage_policy, user_storage_policy};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
+use crate::storage::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::types::DriverType;
 
 const SYSTEM_STORAGE_POLICY_ID: i64 = 1;
@@ -43,6 +44,8 @@ pub async fn create(
     is_default: bool,
     options: Option<String>,
 ) -> Result<storage_policy::Model> {
+    let (endpoint, bucket) = normalize_connection_fields(driver_type, endpoint, bucket)?;
+
     // 设为默认时清除其他策略的 default
     if is_default {
         policy_repo::clear_system_default(&state.db).await?;
@@ -52,8 +55,8 @@ pub async fn create(
     let model = storage_policy::ActiveModel {
         name: Set(name.to_string()),
         driver_type: Set(driver_type),
-        endpoint: Set(endpoint.to_string()),
-        bucket: Set(bucket.to_string()),
+        endpoint: Set(endpoint),
+        bucket: Set(bucket),
         access_key: Set(access_key.to_string()),
         secret_key: Set(secret_key.to_string()),
         base_path: Set(base_path.to_string()),
@@ -133,6 +136,12 @@ pub async fn update(
     options: Option<String>,
 ) -> Result<storage_policy::Model> {
     let existing = policy_repo::find_by_id(&state.db, id).await?;
+    let existing_endpoint = existing.endpoint.clone();
+    let existing_bucket = existing.bucket.clone();
+    let final_endpoint = endpoint.unwrap_or_else(|| existing_endpoint.clone());
+    let final_bucket = bucket.unwrap_or_else(|| existing_bucket.clone());
+    let (normalized_endpoint, normalized_bucket) =
+        normalize_connection_fields(existing.driver_type, &final_endpoint, &final_bucket)?;
 
     // 不允许取消唯一的系统默认策略
     if let Some(false) = is_default
@@ -158,11 +167,11 @@ pub async fn update(
     if let Some(v) = name {
         active.name = Set(v);
     }
-    if let Some(v) = endpoint {
-        active.endpoint = Set(v);
+    if normalized_endpoint != existing_endpoint {
+        active.endpoint = Set(normalized_endpoint);
     }
-    if let Some(v) = bucket {
-        active.bucket = Set(v);
+    if normalized_bucket != existing_bucket {
+        active.bucket = Set(normalized_bucket);
     }
     if let Some(v) = access_key {
         active.access_key = Set(v);
@@ -198,7 +207,7 @@ pub async fn update(
 /// 测试存储策略连接是否正常
 ///
 /// - Local: 检查 base_path 目录是否可写
-/// - S3: 尝试 HEAD bucket
+/// - S3: 写入并删除一个测试对象
 pub async fn test_connection(state: &AppState, id: i64) -> Result<()> {
     let policy = policy_repo::find_by_id(&state.db, id).await?;
     let driver = state.driver_registry.get_driver(&policy)?;
@@ -229,13 +238,15 @@ pub async fn test_connection_params(
     use crate::storage::local::LocalDriver;
     use crate::storage::s3::S3Driver;
 
+    let (endpoint, bucket) = normalize_connection_fields(driver_type, endpoint, bucket)?;
+
     // 构造一个临时 policy model 用于创建 driver
     let fake_policy = storage_policy::Model {
         id: 0,
         name: String::new(),
         driver_type,
-        endpoint: endpoint.to_string(),
-        bucket: bucket.to_string(),
+        endpoint,
+        bucket,
         access_key: access_key.to_string(),
         secret_key: secret_key.to_string(),
         base_path: base_path.to_string(),
@@ -263,6 +274,20 @@ pub async fn test_connection_params(
     }
 
     Ok(())
+}
+
+fn normalize_connection_fields(
+    driver_type: DriverType,
+    endpoint: &str,
+    bucket: &str,
+) -> Result<(String, String)> {
+    match driver_type {
+        DriverType::Local => Ok((endpoint.trim().to_string(), bucket.trim().to_string())),
+        DriverType::S3 => {
+            let normalized = normalize_s3_endpoint_and_bucket(endpoint, bucket)?;
+            Ok((normalized.endpoint, normalized.bucket))
+        }
+    }
 }
 
 // ── User Storage Policy ──────────────────────────────────────────────

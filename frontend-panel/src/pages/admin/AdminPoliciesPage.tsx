@@ -1,6 +1,7 @@
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminTableList } from "@/components/common/AdminTableList";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
@@ -12,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
+	DialogDescription,
+	DialogFooter,
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
@@ -32,14 +35,29 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
-import { ADMIN_ICON_BUTTON_CLASS } from "@/lib/constants";
+import {
+	ADMIN_CONTROL_HEIGHT_CLASS,
+	ADMIN_ICON_BUTTON_CLASS,
+	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
+} from "@/lib/constants";
+import {
+	isPublicR2DevUrl,
+	normalizeS3ConnectionFields,
+} from "@/lib/s3Endpoint";
 import { adminPolicyService } from "@/services/adminService";
 import type { DriverType, StoragePolicy } from "@/types/api";
 
 type S3UploadStrategy = "proxy_tempfile" | "relay_stream" | "presigned";
+const POLICY_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 
 interface PolicyFormData {
 	name: string;
@@ -107,14 +125,36 @@ function buildPolicyOptions(form: PolicyFormData): string {
 	});
 }
 
-function buildPolicyTestPayload(form: PolicyFormData) {
+function normalizePolicyForm(form: PolicyFormData): PolicyFormData {
+	if (form.driver_type !== "s3") {
+		return form;
+	}
+
+	const normalized = normalizeS3ConnectionFields(form.endpoint, form.bucket);
+	if (
+		normalized.endpoint === form.endpoint &&
+		normalized.bucket === form.bucket
+	) {
+		return form;
+	}
+
 	return {
-		driver_type: form.driver_type,
-		endpoint: form.endpoint || undefined,
-		bucket: form.bucket || undefined,
-		access_key: form.access_key || undefined,
-		secret_key: form.secret_key || undefined,
-		base_path: form.base_path || undefined,
+		...form,
+		endpoint: normalized.endpoint,
+		bucket: normalized.bucket,
+	};
+}
+
+function buildPolicyTestPayload(form: PolicyFormData) {
+	const normalizedForm = normalizePolicyForm(form);
+
+	return {
+		driver_type: normalizedForm.driver_type,
+		endpoint: normalizedForm.endpoint || undefined,
+		bucket: normalizedForm.bucket || undefined,
+		access_key: normalizedForm.access_key || undefined,
+		secret_key: normalizedForm.secret_key || undefined,
+		base_path: normalizedForm.base_path || undefined,
 	};
 }
 
@@ -122,31 +162,35 @@ function hasConnectionFieldChanges(
 	form: PolicyFormData,
 	editingPolicy: StoragePolicy | null,
 ) {
+	const normalizedForm = normalizePolicyForm(form);
+
 	if (!editingPolicy) {
 		return true;
 	}
 
-	if (form.driver_type === "s3") {
+	if (normalizedForm.driver_type === "s3") {
 		return (
-			form.endpoint !== editingPolicy.endpoint ||
-			form.bucket !== editingPolicy.bucket ||
-			form.base_path !== editingPolicy.base_path ||
-			form.access_key !== "" ||
-			form.secret_key !== ""
+			normalizedForm.endpoint !== editingPolicy.endpoint ||
+			normalizedForm.bucket !== editingPolicy.bucket ||
+			normalizedForm.base_path !== editingPolicy.base_path ||
+			normalizedForm.access_key !== "" ||
+			normalizedForm.secret_key !== ""
 		);
 	}
 
-	return form.base_path !== editingPolicy.base_path;
+	return normalizedForm.base_path !== editingPolicy.base_path;
 }
 
 function getS3ConnectionTestKey(form: PolicyFormData) {
+	const normalizedForm = normalizePolicyForm(form);
+
 	return JSON.stringify({
-		driver_type: form.driver_type,
-		endpoint: form.endpoint,
-		bucket: form.bucket,
-		access_key: form.access_key,
-		secret_key: form.secret_key,
-		base_path: form.base_path,
+		driver_type: normalizedForm.driver_type,
+		endpoint: normalizedForm.endpoint,
+		bucket: normalizedForm.bucket,
+		access_key: normalizedForm.access_key,
+		secret_key: normalizedForm.secret_key,
+		base_path: normalizedForm.base_path,
 	});
 }
 
@@ -187,6 +231,7 @@ function TestConnectionButton({
 		<Button
 			type="button"
 			variant="outline"
+			className={ADMIN_CONTROL_HEIGHT_CLASS}
 			disabled={testing || disabled}
 			onClick={handleTest}
 		>
@@ -207,11 +252,31 @@ function TestConnectionButton({
 
 export default function AdminPoliciesPage() {
 	const { t } = useTranslation("admin");
+	const [searchParams, setSearchParams] = useSearchParams();
+	const initialOffset = Number(searchParams.get("offset") ?? "0");
+	const initialPageSize = Number(searchParams.get("pageSize") ?? "20");
+	const [offset, setOffset] = useState(
+		Number.isNaN(initialOffset) ? 0 : initialOffset,
+	);
+	const [pageSize, setPageSize] = useState<
+		(typeof POLICY_PAGE_SIZE_OPTIONS)[number]
+	>(
+		POLICY_PAGE_SIZE_OPTIONS.includes(
+			initialPageSize as (typeof POLICY_PAGE_SIZE_OPTIONS)[number],
+		)
+			? (initialPageSize as (typeof POLICY_PAGE_SIZE_OPTIONS)[number])
+			: 20,
+	);
 	const {
 		items: policies,
 		setItems: setPolicies,
+		total,
 		loading,
-	} = useApiList(() => adminPolicyService.list({ limit: 100, offset: 0 }));
+		reload,
+	} = useApiList(
+		() => adminPolicyService.list({ limit: pageSize, offset }),
+		[offset, pageSize],
+	);
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [editingId, setEditingId] = useState<number | null>(null);
 	const [editingPolicy, setEditingPolicy] = useState<StoragePolicy | null>(
@@ -221,11 +286,37 @@ export default function AdminPoliciesPage() {
 	const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
 	const [validatedS3Key, setValidatedS3Key] = useState<string | null>(null);
+	const endpointValidationMessage =
+		form.driver_type === "s3" && isPublicR2DevUrl(form.endpoint)
+			? t("s3_endpoint_public_r2_dev_error")
+			: null;
+	const totalPages = Math.max(1, Math.ceil(total / pageSize));
+	const currentPage = Math.floor(offset / pageSize) + 1;
+	const prevPageDisabled = offset === 0;
+	const nextPageDisabled = offset + pageSize >= total;
+
+	useEffect(() => {
+		const params = new URLSearchParams();
+		if (offset > 0) params.set("offset", String(offset));
+		if (pageSize !== 20) params.set("pageSize", String(pageSize));
+		setSearchParams(params, { replace: true });
+	}, [offset, pageSize, setSearchParams]);
+
+	const handlePageSizeChange = (value: string | null) => {
+		if (!value) return;
+		const next = Number(value) as (typeof POLICY_PAGE_SIZE_OPTIONS)[number];
+		setPageSize(next);
+		setOffset(0);
+	};
 
 	const handleDelete = async (id: number) => {
 		try {
 			await adminPolicyService.delete(id);
-			setPolicies((prev) => prev.filter((p) => p.id !== id));
+			if (policies.length === 1 && offset > 0) {
+				setOffset(Math.max(0, offset - pageSize));
+			} else {
+				await reload();
+			}
 			toast.success(t("policy_deleted"));
 		} catch (e) {
 			handleApiError(e);
@@ -287,18 +378,22 @@ export default function AdminPoliciesPage() {
 		showSuccessToast?: boolean;
 		showFailureError?: boolean;
 	} = {}) => {
+		const currentForm = syncNormalizedS3Form();
 		const shouldUseParamTest =
-			editingId === null || hasConnectionFieldChanges(form, editingPolicy);
+			editingId === null ||
+			hasConnectionFieldChanges(currentForm, editingPolicy);
 
 		try {
 			if (shouldUseParamTest) {
-				await adminPolicyService.testParams(buildPolicyTestPayload(form));
+				await adminPolicyService.testParams(
+					buildPolicyTestPayload(currentForm),
+				);
 			} else {
 				await adminPolicyService.testConnection(editingId);
 			}
 
-			if (form.driver_type === "s3") {
-				setValidatedS3Key(getS3ConnectionTestKey(form));
+			if (currentForm.driver_type === "s3") {
+				setValidatedS3Key(getS3ConnectionTestKey(currentForm));
 			}
 			if (showSuccessToast) {
 				toast.success(t("connection_success"));
@@ -315,25 +410,26 @@ export default function AdminPoliciesPage() {
 
 	const persistPolicy = async () => {
 		try {
-			const options = buildPolicyOptions(form);
+			const currentForm = syncNormalizedS3Form();
+			const options = buildPolicyOptions(currentForm);
 			if (editingId) {
 				const payload: Record<string, unknown> = {
-					name: form.name,
-					endpoint: form.endpoint,
-					bucket: form.bucket,
-					base_path: form.base_path,
-					max_file_size: form.max_file_size
-						? Number(form.max_file_size)
+					name: currentForm.name,
+					endpoint: currentForm.endpoint,
+					bucket: currentForm.bucket,
+					base_path: currentForm.base_path,
+					max_file_size: currentForm.max_file_size
+						? Number(currentForm.max_file_size)
 						: undefined,
-					chunk_size: form.chunk_size
-						? Number(form.chunk_size) * 1024 * 1024
+					chunk_size: currentForm.chunk_size
+						? Number(currentForm.chunk_size) * 1024 * 1024
 						: 0,
-					is_default: form.is_default,
+					is_default: currentForm.is_default,
 					options,
 				};
 				// Only send credentials if user typed new values
-				if (form.access_key) payload.access_key = form.access_key;
-				if (form.secret_key) payload.secret_key = form.secret_key;
+				if (currentForm.access_key) payload.access_key = currentForm.access_key;
+				if (currentForm.secret_key) payload.secret_key = currentForm.secret_key;
 				const updated = await adminPolicyService.update(editingId, payload);
 				setPolicies((prev) =>
 					prev.map((p) => (p.id === editingId ? updated : p)),
@@ -341,24 +437,33 @@ export default function AdminPoliciesPage() {
 				toast.success(t("policy_updated"));
 			} else {
 				const payload = {
-					name: form.name,
-					driver_type: form.driver_type,
-					endpoint: form.endpoint,
-					bucket: form.bucket,
-					access_key: form.access_key,
-					secret_key: form.secret_key,
-					base_path: form.base_path,
-					max_file_size: form.max_file_size
-						? Number(form.max_file_size)
+					name: currentForm.name,
+					driver_type: currentForm.driver_type,
+					endpoint: currentForm.endpoint,
+					bucket: currentForm.bucket,
+					access_key: currentForm.access_key,
+					secret_key: currentForm.secret_key,
+					base_path: currentForm.base_path,
+					max_file_size: currentForm.max_file_size
+						? Number(currentForm.max_file_size)
 						: undefined,
-					chunk_size: form.chunk_size
-						? Number(form.chunk_size) * 1024 * 1024
+					chunk_size: currentForm.chunk_size
+						? Number(currentForm.chunk_size) * 1024 * 1024
 						: 0,
-					is_default: form.is_default,
+					is_default: currentForm.is_default,
 					options,
 				};
-				const created = await adminPolicyService.create(payload);
-				setPolicies((prev) => [...prev, created]);
+				await adminPolicyService.create(payload);
+				const nextTotal = total + 1;
+				const nextLastOffset = Math.max(
+					0,
+					Math.floor((nextTotal - 1) / pageSize) * pageSize,
+				);
+				if (nextLastOffset !== offset) {
+					setOffset(nextLastOffset);
+				} else {
+					await reload();
+				}
 				toast.success(t("policy_created"));
 			}
 			handleDialogOpenChange(false);
@@ -413,6 +518,14 @@ export default function AdminPoliciesPage() {
 		value: PolicyFormData[K],
 	) => setForm((prev) => ({ ...prev, [key]: value }));
 
+	const syncNormalizedS3Form = () => {
+		const normalizedForm = normalizePolicyForm(form);
+		if (normalizedForm !== form) {
+			setForm(normalizedForm);
+		}
+		return normalizedForm;
+	};
+
 	const deletePolicyName =
 		deleteId !== null
 			? (policies.find((p) => p.id === deleteId)?.name ?? "")
@@ -425,10 +538,29 @@ export default function AdminPoliciesPage() {
 					title={t("policies")}
 					description={t("policies_intro")}
 					actions={
-						<Button size="sm" onClick={openCreate}>
-							<Icon name="Plus" className="mr-1 h-4 w-4" />
-							{t("new_policy")}
-						</Button>
+						<>
+							<Button
+								size="sm"
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								onClick={openCreate}
+							>
+								<Icon name="Plus" className="mr-1 h-4 w-4" />
+								{t("new_policy")}
+							</Button>
+							<Button
+								variant="outline"
+								size="sm"
+								className={ADMIN_CONTROL_HEIGHT_CLASS}
+								onClick={() => void reload()}
+								disabled={loading}
+							>
+								<Icon
+									name={loading ? "Spinner" : "ArrowsClockwise"}
+									className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+								/>
+								{t("refresh")}
+							</Button>
+						</>
 					}
 				/>
 
@@ -448,7 +580,9 @@ export default function AdminPoliciesPage() {
 								<TableHead>{t("endpoint_path")}</TableHead>
 								<TableHead>{t("bucket")}</TableHead>
 								<TableHead className="w-20">{t("is_default")}</TableHead>
-								<TableHead className="w-24">{t("core:actions")}</TableHead>
+								<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
+									{t("core:actions")}
+								</TableHead>
 							</TableRow>
 						</TableHeader>
 					}
@@ -500,6 +634,81 @@ export default function AdminPoliciesPage() {
 					)}
 				/>
 
+				{total > 0 ? (
+					<div className="flex items-center justify-between gap-3 px-4 pb-4 text-sm text-muted-foreground md:px-6">
+						<div className="flex items-center gap-3">
+							<span>
+								{t("entries_page", {
+									total,
+									current: currentPage,
+									pages: totalPages,
+								})}
+							</span>
+							<Select
+								value={String(pageSize)}
+								onValueChange={handlePageSizeChange}
+							>
+								<SelectTrigger
+									className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-[120px]`}
+								>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									{POLICY_PAGE_SIZE_OPTIONS.map((size) => (
+										<SelectItem key={size} value={String(size)}>
+											{t("page_size_option", { count: size })}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+						<TooltipProvider>
+							<div className="flex items-center gap-2">
+								<Tooltip>
+									<TooltipTrigger
+										render={
+											<Button
+												variant="outline"
+												size="sm"
+												disabled={prevPageDisabled}
+												onClick={() =>
+													setOffset(Math.max(0, offset - pageSize))
+												}
+											/>
+										}
+									>
+										<Icon name="CaretLeft" className="h-4 w-4" />
+									</TooltipTrigger>
+									{prevPageDisabled ? (
+										<TooltipContent>
+											{t("pagination_prev_disabled")}
+										</TooltipContent>
+									) : null}
+								</Tooltip>
+								<Tooltip>
+									<TooltipTrigger
+										render={
+											<Button
+												variant="outline"
+												size="sm"
+												disabled={nextPageDisabled}
+												onClick={() => setOffset(offset + pageSize)}
+											/>
+										}
+									>
+										<Icon name="CaretRight" className="h-4 w-4" />
+									</TooltipTrigger>
+									{nextPageDisabled ? (
+										<TooltipContent>
+											{t("pagination_next_disabled")}
+										</TooltipContent>
+									) : null}
+								</Tooltip>
+							</div>
+						</TooltipProvider>
+					</div>
+				) : null}
+
 				<ConfirmDialog
 					{...dialogProps}
 					title={`${t("delete_policy")} "${deletePolicyName}"?`}
@@ -521,11 +730,12 @@ export default function AdminPoliciesPage() {
 				/>
 
 				<Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
-					<DialogContent className="max-w-lg">
+					<DialogContent className="sm:max-w-lg">
 						<DialogHeader>
 							<DialogTitle>
 								{editingId ? t("edit_policy") : t("create_policy")}
 							</DialogTitle>
+							<DialogDescription>{t("policies_intro")}</DialogDescription>
 						</DialogHeader>
 						<form onSubmit={handleSubmit} className="space-y-4">
 							<div className="space-y-2">
@@ -534,6 +744,7 @@ export default function AdminPoliciesPage() {
 									id="name"
 									value={form.name}
 									onChange={(e) => setField("name", e.target.value)}
+									className={ADMIN_CONTROL_HEIGHT_CLASS}
 									required
 								/>
 							</div>
@@ -547,7 +758,7 @@ export default function AdminPoliciesPage() {
 											setField("driver_type", v as DriverType)
 										}
 									>
-										<SelectTrigger>
+										<SelectTrigger className={ADMIN_CONTROL_HEIGHT_CLASS}>
 											<SelectValue />
 										</SelectTrigger>
 										<SelectContent>
@@ -566,6 +777,7 @@ export default function AdminPoliciesPage() {
 									id="base_path"
 									value={form.base_path}
 									onChange={(e) => setField("base_path", e.target.value)}
+									className={ADMIN_CONTROL_HEIGHT_CLASS}
 									placeholder={
 										form.driver_type === "local" ? "./data" : "prefix/path"
 									}
@@ -580,8 +792,21 @@ export default function AdminPoliciesPage() {
 											id="endpoint"
 											value={form.endpoint}
 											onChange={(e) => setField("endpoint", e.target.value)}
+											onBlur={syncNormalizedS3Form}
+											aria-invalid={
+												endpointValidationMessage ? true : undefined
+											}
+											className={ADMIN_CONTROL_HEIGHT_CLASS}
 											placeholder="https://s3.amazonaws.com"
 										/>
+										{endpointValidationMessage && (
+											<p className="text-xs text-destructive">
+												{endpointValidationMessage}
+											</p>
+										)}
+										<p className="text-xs text-muted-foreground">
+											{t("s3_endpoint_hint")}
+										</p>
 									</div>
 									<div className="space-y-2">
 										<Label htmlFor="bucket">{t("bucket")}</Label>
@@ -589,6 +814,7 @@ export default function AdminPoliciesPage() {
 											id="bucket"
 											value={form.bucket}
 											onChange={(e) => setField("bucket", e.target.value)}
+											className={ADMIN_CONTROL_HEIGHT_CLASS}
 											required
 										/>
 									</div>
@@ -599,6 +825,7 @@ export default function AdminPoliciesPage() {
 												id="access_key"
 												value={form.access_key}
 												onChange={(e) => setField("access_key", e.target.value)}
+												className={ADMIN_CONTROL_HEIGHT_CLASS}
 											/>
 										</div>
 										<div className="space-y-2">
@@ -608,6 +835,7 @@ export default function AdminPoliciesPage() {
 												type="password"
 												value={form.secret_key}
 												onChange={(e) => setField("secret_key", e.target.value)}
+												className={ADMIN_CONTROL_HEIGHT_CLASS}
 											/>
 										</div>
 									</div>
@@ -624,7 +852,10 @@ export default function AdminPoliciesPage() {
 												)
 											}
 										>
-											<SelectTrigger id="s3_upload_strategy">
+											<SelectTrigger
+												id="s3_upload_strategy"
+												className={ADMIN_CONTROL_HEIGHT_CLASS}
+											>
 												<SelectValue />
 											</SelectTrigger>
 											<SelectContent>
@@ -663,6 +894,7 @@ export default function AdminPoliciesPage() {
 									type="number"
 									value={form.max_file_size}
 									onChange={(e) => setField("max_file_size", e.target.value)}
+									className={ADMIN_CONTROL_HEIGHT_CLASS}
 									placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
 								/>
 							</div>
@@ -674,6 +906,7 @@ export default function AdminPoliciesPage() {
 									type="number"
 									value={form.chunk_size}
 									onChange={(e) => setField("chunk_size", e.target.value)}
+									className={ADMIN_CONTROL_HEIGHT_CLASS}
 									placeholder="5 = 5MB, 0 = single upload only"
 								/>
 								<p className="text-xs text-muted-foreground">
@@ -690,15 +923,28 @@ export default function AdminPoliciesPage() {
 								<Label htmlFor="is_default">{t("set_as_default")}</Label>
 							</div>
 
-							<div className="flex gap-2">
+							<DialogFooter>
+								<Button
+									type="button"
+									variant="outline"
+									className={ADMIN_CONTROL_HEIGHT_CLASS}
+									onClick={() => handleDialogOpenChange(false)}
+									disabled={submitting}
+								>
+									{t("core:cancel")}
+								</Button>
 								<TestConnectionButton
 									onTest={() => runConnectionTest()}
 									disabled={submitting}
 								/>
-								<Button type="submit" className="flex-1" disabled={submitting}>
+								<Button
+									type="submit"
+									className={ADMIN_CONTROL_HEIGHT_CLASS}
+									disabled={submitting}
+								>
 									{editingId ? t("save_changes") : t("core:create")}
 								</Button>
-							</div>
+							</DialogFooter>
 						</form>
 					</DialogContent>
 				</Dialog>

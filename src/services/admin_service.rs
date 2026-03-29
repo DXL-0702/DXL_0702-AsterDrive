@@ -240,6 +240,8 @@ async fn build_daily_reports(
         });
     }
 
+    reports.sort_by(|left, right| right.date.cmp(&left.date));
+
     Ok(reports)
 }
 

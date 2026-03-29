@@ -21,13 +21,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription } from "@/components/ui/card";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
 	Table,
@@ -133,6 +126,12 @@ function formatTrendDayLabel(date: string) {
 	return `${Number(month)}/${Number(day)}`;
 }
 
+function sortReportsByDateAscending(reports: DailyReport[]) {
+	return [...reports].sort((left, right) =>
+		left.date.localeCompare(right.date),
+	);
+}
+
 function createTrendData(reports: DailyReport[]): TrendPoint[] {
 	return reports.map((report) => ({
 		date: report.date,
@@ -202,14 +201,15 @@ function OverviewTrendChart({
 		);
 	}
 
-	const trendData = createTrendData(reports);
-	const latestReport = reports[reports.length - 1];
-	const totalEvents = reports.reduce(
+	const orderedReports = sortReportsByDateAscending(reports);
+	const trendData = createTrendData(orderedReports);
+	const latestReport = orderedReports[orderedReports.length - 1];
+	const totalEvents = orderedReports.reduce(
 		(sum, report) => sum + report.total_events,
 		0,
 	);
-	const averageEvents = totalEvents / reports.length;
-	const peakReport = reports.reduce((peak, report) =>
+	const averageEvents = totalEvents / orderedReports.length;
+	const peakReport = orderedReports.reduce((peak, report) =>
 		report.total_events > peak.total_events ? report : peak,
 	);
 
@@ -236,6 +236,9 @@ function OverviewTrendChart({
 								axisLine={false}
 								tickLine={false}
 								tickMargin={12}
+								interval={0}
+								minTickGap={0}
+								padding={{ left: 12, right: 12 }}
 								tick={{ fill: "var(--muted-foreground)", fontSize: 12 }}
 							/>
 							<YAxis
@@ -314,8 +317,7 @@ function OverviewTrendChart({
 
 export default function AdminOverviewPage() {
 	const { t } = useTranslation("admin");
-	const browserTimezone = resolveBrowserTimeZone();
-	const [timezone, setTimezone] = useState(browserTimezone);
+	const timezone = resolveBrowserTimeZone();
 	const [overview, setOverview] = useState<AdminOverview | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [refreshing, setRefreshing] = useState(false);
@@ -349,9 +351,6 @@ export default function AdminOverviewPage() {
 		void load();
 	}, [load]);
 
-	const timezoneOptions = Array.from(
-		new Set([browserTimezone, "UTC", "Asia/Shanghai", "America/Los_Angeles"]),
-	);
 	const stats = overview?.stats;
 	const statCards = stats
 		? [
@@ -450,29 +449,6 @@ export default function AdminOverviewPage() {
 						title={t("overview")}
 						description={t("overview_intro")}
 						className="pt-4"
-						toolbar={
-							<Select
-								value={timezone}
-								onValueChange={(value) => value && setTimezone(value)}
-							>
-								<SelectTrigger
-									className={`${ADMIN_CONTROL_HEIGHT_CLASS} min-w-[180px] max-w-[240px]`}
-								>
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{timezoneOptions.map((option) => (
-										<SelectItem key={option} value={option}>
-											{option === browserTimezone
-												? t("overview_browser_timezone_option", {
-														timezone: option,
-													})
-												: option}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						}
 						actions={
 							<Button
 								variant="outline"
@@ -511,17 +487,7 @@ export default function AdminOverviewPage() {
 						</div>
 					) : overview ? (
 						<>
-							<div className={cn("space-y-4 py-4", PAGE_SECTION_PADDING_CLASS)}>
-								<div className="space-y-1">
-									<h3 className="text-base font-semibold">
-										{t("overview_daily_trend")}
-									</h3>
-									<p className="text-sm text-muted-foreground">
-										{t("overview_daily_trend_desc", {
-											days: OVERVIEW_TREND_DAYS,
-										})}
-									</p>
-								</div>
+							<div className={cn("py-4", PAGE_SECTION_PADDING_CLASS)}>
 								<OverviewTrendChart
 									reports={overview.daily_reports}
 									emptyTitle={t("overview_daily_trend_empty")}
@@ -539,21 +505,18 @@ export default function AdminOverviewPage() {
 									PAGE_SECTION_PADDING_CLASS,
 								)}
 							>
-								<Badge variant="outline">
-									{t("overview_range_badge", { days: overview.days })}
-								</Badge>
-								<Badge variant="outline">{overview.timezone}</Badge>
-								<span>
+								<div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+									{secondaryBadges.map((badge) => (
+										<Badge key={badge.key} variant="secondary">
+											{badge.label}
+										</Badge>
+									))}
+								</div>
+								<span className="ml-auto whitespace-nowrap text-right">
 									{t("overview_generated_at", {
 										date: formatDateAbsolute(overview.generated_at),
 									})}
 								</span>
-								{secondaryBadges.map((badge) => (
-									<Badge key={badge.key} variant="secondary">
-										{badge.label}
-									</Badge>
-								))}
-								<span>{t("overview_source_hint")}</span>
 							</div>
 						</>
 					) : (

@@ -636,7 +636,7 @@ describe("FileBrowserPage", () => {
 		await waitFor(() => {
 			expect(mockState.store.navigateTo).toHaveBeenCalledWith(12, "Projects");
 		});
-		expect(screen.getByText('search: "budget"')).toBeInTheDocument();
+		expect(screen.getByText(/core:search:\s*"budget"/)).toBeInTheDocument();
 		expect(screen.getByText("grid:1:1")).toBeInTheDocument();
 		expect(screen.getByText("view:grid")).toBeInTheDocument();
 		expect(screen.getByText("sort:name:asc")).toBeInTheDocument();
@@ -657,7 +657,7 @@ describe("FileBrowserPage", () => {
 			expect(mockState.store.navigateTo).toHaveBeenCalledWith(12, "Projects");
 		});
 
-		fireEvent.click(screen.getByRole("button", { name: "refresh" }));
+		fireEvent.click(screen.getByRole("button", { name: "core:refresh" }));
 		fireEvent.click(screen.getByRole("button", { name: "Root" }));
 		fireEvent.click(screen.getByRole("button", { name: "open-folder" }));
 		fireEvent.click(screen.getByRole("button", { name: "open-file" }));

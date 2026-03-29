@@ -1,4 +1,5 @@
 use super::driver::{BlobMetadata, StorageDriver};
+use super::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use async_trait::async_trait;
@@ -23,6 +24,9 @@ impl S3Driver {
     const ERROR_BODY_PREVIEW_LIMIT: usize = 512;
 
     pub fn new(policy: &storage_policy::Model) -> Result<Self> {
+        let normalized = normalize_s3_endpoint_and_bucket(&policy.endpoint, &policy.bucket)
+            .map_err(|err| AsterError::storage_driver_error(err.message().to_string()))?;
+
         let credentials = Credentials::new(
             &policy.access_key,
             &policy.secret_key,
@@ -38,24 +42,16 @@ impl S3Driver {
             .force_path_style(true); // MinIO / R2 等需要
 
         // 自定义 endpoint（MinIO、R2、OSS 等）
-        if !policy.endpoint.is_empty() {
-            config_builder = config_builder.endpoint_url(&policy.endpoint);
+        if !normalized.endpoint.is_empty() {
+            config_builder = config_builder.endpoint_url(&normalized.endpoint);
         }
 
         let config = config_builder.build();
         let client = Client::from_conf(config);
 
-        let bucket = if policy.bucket.is_empty() {
-            return Err(AsterError::storage_driver_error(
-                "S3 bucket name is required",
-            ));
-        } else {
-            policy.bucket.clone()
-        };
-
         Ok(Self {
             client,
-            bucket,
+            bucket: normalized.bucket,
             base_path: policy.base_path.clone(),
         })
     }
@@ -534,6 +530,7 @@ impl StorageDriver for S3Driver {
 #[cfg(test)]
 mod tests {
     use super::S3Driver;
+    use crate::entities::storage_policy;
     use crate::errors::AsterError;
     use crate::storage::driver::StorageDriver;
     use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
@@ -596,6 +593,52 @@ mod tests {
         assert!(
             err.message().contains("extended_request_id=ext-456"),
             "expected S3 extended_request_id in '{}'",
+            err.message()
+        );
+    }
+
+    fn sample_policy(endpoint: &str, bucket: &str) -> storage_policy::Model {
+        storage_policy::Model {
+            id: 1,
+            name: "S3".to_string(),
+            driver_type: crate::types::DriverType::S3,
+            endpoint: endpoint.to_string(),
+            bucket: bucket.to_string(),
+            access_key: "key".to_string(),
+            secret_key: "secret".to_string(),
+            base_path: String::new(),
+            max_file_size: 0,
+            allowed_types: "[]".to_string(),
+            options: "{}".to_string(),
+            is_default: false,
+            chunk_size: 0,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    #[test]
+    fn new_normalizes_r2_bucket_path() {
+        let driver = S3Driver::new(&sample_policy(
+            "https://demo-account.r2.cloudflarestorage.com/photos",
+            "",
+        ))
+        .expect("normalized R2 driver");
+
+        assert_eq!(driver.bucket, "photos");
+    }
+
+    #[test]
+    fn new_maps_r2_validation_errors_to_storage_driver_errors() {
+        let err = match S3Driver::new(&sample_policy("https://pub-demo.r2.dev", "photos")) {
+            Ok(_) => panic!("public R2 endpoint should fail"),
+            Err(err) => err,
+        };
+
+        assert_eq!(err.code(), "E031");
+        assert!(
+            err.message().contains("Cloudflare R2 endpoint"),
+            "expected R2 validation context in '{}'",
             err.message()
         );
     }

@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminUsersPage from "@/pages/admin/AdminUsersPage";
 
@@ -427,9 +427,16 @@ function createUser(overrides: Record<string, unknown> = {}) {
 function renderPage(initialEntry = "/admin/users") {
 	return render(
 		<MemoryRouter initialEntries={[initialEntry]}>
+			<LocationProbe />
 			<AdminUsersPage />
 		</MemoryRouter>,
 	);
+}
+
+function LocationProbe() {
+	const location = useLocation();
+
+	return <div data-testid="location-search">{location.search}</div>;
 }
 
 describe("AdminUsersPage", () => {
@@ -503,6 +510,24 @@ describe("AdminUsersPage", () => {
 			expect(mockState.update).toHaveBeenCalledWith(11, { role: "admin" });
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("user_updated");
+	});
+
+	it("clears keyword and select filters from the url in one update", async () => {
+		renderPage("/admin/users?keyword=alice&role=admin&status=disabled");
+
+		await waitFor(() => {
+			expect(mockState.list).toHaveBeenCalledWith({
+				keyword: "alice",
+				limit: 20,
+				offset: 0,
+				role: "admin",
+				status: "disabled",
+			});
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "clear_filters" }));
+
+		expect(screen.getByTestId("location-search").textContent).toBe("");
 	});
 
 	it("validates the create form, trims inputs, creates the user, and reloads the list", async () => {

@@ -194,6 +194,7 @@ export default function AdminUsersPage() {
 
 	const resetFilters = () => {
 		setKeyword("");
+		setDebouncedKeyword("");
 		setRoleFilter("__all__");
 		setStatusFilter("__all__");
 		setOffset(0);

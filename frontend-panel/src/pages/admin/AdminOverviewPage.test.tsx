@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminOverviewPage from "@/pages/admin/AdminOverviewPage";
 
@@ -13,9 +19,6 @@ vi.mock("react-i18next", () => ({
 			if (key === "overview_generated_at") {
 				return `generated:${options?.date}`;
 			}
-			if (key === "overview_range_badge") {
-				return `range:${options?.days}`;
-			}
 			if (key === "overview_today_new_users_badge") {
 				return `new-users:${options?.count}`;
 			}
@@ -24,12 +27,6 @@ vi.mock("react-i18next", () => ({
 			}
 			if (key === "overview_today_shares_badge") {
 				return `shares:${options?.count}`;
-			}
-			if (key === "overview_browser_timezone_option") {
-				return `browser-tz:${options?.timezone}`;
-			}
-			if (key === "overview_days_option") {
-				return `days:${options?.count}`;
 			}
 			return key;
 		},
@@ -81,8 +78,8 @@ vi.mock("@/components/layout/AdminPageHeader", () => ({
 		<div>
 			<h1>{title}</h1>
 			<p>{description}</p>
-			<div>{toolbar}</div>
-			<div>{actions}</div>
+			<div data-testid="admin-page-header-toolbar">{toolbar}</div>
+			<div data-testid="admin-page-header-actions">{actions}</div>
 		</div>
 	),
 }));
@@ -144,52 +141,42 @@ vi.mock("@/components/ui/card", () => ({
 vi.mock("recharts", () => ({
 	CartesianGrid: () => <div>recharts-grid</div>,
 	Line: () => <div>recharts-line</div>,
-	LineChart: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	LineChart: ({
+		children,
+		data,
+	}: {
+		children: React.ReactNode;
+		data?: Array<{ date: string }>;
+	}) => (
+		<div>
+			<div>{`recharts-line-chart:${data?.map((point) => point.date).join(",") ?? ""}`}</div>
+			{children}
+		</div>
 	),
 	ResponsiveContainer: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
 	Tooltip: () => <div>recharts-tooltip</div>,
-	XAxis: () => <div>recharts-x-axis</div>,
+	XAxis: ({
+		dataKey,
+		interval,
+		minTickGap,
+		padding,
+	}: {
+		dataKey?: string;
+		interval?: number | string;
+		minTickGap?: number;
+		padding?: { left?: number; right?: number };
+	}) => (
+		<div>
+			{`recharts-x-axis:${dataKey ?? ""}:${String(interval ?? "")}:${String(minTickGap ?? "")}:${String(padding?.left ?? "")}:${String(padding?.right ?? "")}`}
+		</div>
+	),
 	YAxis: () => <div>recharts-y-axis</div>,
 }));
 
 vi.mock("@/components/ui/icon", () => ({
 	Icon: ({ name }: { name: string }) => <span>{name}</span>,
-}));
-
-vi.mock("@/components/ui/select", () => ({
-	Select: ({
-		children,
-		onValueChange,
-		value,
-	}: {
-		children: React.ReactNode;
-		onValueChange?: (value: string) => void;
-		value?: string;
-	}) => (
-		<div>
-			<div>{`select:${value}`}</div>
-			<button type="button" onClick={() => onValueChange?.("30")}>
-				{`set:${value}:30`}
-			</button>
-			<button type="button" onClick={() => onValueChange?.("Asia/Shanghai")}>
-				{`set:${value}:Asia/Shanghai`}
-			</button>
-			{children}
-		</div>
-	),
-	SelectContent: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	SelectItem: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	SelectTrigger: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	SelectValue: () => <span>select-value</span>,
 }));
 
 vi.mock("@/components/ui/scroll-area", () => ({
@@ -251,6 +238,24 @@ function createOverview() {
 				total_events: 10,
 				uploads: 5,
 			},
+			{
+				date: "2026-03-28",
+				deletions: 2,
+				new_users: 1,
+				share_creations: 1,
+				sign_ins: 3,
+				total_events: 9,
+				uploads: 2,
+			},
+			{
+				date: "2026-03-27",
+				deletions: 0,
+				new_users: 0,
+				share_creations: 0,
+				sign_ins: 1,
+				total_events: 4,
+				uploads: 1,
+			},
 		],
 		generated_at: "2026-03-29T10:00:00Z",
 		recent_events: [
@@ -309,7 +314,7 @@ describe("AdminOverviewPage", () => {
 		});
 
 		expect(screen.getByText("overview")).toBeInTheDocument();
-		expect(screen.getByText("overview_daily_trend")).toBeInTheDocument();
+		expect(screen.queryByText("overview_daily_trend")).not.toBeInTheDocument();
 		expect(screen.getByText("overview_summary")).toBeInTheDocument();
 		expect(screen.getByText("overview_total_users")).toBeInTheDocument();
 		expect(screen.getByText("120")).toBeInTheDocument();
@@ -317,25 +322,34 @@ describe("AdminOverviewPage", () => {
 		expect(screen.getByText("bytes:4096")).toBeInTheDocument();
 		expect(screen.getByText("bytes:2048")).toBeInTheDocument();
 		expect(screen.getByText("report.pdf")).toBeInTheDocument();
-		expect(screen.getByText("range:7")).toBeInTheDocument();
 		expect(screen.getByText("new-users:2")).toBeInTheDocument();
 		expect(screen.getByText("uploads:5")).toBeInTheDocument();
 		expect(screen.getByText("shares:3")).toBeInTheDocument();
 		expect(
 			screen.getByText("generated:date:2026-03-29T10:00:00Z"),
 		).toBeInTheDocument();
+		expect(
+			screen.getByTestId("admin-page-header-toolbar"),
+		).toBeEmptyDOMElement();
+		expect(screen.queryByText(/^select:/)).not.toBeInTheDocument();
+		expect(
+			within(screen.getByTestId("admin-page-header-actions")).getByRole(
+				"button",
+				{ name: /refresh/i },
+			),
+		).toBeInTheDocument();
 		expect(screen.getByText("recharts-line")).toBeInTheDocument();
-
-		fireEvent.click(screen.getByRole("button", { name: /set:.*:30/i }));
-
-		await waitFor(() => {
-			expect(mockState.get).toHaveBeenCalledTimes(2);
-		});
+		expect(
+			screen.getByText("recharts-x-axis:label:0:0:12:12"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText("recharts-line-chart:2026-03-27,2026-03-28,2026-03-29"),
+		).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
 
 		await waitFor(() => {
-			expect(mockState.get).toHaveBeenCalledTimes(3);
+			expect(mockState.get).toHaveBeenCalledTimes(2);
 		});
 	});
 });
