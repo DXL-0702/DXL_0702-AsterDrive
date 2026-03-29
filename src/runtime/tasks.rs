@@ -34,12 +34,54 @@ fn spawn_periodic<F, Fut>(
 /// Spawn all periodic background cleanup tasks.
 pub fn spawn_background_tasks(state: web::Data<AppState>) {
     let hourly = Duration::from_secs(3600);
+    let every_six_hours = Duration::from_secs(6 * 3600);
 
     spawn_periodic("upload-cleanup", hourly, state.clone(), |s| async move {
         if let Err(e) = crate::services::upload_service::cleanup_expired(&s).await {
             tracing::warn!("upload cleanup failed: {e}");
         }
     });
+
+    spawn_periodic(
+        "completed-upload-cleanup",
+        hourly,
+        state.clone(),
+        |s| async move {
+            match crate::services::maintenance_service::cleanup_expired_completed_upload_sessions(
+                &s,
+            )
+            .await
+            {
+                Ok(stats) if stats.completed_sessions_deleted > 0 => tracing::info!(
+                    deleted = stats.completed_sessions_deleted,
+                    broken = stats.broken_completed_sessions_deleted,
+                    "cleaned up expired completed upload sessions"
+                ),
+                Err(e) => tracing::warn!("completed upload session cleanup failed: {e}"),
+                _ => {}
+            }
+        },
+    );
+
+    // Full-table blob reconciliation is intentionally less frequent than lightweight cleanups.
+    spawn_periodic(
+        "blob-reconcile",
+        every_six_hours,
+        state.clone(),
+        |s| async move {
+            match crate::services::maintenance_service::reconcile_blob_state(&s).await {
+                Ok(stats) if stats.ref_count_fixed > 0 || stats.orphan_blobs_deleted > 0 => {
+                    tracing::info!(
+                        ref_count_fixed = stats.ref_count_fixed,
+                        orphan_blobs_deleted = stats.orphan_blobs_deleted,
+                        "reconciled blob state"
+                    );
+                }
+                Err(e) => tracing::warn!("blob reconcile failed: {e}"),
+                _ => {}
+            }
+        },
+    );
 
     spawn_periodic("trash-cleanup", hourly, state.clone(), |s| async move {
         if let Err(e) = crate::services::trash_service::cleanup_expired(&s).await {

@@ -23,4 +23,12 @@ describe("AdminSurface", () => {
 
 		expect(container.firstChild).toHaveClass("shadow-lg");
 	});
+
+	it("can disable the default section padding", () => {
+		const { container } = render(
+			<AdminSurface padded={false}>Content</AdminSurface>,
+		);
+
+		expect(container.firstChild).not.toHaveClass("px-4", "md:px-6");
+	});
 });

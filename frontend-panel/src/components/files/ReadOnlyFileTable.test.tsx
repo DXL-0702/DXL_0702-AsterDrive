@@ -86,7 +86,7 @@ vi.mock("@/components/ui/table", () => ({
 }));
 
 describe("ReadOnlyFileTable", () => {
-	it("renders translated headers, spacing wrapper, and table cells", () => {
+	it("renders translated headers, a vertical wrapper, and table cells", () => {
 		const { container } = render(
 			<ReadOnlyFileTable
 				folders={[{ id: 1, name: "Docs", updated_at: "2026-01-01" } as never]}
@@ -102,7 +102,8 @@ describe("ReadOnlyFileTable", () => {
 			/>,
 		);
 
-		expect(container.firstChild).toHaveClass("px-4", "md:px-6", "py-2");
+		expect(container.firstChild).toHaveClass("py-2");
+		expect(container.firstChild).not.toHaveClass("px-4", "md:px-6");
 		expect(screen.getByText("translated:name")).toBeInTheDocument();
 		expect(screen.getByText("translated:size")).toBeInTheDocument();
 		expect(screen.getByText("translated:date")).toBeInTheDocument();

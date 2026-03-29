@@ -44,7 +44,7 @@ export function TrashTable({
 		<Table>
 			<TableHeader>
 				<TableRow>
-					<TableHead className="w-12 pl-3 pr-0">
+					<TableHead className="w-12 pr-0 first:pl-3 md:first:pl-3">
 						<div className="flex justify-center">
 							<ItemCheckbox
 								checked={allSelected}
@@ -75,7 +75,7 @@ export function TrashTable({
 							onClick={() => onToggleSelect(item)}
 						>
 							<TableCell
-								className="w-12 pl-3 pr-0"
+								className="w-12 pr-0 first:pl-3 md:first:pl-3"
 								onClick={(e) => e.stopPropagation()}
 							>
 								<div className="flex justify-center">

@@ -1,6 +1,7 @@
 import Papa from "papaparse";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Table,
 	TableBody,
@@ -54,38 +55,42 @@ export function CsvTablePreview({ path, delimiter }: CsvTablePreviewProps) {
 	const headerKey = header.join("|");
 
 	return (
-		<div className="overflow-hidden rounded-xl border bg-background">
-			<Table>
-				<TableHeader>
-					<TableRow>
-						{header.map((cell, index) => (
-							<TableHead
-								key={`header-${headerKey}-${cell || `column-${index + 1}`}`}
-								className="whitespace-pre-wrap break-words"
-							>
-								{cell || `${t("column")} ${index + 1}`}
-							</TableHead>
-						))}
-					</TableRow>
-				</TableHeader>
-				<TableBody>
-					{body.map((row) => {
-						const rowKey = row.join("|");
-						return (
-							<TableRow key={`row-${rowKey}`}>
-								{header.map((_, cellIndex) => (
-									<TableCell
-										key={`cell-${rowKey}-${header[cellIndex] ?? `column-${cellIndex + 1}`}`}
-										className="max-w-80 whitespace-pre-wrap break-words align-top"
+		<div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+			<div className="min-h-0 flex-1">
+				<ScrollArea className="h-full bg-background">
+					<Table>
+						<TableHeader>
+							<TableRow>
+								{header.map((cell, index) => (
+									<TableHead
+										key={`header-${headerKey}-${cell || `column-${index + 1}`}`}
+										className="sticky top-0 z-10 bg-background whitespace-pre-wrap break-words"
 									>
-										{row[cellIndex] ?? ""}
-									</TableCell>
+										{cell || `${t("column")} ${index + 1}`}
+									</TableHead>
 								))}
 							</TableRow>
-						);
-					})}
-				</TableBody>
-			</Table>
+						</TableHeader>
+						<TableBody>
+							{body.map((row) => {
+								const rowKey = row.join("|");
+								return (
+									<TableRow key={`row-${rowKey}`}>
+										{header.map((_, cellIndex) => (
+											<TableCell
+												key={`cell-${rowKey}-${header[cellIndex] ?? `column-${cellIndex + 1}`}`}
+												className="max-w-80 whitespace-pre-wrap break-words align-top"
+											>
+												{row[cellIndex] ?? ""}
+											</TableCell>
+										))}
+									</TableRow>
+								);
+							})}
+						</TableBody>
+					</Table>
+				</ScrollArea>
+			</div>
 			{parsed.data.length > MAX_ROWS && (
 				<div className="border-t bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
 					{t("files:table_truncated", { count: MAX_ROWS })}

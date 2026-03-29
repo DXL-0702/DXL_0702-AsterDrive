@@ -343,7 +343,7 @@ export default function AdminSettingsPage() {
 				) : categories.length === 0 ? (
 					<EmptyState title={t("no_config")} />
 				) : categories.length === 1 ? (
-					<AdminSurface className="overflow-auto">
+					<AdminSurface padded={false} className="overflow-auto">
 						{renderCategory(categories[0])}
 					</AdminSurface>
 				) : (
@@ -363,7 +363,7 @@ export default function AdminSettingsPage() {
 						</TabsList>
 						{categories.map((cat) => (
 							<TabsContent key={cat} value={cat} className="min-h-0 flex-1">
-								<AdminSurface className="overflow-auto">
+								<AdminSurface padded={false} className="overflow-auto">
 									{renderCategory(cat)}
 								</AdminSurface>
 							</TabsContent>

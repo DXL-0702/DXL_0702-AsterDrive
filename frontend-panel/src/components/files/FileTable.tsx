@@ -238,7 +238,7 @@ export function FileTable({
 				onClick={() => onFolderOpen(folder.id, folder.name)}
 			>
 				<TableCell
-					className="w-12 pl-3 pr-0"
+					className="w-12 pr-0 first:pl-3 md:first:pl-3"
 					onClick={(e) => e.stopPropagation()}
 				>
 					<div className="flex justify-center">
@@ -285,7 +285,7 @@ export function FileTable({
 				onClick={() => onFileClick(file)}
 			>
 				<TableCell
-					className="w-12 pl-3 pr-0"
+					className="w-12 pr-0 first:pl-3 md:first:pl-3"
 					onClick={(e) => e.stopPropagation()}
 				>
 					<div className="flex justify-center">
@@ -326,7 +326,7 @@ export function FileTable({
 		<TableRow key={key} aria-hidden className="border-0 hover:bg-transparent">
 			<TableCell
 				colSpan={TABLE_COLUMN_COUNT}
-				className="p-0"
+				className="p-0 first:pl-0 last:pr-0 md:first:pl-0 md:last:pr-0"
 				style={{ height }}
 			/>
 		</TableRow>
@@ -370,7 +370,7 @@ export function FileTable({
 		<Table>
 			<TableHeader>
 				<TableRow>
-					<TableHead className="w-12 pl-3 pr-0">
+					<TableHead className="w-12 pr-0 first:pl-3 md:first:pl-3">
 						<div className="flex justify-center">
 							<ItemCheckbox checked={allSelected} onChange={handleSelectAll} />
 						</div>

@@ -43,7 +43,7 @@ export function AdminTableList<T>({
 	}
 
 	return (
-		<AdminSurface>
+		<AdminSurface padded={false}>
 			<ScrollArea className="min-h-0 flex-1">
 				<Table>
 					{headerRow}

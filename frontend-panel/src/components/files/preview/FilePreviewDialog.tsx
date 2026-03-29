@@ -117,6 +117,7 @@ export function FilePreviewDialog({
 	const activeMode = mode ?? preferredMode;
 	const usesInnerScroll =
 		activeMode === "pdf" ||
+		activeMode === "table" ||
 		(activeMode === "videoBrowser" && resolvedVideoBrowser?.mode === "iframe");
 	const fillsViewportHeight =
 		activeMode === "code" ||

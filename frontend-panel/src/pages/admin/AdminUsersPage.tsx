@@ -446,7 +446,7 @@ export default function AdminUsersPage() {
 						<EmptyState title={t("no_users")} />
 					)
 				) : (
-					<AdminSurface>
+					<AdminSurface padded={false}>
 						<ScrollArea className="min-h-0 flex-1">
 							<Table>
 								<TableHeader>

@@ -445,14 +445,14 @@ export default function AdminOverviewPage() {
 	return (
 		<AdminLayout>
 			<AdminPageShell className="pt-2 md:pt-3">
-					<AdminSurface className="flex-none overflow-hidden p-0 md:p-0">
-						<AdminPageHeader
-							title={t("overview")}
-							description={t("overview_intro")}
-							className="pt-4"
-							toolbar={
-								<Select
-									value={timezone}
+				<AdminSurface padded={false} className="flex-none overflow-hidden">
+					<AdminPageHeader
+						title={t("overview")}
+						description={t("overview_intro")}
+						className="pt-4"
+						toolbar={
+							<Select
+								value={timezone}
 								onValueChange={(value) => value && setTimezone(value)}
 							>
 								<SelectTrigger
@@ -576,7 +576,7 @@ export default function AdminOverviewPage() {
 				</AdminSurface>
 
 				<div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-					<AdminSurface className="min-h-0 overflow-hidden p-0 md:p-0">
+					<AdminSurface padded={false} className="min-h-0 overflow-hidden">
 						<div className={cn("border-b py-4", PAGE_SECTION_PADDING_CLASS)}>
 							<h3 className="text-base font-semibold">
 								{t("overview_summary")}
@@ -626,7 +626,7 @@ export default function AdminOverviewPage() {
 						)}
 					</AdminSurface>
 
-					<AdminSurface className="min-h-0 overflow-hidden p-0 md:p-0">
+					<AdminSurface padded={false} className="min-h-0 overflow-hidden">
 						<div className={cn("border-b py-4", PAGE_SECTION_PADDING_CLASS)}>
 							<h3 className="text-base font-semibold">
 								{t("overview_recent_events")}
@@ -637,7 +637,7 @@ export default function AdminOverviewPage() {
 						</div>
 
 						{loading && !overview ? (
-							<div className={cn("py-4 md:py-6", PAGE_SECTION_PADDING_CLASS)}>
+							<div className="py-4 md:py-6">
 								<SkeletonTable columns={4} rows={8} />
 							</div>
 						) : overview?.recent_events.length ? (
@@ -693,7 +693,7 @@ export default function AdminOverviewPage() {
 					</AdminSurface>
 				</div>
 
-				<AdminSurface className="min-h-0 overflow-hidden p-0 md:p-0">
+				<AdminSurface padded={false} className="min-h-0 overflow-hidden">
 					<div className={cn("border-b py-4", PAGE_SECTION_PADDING_CLASS)}>
 						<h3 className="text-base font-semibold">
 							{t("overview_daily_reports")}
@@ -706,7 +706,7 @@ export default function AdminOverviewPage() {
 					</div>
 
 					{loading && !overview ? (
-						<div className={cn("py-4 md:py-6", PAGE_SECTION_PADDING_CLASS)}>
+						<div className="py-4 md:py-6">
 							<SkeletonTable columns={7} rows={7} />
 						</div>
 					) : (

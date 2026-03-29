@@ -16,7 +16,6 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import type { FileListItem, FolderListItem } from "@/types/api";
 
 interface ReadOnlyFileTableProps {
@@ -39,7 +38,7 @@ export function ReadOnlyFileTable({
 	const { t } = useTranslation(["core", "files"]);
 
 	return (
-		<div className={`${PAGE_SECTION_PADDING_CLASS} py-2`}>
+		<div className="py-2">
 			<Table>
 				<TableHeader>
 					<TableRow>
