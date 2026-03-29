@@ -121,6 +121,7 @@
 	"delete_policy_desc": "This will not delete stored files, but new uploads using this policy will fail.",
 	"delete_config_desc": "This config entry will be permanently removed.",
 	"path": "Path",
+	"owner": "Owner",
 	"principal": "Principal",
 	"exclusive": "Exclusive",
 	"shared_lock": "Shared",
@@ -129,6 +130,8 @@
 	"requires_restart": "Requires restart",
 	"reset_to_default": "Reset to default ({{value}})",
 	"id": "ID",
+	"token": "Token",
+	"downloads": "Downloads",
 	"presigned_upload": "Presigned Upload (client direct to S3)",
 	"presigned_upload_desc": "Upload directly to S3 via presigned URLs. Files ≤ chunk size use single PUT; larger files use S3 multipart upload with resume support. Requires bucket CORS with ExposeHeaders: [\"ETag\"].",
 	"chunk_size": "Chunk Size (MB)",
@@ -163,6 +166,8 @@
 	"refresh": "Refresh",
 	"user_search_placeholder": "Search by username, email, or ID...",
 	"all_roles": "All roles",
+	"role_admin": "Admin",
+	"role_user": "User",
 	"all_statuses": "All statuses",
 	"clear_filters": "Clear filters",
 	"no_filtered_users": "No matching users",
@@ -198,5 +203,9 @@
 	"assignment_updated": "Assignment updated",
 	"default_selected": "Default",
 	"default_policy_required": "A default policy must always exist while assignments remain.",
-	"default_policy_remove_blocked": "Set another policy as default before removing the current default policy."
+	"default_policy_remove_blocked": "Set another policy as default before removing the current default policy.",
+	"driver_type_local": "Local",
+	"driver_type_s3": "S3",
+	"access_key": "Access Key",
+	"secret_key": "Secret Key"
 }

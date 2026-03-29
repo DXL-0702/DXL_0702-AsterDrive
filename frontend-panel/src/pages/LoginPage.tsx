@@ -481,7 +481,9 @@ export default function LoginPage() {
 									onClick={() => setShowPassword(!showPassword)}
 									tabIndex={-1}
 									aria-label={
-										showPassword ? t("hide_password") : t("show_password")
+										showPassword
+											? t("core:hide_password")
+											: t("core:show_password")
 									}
 								>
 									{showPassword ? (

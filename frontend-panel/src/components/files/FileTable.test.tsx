@@ -217,16 +217,16 @@ describe("FileTable", () => {
 			/>,
 		);
 
-		expect(screen.getByText("translated:name")).toBeInTheDocument();
-		expect(screen.getByText("translated:size")).toBeInTheDocument();
-		expect(screen.getByText("translated:date")).toBeInTheDocument();
+		expect(screen.getByText("translated:core:name")).toBeInTheDocument();
+		expect(screen.getByText("translated:core:size")).toBeInTheDocument();
+		expect(screen.getByText("translated:core:date")).toBeInTheDocument();
 		expect(screen.getAllByTestId("icon")[0]).toHaveAttribute(
 			"data-name",
 			"SortAscending",
 		);
 
-		fireEvent.click(screen.getByText("translated:name"));
-		fireEvent.click(screen.getByText("translated:size"));
+		fireEvent.click(screen.getByText("translated:core:name"));
+		fireEvent.click(screen.getByText("translated:core:size"));
 
 		expect(mockState.store.setSortOrder).toHaveBeenCalledWith("desc");
 		expect(mockState.store.setSortBy).toHaveBeenCalledWith("size");

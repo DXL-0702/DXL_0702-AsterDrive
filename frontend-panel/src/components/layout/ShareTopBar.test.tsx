@@ -28,6 +28,6 @@ describe("ShareTopBar", () => {
 		render(<ShareTopBar />);
 
 		expect(screen.getByAltText("translated:app_name")).toBeInTheDocument();
-		expect(screen.getByText("translated:share")).toBeInTheDocument();
+		expect(screen.getByText("translated:files:share")).toBeInTheDocument();
 	});
 });

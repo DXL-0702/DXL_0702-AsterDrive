@@ -80,7 +80,7 @@ export function ReadOnlyFileGrid({
 										}}
 									>
 										<Icon name="Download" className="h-4 w-4" />
-										<span className="sr-only">Download</span>
+										<span className="sr-only">{t("download")}</span>
 									</button>
 								)}
 							</div>

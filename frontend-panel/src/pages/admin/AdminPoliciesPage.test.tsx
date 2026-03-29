@@ -17,7 +17,20 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
-		t: (key: string) => key,
+		t: (key: string) => {
+			switch (key) {
+				case "driver_type_local":
+					return "Local";
+				case "driver_type_s3":
+					return "S3";
+				case "access_key":
+					return "Access Key";
+				case "secret_key":
+					return "Secret Key";
+				default:
+					return key;
+			}
+		},
 	}),
 }));
 

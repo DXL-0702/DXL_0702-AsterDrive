@@ -151,7 +151,7 @@ export function Sidebar({
 						USER_TOPBAR_OFFSET_CLASS,
 					)}
 					onClick={onMobileClose}
-					aria-label="Close sidebar"
+					aria-label={t("close_sidebar")}
 				/>
 			)}
 

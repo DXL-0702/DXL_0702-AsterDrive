@@ -511,8 +511,10 @@ export default function AdminPoliciesPage() {
 											<SelectValue />
 										</SelectTrigger>
 										<SelectContent>
-											<SelectItem value="local">Local</SelectItem>
-											<SelectItem value="s3">S3</SelectItem>
+											<SelectItem value="local">
+												{t("driver_type_local")}
+											</SelectItem>
+											<SelectItem value="s3">{t("driver_type_s3")}</SelectItem>
 										</SelectContent>
 									</Select>
 								</div>
@@ -552,7 +554,7 @@ export default function AdminPoliciesPage() {
 									</div>
 									<div className="grid grid-cols-2 gap-4">
 										<div className="space-y-2">
-											<Label htmlFor="access_key">Access Key</Label>
+											<Label htmlFor="access_key">{t("access_key")}</Label>
 											<Input
 												id="access_key"
 												value={form.access_key}
@@ -560,7 +562,7 @@ export default function AdminPoliciesPage() {
 											/>
 										</div>
 										<div className="space-y-2">
-											<Label htmlFor="secret_key">Secret Key</Label>
+											<Label htmlFor="secret_key">{t("secret_key")}</Label>
 											<Input
 												id="secret_key"
 												type="password"

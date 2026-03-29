@@ -119,7 +119,7 @@ export function TextCodePreview({
 						editable ? (
 							<Button variant="outline" size="sm" onClick={startEditing}>
 								<Icon name="PencilSimple" className="mr-1 h-3.5 w-3.5" />
-								{t("edit")}
+								{t("core:edit")}
 							</Button>
 						) : null
 					) : (
@@ -131,11 +131,11 @@ export function TextCodePreview({
 								disabled={saving}
 							>
 								<Icon name="FloppyDisk" className="mr-1 h-3.5 w-3.5" />
-								{saving ? t("files:saving") : t("save")}
+								{saving ? t("files:saving") : t("core:save")}
 							</Button>
 							<Button variant="outline" size="sm" onClick={cancelEditing}>
 								<Icon name="Undo" className="mr-1 h-3.5 w-3.5" />
-								{t("cancel")}
+								{t("core:cancel")}
 							</Button>
 						</>
 					)}
@@ -144,9 +144,11 @@ export function TextCodePreview({
 			<div className="flex items-center gap-3 border-b bg-background px-4 py-2 text-xs text-muted-foreground">
 				<span>{language}</span>
 				<span>·</span>
-				<span>{editable && editing ? t("edit") : t("open_with_code")}</span>
+				<span>
+					{editable && editing ? t("core:edit") : t("files:open_with_code")}
+				</span>
 				<span>·</span>
-				<span>{dirty ? t("files:unsaved_changes") : t("active")}</span>
+				<span>{dirty ? t("files:unsaved_changes") : t("core:active")}</span>
 				{editing ? (
 					<>
 						<span>·</span>

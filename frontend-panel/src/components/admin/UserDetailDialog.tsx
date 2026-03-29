@@ -427,8 +427,12 @@ export function UserDetailDialog({
 															<SelectValue />
 														</SelectTrigger>
 														<SelectContent>
-															<SelectItem value="admin">Admin</SelectItem>
-															<SelectItem value="user">User</SelectItem>
+															<SelectItem value="admin">
+																{t("role_admin")}
+															</SelectItem>
+															<SelectItem value="user">
+																{t("role_user")}
+															</SelectItem>
 														</SelectContent>
 													</Select>
 												</div>

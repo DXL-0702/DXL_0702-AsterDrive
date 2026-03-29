@@ -86,21 +86,29 @@ describe("AdminLayout", () => {
 		render(<AdminLayout>Admin Content</AdminLayout>);
 
 		expect(
-			screen.queryByRole("button", { name: "Close admin sidebar" }),
+			screen.queryByRole("button", {
+				name: "translated:core:close_admin_sidebar",
+			}),
 		).not.toBeInTheDocument();
 
 		fireEvent.click(
 			screen.getByRole("button", { name: "Toggle Admin Sidebar" }),
 		);
 		expect(
-			screen.getByRole("button", { name: "Close admin sidebar" }),
+			screen.getByRole("button", {
+				name: "translated:core:close_admin_sidebar",
+			}),
 		).toBeInTheDocument();
 
 		fireEvent.click(
-			screen.getByRole("button", { name: "Close admin sidebar" }),
+			screen.getByRole("button", {
+				name: "translated:core:close_admin_sidebar",
+			}),
 		);
 		expect(
-			screen.queryByRole("button", { name: "Close admin sidebar" }),
+			screen.queryByRole("button", {
+				name: "translated:core:close_admin_sidebar",
+			}),
 		).not.toBeInTheDocument();
 	});
 

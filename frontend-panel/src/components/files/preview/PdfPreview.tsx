@@ -336,7 +336,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 			<div className="border-b bg-muted/30 px-2.5 py-2">
 				<div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
 					<Icon name="FileText" className="h-3.5 w-3.5" />
-					<span>PDF</span>
+					<span>{t("pdf_label")}</span>
 					{numPages !== null && (
 						<>
 							<span>·</span>

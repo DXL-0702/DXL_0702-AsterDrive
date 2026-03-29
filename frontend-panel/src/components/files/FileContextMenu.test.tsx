@@ -4,7 +4,7 @@ import { FileContextMenu } from "@/components/files/FileContextMenu";
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
-		t: (key: string) => key,
+		t: (key: string) => key.replace(/^core:/, ""),
 	}),
 }));
 

@@ -380,7 +380,7 @@ export function FileTable({
 						onClick={() => handleSort("name")}
 					>
 						<div className="flex items-center">
-							{t("name")}
+							{t("core:name")}
 							<SortIcon column="name" current={sortBy} order={sortOrder} />
 						</div>
 					</TableHead>
@@ -389,7 +389,7 @@ export function FileTable({
 						onClick={() => handleSort("size")}
 					>
 						<div className="flex items-center">
-							{t("size")}
+							{t("core:size")}
 							<SortIcon column="size" current={sortBy} order={sortOrder} />
 						</div>
 					</TableHead>
@@ -398,7 +398,7 @@ export function FileTable({
 						onClick={() => handleSort("created_at")}
 					>
 						<div className="flex items-center">
-							{t("date")}
+							{t("core:date")}
 							<SortIcon
 								column="created_at"
 								current={sortBy}

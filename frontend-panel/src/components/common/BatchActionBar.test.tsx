@@ -20,11 +20,14 @@ const mockState = vi.hoisted(() => ({
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string, options?: Record<string, unknown>) => {
-			if (key === "selected_count") return `selected:${options?.count}`;
-			if (key === "batch_delete_confirm_title") {
+			const normalizedKey = key.replace(/^core:/, "");
+			if (normalizedKey === "selected_count") {
+				return `selected:${options?.count}`;
+			}
+			if (normalizedKey === "batch_delete_confirm_title") {
 				return `delete-title:${options?.count}`;
 			}
-			return key;
+			return normalizedKey;
 		},
 	}),
 }));

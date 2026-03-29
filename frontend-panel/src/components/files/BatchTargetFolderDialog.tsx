@@ -223,7 +223,7 @@ export function BatchTargetFolderDialog({
 										setNewFolderName("");
 									}}
 								>
-									{t("cancel")}
+									{t("core:cancel")}
 								</Button>
 								<Button
 									size="sm"
@@ -325,7 +325,7 @@ export function BatchTargetFolderDialog({
 						)}
 					</div>
 					<Button variant="outline" onClick={() => onOpenChange(false)}>
-						{t("cancel")}
+						{t("core:cancel")}
 					</Button>
 					<Button
 						onClick={handleConfirm}

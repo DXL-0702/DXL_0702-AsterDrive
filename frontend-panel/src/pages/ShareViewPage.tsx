@@ -515,7 +515,7 @@ export default function ShareViewPage() {
 								`/s/${token}/files/${file.id}/thumbnail`
 							}
 							emptyTitle={t("empty_folder")}
-							emptyDescription={t("folder_empty_desc")}
+							emptyDescription={t("files:folder_empty_desc")}
 						/>
 						{hasMoreFiles && (
 							<div ref={sentinelRef} className="flex justify-center py-4">

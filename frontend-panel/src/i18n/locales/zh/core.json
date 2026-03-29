@@ -6,6 +6,7 @@
 	"create": "创建",
 	"edit": "编辑",
 	"close": "关闭",
+	"more": "更多",
 	"confirm": "确认",
 	"back": "返回",
 	"loading": "加载中...",
@@ -76,5 +77,9 @@
 	"folders_section": "文件夹",
 	"files_section": "文件",
 	"storage_space": "存储空间",
-	"search_placeholder": "搜索文件..."
+	"search_placeholder": "搜索文件...",
+	"clear_search": "清除搜索",
+	"breadcrumb": "路径导航",
+	"close_sidebar": "关闭侧边栏",
+	"close_admin_sidebar": "关闭管理侧边栏"
 }

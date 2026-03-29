@@ -12,9 +12,9 @@ export interface BatchToastContent {
 function getEntityLabel(t: TFunction, entityType: string): string {
 	switch (entityType) {
 		case "file":
-			return t("file");
+			return t("core:file");
 		case "folder":
-			return t("folder");
+			return t("core:folder");
 		default:
 			return entityType;
 	}
@@ -27,7 +27,7 @@ function formatBatchErrorDescription(
 	if (errors.length === 0) return undefined;
 
 	const visibleErrors = errors.slice(0, 3).map((error) =>
-		t("batch_error_detail", {
+		t("files:batch_error_detail", {
 			entityType: getEntityLabel(t, error.entity_type),
 			entityId: error.entity_id,
 			error: error.error,
@@ -36,7 +36,7 @@ function formatBatchErrorDescription(
 	const remainingCount = errors.length - visibleErrors.length;
 
 	if (remainingCount > 0) {
-		visibleErrors.push(t("batch_error_more", { count: remainingCount }));
+		visibleErrors.push(t("files:batch_error_more", { count: remainingCount }));
 	}
 
 	return visibleErrors.join("\n");
@@ -50,21 +50,21 @@ export function formatBatchToast(
 	if (result.failed === 0) {
 		return {
 			variant: "success",
-			title: t(`batch_${operation}_success`, { count: result.succeeded }),
+			title: t(`files:batch_${operation}_success`, { count: result.succeeded }),
 		};
 	}
 
 	if (result.succeeded === 0) {
 		return {
 			variant: "error",
-			title: t(`batch_${operation}_failed`),
+			title: t(`files:batch_${operation}_failed`),
 			description: formatBatchErrorDescription(t, result.errors),
 		};
 	}
 
 	return {
 		variant: "success",
-		title: t(`batch_${operation}_partial`, {
+		title: t(`files:batch_${operation}_partial`, {
 			succeeded: result.succeeded,
 			failed: result.failed,
 		}),

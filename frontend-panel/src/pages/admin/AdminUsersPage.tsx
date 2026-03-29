@@ -391,8 +391,8 @@ export default function AdminUsersPage() {
 								</SelectTrigger>
 								<SelectContent>
 									<SelectItem value="__all__">{t("all_roles")}</SelectItem>
-									<SelectItem value="admin">Admin</SelectItem>
-									<SelectItem value="user">User</SelectItem>
+									<SelectItem value="admin">{t("role_admin")}</SelectItem>
+									<SelectItem value="user">{t("role_user")}</SelectItem>
 								</SelectContent>
 							</Select>
 							<Select

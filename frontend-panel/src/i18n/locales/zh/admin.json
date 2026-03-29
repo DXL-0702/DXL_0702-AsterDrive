@@ -121,6 +121,7 @@
 	"delete_policy_desc": "不会删除已存储的文件，但使用此策略的新上传将失败。",
 	"delete_config_desc": "此配置项将被永久删除。",
 	"path": "路径",
+	"owner": "所有者",
 	"principal": "主体",
 	"exclusive": "独占",
 	"shared_lock": "共享",
@@ -129,6 +130,8 @@
 	"requires_restart": "需要重启",
 	"reset_to_default": "重置为默认值 ({{value}})",
 	"id": "ID",
+	"token": "令牌",
+	"downloads": "下载次数",
 	"presigned_upload": "Presigned 直传（客户端直传 S3）",
 	"presigned_upload_desc": "通过 presigned URL 直传 S3。文件 ≤ 分片大小时单次 PUT；更大文件自动使用 S3 分片上传（支持断点续传）。需要在存储桶 CORS 配置 ExposeHeaders: [\"ETag\"]。",
 	"chunk_size": "分片大小 (MB)",
@@ -163,6 +166,8 @@
 	"refresh": "刷新",
 	"user_search_placeholder": "搜索用户名、邮箱或 ID...",
 	"all_roles": "全部角色",
+	"role_admin": "管理员",
+	"role_user": "普通用户",
 	"all_statuses": "全部状态",
 	"clear_filters": "清空筛选",
 	"no_filtered_users": "没有匹配的用户",
@@ -198,5 +203,9 @@
 	"assignment_updated": "策略分配已更新",
 	"default_selected": "默认策略",
 	"default_policy_required": "存在策略分配时必须始终保留一个默认策略。",
-	"default_policy_remove_blocked": "请先将其他策略设为默认，再删除当前默认策略。"
+	"default_policy_remove_blocked": "请先将其他策略设为默认，再删除当前默认策略。",
+	"driver_type_local": "本地",
+	"driver_type_s3": "S3",
+	"access_key": "访问密钥",
+	"secret_key": "密钥"
 }

@@ -76,11 +76,11 @@ export default function AdminSharesPage() {
 						<TableHeader>
 							<TableRow>
 								<TableHead className="w-16">{t("id")}</TableHead>
-								<TableHead>Token</TableHead>
+								<TableHead>{t("token")}</TableHead>
 								<TableHead>{t("audit_user")}</TableHead>
 								<TableHead>{t("core:type")}</TableHead>
 								<TableHead>{t("core:status")}</TableHead>
-								<TableHead>Downloads</TableHead>
+								<TableHead>{t("downloads")}</TableHead>
 								<TableHead>{t("core:created_at")}</TableHead>
 								<TableHead className={ADMIN_TABLE_ACTIONS_WIDTH_CLASS}>
 									{t("core:actions")}

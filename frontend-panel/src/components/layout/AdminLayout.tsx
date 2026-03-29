@@ -70,7 +70,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 							ADMIN_TOPBAR_OFFSET_CLASS,
 						)}
 						onClick={handleMobileClose}
-						aria-label="Close admin sidebar"
+						aria-label={t("core:close_admin_sidebar")}
 					/>
 				)}
 				<aside

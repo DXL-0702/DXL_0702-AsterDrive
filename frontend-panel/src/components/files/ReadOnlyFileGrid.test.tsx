@@ -70,7 +70,9 @@ describe("ReadOnlyFileGrid", () => {
 
 		fireEvent.click(screen.getByTestId("folder-card"));
 		fireEvent.click(screen.getByTestId("file-card"));
-		fireEvent.click(screen.getByRole("button", { name: "Download" }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "translated:download" }),
+		);
 
 		expect(onFolderClick).toHaveBeenCalledWith(
 			expect.objectContaining({ id: 1 }),

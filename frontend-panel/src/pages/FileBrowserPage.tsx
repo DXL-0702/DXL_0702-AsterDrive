@@ -534,7 +534,7 @@ export default function FileBrowserPage() {
 						<div className="min-w-0 flex-1">
 							{isSearching ? (
 								<span className="text-sm text-muted-foreground">
-									{t("search")}: &quot;{searchQuery}&quot;
+									{t("core:search")}: &quot;{searchQuery}&quot;
 								</span>
 							) : (
 								<Breadcrumb>
@@ -585,8 +585,8 @@ export default function FileBrowserPage() {
 							type="button"
 							className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground"
 							onClick={() => void refresh()}
-							aria-label={t("refresh")}
-							title={t("refresh")}
+							aria-label={t("core:refresh")}
+							title={t("core:refresh")}
 						>
 							<Icon name="ArrowsClockwise" className="h-4 w-4" />
 						</button>
@@ -605,7 +605,7 @@ export default function FileBrowserPage() {
 				}
 			/>
 			<section
-				aria-label="File drop zone"
+				aria-label={t("file_drop_zone")}
 				className={cn(
 					"relative flex min-h-0 flex-1 flex-col transition-colors",
 					contentDragOver && "bg-accent/10",
@@ -646,7 +646,7 @@ export default function FileBrowserPage() {
 							) : error ? (
 								<EmptyState
 									icon={<Icon name="Warning" className="h-12 w-12" />}
-									title={t("error")}
+									title={t("core:error")}
 									description={error}
 								/>
 							) : isEmpty ? (

@@ -166,7 +166,9 @@ describe("Sidebar", () => {
 
 		render(<Sidebar mobileOpen onMobileClose={onMobileClose} />);
 
-		fireEvent.click(screen.getByRole("button", { name: "Close sidebar" }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "translated:close_sidebar" }),
+		);
 
 		expect(onMobileClose).toHaveBeenCalledTimes(1);
 	});

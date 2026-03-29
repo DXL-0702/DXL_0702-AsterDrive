@@ -6,6 +6,7 @@
 	"create": "Create",
 	"edit": "Edit",
 	"close": "Close",
+	"more": "More",
 	"confirm": "Confirm",
 	"back": "Back",
 	"loading": "Loading...",
@@ -76,5 +77,9 @@
 	"folders_section": "Folders",
 	"files_section": "Files",
 	"storage_space": "Storage",
-	"search_placeholder": "Search files..."
+	"search_placeholder": "Search files...",
+	"clear_search": "Clear search",
+	"breadcrumb": "Breadcrumb",
+	"close_sidebar": "Close sidebar",
+	"close_admin_sidebar": "Close admin sidebar"
 }

@@ -17,7 +17,7 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
-		t: (key: string) => key,
+		t: (key: string) => key.replace(/^(core|files):/, ""),
 	}),
 }));
 
@@ -161,7 +161,7 @@ describe("TextCodePreview", () => {
 
 		render(<TextCodePreview file={file} path="/files/7/content" />);
 
-		expect(screen.getByText("files:loading_preview")).toBeInTheDocument();
+		expect(screen.getByText("loading_preview")).toBeInTheDocument();
 	});
 
 	it("renders a retry state when content loading fails", () => {
@@ -199,8 +199,8 @@ describe("TextCodePreview", () => {
 				initialContent: "const value = 1;",
 				etag: '"etag-1"',
 				messages: {
-					saved: "files:file_saved",
-					editedByOthers: "files:edited_by_others",
+					saved: "file_saved",
+					editedByOthers: "edited_by_others",
 				},
 			}),
 		);
@@ -237,8 +237,8 @@ describe("TextCodePreview", () => {
 			/>,
 		);
 
-		expect(screen.getByText("files:unsaved_changes")).toBeInTheDocument();
-		expect(screen.getByText("files:save_shortcut_hint")).toBeInTheDocument();
+		expect(screen.getByText("unsaved_changes")).toBeInTheDocument();
+		expect(screen.getByText("save_shortcut_hint")).toBeInTheDocument();
 		expect(screen.getByTestId("editor")).toHaveTextContent(
 			"editor:typescript:vs-dark:false:draft content",
 		);
