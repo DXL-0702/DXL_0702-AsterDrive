@@ -935,6 +935,82 @@ async fn test_upload_service_get_progress_scans_and_sorts_local_chunks() {
 }
 
 #[actix_web::test]
+async fn test_upload_service_get_progress_uses_db_parts_for_terminal_relay_multipart_sessions() {
+    use aster_drive::db::repository::{upload_session_part_repo, upload_session_repo};
+    use aster_drive::services::{auth_service, upload_service};
+    use aster_drive::types::UploadSessionStatus;
+    use chrono::Utc;
+    use sea_orm::Set;
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "relayprog",
+        "relay-progress@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let relay_policy = create_s3_default_policy(
+        &state,
+        user.id,
+        "Test S3 Relay Progress",
+        "http://127.0.0.1:9000",
+        "unused-progress-bucket",
+        r#"{"s3_upload_strategy":"relay_stream"}"#,
+        5_242_880,
+    )
+    .await;
+
+    for (status_name, status) in [
+        ("assembling", UploadSessionStatus::Assembling),
+        ("completed", UploadSessionStatus::Completed),
+        ("failed", UploadSessionStatus::Failed),
+    ] {
+        let upload_id = format!("relay-progress-{status_name}-{}", uuid::Uuid::new_v4());
+        let now = Utc::now();
+        upload_session_repo::create(
+            &state.db,
+            aster_drive::entities::upload_session::ActiveModel {
+                id: Set(upload_id.clone()),
+                user_id: Set(user.id),
+                filename: Set("relay-progress.bin".to_string()),
+                total_size: Set(15),
+                chunk_size: Set(5),
+                total_chunks: Set(3),
+                received_count: Set(2),
+                folder_id: Set(None),
+                policy_id: Set(relay_policy.id),
+                status: Set(status),
+                s3_temp_key: Set(Some(format!("files/{upload_id}"))),
+                s3_multipart_id: Set(Some(format!("multipart-{status_name}"))),
+                file_id: Set(None),
+                created_at: Set(now),
+                expires_at: Set(now + chrono::Duration::hours(1)),
+                updated_at: Set(now),
+            },
+        )
+        .await
+        .unwrap();
+
+        upload_session_part_repo::upsert_part(&state.db, &upload_id, 1, "etag-1", 5)
+            .await
+            .unwrap();
+        upload_session_part_repo::upsert_part(&state.db, &upload_id, 3, "etag-3", 5)
+            .await
+            .unwrap();
+
+        let progress = upload_service::get_progress(&state, &upload_id, user.id)
+            .await
+            .unwrap();
+        assert_eq!(progress.status, status);
+        assert_eq!(progress.received_count, 2);
+        assert_eq!(progress.total_chunks, 3);
+        assert_eq!(progress.chunks_on_disk, vec![0, 2]);
+    }
+}
+
+#[actix_web::test]
 async fn test_upload_service_presign_parts_rejects_non_multipart_session() {
     use aster_drive::services::{auth_service, upload_service};
 
@@ -1709,13 +1785,22 @@ async fn test_relay_stream_chunked_upload_s3_e2e() {
     let driver = state.driver_registry.get_driver(&policy).unwrap();
     let stored = driver.get(&blob.storage_path).await.unwrap();
     assert_eq!(stored, data);
-    assert!(
-        upload_session_part_repo::list_by_upload(&state.db, &upload_id)
-            .await
-            .unwrap()
-            .is_empty(),
-        "relay multipart part rows should be deleted after completion"
+
+    let completed_progress = upload_service::get_progress(&state, &upload_id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        completed_progress.status,
+        aster_drive::types::UploadSessionStatus::Completed
     );
+    assert_eq!(completed_progress.chunks_on_disk, vec![0, 1]);
+
+    let parts = upload_session_part_repo::list_by_upload(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(parts.len(), 2);
+    assert_eq!(parts[0].part_number, 1);
+    assert_eq!(parts[1].part_number, 2);
     assert!(
         !std::path::Path::new(&relay_temp_dir).exists(),
         "relay_stream multipart should never use local chunk temp dir"

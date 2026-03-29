@@ -950,15 +950,7 @@ async fn complete_s3_relay_multipart(
     .await;
 
     match result {
-        Ok(file) => {
-            if let Err(e) = upload_session_part_repo::delete_by_upload(db, upload_id).await {
-                tracing::warn!(
-                    upload_id,
-                    "failed to delete relay multipart part rows after completion: {e}"
-                );
-            }
-            Ok(file)
-        }
+        Ok(file) => Ok(file),
         Err(e) => {
             mark_session_failed(db, upload_id).await;
             Err(e)
@@ -1080,24 +1072,40 @@ pub async fn get_progress(
     let session = upload_session_repo::find_by_id(&state.db, upload_id).await?;
     crate::utils::verify_owner(session.user_id, user_id, "upload session")?;
 
-    // S3 relay multipart → 读服务端 parts；S3 presigned multipart → 从 S3 查询；本地分片 → 扫磁盘
-    let chunks_on_disk =
-        if session.status == UploadSessionStatus::Uploading && session.s3_multipart_id.is_some() {
-            upload_session_part_repo::list_part_numbers(&state.db, &session.id)
-                .await?
-                .into_iter()
-                .map(|part_number| part_number - 1)
-                .collect()
-        } else if session.status == UploadSessionStatus::Presigned
-            && let (Some(temp_key), Some(multipart_id)) =
-                (&session.s3_temp_key, &session.s3_multipart_id)
-        {
-            let policy = policy_repo::find_by_id(&state.db, session.policy_id).await?;
-            let driver = state.driver_registry.get_driver(&policy)?;
-            driver.list_uploaded_parts(temp_key, multipart_id).await?
+    // S3 relay multipart 在整个生命周期都以 upload_session_parts 为准；
+    // S3 presigned multipart 仅在 Presigned 阶段查询远端已上传 parts；
+    // 其他上传模式仍按本地临时分片扫描。
+    let chunks_on_disk = if let Some(multipart_id) = session.s3_multipart_id.as_deref() {
+        let policy = policy_repo::find_by_id(&state.db, session.policy_id).await?;
+        let strategy = if policy.driver_type == DriverType::S3 {
+            Some(parse_storage_policy_options(&policy.options).effective_s3_upload_strategy())
         } else {
-            scan_received_chunks(state, &session.id).await
+            None
         };
+
+        match strategy {
+            Some(S3UploadStrategy::RelayStream) => {
+                upload_session_part_repo::list_part_numbers(&state.db, &session.id)
+                    .await?
+                    .into_iter()
+                    .map(|part_number| part_number - 1)
+                    .collect()
+            }
+            Some(S3UploadStrategy::Presigned)
+                if session.status == UploadSessionStatus::Presigned =>
+            {
+                if let Some(temp_key) = session.s3_temp_key.as_deref() {
+                    let driver = state.driver_registry.get_driver(&policy)?;
+                    driver.list_uploaded_parts(temp_key, multipart_id).await?
+                } else {
+                    scan_received_chunks(state, &session.id).await
+                }
+            }
+            _ => scan_received_chunks(state, &session.id).await,
+        }
+    } else {
+        scan_received_chunks(state, &session.id).await
+    };
 
     Ok(UploadProgressResponse {
         upload_id: session.id,
