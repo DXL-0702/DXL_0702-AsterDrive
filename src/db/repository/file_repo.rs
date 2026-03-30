@@ -40,6 +40,7 @@ pub async fn find_by_folder<C: ConnectionTrait>(
     user_id: i64,
     folder_id: Option<i64>,
 ) -> Result<Vec<file::Model>> {
+    // Keep the predicate aligned with idx_files_user_deleted_folder_name; name lookups reuse it too.
     let mut q = File::find()
         .filter(file::Column::UserId.eq(user_id))
         .filter(file::Column::DeletedAt.is_null())
@@ -232,6 +233,7 @@ pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
         .and_where(Expr::col((Alias::new("f2"), Alias::new("deleted_at"))).is_not_null())
         .to_owned();
 
+    // Match idx_files_user_deleted_at_id so recycle-bin pages walk deleted_at/id instead of scanning.
     let base_cond = sea_orm::Condition::all()
         .add(file::Column::UserId.eq(user_id))
         .add(file::Column::DeletedAt.is_not_null())
@@ -279,6 +281,7 @@ pub async fn find_by_name_in_folder<C: ConnectionTrait>(
     folder_id: Option<i64>,
     name: &str,
 ) -> Result<Option<file::Model>> {
+    // Upload/copy/rename duplicate checks share the same directory lookup index.
     let mut q = File::find()
         .filter(file::Column::UserId.eq(user_id))
         .filter(file::Column::Name.eq(name))

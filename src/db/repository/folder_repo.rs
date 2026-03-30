@@ -32,6 +32,7 @@ pub async fn find_children<C: ConnectionTrait>(
     user_id: i64,
     parent_id: Option<i64>,
 ) -> Result<Vec<folder::Model>> {
+    // Keep the predicate aligned with idx_folders_user_deleted_parent_name; name lookups reuse it too.
     let mut q = Folder::find()
         .filter(folder::Column::UserId.eq(user_id))
         .filter(folder::Column::DeletedAt.is_null())
@@ -129,6 +130,7 @@ pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
         .and_where(Expr::col((Alias::new("p"), Alias::new("deleted_at"))).is_not_null())
         .to_owned();
 
+    // Match idx_folders_user_deleted_at_id so recycle-bin pages walk deleted_at/id instead of scanning.
     let cond = Condition::all()
         .add(folder::Column::UserId.eq(user_id))
         .add(folder::Column::DeletedAt.is_not_null())
@@ -163,6 +165,7 @@ pub async fn find_by_name_in_parent<C: ConnectionTrait>(
     parent_id: Option<i64>,
     name: &str,
 ) -> Result<Option<folder::Model>> {
+    // Create/rename/path resolution duplicate checks share the same directory lookup index.
     let mut q = Folder::find()
         .filter(folder::Column::UserId.eq(user_id))
         .filter(folder::Column::Name.eq(name))
