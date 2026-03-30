@@ -99,7 +99,7 @@ See [`docker-compose.yml`](docker-compose.yml) and [`docs/deployment/docker.md`]
 
 ### Storage and delivery
 
-- blob deduplication with SHA-256 + reference counting
+- optional local-only blob deduplication with SHA-256 + reference counting
 - local storage and S3-compatible storage policies
 - user default policy + folder override
 - S3 transport strategies: `proxy_tempfile`, `relay_stream`, and `presigned`

@@ -2,7 +2,7 @@ use actix_multipart::Multipart;
 use actix_web::HttpResponse;
 use chrono::Utc;
 use futures::{StreamExt, stream};
-use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, Set, TransactionTrait};
 use tokio::io::AsyncWriteExt;
 
 use crate::cache::CacheExt;
@@ -19,6 +19,38 @@ use crate::utils::numbers;
 
 const HASH_BUF_SIZE: usize = 65536; // 64KB
 const BLOB_CLEANUP_CONCURRENCY: usize = 8;
+
+pub(crate) fn local_content_dedup_enabled(policy: &crate::entities::storage_policy::Model) -> bool {
+    policy.driver_type == crate::types::DriverType::Local
+        && parse_storage_policy_options(&policy.options)
+            .content_dedup
+            .unwrap_or(false)
+}
+
+pub(crate) async fn create_nondedup_blob<C: ConnectionTrait>(
+    db: &C,
+    size: i64,
+    policy_id: i64,
+) -> Result<file_blob::Model> {
+    let blob_key = crate::utils::id::new_short_token();
+    let storage_path = crate::utils::storage_path_from_blob_key(&blob_key);
+    let now = Utc::now();
+
+    file_repo::create_blob(
+        db,
+        file_blob::ActiveModel {
+            hash: Set(blob_key),
+            size: Set(size),
+            policy_id: Set(policy_id),
+            storage_path: Set(storage_path),
+            ref_count: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+}
 
 #[allow(clippy::too_many_arguments)]
 async fn create_s3_nondedup_file(
@@ -261,8 +293,8 @@ async fn relay_field_to_s3(
 /// 从临时文件存储 blob 并创建文件记录
 ///
 /// 公共函数，REST upload 和 WebDAV flush 都调用。
-/// - 流式 sha256（不加载全文件到内存）
-/// - 策略检查 + 配额检查 + blob 去重
+/// - local 开启 `content_dedup` 时流式计算 sha256（不加载全文件到内存）
+/// - 策略检查 + 配额检查 + 按策略决定是否做 blob 去重
 /// - `put_file` 零拷贝（LocalDriver rename）
 /// - 创建/覆盖文件记录
 ///
@@ -285,30 +317,9 @@ pub async fn store_from_temp(
 
     crate::utils::validate_name(filename)?;
 
-    // ── [事务外] sha256 计算 ──
-    let file_hash = {
-        use sha2::{Digest, Sha256};
-        use tokio::io::AsyncReadExt;
-        let mut hasher = Sha256::new();
-        let mut reader = tokio::fs::File::open(temp_path)
-            .await
-            .map_aster_err_ctx("open temp", AsterError::file_upload_failed)?;
-        let mut buf = vec![0u8; HASH_BUF_SIZE];
-        loop {
-            let n = reader
-                .read(&mut buf)
-                .await
-                .map_aster_err_ctx("read temp", AsterError::file_upload_failed)?;
-            if n == 0 {
-                break;
-            }
-            hasher.update(&buf[..n]);
-        }
-        crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
-    };
-
     // ── [事务外] 策略解析 ──
     let policy = resolve_policy(state, user_id, folder_id).await?;
+    let should_dedup = local_content_dedup_enabled(&policy);
 
     // 文件大小限制
     if policy.max_file_size > 0 && size > policy.max_file_size {
@@ -324,7 +335,33 @@ pub async fn store_from_temp(
     let now = Utc::now();
     let driver = state.driver_registry.get_driver(&policy)?;
 
-    let storage_path = crate::utils::storage_path_from_hash(&file_hash);
+    let dedup_target = if should_dedup {
+        // ── [事务外] sha256 计算 ──
+        let file_hash = {
+            use sha2::{Digest, Sha256};
+            use tokio::io::AsyncReadExt;
+            let mut hasher = Sha256::new();
+            let mut reader = tokio::fs::File::open(temp_path)
+                .await
+                .map_aster_err_ctx("open temp", AsterError::file_upload_failed)?;
+            let mut buf = vec![0u8; HASH_BUF_SIZE];
+            loop {
+                let n = reader
+                    .read(&mut buf)
+                    .await
+                    .map_aster_err_ctx("read temp", AsterError::file_upload_failed)?;
+                if n == 0 {
+                    break;
+                }
+                hasher.update(&buf[..n]);
+            }
+            crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
+        };
+        let storage_path = crate::utils::storage_path_from_hash(&file_hash);
+        Some((file_hash, storage_path))
+    } else {
+        None
+    };
 
     // ── [事务外] 覆盖模式：预读旧文件 + 删除旧缩略图 ──
     let overwrite_ctx = if let Some(existing_id) = existing_file_id {
@@ -353,19 +390,26 @@ pub async fn store_from_temp(
     // 事务内配额权威检查（防止并发上传绕过事务外 fast-fail）
     user_repo::check_quota(&txn, user_id, size).await?;
 
-    // Blob 去重（事务内重新检查，防止并发竞争）
-    let blob =
-        file_repo::find_or_create_blob(&txn, &file_hash, size, policy.id, &storage_path).await?;
-    if blob.inserted {
-        driver.put_file(&storage_path, temp_path).await?;
-    }
+    let blob = if let Some((file_hash, storage_path)) = dedup_target.as_ref() {
+        // Blob 去重（事务内重新检查，防止并发竞争）
+        let blob =
+            file_repo::find_or_create_blob(&txn, file_hash, size, policy.id, storage_path).await?;
+        if blob.inserted {
+            driver.put_file(storage_path, temp_path).await?;
+        }
+        blob.model
+    } else {
+        let blob = create_nondedup_blob(&txn, size, policy.id).await?;
+        driver.put_file(&blob.storage_path, temp_path).await?;
+        blob
+    };
 
     let result = if let Some((old_file, old_blob)) = overwrite_ctx {
         // 覆盖现有文件
         let existing_id = old_file.id;
         let mut active: file::ActiveModel = old_file.into();
-        active.blob_id = Set(blob.model.id);
-        active.size = Set(blob.model.size);
+        active.blob_id = Set(blob.id);
+        active.size = Set(blob.size);
         active.mime_type = Set(mime);
         active.updated_at = Set(now);
         let updated = active.update(&txn).await.map_err(AsterError::from)?;
@@ -397,8 +441,8 @@ pub async fn store_from_temp(
         let file_model = file::ActiveModel {
             name: Set(final_name),
             folder_id: Set(folder_id),
-            blob_id: Set(blob.model.id),
-            size: Set(blob.model.size),
+            blob_id: Set(blob.id),
+            size: Set(blob.size),
             user_id: Set(user_id),
             mime_type: Set(mime),
             created_at: Set(now),
@@ -1345,8 +1389,8 @@ pub async fn resolve_policy(
 ///
 /// - 校验文件名
 /// - 解析存储策略
-/// - blob 去重（空文件 sha256 固定）
-/// - 若 blob 不存在则用 driver.put 写入 0 字节
+/// - 只有 local 显式开启 `content_dedup` 时才复用空文件固定 sha256
+/// - 其余路径都为每个文件分配独立 blob
 /// - 创建文件记录并更新配额（0 字节不影响配额）
 pub async fn create_empty(
     state: &AppState,
@@ -1368,8 +1412,7 @@ pub async fn create_empty(
 
     let policy = resolve_policy(state, user_id, folder_id).await?;
     let driver = state.driver_registry.get_driver(&policy)?;
-
-    let storage_path = crate::utils::storage_path_from_hash(EMPTY_SHA256);
+    let should_dedup = local_content_dedup_enabled(&policy);
 
     let now = chrono::Utc::now();
     let mime = mime_guess::from_path(filename)
@@ -1378,19 +1421,32 @@ pub async fn create_empty(
 
     let txn = db.begin().await.map_err(AsterError::from)?;
 
-    let blob =
-        file_repo::find_or_create_blob(&txn, EMPTY_SHA256, EMPTY_SIZE, policy.id, &storage_path)
-            .await?;
-    if blob.inserted {
-        driver.put(&storage_path, &[]).await?;
-    }
+    let blob = if should_dedup {
+        let storage_path = crate::utils::storage_path_from_hash(EMPTY_SHA256);
+        let blob = file_repo::find_or_create_blob(
+            &txn,
+            EMPTY_SHA256,
+            EMPTY_SIZE,
+            policy.id,
+            &storage_path,
+        )
+        .await?;
+        if blob.inserted {
+            driver.put(&storage_path, &[]).await?;
+        }
+        blob.model
+    } else {
+        let blob = create_nondedup_blob(&txn, EMPTY_SIZE, policy.id).await?;
+        driver.put(&blob.storage_path, &[]).await?;
+        blob
+    };
 
     let final_name = file_repo::resolve_unique_filename(&txn, user_id, folder_id, filename).await?;
 
     let file_model = file::ActiveModel {
         name: Set(final_name),
         folder_id: Set(folder_id),
-        blob_id: Set(blob.model.id),
+        blob_id: Set(blob.id),
         size: Set(EMPTY_SIZE),
         user_id: Set(user_id),
         mime_type: Set(mime),

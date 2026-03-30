@@ -17,10 +17,12 @@ export interface PolicyFormData {
 	max_file_size: string;
 	chunk_size: string;
 	is_default: boolean;
+	content_dedup: boolean;
 	s3_upload_strategy: S3UploadStrategy;
 }
 
 interface PolicyOptions {
+	content_dedup?: boolean;
 	presigned_upload?: boolean;
 	s3_upload_strategy?: S3UploadStrategy;
 }
@@ -36,10 +38,15 @@ export function isS3UploadStrategy(value: unknown): value is S3UploadStrategy {
 export function parsePolicyOptions(options: string): PolicyOptions {
 	try {
 		const parsed = JSON.parse(options) as {
+			content_dedup?: unknown;
 			presigned_upload?: unknown;
 			s3_upload_strategy?: unknown;
 		};
 		return {
+			content_dedup:
+				typeof parsed.content_dedup === "boolean"
+					? parsed.content_dedup
+					: undefined,
 			presigned_upload:
 				typeof parsed.presigned_upload === "boolean"
 					? parsed.presigned_upload
@@ -63,8 +70,8 @@ export function getEffectiveS3UploadStrategy(
 }
 
 export function buildPolicyOptions(form: PolicyFormData): string {
-	if (form.driver_type !== "s3") {
-		return JSON.stringify({});
+	if (form.driver_type === "local") {
+		return JSON.stringify(form.content_dedup ? { content_dedup: true } : {});
 	}
 
 	return JSON.stringify({
@@ -161,5 +168,6 @@ export const emptyForm: PolicyFormData = {
 	max_file_size: "",
 	chunk_size: "5",
 	is_default: false,
+	content_dedup: false,
 	s3_upload_strategy: "proxy_tempfile",
 };

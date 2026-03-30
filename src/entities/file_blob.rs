@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
-    pub hash: String, // sha256
+    pub hash: String, // sha256 or synthetic blob key
     pub size: i64,
     pub policy_id: i64,
     pub storage_path: String,

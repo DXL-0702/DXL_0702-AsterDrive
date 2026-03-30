@@ -157,6 +157,8 @@ pub struct StoragePolicyOptions {
     pub presigned_upload: bool,
     #[serde(default)]
     pub s3_upload_strategy: Option<S3UploadStrategy>,
+    #[serde(default)]
+    pub content_dedup: Option<bool>,
 }
 
 impl StoragePolicyOptions {

@@ -99,7 +99,7 @@ docker compose up -d
 
 ### 存储与传输
 
-- 基于 SHA-256 + 引用计数的 Blob 去重
+- 仅本地策略可选开启的基于 SHA-256 + 引用计数的 Blob 去重
 - 本地存储与 S3 兼容存储策略
 - 用户默认策略与文件夹策略覆盖
 - S3 上传策略：`proxy_tempfile`、`relay_stream`、`presigned`

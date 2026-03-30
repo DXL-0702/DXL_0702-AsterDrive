@@ -499,7 +499,7 @@ pub async fn upload_chunk(
     })
 }
 
-/// 完成分片上传：组装 → hash → 去重 → 写入最终存储
+/// 完成分片上传：组装 → 按策略决定是否计算 hash / 去重 → 写入最终存储
 pub async fn complete_upload(
     state: &AppState,
     upload_id: &str,
@@ -567,7 +567,11 @@ pub async fn complete_upload(
         )));
     }
 
-    // ── [事务外] 流式拼接分片 + sha256 → finalize ──
+    let policy = policy_repo::find_by_id(db, session.policy_id).await?;
+    let driver = state.driver_registry.get_driver(&policy)?;
+    let should_dedup = file_service::local_content_dedup_enabled(&policy);
+
+    // ── [事务外] 流式拼接分片；local 未开启 dedup 时跳过 sha256 ──
     // 任何失败都将 session 标记为 Failed，避免前端无限轮询 Assembling
     let result = async {
         use sha2::{Digest, Sha256};
@@ -580,7 +584,7 @@ pub async fn complete_upload(
         let mut out_file = tokio::fs::File::create(&assembled_path)
             .await
             .map_aster_err_ctx("create assembled file", AsterError::upload_assembly_failed)?;
-        let mut hasher = Sha256::new();
+        let mut hasher = should_dedup.then(Sha256::new);
         let mut size: i64 = 0;
         let mut buffer = vec![0u8; ASSEMBLY_BUFFER_SIZE];
 
@@ -600,7 +604,9 @@ pub async fn complete_upload(
                 }
 
                 let data = &buffer[..n];
-                hasher.update(data);
+                if let Some(hasher) = hasher.as_mut() {
+                    hasher.update(data);
+                }
                 size += n as i64;
                 out_file
                     .write_all(data)
@@ -614,23 +620,27 @@ pub async fn complete_upload(
             .map_aster_err_ctx("flush assembled", AsterError::upload_assembly_failed)?;
         drop(out_file);
 
-        let file_hash = crate::utils::hash::sha256_digest_to_hex(&hasher.finalize());
         let now = Utc::now();
-
-        // ── [事务外] 获取策略 + driver ──
-        let policy = policy_repo::find_by_id(db, session.policy_id).await?;
-        let driver = state.driver_registry.get_driver(&policy)?;
-        let storage_path = crate::utils::storage_path_from_hash(&file_hash);
         let txn = state.db.begin().await.map_err(AsterError::from)?;
 
-        let blob = file_repo::find_or_create_blob(&txn, &file_hash, size, policy.id, &storage_path)
-            .await?;
-        if blob.inserted {
-            // 零拷贝：LocalDriver rename，S3 流式上传，不读进内存
-            driver.put_file(&storage_path, &assembled_path).await?;
+        let blob = if let Some(hasher) = hasher {
+            let file_hash = crate::utils::hash::sha256_digest_to_hex(&hasher.finalize());
+            let storage_path = crate::utils::storage_path_from_hash(&file_hash);
+            let blob =
+                file_repo::find_or_create_blob(&txn, &file_hash, size, policy.id, &storage_path)
+                    .await?;
+            if blob.inserted {
+                // 零拷贝：LocalDriver rename，S3 流式上传，不读进内存
+                driver.put_file(&storage_path, &assembled_path).await?;
+            } else {
+                crate::utils::cleanup_temp_file(&assembled_path).await;
+            }
+            blob.model
         } else {
-            crate::utils::cleanup_temp_file(&assembled_path).await;
-        }
+            let blob = file_service::create_nondedup_blob(&txn, size, policy.id).await?;
+            driver.put_file(&blob.storage_path, &assembled_path).await?;
+            blob
+        };
 
         let final_name = file_repo::resolve_unique_filename(
             &txn,
@@ -649,8 +659,8 @@ pub async fn complete_upload(
             file::ActiveModel {
                 name: Set(final_name),
                 folder_id: Set(session.folder_id),
-                blob_id: Set(blob.model.id),
-                size: Set(blob.model.size),
+                blob_id: Set(blob.id),
+                size: Set(blob.size),
                 user_id: Set(session.user_id),
                 mime_type: Set(mime),
                 created_at: Set(now),
@@ -689,7 +699,7 @@ pub async fn complete_upload(
     }
 }
 
-/// 完成 presigned 上传：从 S3 临时 key 读取 → hash → 去重 → copy → 建文件记录
+/// 完成 presigned 上传：校验 S3 临时对象 → 直接建文件记录
 async fn complete_presigned_upload(
     state: &AppState,
     session: upload_session::Model,
@@ -767,7 +777,7 @@ async fn complete_presigned_upload(
     }
 }
 
-/// 完成 S3 multipart presigned 上传：complete multipart → hash → 去重 → copy → 建文件记录
+/// 完成 S3 multipart presigned 上传：complete multipart → 直接建文件记录
 async fn complete_s3_multipart(
     state: &AppState,
     session: upload_session::Model,

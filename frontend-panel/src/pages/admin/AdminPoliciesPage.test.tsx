@@ -407,6 +407,18 @@ function createPolicy(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function openCreateWizard(driver: "local" | "s3" = "local") {
+	fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
+	if (driver === "s3") {
+		fireEvent.click(screen.getByRole("button", { name: /^S3\b/ }));
+	}
+	fireEvent.click(screen.getByRole("button", { name: "policy_wizard_next" }));
+}
+
+function advanceCreateWizardToRulesStep() {
+	fireEvent.click(screen.getByRole("button", { name: "policy_wizard_review" }));
+}
+
 describe("AdminPoliciesPage", () => {
 	beforeEach(() => {
 		mockState.create.mockReset();
@@ -477,7 +489,7 @@ describe("AdminPoliciesPage", () => {
 	it("tests create params and creates a new local policy", async () => {
 		render(<AdminPoliciesPage />);
 
-		fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
+		openCreateWizard();
 
 		fireEvent.change(screen.getByLabelText("core:name"), {
 			target: { value: "Primary Local" },
@@ -485,6 +497,7 @@ describe("AdminPoliciesPage", () => {
 		fireEvent.change(screen.getByLabelText("base_path"), {
 			target: { value: "/srv/data" },
 		});
+		advanceCreateWizardToRulesStep();
 		fireEvent.change(screen.getByLabelText("max_file_size (bytes)"), {
 			target: { value: "2048" },
 		});
@@ -605,11 +618,46 @@ describe("AdminPoliciesPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
 	});
 
+	it("parses and updates local content dedup options", async () => {
+		mockState.items = [
+			createPolicy({
+				id: 11,
+				name: "Dedup Local",
+				driver_type: "local",
+				base_path: "/srv/dedup",
+				options: JSON.stringify({ content_dedup: true }),
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: "PencilSimple" }));
+
+		expect(screen.getByDisplayValue("Dedup Local")).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "switch:content_dedup:true" }),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "switch:content_dedup:true" }),
+		);
+		fireEvent.click(screen.getByRole("button", { name: /save_changes/i }));
+
+		await waitFor(() => {
+			expect(mockState.update).toHaveBeenCalledWith(
+				11,
+				expect.objectContaining({
+					options: JSON.stringify({}),
+				}),
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_updated");
+	});
+
 	it("splits an R2 bucket path into the endpoint and bucket inputs on blur", () => {
 		render(<AdminPoliciesPage />);
 
-		fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
-		fireEvent.click(screen.getByRole("button", { name: "select-item:s3" }));
+		openCreateWizard("s3");
 
 		const endpointInput = screen.getByLabelText("endpoint");
 		fireEvent.change(endpointInput, {
@@ -628,8 +676,7 @@ describe("AdminPoliciesPage", () => {
 	it("marks public r2.dev endpoints as invalid", () => {
 		render(<AdminPoliciesPage />);
 
-		fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
-		fireEvent.click(screen.getByRole("button", { name: "select-item:s3" }));
+		openCreateWizard("s3");
 
 		const endpointInput = screen.getByLabelText("endpoint");
 		fireEvent.change(endpointInput, {
@@ -800,8 +847,7 @@ describe("AdminPoliciesPage", () => {
 
 		render(<AdminPoliciesPage />);
 
-		fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
-		fireEvent.click(screen.getByRole("button", { name: "select-item:s3" }));
+		openCreateWizard("s3");
 
 		fireEvent.change(screen.getByLabelText("core:name"), {
 			target: { value: "Broken S3" },
@@ -812,6 +858,7 @@ describe("AdminPoliciesPage", () => {
 		fireEvent.change(screen.getByLabelText("bucket"), {
 			target: { value: "broken-bucket" },
 		});
+		advanceCreateWizardToRulesStep();
 
 		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
 

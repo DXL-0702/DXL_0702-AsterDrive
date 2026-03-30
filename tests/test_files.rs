@@ -427,6 +427,11 @@ async fn test_create_empty_file() {
     let body2: Value = test::read_body_json(resp).await;
     let name2 = body2["data"]["name"].as_str().unwrap();
     assert_ne!(name2, "empty.txt", "duplicate name should be auto-renamed");
+    assert_ne!(
+        body2["data"]["blob_id"].as_i64().unwrap(),
+        body["data"]["blob_id"].as_i64().unwrap(),
+        "local create_empty should not dedup by default"
+    );
 
     // 下载空文件应返回 200，内容为空
     let req = test::TestRequest::get()

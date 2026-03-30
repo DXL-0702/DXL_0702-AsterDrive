@@ -84,9 +84,14 @@ pub fn validate_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// 根据 SHA256 hex hash 计算内容寻址存储路径：`ab/cd/abcdef...`
+/// 根据 blob key 计算分片存储路径：`ab/cd/abcdef...`
+pub fn storage_path_from_blob_key(blob_key: &str) -> String {
+    format!("{}/{}/{}", &blob_key[..2], &blob_key[2..4], blob_key)
+}
+
+/// 兼容旧调用方：SHA-256 hash 仍然走同一套分片路径规则。
 pub fn storage_path_from_hash(hash: &str) -> String {
-    format!("{}/{}/{}", &hash[..2], &hash[2..4], hash)
+    storage_path_from_blob_key(hash)
 }
 
 /// macOS / Office 生成的隐藏文件名，不在目录列表中显示

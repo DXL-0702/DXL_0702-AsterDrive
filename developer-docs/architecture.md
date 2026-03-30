@@ -225,7 +225,7 @@ WebDAV 不是走 `src/api/routes/*`，而是这样进入系统：
 ### 文件与 Blob 分离
 
 - `files` 是用户可见的文件记录
-- `file_blobs` 是实际内容，按 `sha256 + policy_id` 去重
+- `file_blobs` 是实际内容；只有 local 显式开启 `content_dedup` 时，上传路径才会按 `sha256 + policy_id` 去重；其余路径都会创建独立 Blob
 - 多个 `files` 与 `file_versions` 可以引用同一个 Blob
 
 这让系统能同时支持：
@@ -252,7 +252,7 @@ WebDAV 不是走 `src/api/routes/*`，而是这样进入系统：
 - 根目录或对象前缀
 - 单文件大小限制
 - 分片大小 `chunk_size`
-- 是否通过 `options` 启用 S3 预签名上传
+- 是否通过 `options` 启用 local `content_dedup` 或选择 S3 上传方式
 
 这意味着：
 
@@ -322,9 +322,9 @@ WebDAV 不是走 `src/api/routes/*`，而是这样进入系统：
 
 1. 解析生效存储策略
 2. 校验大小限制与用户配额
-3. `direct` / `chunked` / 本地组装完成后的上传会计算 SHA-256
-4. 只有拿到 SHA-256 的上传路径才会按 `hash + policy_id` 做 Blob 去重
-5. `relay_stream` / `presigned` / `presigned_multipart` 不会回读对象计算 SHA-256，因此不会做 Blob 去重
+3. 只有 local 显式开启 `content_dedup` 时，`direct` / `chunked` / 覆盖写入 / 空文件这些路径才会计算 SHA-256
+4. 只有拿到 SHA-256 的本地上传路径才会按 `hash + policy_id` 做 Blob 去重；local 默认关闭 `content_dedup`
+5. 所有 S3 路径（`proxy_tempfile` / `relay_stream` / `presigned` / `presigned_multipart`）都不会做 Blob 去重
 6. 创建文件记录
 7. 更新用户已用空间
 

@@ -170,6 +170,8 @@ export default function AdminPoliciesPage() {
 					? String(Math.round(policy.chunk_size / 1024 / 1024))
 					: "5",
 			is_default: policy.is_default,
+			content_dedup:
+				policy.driver_type === "local" && options.content_dedup === true,
 			s3_upload_strategy: getEffectiveS3UploadStrategy(options),
 		});
 		setDialogOpen(true);

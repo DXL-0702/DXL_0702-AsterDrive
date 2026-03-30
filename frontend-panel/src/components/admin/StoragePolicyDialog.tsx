@@ -175,6 +175,9 @@ export function StoragePolicyDialog({
 			: form.s3_upload_strategy === "relay_stream"
 				? t("s3_upload_strategy_relay_stream")
 				: t("s3_upload_strategy_presigned");
+	const contentDedupLabel = form.content_dedup
+		? t("policy_wizard_enabled")
+		: t("policy_wizard_disabled");
 	const createSummaryItems = [
 		{ label: t("driver_type"), value: currentStorageOption.title },
 		{
@@ -200,6 +203,14 @@ export function StoragePolicyDialog({
 				? t("policy_wizard_enabled")
 				: t("policy_wizard_disabled"),
 		},
+		...(form.driver_type === "local"
+			? [
+					{
+						label: t("content_dedup"),
+						value: contentDedupLabel,
+					},
+				]
+			: []),
 		...(form.driver_type === "s3"
 			? [
 					{
@@ -344,6 +355,22 @@ export function StoragePolicyDialog({
 								: "s3_upload_strategy_presigned_desc"
 					}`,
 				)}
+			</p>
+		</div>
+	);
+
+	const renderLocalContentDedupField = () => (
+		<div className="space-y-2 pt-1">
+			<div className="flex items-center gap-2">
+				<Switch
+					id="content_dedup"
+					checked={form.content_dedup}
+					onCheckedChange={(value) => onFieldChange("content_dedup", value)}
+				/>
+				<Label htmlFor="content_dedup">{t("content_dedup")}</Label>
+			</div>
+			<p className="text-xs text-muted-foreground">
+				{t("local_content_dedup_desc")}
 			</p>
 		</div>
 	);
@@ -569,9 +596,12 @@ export function StoragePolicyDialog({
 											{form.driver_type === "s3" ? (
 												renderS3UploadStrategyField()
 											) : (
-												<div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-sm text-muted-foreground">
-													{t("policy_wizard_local_rules_helper")}
-												</div>
+												<>
+													<div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-sm text-muted-foreground">
+														{t("policy_wizard_local_rules_helper")}
+													</div>
+													{renderLocalContentDedupField()}
+												</>
 											)}
 											{renderLimitsFields()}
 											{renderDefaultToggle()}
@@ -635,7 +665,9 @@ export function StoragePolicyDialog({
 									{renderS3ConnectionFields()}
 									{renderS3UploadStrategyField()}
 								</>
-							) : null}
+							) : (
+								renderLocalContentDedupField()
+							)}
 							{renderLimitsFields()}
 							{renderDefaultToggle()}
 						</>
