@@ -1,4 +1,3 @@
-import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router-dom";
@@ -56,6 +55,21 @@ import type { DriverType, StoragePolicy } from "@/types/api";
 
 const POLICY_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const CREATE_LAST_STEP = 2;
+const PROTECTED_POLICY_ID = 1;
+const INTERACTIVE_TABLE_ROW_CLASS =
+	"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50";
+
+function getPolicyDriverBadgeClass(driverType: DriverType): string {
+	return driverType === "s3"
+		? "border-blue-500/60 bg-blue-500/10 text-blue-600 dark:text-blue-300"
+		: "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300";
+}
+
+const POLICY_TEXT_CELL_CONTENT_CLASS =
+	"flex min-w-0 items-center rounded-lg bg-muted/10 px-3 py-3 text-left transition-colors duration-200";
+
+const POLICY_BADGE_CELL_CONTENT_CLASS =
+	"flex items-center rounded-lg bg-muted/20 px-3 py-3 text-left transition-colors duration-200";
 
 export default function AdminPoliciesPage() {
 	const { t } = useTranslation("admin");
@@ -116,6 +130,7 @@ export default function AdminPoliciesPage() {
 	};
 
 	const handleDelete = async (id: number) => {
+		if (id === PROTECTED_POLICY_ID) return;
 		try {
 			await adminPolicyService.delete(id);
 			if (policies.length === 1 && offset > 0) {
@@ -134,6 +149,10 @@ export default function AdminPoliciesPage() {
 		requestConfirm,
 		dialogProps,
 	} = useConfirmDialog(handleDelete);
+	const requestDeleteConfirm = (id: number) => {
+		if (id === PROTECTED_POLICY_ID) return;
+		requestConfirm(id);
+	};
 
 	const resetDialogState = () => {
 		setSaveConfirmOpen(false);
@@ -389,8 +408,7 @@ export default function AdminPoliciesPage() {
 		setCreateStep(CREATE_LAST_STEP);
 	};
 
-	const handleSubmit = (e: FormEvent) => {
-		e.preventDefault();
+	const handleSubmit = () => {
 		if (editingId === null && createStep < CREATE_LAST_STEP) {
 			handleCreateNext();
 			return;
@@ -459,47 +477,100 @@ export default function AdminPoliciesPage() {
 						</TableHeader>
 					}
 					renderRow={(policy) => (
-						<TableRow key={policy.id}>
-							<TableCell className="font-mono text-xs">{policy.id}</TableCell>
-							<TableCell className="font-medium">{policy.name}</TableCell>
+						<TableRow
+							key={policy.id}
+							className={INTERACTIVE_TABLE_ROW_CLASS}
+							onClick={() => openEdit(policy)}
+							onKeyDown={(event) => {
+								if (event.key === "Enter" || event.key === " ") {
+									event.preventDefault();
+									openEdit(policy);
+								}
+							}}
+							tabIndex={0}
+						>
 							<TableCell>
-								<Badge variant="outline">
-									{policy.driver_type === "local" ? "Local" : "S3"}
-								</Badge>
-							</TableCell>
-							<TableCell className="text-muted-foreground text-xs font-mono">
-								{policy.driver_type === "local"
-									? policy.base_path || "./data"
-									: policy.endpoint}
-							</TableCell>
-							<TableCell className="text-muted-foreground text-xs">
-								{policy.bucket || "-"}
+								<div className={POLICY_TEXT_CELL_CONTENT_CLASS}>
+									<span className="font-mono text-xs text-muted-foreground">
+										{policy.id}
+									</span>
+								</div>
 							</TableCell>
 							<TableCell>
-								{policy.is_default ? (
-									<Badge className="bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700">
-										{t("is_default")}
+								<div className={POLICY_TEXT_CELL_CONTENT_CLASS}>
+									<div className="min-w-0">
+										<div className="truncate font-medium text-foreground">
+											{policy.name}
+										</div>
+									</div>
+								</div>
+							</TableCell>
+							<TableCell>
+								<div className={POLICY_BADGE_CELL_CONTENT_CLASS}>
+									<Badge
+										variant="outline"
+										className={getPolicyDriverBadgeClass(policy.driver_type)}
+									>
+										{policy.driver_type === "local" ? "Local" : "S3"}
 									</Badge>
-								) : null}
+								</div>
 							</TableCell>
 							<TableCell>
-								<div className="flex items-center gap-1">
-									<Button
-										variant="ghost"
-										size="icon"
-										className={ADMIN_ICON_BUTTON_CLASS}
-										onClick={() => openEdit(policy)}
-									>
-										<Icon name="PencilSimple" className="h-3.5 w-3.5" />
-									</Button>
-									<Button
-										variant="ghost"
-										size="icon"
-										className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
-										onClick={() => requestConfirm(policy.id)}
-									>
-										<Icon name="Trash" className="h-3.5 w-3.5" />
-									</Button>
+								<div className={POLICY_TEXT_CELL_CONTENT_CLASS}>
+									<span className="truncate text-xs font-mono text-muted-foreground">
+										{policy.driver_type === "local"
+											? policy.base_path || "./data"
+											: policy.endpoint}
+									</span>
+								</div>
+							</TableCell>
+							<TableCell>
+								<div className={POLICY_TEXT_CELL_CONTENT_CLASS}>
+									<span className="truncate text-xs text-muted-foreground">
+										{policy.bucket || "-"}
+									</span>
+								</div>
+							</TableCell>
+							<TableCell>
+								<div className={POLICY_BADGE_CELL_CONTENT_CLASS}>
+									{policy.is_default ? (
+										<Badge className="bg-blue-100 border-blue-300 text-blue-700 dark:border-blue-700 dark:bg-blue-900 dark:text-blue-300">
+											{t("is_default")}
+										</Badge>
+									) : (
+										<span className="text-xs text-muted-foreground">-</span>
+									)}
+								</div>
+							</TableCell>
+							<TableCell
+								onClick={(event) => event.stopPropagation()}
+								onKeyDown={(event) => event.stopPropagation()}
+							>
+								<div className="flex justify-end">
+									<TooltipProvider>
+										<Tooltip>
+											<TooltipTrigger>
+												<div>
+													<Button
+														variant="ghost"
+														size="icon"
+														className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
+														onClick={() => requestDeleteConfirm(policy.id)}
+														aria-label={t("delete_policy")}
+														title={t("delete_policy")}
+														disabled={policy.id === PROTECTED_POLICY_ID}
+													>
+														<Icon name="Trash" className="h-3.5 w-3.5" />
+													</Button>
+												</div>
+											</TooltipTrigger>
+											{policy.id === PROTECTED_POLICY_ID ? (
+												<TooltipContent>
+													{t("initial_policy_delete_blocked")}
+												</TooltipContent>
+											) : null}
+										</Tooltip>
+									</TooltipProvider>
 								</div>
 							</TableCell>
 						</TableRow>

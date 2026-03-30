@@ -69,6 +69,12 @@ import type {
 } from "@/types/api";
 
 const USER_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+const INTERACTIVE_TABLE_ROW_CLASS =
+	"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50";
+const USER_TEXT_CELL_CONTENT_CLASS =
+	"flex min-w-0 items-center rounded-lg bg-muted/10 px-3 py-3 text-left transition-colors duration-200";
+const USER_BADGE_CELL_CONTENT_CLASS =
+	"flex items-center rounded-lg bg-muted/20 px-3 py-3 text-left transition-colors duration-200";
 
 function QuotaCell({ user }: { user: UserInfo }) {
 	const { t } = useTranslation("admin");
@@ -463,17 +469,23 @@ export default function AdminUsersPage() {
 								</TableHeader>
 								<TableBody>
 									{users.map((user) => (
-										<TableRow key={user.id}>
+										<TableRow
+											key={user.id}
+											className={INTERACTIVE_TABLE_ROW_CLASS}
+											onClick={() => setDetailDialogUserId(user.id)}
+											onKeyDown={(event) => {
+												if (event.key === "Enter" || event.key === " ") {
+													event.preventDefault();
+													setDetailDialogUserId(user.id);
+												}
+											}}
+											tabIndex={0}
+										>
 											<TableCell className="font-mono text-xs text-muted-foreground">
 												{user.id}
 											</TableCell>
 											<TableCell>
-												<button
-													type="button"
-													className="flex w-full min-w-0 items-center rounded-lg border border-transparent bg-muted/10 px-2 py-2 text-left transition-colors duration-200 hover:border-border hover:bg-muted/25 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-													onClick={() => setDetailDialogUserId(user.id)}
-													title={t("view_details")}
-												>
+												<div className={USER_TEXT_CELL_CONTENT_CLASS}>
 													<UserAvatarImage
 														avatar={user.profile.avatar}
 														name={getUserDisplayName(user)}
@@ -493,42 +505,27 @@ export default function AdminUsersPage() {
 															</div>
 														) : null}
 													</div>
-												</button>
+												</div>
 											</TableCell>
 											<TableCell>
-												<button
-													type="button"
-													className="flex w-full min-w-0 items-center rounded-lg border border-transparent bg-muted/10 px-2 py-2 text-left transition-colors duration-200 hover:border-border hover:bg-muted/25 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-													onClick={() => setDetailDialogUserId(user.id)}
-													title={t("view_details")}
-												>
+												<div className={USER_TEXT_CELL_CONTENT_CLASS}>
 													<div className="truncate text-sm text-muted-foreground">
 														{user.email}
 													</div>
-												</button>
+												</div>
 											</TableCell>
 											<TableCell>
-												<button
-													type="button"
-													className="flex w-full items-center rounded-lg border border-transparent bg-muted/20 px-3 py-2 text-left transition-colors duration-200 hover:border-border hover:bg-muted/35 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-													onClick={() => setDetailDialogUserId(user.id)}
-													title={t("view_details")}
-												>
+												<div className={USER_BADGE_CELL_CONTENT_CLASS}>
 													<Badge
 														variant="outline"
 														className={getRoleBadgeClass(user.role)}
 													>
 														{user.role === "admin" ? "Admin" : "User"}
 													</Badge>
-												</button>
+												</div>
 											</TableCell>
 											<TableCell>
-												<button
-													type="button"
-													className="flex w-full items-center rounded-lg border border-transparent bg-muted/20 px-3 py-2 text-left transition-colors duration-200 hover:border-border hover:bg-muted/35 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-													onClick={() => setDetailDialogUserId(user.id)}
-													title={t("view_details")}
-												>
+												<div className={USER_BADGE_CELL_CONTENT_CLASS}>
 													<Badge
 														variant="outline"
 														className={getStatusBadgeClass(user.status)}
@@ -537,19 +534,17 @@ export default function AdminUsersPage() {
 															? t("core:active")
 															: t("core:disabled_status")}
 													</Badge>
-												</button>
+												</div>
 											</TableCell>
 											<TableCell>
-												<button
-													type="button"
-													className="w-full text-left"
-													onClick={() => setDetailDialogUserId(user.id)}
-													title={t("view_details")}
-												>
+												<div className="w-full text-left">
 													<QuotaCell user={user} />
-												</button>
+												</div>
 											</TableCell>
-											<TableCell>
+											<TableCell
+												onClick={(event) => event.stopPropagation()}
+												onKeyDown={(event) => event.stopPropagation()}
+											>
 												<div className="flex justify-end">
 													<TooltipProvider>
 														<Tooltip>

@@ -76,14 +76,10 @@ vi.mock("@/components/common/AdminTableList", () => ({
 		) : items.length === 0 ? (
 			<div>{`${emptyTitle}:${emptyDescription}`}</div>
 		) : (
-			<div>
+			<table>
 				{headerRow}
-				{items.map((item) => (
-					<div key={String((item as { id: number }).id)}>
-						{renderRow(item as never)}
-					</div>
-				))}
-			</div>
+				<tbody>{items.map((item) => renderRow(item as never))}</tbody>
+			</table>
 		),
 }));
 
@@ -143,8 +139,20 @@ vi.mock("@/components/layout/AdminPageShell", () => ({
 }));
 
 vi.mock("@/components/ui/badge", () => ({
-	Badge: ({ children }: { children: React.ReactNode }) => (
-		<span>{children}</span>
+	Badge: ({
+		children,
+		className,
+		"data-testid": dataTestId,
+		variant,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+		"data-testid"?: string;
+		variant?: string;
+	}) => (
+		<span className={className} data-testid={dataTestId} data-variant={variant}>
+			{children}
+		</span>
 	),
 }));
 
@@ -179,14 +187,30 @@ vi.mock("@/components/ui/button", () => ({
 vi.mock("@/components/ui/dialog", () => ({
 	Dialog: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
 		open ? <div>{children}</div> : null,
-	DialogContent: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	DialogContent: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => (
+		<div data-testid="dialog-content" className={className}>
+			{children}
+		</div>
 	),
 	DialogDescription: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
-	DialogFooter: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	DialogFooter: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => (
+		<div data-testid="dialog-footer" className={className}>
+			{children}
+		</div>
 	),
 	DialogHeader: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
@@ -343,17 +367,70 @@ vi.mock("@/components/ui/tooltip", () => ({
 }));
 
 vi.mock("@/components/ui/table", () => ({
-	TableCell: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	TableCell: ({
+		children,
+		className,
+		onClick,
+		onKeyDown,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+		onClick?: (event: { stopPropagation?: () => void }) => void;
+		onKeyDown?: (event: {
+			key: string;
+			preventDefault?: () => void;
+			stopPropagation?: () => void;
+		}) => void;
+	}) => (
+		<td
+			data-slot="table-cell"
+			className={className}
+			onClick={onClick}
+			onKeyDown={onKeyDown}
+		>
+			{children}
+		</td>
 	),
-	TableHead: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	TableHead: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => (
+		<th data-slot="table-head" className={className}>
+			{children}
+		</th>
 	),
 	TableHeader: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+		<thead data-slot="table-header">{children}</thead>
 	),
-	TableRow: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	TableRow: ({
+		children,
+		className,
+		onClick,
+		onKeyDown,
+		tabIndex,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+		onClick?: () => void;
+		onKeyDown?: (event: {
+			key: string;
+			preventDefault?: () => void;
+			stopPropagation?: () => void;
+		}) => void;
+		tabIndex?: number;
+	}) => (
+		<tr
+			data-slot="table-row"
+			className={className}
+			onClick={onClick}
+			onKeyDown={onKeyDown}
+			tabIndex={tabIndex}
+		>
+			{children}
+		</tr>
 	),
 }));
 
@@ -419,6 +496,10 @@ function advanceCreateWizardToRulesStep() {
 	fireEvent.click(screen.getByRole("button", { name: "policy_wizard_review" }));
 }
 
+function openEditPolicy(name: string) {
+	fireEvent.click(screen.getByText(name));
+}
+
 describe("AdminPoliciesPage", () => {
 	beforeEach(() => {
 		mockState.create.mockReset();
@@ -482,8 +563,59 @@ describe("AdminPoliciesPage", () => {
 		expect(screen.getByText("https://s3.example.com")).toBeInTheDocument();
 		expect(screen.getByText("archive")).toBeInTheDocument();
 		expect(screen.getAllByText("is_default")).toHaveLength(2);
-		expect(screen.getByText("Local")).toBeInTheDocument();
-		expect(screen.getByText("S3")).toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: "PencilSimple" }),
+		).not.toBeInTheDocument();
+		const localBadge = screen.getByText("Local");
+		const s3Badge = screen.getByText("S3");
+		expect(localBadge).toHaveAttribute("data-variant", "outline");
+		expect(localBadge).toHaveClass("bg-emerald-500/10", "text-emerald-600");
+		expect(s3Badge).toHaveAttribute("data-variant", "outline");
+		expect(s3Badge).toHaveClass("bg-blue-500/10", "text-blue-600");
+	});
+
+	it("opens edit from any non-delete policy cell", () => {
+		mockState.items = [
+			createPolicy({
+				id: 2,
+				name: "Archive S3",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				bucket: "archive",
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByText("S3"));
+		expect(screen.getByDisplayValue("Archive S3")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "Trash" }));
+		expect(screen.getByText('delete_policy "Archive S3"?')).toBeInTheDocument();
+	});
+
+	it("prevents deleting the protected policy with id 1", () => {
+		mockState.items = [
+			createPolicy({
+				id: 1,
+				name: "System Policy",
+			}),
+		];
+
+		render(<AdminPoliciesPage />);
+
+		const deleteButton = screen.getByRole("button", { name: "Trash" });
+		expect(deleteButton).toBeDisabled();
+		expect(
+			screen.getByText("initial_policy_delete_blocked"),
+		).toBeInTheDocument();
+
+		fireEvent.click(deleteButton);
+
+		expect(
+			screen.queryByText('delete_policy "System Policy"?'),
+		).not.toBeInTheDocument();
+		expect(mockState.deletePolicy).not.toHaveBeenCalled();
 	});
 
 	it("tests create params and creates a new local policy", async () => {
@@ -542,6 +674,191 @@ describe("AdminPoliciesPage", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("policy_created");
 	});
 
+	it("keeps the create dialog shell fixed and scrolls the form body internally", () => {
+		const { container } = render(<AdminPoliciesPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: /new_policy/i }));
+
+		const dialogContent = screen.getByTestId("dialog-content");
+		expect(dialogContent).toHaveClass(
+			"flex",
+			"flex-col",
+			"overflow-hidden",
+			"p-0",
+		);
+		expect(dialogContent).not.toHaveClass("overflow-y-auto");
+
+		const form = dialogContent.querySelector("form");
+		if (!form) {
+			throw new Error("Expected create dialog form to render");
+		}
+		expect(form).toHaveClass(
+			"flex",
+			"min-h-0",
+			"flex-1",
+			"flex-col",
+			"overflow-hidden",
+		);
+
+		const scrollBody = container.querySelector("form > .overflow-y-auto");
+		if (!scrollBody) {
+			throw new Error(
+				"Expected create dialog body to be internally scrollable",
+			);
+		}
+		expect(scrollBody).toHaveClass(
+			"min-h-0",
+			"flex-1",
+			"overflow-y-auto",
+			"px-6",
+		);
+		expect(
+			screen.queryByRole("button", { name: /core:cancel/i }),
+		).not.toBeInTheDocument();
+
+		const footer = screen.getByTestId("dialog-footer");
+		expect(footer).toHaveClass("w-full", "flex-row");
+
+		const nextButton = screen.getByRole("button", {
+			name: "policy_wizard_next",
+		});
+		expect(nextButton.parentElement).toHaveClass(
+			"ml-auto",
+			"flex-nowrap",
+			"justify-end",
+		);
+
+		fireEvent.click(nextButton);
+
+		const forwardAnimatedPanel = screen.getByTestId("policy-step-panel");
+		expect(forwardAnimatedPanel).toHaveClass(
+			"animate-in",
+			"fade-in",
+			"slide-in-from-right-6",
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: /core:back/i }));
+
+		const backwardAnimatedPanel = screen.getByTestId("policy-step-panel");
+		expect(backwardAnimatedPanel).toHaveClass(
+			"animate-in",
+			"fade-in",
+			"slide-in-from-left-6",
+		);
+	});
+
+	it("shows S3 connection testing in step two before review", async () => {
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard("s3");
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Archive S3" },
+		});
+		fireEvent.change(screen.getByLabelText("bucket"), {
+			target: { value: "archive" },
+		});
+		fireEvent.change(screen.getByLabelText("endpoint"), {
+			target: { value: "https://s3.example.com" },
+		});
+
+		expect(
+			screen.getByRole("button", { name: /test_connection/i }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: /core:cancel/i }),
+		).not.toBeInTheDocument();
+
+		const reviewButton = screen.getByRole("button", {
+			name: "policy_wizard_review",
+		});
+		expect(reviewButton.parentElement).toHaveClass(
+			"ml-auto",
+			"flex-nowrap",
+			"justify-end",
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
+
+		await waitFor(() => {
+			expect(mockState.testParams).toHaveBeenCalledWith({
+				access_key: undefined,
+				base_path: undefined,
+				bucket: "archive",
+				driver_type: "s3",
+				endpoint: "https://s3.example.com",
+				secret_key: undefined,
+			});
+		});
+	});
+
+	it("does not save when moving from S3 step two to review", () => {
+		render(<AdminPoliciesPage />);
+
+		openCreateWizard("s3");
+
+		fireEvent.change(screen.getByLabelText("core:name"), {
+			target: { value: "Archive S3" },
+		});
+		fireEvent.change(screen.getByLabelText("bucket"), {
+			target: { value: "archive" },
+		});
+		fireEvent.change(screen.getByLabelText("endpoint"), {
+			target: { value: "https://s3.example.com" },
+		});
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "policy_wizard_review" }),
+		);
+
+		expect(mockState.create).not.toHaveBeenCalled();
+		expect(mockState.update).not.toHaveBeenCalled();
+		expect(
+			screen.getByRole("button", { name: /core:create/i }),
+		).toBeInTheDocument();
+	});
+
+	it("keeps edit dialog primary actions right aligned", () => {
+		mockState.items = [createPolicy({ id: 3, name: "Edit Me" })];
+
+		render(<AdminPoliciesPage />);
+
+		openEditPolicy("Edit Me");
+
+		const editShell = screen.getByTestId("policy-edit-shell");
+		expect(editShell).toHaveClass("grid", "gap-6");
+		expect(
+			screen.getByText("policy_editor_overview_title"),
+		).toBeInTheDocument();
+		expect(screen.getByText("policy_editor_storage_title")).toBeInTheDocument();
+		expect(screen.getByText("policy_editor_rules_title")).toBeInTheDocument();
+		expect(screen.getByTestId("policy-summary-card")).toBeInTheDocument();
+		expect(
+			screen.queryByText("policy_wizard_driver_panel_title"),
+		).not.toBeInTheDocument();
+		expect(screen.getByTestId("policy-driver-badge")).toHaveAttribute(
+			"data-variant",
+			"outline",
+		);
+		expect(screen.getByTestId("policy-driver-badge")).toHaveClass(
+			"bg-emerald-500/10",
+			"text-emerald-600",
+		);
+
+		const footer = screen.getByTestId("dialog-footer");
+		expect(footer).toHaveClass("w-full", "flex-row");
+
+		const saveButton = screen.getByRole("button", { name: /save_changes/i });
+		expect(saveButton.parentElement).toHaveClass(
+			"ml-auto",
+			"flex-nowrap",
+			"justify-end",
+		);
+	});
+
 	it("tests changed s3 params and updates without sending blank secrets", async () => {
 		mockState.items = [
 			createPolicy({
@@ -558,9 +875,17 @@ describe("AdminPoliciesPage", () => {
 
 		render(<AdminPoliciesPage />);
 
-		fireEvent.click(screen.getByRole("button", { name: "PencilSimple" }));
+		openEditPolicy("Archive S3");
 
 		expect(screen.getByText("s3_endpoint_hint")).toBeInTheDocument();
+		expect(screen.getByTestId("policy-driver-badge")).toHaveAttribute(
+			"data-variant",
+			"outline",
+		);
+		expect(screen.getByTestId("policy-driver-badge")).toHaveClass(
+			"bg-blue-500/10",
+			"text-blue-600",
+		);
 		expect(screen.getByDisplayValue("Archive S3")).toBeInTheDocument();
 		expect(screen.getByDisplayValue("tenant-a")).toBeInTheDocument();
 		expect(screen.getByDisplayValue("4096")).toBeInTheDocument();
@@ -631,7 +956,7 @@ describe("AdminPoliciesPage", () => {
 
 		render(<AdminPoliciesPage />);
 
-		fireEvent.click(screen.getByRole("button", { name: "PencilSimple" }));
+		openEditPolicy("Dedup Local");
 
 		expect(screen.getByDisplayValue("Dedup Local")).toBeInTheDocument();
 		expect(
@@ -706,7 +1031,7 @@ describe("AdminPoliciesPage", () => {
 
 		render(<AdminPoliciesPage />);
 
-		fireEvent.click(screen.getByRole("button", { name: "PencilSimple" }));
+		openEditPolicy("Legacy Presigned S3");
 
 		expect(screen.getByDisplayValue("Legacy Presigned S3")).toBeInTheDocument();
 		expect(screen.getByDisplayValue("legacy-bucket")).toBeInTheDocument();
@@ -767,7 +1092,7 @@ describe("AdminPoliciesPage", () => {
 
 		render(<AdminPoliciesPage />);
 
-		fireEvent.click(screen.getByRole("button", { name: "PencilSimple" }));
+		openEditPolicy("Relay S3");
 
 		expect(screen.getByDisplayValue("Relay S3")).toBeInTheDocument();
 		expect(screen.getByDisplayValue("tenant-relay")).toBeInTheDocument();
@@ -835,7 +1160,7 @@ describe("AdminPoliciesPage", () => {
 
 		render(<AdminPoliciesPage />);
 
-		fireEvent.click(screen.getByRole("button", { name: "PencilSimple" }));
+		openEditPolicy("Direct Put S3");
 
 		expect(screen.getByDisplayValue("Direct Put S3")).toBeInTheDocument();
 		expect(screen.getAllByDisplayValue("0")).toHaveLength(2);

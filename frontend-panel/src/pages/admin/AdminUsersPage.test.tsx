@@ -347,21 +347,76 @@ vi.mock("@/components/ui/select", () => {
 });
 
 vi.mock("@/components/ui/table", () => ({
-	Table: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+	Table: ({ children }: { children: React.ReactNode }) => (
+		<table>{children}</table>
+	),
 	TableBody: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+		<tbody>{children}</tbody>
 	),
-	TableCell: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	TableCell: ({
+		children,
+		className,
+		onClick,
+		onKeyDown,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+		onClick?: (event: { stopPropagation?: () => void }) => void;
+		onKeyDown?: (event: {
+			key: string;
+			preventDefault?: () => void;
+			stopPropagation?: () => void;
+		}) => void;
+	}) => (
+		<td
+			data-slot="table-cell"
+			className={className}
+			onClick={onClick}
+			onKeyDown={onKeyDown}
+		>
+			{children}
+		</td>
 	),
-	TableHead: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	TableHead: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => (
+		<th data-slot="table-head" className={className}>
+			{children}
+		</th>
 	),
 	TableHeader: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+		<thead data-slot="table-header">{children}</thead>
 	),
-	TableRow: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	TableRow: ({
+		children,
+		className,
+		onClick,
+		onKeyDown,
+		tabIndex,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+		onClick?: () => void;
+		onKeyDown?: (event: {
+			key: string;
+			preventDefault?: () => void;
+			stopPropagation?: () => void;
+		}) => void;
+		tabIndex?: number;
+	}) => (
+		<tr
+			data-slot="table-row"
+			className={className}
+			onClick={onClick}
+			onKeyDown={onKeyDown}
+			tabIndex={tabIndex}
+		>
+			{children}
+		</tr>
 	),
 }));
 
@@ -490,11 +545,9 @@ describe("AdminUsersPage", () => {
 		expect(screen.getByText("entries:2/3/21")).toBeInTheDocument();
 		expect(screen.getByText("alice")).toBeInTheDocument();
 		expect(screen.getByTestId("avatar:alice")).toBeInTheDocument();
-		expect(
-			screen.getByText("bytes:5242880 / bytes:10485760"),
-		).toBeInTheDocument();
-
-		fireEvent.click(screen.getByRole("button", { name: "alice" }));
+		const storageSummary = screen.getByText("bytes:5242880 / bytes:10485760");
+		expect(storageSummary).toBeInTheDocument();
+		fireEvent.click(storageSummary);
 
 		expect(screen.getByText("detail:alice")).toBeInTheDocument();
 

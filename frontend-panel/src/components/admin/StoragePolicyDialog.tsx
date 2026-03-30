@@ -1,10 +1,10 @@
-import type { FormEvent } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
 	PolicyFormData,
 	S3UploadStrategy,
 } from "@/components/admin/storagePolicyDialogShared";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -38,7 +38,7 @@ interface StoragePolicyDialogProps {
 	createStepTouched: boolean;
 	endpointValidationMessage: string | null;
 	onOpenChange: (open: boolean) => void;
-	onSubmit: (e: FormEvent) => void;
+	onSubmit: () => void;
 	onRunConnectionTest: () => Promise<boolean>;
 	onFieldChange: <K extends keyof PolicyFormData>(
 		key: K,
@@ -154,9 +154,29 @@ export function StoragePolicyDialog({
 	];
 	const createLastStep = createSteps.length - 1;
 	const currentCreateStep = createSteps[Math.min(createStep, createLastStep)];
+	const previousCreateStepRef = useRef(createStep);
+	const stepAnimationRef = useRef<{
+		direction: "idle" | "forward" | "backward";
+		step: number;
+	}>({
+		direction: "idle",
+		step: createStep,
+	});
+	if (createStep !== previousCreateStepRef.current) {
+		stepAnimationRef.current = {
+			direction:
+				createStep > previousCreateStepRef.current ? "forward" : "backward",
+			step: createStep,
+		};
+	}
+	const createStepDirection = stepAnimationRef.current.direction;
 	const currentStorageOption =
 		storageOptions.find((option) => option.type === form.driver_type) ??
 		storageOptions[0];
+	const currentDriverBadgeClass =
+		form.driver_type === "s3"
+			? "border-blue-500/60 bg-blue-500/10 text-blue-600 dark:text-blue-300"
+			: "border-emerald-500/60 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300";
 	const createNameError =
 		isCreateMode && createStep === 1 && createStepTouched && !form.name.trim()
 			? t("policy_wizard_name_required")
@@ -415,275 +435,386 @@ export function StoragePolicyDialog({
 		</div>
 	);
 
+	const renderSectionIntro = (title: string, description: string) => (
+		<div className="mb-5">
+			<h3 className="text-base font-semibold text-foreground">{title}</h3>
+			<p className="mt-1 text-sm text-muted-foreground">{description}</p>
+		</div>
+	);
+
+	const renderPolicySummaryCard = (description: string) => (
+		<div
+			data-testid="policy-summary-card"
+			className="rounded-3xl border border-border/70 bg-muted/20 p-5"
+		>
+			<div className="flex items-center gap-3">
+				<div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+					<img
+						src={currentStorageOption.iconSrc}
+						alt=""
+						className={cn(
+							"w-auto object-contain",
+							currentStorageOption.type === "local" ? "max-h-7" : "max-h-9",
+						)}
+					/>
+				</div>
+				<div>
+					<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+						{t("policy_wizard_summary_title")}
+					</p>
+					<h3 className="mt-1 text-base font-semibold">
+						{form.name || t("new_policy")}
+					</h3>
+				</div>
+			</div>
+			<p className="mt-4 text-sm leading-6 text-muted-foreground">
+				{description}
+			</p>
+			<div className="mt-4 overflow-hidden rounded-2xl border border-border/70 bg-background/85">
+				<dl className="divide-y divide-border/70">
+					{createSummaryItems.map((item) => (
+						<div
+							key={item.label}
+							className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-3 px-4 py-3"
+						>
+							<dt className="pt-0.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+								{item.label}
+							</dt>
+							<dd className="min-w-0 break-all text-sm font-medium leading-5 text-foreground">
+								{item.value}
+							</dd>
+						</div>
+					))}
+				</dl>
+			</div>
+		</div>
+	);
+
+	useEffect(() => {
+		if (!open || !isCreateMode) {
+			previousCreateStepRef.current = 0;
+			stepAnimationRef.current = {
+				direction: "idle",
+				step: 0,
+			};
+			return;
+		}
+
+		previousCreateStepRef.current = createStep;
+	}, [createStep, isCreateMode, open]);
+
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
 				className={cn(
-					"max-h-[90vh] overflow-y-auto",
-					isCreateMode ? "sm:max-w-4xl" : "sm:max-w-lg",
+					"flex max-h-[min(90vh,calc(100vh-2rem))] flex-col gap-0 overflow-hidden p-0",
+					isCreateMode
+						? "sm:max-w-[calc(100%-2rem)] lg:max-w-4xl"
+						: "sm:max-w-[calc(100%-2rem)] lg:max-w-4xl",
 				)}
 			>
-				<DialogHeader>
+				<DialogHeader className="shrink-0 px-6 pt-5 pb-0 pr-14">
 					<DialogTitle>
 						{isCreateMode ? t("create_policy") : t("edit_policy")}
 					</DialogTitle>
-					<DialogDescription>
-						{isCreateMode ? currentCreateStep.description : t("policies_intro")}
-					</DialogDescription>
+					{isCreateMode ? null : (
+						<DialogDescription>{t("policies_intro")}</DialogDescription>
+					)}
 				</DialogHeader>
-				<form onSubmit={onSubmit} className="space-y-6">
-					{isCreateMode ? (
-						<>
-							<div className="space-y-4">
-								<div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-									<div className="flex items-start justify-between gap-4">
-										<div className="space-y-1">
-											<p className="text-xs font-medium uppercase tracking-[0.22em] text-muted-foreground">
-												{t("policy_wizard_progress", {
-													current: createStep + 1,
-													total: createSteps.length,
-												})}
-											</p>
-											<h3 className="text-base font-semibold">
-												{currentCreateStep.title}
-											</h3>
-											<p className="text-sm text-muted-foreground">
-												{currentCreateStep.description}
-											</p>
+				<form
+					onSubmit={(e) => e.preventDefault()}
+					className="flex min-h-0 flex-1 flex-col overflow-hidden"
+				>
+					<div className="min-h-0 flex-1 overflow-y-auto px-6 pt-6 pb-5">
+						<div className="space-y-6">
+							{isCreateMode ? (
+								<>
+									<div className="space-y-3">
+										<div className="rounded-2xl border border-border/70 bg-muted/20 p-3 sm:p-4">
+											<div className="flex items-start justify-between gap-3">
+												<div className="space-y-1">
+													<p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
+														{t("policy_wizard_progress", {
+															current: createStep + 1,
+															total: createSteps.length,
+														})}
+													</p>
+													<h3 className="text-sm font-semibold sm:text-base">
+														{currentCreateStep.title}
+													</h3>
+													<p className="hidden text-sm text-muted-foreground sm:block">
+														{currentCreateStep.description}
+													</p>
+												</div>
+												<div className="hidden text-3xl leading-none font-semibold text-foreground/15 md:block">
+													{String(createStep + 1).padStart(2, "0")}
+												</div>
+											</div>
+											<div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
+												<div
+													className="h-full rounded-full bg-primary transition-all"
+													style={{
+														width: `${((createStep + 1) / createSteps.length) * 100}%`,
+													}}
+												/>
+											</div>
 										</div>
-										<div className="hidden text-4xl leading-none font-semibold text-foreground/15 sm:block">
-											{String(createStep + 1).padStart(2, "0")}
-										</div>
-									</div>
-									<div className="mt-4 h-1.5 overflow-hidden rounded-full bg-muted">
-										<div
-											className="h-full rounded-full bg-primary transition-all"
-											style={{
-												width: `${((createStep + 1) / createSteps.length) * 100}%`,
-											}}
-										/>
-									</div>
-								</div>
 
-								<div className="grid gap-2 sm:grid-cols-3">
-									{createSteps.map((step, index) => (
-										<button
-											type="button"
-											key={step.title}
-											disabled={index > createStep}
-											onClick={() => onCreateStepChange(index)}
-											className={cn(
-												"rounded-2xl border px-4 py-3 text-left transition",
-												index === createStep
-													? "border-primary bg-primary/5 shadow-sm"
-													: index < createStep
-														? "border-border bg-background hover:border-primary/40"
-														: "border-border/60 bg-muted/20 text-muted-foreground",
-											)}
-										>
-											<span className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-												0{index + 1}
-											</span>
-											<p className="mt-2 text-sm font-medium">{step.title}</p>
-										</button>
-									))}
-								</div>
-							</div>
-
-							<div className="rounded-2xl border border-border/70 bg-background/70 p-5">
-								{createStep === 0 ? (
-									<div className="space-y-4">
-										<div className="max-w-2xl">
-											<h3 className="text-base font-semibold">
-												{t("policy_wizard_choose_driver_title")}
-											</h3>
-											<p className="mt-1 text-sm text-muted-foreground">
-												{t("policy_wizard_choose_driver_desc")}
-											</p>
-										</div>
-										<div className="grid gap-4 md:grid-cols-2">
-											{storageOptions.map((option) => (
+										<div className="hidden gap-2 md:grid md:grid-cols-3">
+											{createSteps.map((step, index) => (
 												<button
 													type="button"
-													key={option.type}
-													aria-pressed={form.driver_type === option.type}
-													onClick={() => onDriverTypeChange(option.type)}
+													key={step.title}
+													disabled={index > createStep}
+													onClick={() => onCreateStepChange(index)}
 													className={cn(
-														"rounded-3xl border p-5 text-left transition",
-														form.driver_type === option.type
+														"rounded-xl border px-3 py-2.5 text-left transition",
+														index === createStep
 															? "border-primary bg-primary/5 shadow-sm"
-															: "border-border bg-background hover:border-primary/40 hover:bg-muted/20",
+															: index < createStep
+																? "border-border bg-background hover:border-primary/40"
+																: "border-border/60 bg-muted/20 text-muted-foreground",
 													)}
 												>
-													<div className="flex items-start gap-4">
-														<div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-															<img
-																src={option.iconSrc}
-																alt=""
-																className={cn(
-																	"w-auto object-contain",
-																	option.type === "local"
-																		? "max-h-8"
-																		: "max-h-10",
-																)}
-															/>
-														</div>
-														<div className="min-w-0 flex-1">
-															<div className="flex flex-wrap items-center gap-2">
-																<p className="text-base font-semibold">
-																	{option.title}
-																</p>
-																{form.driver_type === option.type ? (
-																	<span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-																		{t("policy_wizard_selected")}
-																	</span>
-																) : null}
-															</div>
-															<p className="mt-2 text-sm leading-6 text-muted-foreground">
-																{option.description}
-															</p>
-														</div>
+													<div className="flex items-center gap-2">
+														<span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background/80 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground">
+															{index + 1}
+														</span>
+														<span className="text-sm font-medium leading-5">
+															{step.title}
+														</span>
 													</div>
 												</button>
 											))}
 										</div>
 									</div>
-								) : createStep === 1 ? (
-									<div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
-										<div className="space-y-4">
-											{renderNameField(true)}
-											{renderBasePathField()}
-											{form.driver_type === "s3"
-												? renderS3ConnectionFields(true)
-												: null}
-										</div>
-										<div className="rounded-3xl border border-border/70 bg-muted/20 p-5">
-											<div className="flex items-center gap-3">
-												<div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-													<img
-														src={currentStorageOption.iconSrc}
-														alt=""
-														className={cn(
-															"w-auto object-contain",
-															currentStorageOption.type === "local"
-																? "max-h-7"
-																: "max-h-9",
-														)}
-													/>
-												</div>
-												<div>
-													<p className="text-sm font-medium">
-														{currentStorageOption.title}
-													</p>
-													<p className="text-xs text-muted-foreground">
-														{t("policy_wizard_driver_panel_title")}
-													</p>
-												</div>
-											</div>
-											<p className="mt-4 text-sm leading-6 text-muted-foreground">
-												{currentStorageOption.description}
-											</p>
-											<p className="mt-4 text-xs leading-5 text-muted-foreground">
-												{form.driver_type === "s3"
-													? t("policy_wizard_s3_helper")
-													: t("policy_wizard_local_helper")}
-											</p>
-										</div>
-									</div>
-								) : (
-									<div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-										<div className="space-y-4">
-											{form.driver_type === "s3" ? (
-												renderS3UploadStrategyField()
-											) : (
-												<>
-													<div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-sm text-muted-foreground">
-														{t("policy_wizard_local_rules_helper")}
+
+									<div className="rounded-2xl border border-border/70 bg-background/70 p-5">
+										<div className="relative overflow-hidden">
+											<div
+												key={`${stepAnimationRef.current.step}-${stepAnimationRef.current.direction}`}
+												data-testid="policy-step-panel"
+												className={cn(
+													createStepDirection === "idle"
+														? undefined
+														: "animate-in fade-in duration-[360ms] motion-reduce:animate-none",
+													createStepDirection === "forward"
+														? "slide-in-from-right-6"
+														: createStepDirection === "backward"
+															? "slide-in-from-left-6"
+															: undefined,
+												)}
+											>
+												{createStep === 0 ? (
+													<div className="space-y-4">
+														<div className="max-w-2xl">
+															<h3 className="text-base font-semibold">
+																{t("policy_wizard_choose_driver_title")}
+															</h3>
+															<p className="mt-1 text-sm text-muted-foreground">
+																{t("policy_wizard_choose_driver_desc")}
+															</p>
+														</div>
+														<div className="grid gap-4 md:grid-cols-2">
+															{storageOptions.map((option) => (
+																<button
+																	type="button"
+																	key={option.type}
+																	aria-pressed={
+																		form.driver_type === option.type
+																	}
+																	onClick={() =>
+																		onDriverTypeChange(option.type)
+																	}
+																	className={cn(
+																		"rounded-3xl border p-5 text-left transition",
+																		form.driver_type === option.type
+																			? "border-primary bg-primary/5 shadow-sm"
+																			: "border-border bg-background hover:border-primary/40 hover:bg-muted/20",
+																	)}
+																>
+																	<div className="flex items-start gap-4">
+																		<div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+																			<img
+																				src={option.iconSrc}
+																				alt=""
+																				className={cn(
+																					"w-auto object-contain",
+																					option.type === "local"
+																						? "max-h-8"
+																						: "max-h-10",
+																				)}
+																			/>
+																		</div>
+																		<div className="min-w-0 flex-1">
+																			<div className="flex flex-wrap items-center gap-2">
+																				<p className="text-base font-semibold">
+																					{option.title}
+																				</p>
+																				{form.driver_type === option.type ? (
+																					<span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+																						{t("policy_wizard_selected")}
+																					</span>
+																				) : null}
+																			</div>
+																			<p className="mt-2 text-sm leading-6 text-muted-foreground">
+																				{option.description}
+																			</p>
+																		</div>
+																	</div>
+																</button>
+															))}
+														</div>
 													</div>
-													{renderLocalContentDedupField()}
-												</>
-											)}
-											{renderLimitsFields()}
-											{renderDefaultToggle()}
-										</div>
-										<div className="space-y-4 lg:sticky lg:top-0">
-											<div className="rounded-3xl border border-border/70 bg-muted/20 p-5">
-												<div className="flex items-center gap-3">
-													<div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-														<img
-															src={currentStorageOption.iconSrc}
-															alt=""
-															className={cn(
-																"w-auto object-contain",
-																currentStorageOption.type === "local"
-																	? "max-h-7"
-																	: "max-h-9",
-															)}
-														/>
-													</div>
-													<div>
-														<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-															{t("policy_wizard_summary_title")}
-														</p>
-														<h3 className="mt-1 text-base font-semibold">
-															{form.name || t("new_policy")}
-														</h3>
-													</div>
-												</div>
-												<p className="mt-4 text-sm leading-6 text-muted-foreground">
-													{t("policy_wizard_summary_desc")}
-												</p>
-												<div className="mt-4 overflow-hidden rounded-2xl border border-border/70 bg-background/85">
-													<dl className="divide-y divide-border/70">
-														{createSummaryItems.map((item) => (
-															<div
-																key={item.label}
-																className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-3 px-4 py-3"
-															>
-																<dt className="pt-0.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-																	{item.label}
-																</dt>
-																<dd className="min-w-0 break-all text-sm font-medium leading-5 text-foreground">
-																	{item.value}
-																</dd>
+												) : createStep === 1 ? (
+													<div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+														<div className="space-y-4">
+															{renderNameField(true)}
+															{renderBasePathField()}
+															{form.driver_type === "s3"
+																? renderS3ConnectionFields(true)
+																: null}
+														</div>
+														<div className="rounded-3xl border border-border/70 bg-muted/20 p-5">
+															<div className="flex items-center gap-3">
+																<div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
+																	<img
+																		src={currentStorageOption.iconSrc}
+																		alt=""
+																		className={cn(
+																			"w-auto object-contain",
+																			currentStorageOption.type === "local"
+																				? "max-h-7"
+																				: "max-h-9",
+																		)}
+																	/>
+																</div>
+																<div>
+																	<p className="text-sm font-medium">
+																		{currentStorageOption.title}
+																	</p>
+																	<p className="text-xs text-muted-foreground">
+																		{t("policy_wizard_driver_panel_title")}
+																	</p>
+																</div>
 															</div>
-														))}
-													</dl>
-												</div>
+															<p className="mt-4 text-sm leading-6 text-muted-foreground">
+																{currentStorageOption.description}
+															</p>
+															<p className="mt-4 text-xs leading-5 text-muted-foreground">
+																{form.driver_type === "s3"
+																	? t("policy_wizard_s3_helper")
+																	: t("policy_wizard_local_helper")}
+															</p>
+														</div>
+													</div>
+												) : (
+													<div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
+														<div className="space-y-4">
+															{form.driver_type === "s3" ? (
+																renderS3UploadStrategyField()
+															) : (
+																<>
+																	<div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-sm text-muted-foreground">
+																		{t("policy_wizard_local_rules_helper")}
+																	</div>
+																	{renderLocalContentDedupField()}
+																</>
+															)}
+															{renderLimitsFields()}
+															{renderDefaultToggle()}
+														</div>
+														<div className="space-y-4 lg:sticky lg:top-0">
+															{renderPolicySummaryCard(
+																t("policy_wizard_summary_desc"),
+															)}
+														</div>
+													</div>
+												)}
 											</div>
 										</div>
 									</div>
-								)}
-							</div>
-						</>
-					) : (
-						<>
-							{renderNameField()}
-							{renderBasePathField()}
-							{form.driver_type === "s3" ? (
-								<>
-									{renderS3ConnectionFields()}
-									{renderS3UploadStrategyField()}
 								</>
 							) : (
-								renderLocalContentDedupField()
-							)}
-							{renderLimitsFields()}
-							{renderDefaultToggle()}
-						</>
-					)}
+								<div
+									data-testid="policy-edit-shell"
+									className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]"
+								>
+									<div className="space-y-4">
+										<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
+											{renderSectionIntro(
+												t("policy_editor_overview_title"),
+												t("policy_editor_overview_desc"),
+											)}
+											<div className="grid gap-5 md:grid-cols-2">
+												<div className="space-y-2">
+													<Label>{t("driver_type")}</Label>
+													<div className="flex h-8 items-center">
+														<Badge
+															variant="outline"
+															data-testid="policy-driver-badge"
+															className={cn(
+																"shadow-sm",
+																currentDriverBadgeClass,
+															)}
+														>
+															{currentStorageOption.title}
+														</Badge>
+													</div>
+												</div>
+												{renderNameField()}
+												<div className="md:col-span-2">
+													{renderBasePathField()}
+												</div>
+											</div>
+										</section>
 
-					<DialogFooter className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-						<div className="flex flex-wrap gap-2">
-							<Button
-								type="button"
-								variant="outline"
-								className={ADMIN_CONTROL_HEIGHT_CLASS}
-								onClick={() => onOpenChange(false)}
-								disabled={submitting}
-							>
-								{t("core:cancel")}
-							</Button>
+										{form.driver_type === "s3" ? (
+											<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
+												{renderSectionIntro(
+													t("policy_editor_connection_title"),
+													t("policy_editor_connection_desc"),
+												)}
+												<div className="space-y-4">
+													{renderS3ConnectionFields()}
+												</div>
+											</section>
+										) : (
+											<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
+												{renderSectionIntro(
+													t("policy_editor_storage_title"),
+													t("policy_editor_storage_desc"),
+												)}
+												<div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-sm text-muted-foreground">
+													{t("policy_wizard_local_rules_helper")}
+												</div>
+											</section>
+										)}
+
+										<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
+											{renderSectionIntro(
+												t("policy_editor_rules_title"),
+												t("policy_editor_rules_desc"),
+											)}
+											<div className="space-y-4">
+												{form.driver_type === "s3"
+													? renderS3UploadStrategyField()
+													: renderLocalContentDedupField()}
+												{renderLimitsFields()}
+												{renderDefaultToggle()}
+											</div>
+										</section>
+									</div>
+
+									<div className="space-y-4 lg:sticky lg:top-0">
+										{renderPolicySummaryCard(t("policy_editor_summary_desc"))}
+									</div>
+								</div>
+							)}
+						</div>
+					</div>
+					<DialogFooter className="mx-0 mb-0 w-full shrink-0 flex-row items-center gap-2 rounded-b-xl px-6 py-3">
+						<div className="mr-auto flex shrink-0 gap-2">
 							{isCreateMode && createStep > 0 ? (
 								<Button
 									type="button"
@@ -697,7 +828,7 @@ export function StoragePolicyDialog({
 							) : null}
 						</div>
 
-						<div className="flex flex-wrap justify-end gap-2">
+						<div className="ml-auto flex shrink-0 flex-nowrap items-center justify-end gap-2">
 							{isCreateMode ? (
 								createStep === createLastStep ? (
 									<>
@@ -706,24 +837,33 @@ export function StoragePolicyDialog({
 											disabled={submitting}
 										/>
 										<Button
-											type="submit"
+											type="button"
 											className={ADMIN_CONTROL_HEIGHT_CLASS}
 											disabled={submitting}
+											onClick={onSubmit}
 										>
 											{t("core:create")}
 										</Button>
 									</>
 								) : (
-									<Button
-										type="button"
-										className={ADMIN_CONTROL_HEIGHT_CLASS}
-										onClick={onCreateNext}
-										disabled={submitting}
-									>
-										{createStep === createLastStep - 1
-											? t("policy_wizard_review")
-											: t("policy_wizard_next")}
-									</Button>
+									<>
+										{createStep === 1 && form.driver_type === "s3" ? (
+											<TestConnectionButton
+												onTest={onRunConnectionTest}
+												disabled={submitting}
+											/>
+										) : null}
+										<Button
+											type="button"
+											className={ADMIN_CONTROL_HEIGHT_CLASS}
+											onClick={onCreateNext}
+											disabled={submitting}
+										>
+											{createStep === createLastStep - 1
+												? t("policy_wizard_review")
+												: t("policy_wizard_next")}
+										</Button>
+									</>
 								)
 							) : (
 								<>
@@ -732,9 +872,10 @@ export function StoragePolicyDialog({
 										disabled={submitting}
 									/>
 									<Button
-										type="submit"
+										type="button"
 										className={ADMIN_CONTROL_HEIGHT_CLASS}
 										disabled={submitting}
+										onClick={onSubmit}
 									>
 										{t("save_changes")}
 									</Button>
