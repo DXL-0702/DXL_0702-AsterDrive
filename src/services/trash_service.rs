@@ -1,3 +1,5 @@
+use std::collections::{BTreeSet, HashMap};
+
 use sea_orm::TransactionTrait;
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -73,14 +75,11 @@ pub async fn list_trash(
     )
     .await?;
 
-    let mut folders = Vec::new();
-    for folder in raw_folders {
-        folders.push(build_trash_folder_item(&state.db, folder).await?);
-    }
-
     let (raw_files, files_total): (Vec<_>, u64) =
         file_repo::find_top_level_deleted_paginated(&state.db, user_id, file_limit, file_cursor)
             .await?;
+
+    let folder_paths = build_trash_path_cache(&state.db, &raw_folders, &raw_files).await?;
 
     let next_file_cursor = if file_limit > 0 && raw_files.len() as u64 == file_limit {
         raw_files.last().and_then(|f| {
@@ -93,10 +92,15 @@ pub async fn list_trash(
         None
     };
 
-    let mut files = Vec::new();
-    for file in raw_files {
-        files.push(build_trash_file_item(&state.db, file).await?);
-    }
+    let folders = raw_folders
+        .into_iter()
+        .map(|folder| build_trash_folder_item(folder, &folder_paths))
+        .collect::<Result<Vec<_>>>()?;
+
+    let files = raw_files
+        .into_iter()
+        .map(|file| build_trash_file_item(file, &folder_paths))
+        .collect::<Result<Vec<_>>>()?;
 
     Ok(TrashContents {
         folders,
@@ -107,9 +111,25 @@ pub async fn list_trash(
     })
 }
 
-async fn build_trash_file_item(
+async fn build_trash_path_cache(
     db: &sea_orm::DatabaseConnection,
+    folders: &[folder::Model],
+    files: &[file::Model],
+) -> Result<HashMap<i64, String>> {
+    let folder_ids: Vec<i64> = folders
+        .iter()
+        .filter_map(|folder| folder.parent_id)
+        .chain(files.iter().filter_map(|file| file.folder_id))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+
+    folder_service::build_folder_paths(db, &folder_ids).await
+}
+
+fn build_trash_file_item(
     file: file::Model,
+    folder_paths: &HashMap<i64, String>,
 ) -> Result<TrashFileItem> {
     Ok(TrashFileItem {
         id: file.id,
@@ -122,13 +142,13 @@ async fn build_trash_file_item(
             .deleted_at
             .ok_or_else(|| AsterError::validation_error("file is not in trash"))?,
         is_locked: file.is_locked,
-        original_path: resolve_folder_path(db, file.folder_id).await?,
+        original_path: resolve_folder_path(folder_paths, file.folder_id)?,
     })
 }
 
-async fn build_trash_folder_item(
-    db: &sea_orm::DatabaseConnection,
+fn build_trash_folder_item(
     folder: folder::Model,
+    folder_paths: &HashMap<i64, String>,
 ) -> Result<TrashFolderItem> {
     Ok(TrashFolderItem {
         id: folder.id,
@@ -139,18 +159,18 @@ async fn build_trash_folder_item(
             .deleted_at
             .ok_or_else(|| AsterError::validation_error("folder is not in trash"))?,
         is_locked: folder.is_locked,
-        original_path: resolve_folder_path(db, folder.parent_id).await?,
+        original_path: resolve_folder_path(folder_paths, folder.parent_id)?,
     })
 }
 
-async fn resolve_folder_path(
-    db: &sea_orm::DatabaseConnection,
+fn resolve_folder_path(
+    folder_paths: &HashMap<i64, String>,
     folder_id: Option<i64>,
 ) -> Result<String> {
     match folder_id {
-        Some(folder_id) => folder_service::build_folder_paths(db, &[folder_id])
-            .await?
-            .remove(&folder_id)
+        Some(folder_id) => folder_paths
+            .get(&folder_id)
+            .cloned()
             .ok_or_else(|| AsterError::record_not_found(format!("folder #{folder_id}"))),
         None => Ok("/".to_string()),
     }

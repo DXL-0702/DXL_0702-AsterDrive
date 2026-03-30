@@ -1,6 +1,39 @@
 #[macro_use]
 mod common;
 
+use std::collections::BTreeSet;
+
+fn write_service_fixture(name: &str, contents: &str) -> String {
+    let dir = format!("/tmp/asterdrive-services-test-{}", uuid::Uuid::new_v4());
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = format!("{dir}/{name}");
+    std::fs::write(&path, contents).unwrap();
+    path
+}
+
+async fn store_service_file(
+    state: &aster_drive::runtime::AppState,
+    user_id: i64,
+    folder_id: Option<i64>,
+    name: &str,
+    contents: &str,
+) -> i64 {
+    let path = write_service_fixture(name, contents);
+    aster_drive::services::file_service::store_from_temp(
+        state,
+        user_id,
+        folder_id,
+        name,
+        &path,
+        contents.len() as i64,
+        None,
+        false,
+    )
+    .await
+    .unwrap()
+    .id
+}
+
 // ─── Auth Service ─────────────────────────────────────────────────
 
 #[actix_web::test]
@@ -175,6 +208,305 @@ async fn test_file_service_get_info() {
             .unwrap();
     let err = aster_drive::services::file_service::get_info(&state, file.id, user2.id).await;
     assert!(err.is_err());
+}
+
+#[actix_web::test]
+async fn test_collect_folder_tree_respects_deleted_visibility() {
+    use aster_drive::services::{auth_service, folder_service, webdav_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "treewalker",
+        "treewalker@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let root = folder_service::create(&state, user.id, "root", None)
+        .await
+        .unwrap();
+    let active_child = folder_service::create(&state, user.id, "active", Some(root.id))
+        .await
+        .unwrap();
+    let deleted_child = folder_service::create(&state, user.id, "deleted", Some(root.id))
+        .await
+        .unwrap();
+    let deleted_grandchild =
+        folder_service::create(&state, user.id, "deleted-leaf", Some(deleted_child.id))
+            .await
+            .unwrap();
+
+    let root_file = store_service_file(&state, user.id, Some(root.id), "root.txt", "root").await;
+    let active_file = store_service_file(
+        &state,
+        user.id,
+        Some(active_child.id),
+        "active.txt",
+        "active",
+    )
+    .await;
+    let deleted_file = store_service_file(
+        &state,
+        user.id,
+        Some(deleted_child.id),
+        "deleted.txt",
+        "deleted",
+    )
+    .await;
+    let deleted_grandchild_file = store_service_file(
+        &state,
+        user.id,
+        Some(deleted_grandchild.id),
+        "deleted-leaf.txt",
+        "deleted leaf",
+    )
+    .await;
+
+    folder_service::delete(&state, deleted_child.id, user.id)
+        .await
+        .unwrap();
+
+    let (visible_files, visible_folder_ids) =
+        webdav_service::collect_folder_tree(&state.db, user.id, root.id, false)
+            .await
+            .unwrap();
+    let visible_file_ids = visible_files
+        .into_iter()
+        .map(|file| file.id)
+        .collect::<BTreeSet<_>>();
+    let visible_folder_ids = visible_folder_ids.into_iter().collect::<BTreeSet<_>>();
+
+    assert_eq!(
+        visible_folder_ids,
+        [root.id, active_child.id].into_iter().collect()
+    );
+    assert_eq!(
+        visible_file_ids,
+        [root_file, active_file].into_iter().collect()
+    );
+
+    let (all_files, all_folder_ids) =
+        webdav_service::collect_folder_tree(&state.db, user.id, root.id, true)
+            .await
+            .unwrap();
+    let all_file_ids = all_files
+        .into_iter()
+        .map(|file| file.id)
+        .collect::<BTreeSet<_>>();
+    let all_folder_ids = all_folder_ids.into_iter().collect::<BTreeSet<_>>();
+
+    assert_eq!(
+        all_folder_ids,
+        [
+            root.id,
+            active_child.id,
+            deleted_child.id,
+            deleted_grandchild.id
+        ]
+        .into_iter()
+        .collect()
+    );
+    assert_eq!(
+        all_file_ids,
+        [
+            root_file,
+            active_file,
+            deleted_file,
+            deleted_grandchild_file
+        ]
+        .into_iter()
+        .collect()
+    );
+}
+
+#[actix_web::test]
+async fn test_collect_folder_tree_handles_empty_leaf_folder() {
+    use aster_drive::services::{auth_service, folder_service, webdav_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "treeleaf", "treeleaf@example.com", "password123")
+        .await
+        .unwrap();
+
+    let leaf = folder_service::create(&state, user.id, "leaf", None)
+        .await
+        .unwrap();
+
+    let (visible_files, visible_folder_ids) =
+        webdav_service::collect_folder_tree(&state.db, user.id, leaf.id, false)
+            .await
+            .unwrap();
+    assert!(visible_files.is_empty());
+    assert_eq!(visible_folder_ids, vec![leaf.id]);
+
+    let (all_files, all_folder_ids) =
+        webdav_service::collect_folder_tree(&state.db, user.id, leaf.id, true)
+            .await
+            .unwrap();
+    assert!(all_files.is_empty());
+    assert_eq!(all_folder_ids, vec![leaf.id]);
+}
+
+#[actix_web::test]
+async fn test_list_trash_keeps_original_paths_for_files_and_folders() {
+    use aster_drive::services::{auth_service, file_service, folder_service, trash_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "trashpaths",
+        "trashpaths@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let projects = folder_service::create(&state, user.id, "Projects", None)
+        .await
+        .unwrap();
+    let reports = folder_service::create(&state, user.id, "Reports", Some(projects.id))
+        .await
+        .unwrap();
+    let archive = folder_service::create(&state, user.id, "Archive", Some(projects.id))
+        .await
+        .unwrap();
+
+    let file_id =
+        store_service_file(&state, user.id, Some(reports.id), "report.txt", "report").await;
+
+    file_service::delete(&state, file_id, user.id)
+        .await
+        .unwrap();
+    folder_service::delete(&state, archive.id, user.id)
+        .await
+        .unwrap();
+
+    let trash = trash_service::list_trash(&state, user.id, 10, 0, 10, None)
+        .await
+        .unwrap();
+
+    assert_eq!(trash.folders_total, 1);
+    assert_eq!(trash.files_total, 1);
+    assert_eq!(trash.folders.len(), 1);
+    assert_eq!(trash.files.len(), 1);
+    assert_eq!(trash.folders[0].id, archive.id);
+    assert_eq!(trash.folders[0].original_path, "/Projects");
+    assert_eq!(trash.files[0].id, file_id);
+    assert_eq!(trash.files[0].original_path, "/Projects/Reports");
+}
+
+#[actix_web::test]
+async fn test_list_trash_handles_root_and_shared_parent_paths() {
+    use aster_drive::services::{auth_service, file_service, folder_service, trash_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "trashmix", "trashmix@example.com", "password123")
+        .await
+        .unwrap();
+
+    let shared = folder_service::create(&state, user.id, "Shared", None)
+        .await
+        .unwrap();
+    let docs = folder_service::create(&state, user.id, "Docs", Some(shared.id))
+        .await
+        .unwrap();
+    let nested_folder_a = folder_service::create(&state, user.id, "Archive-A", Some(shared.id))
+        .await
+        .unwrap();
+    let nested_folder_b = folder_service::create(&state, user.id, "Archive-B", Some(shared.id))
+        .await
+        .unwrap();
+    let root_folder = folder_service::create(&state, user.id, "RootTrash", None)
+        .await
+        .unwrap();
+
+    let nested_file_a =
+        store_service_file(&state, user.id, Some(docs.id), "nested-a.txt", "nested a").await;
+    let nested_file_b =
+        store_service_file(&state, user.id, Some(docs.id), "nested-b.txt", "nested b").await;
+    let root_file = store_service_file(&state, user.id, None, "root.txt", "root").await;
+
+    for file_id in [nested_file_a, nested_file_b, root_file] {
+        file_service::delete(&state, file_id, user.id)
+            .await
+            .unwrap();
+    }
+    for folder_id in [nested_folder_a.id, nested_folder_b.id, root_folder.id] {
+        folder_service::delete(&state, folder_id, user.id)
+            .await
+            .unwrap();
+    }
+
+    let trash = trash_service::list_trash(&state, user.id, 10, 0, 10, None)
+        .await
+        .unwrap();
+
+    assert_eq!(trash.folders_total, 3);
+    assert_eq!(trash.files_total, 3);
+
+    let nested_folder_paths = trash
+        .folders
+        .iter()
+        .filter(|item| item.id == nested_folder_a.id || item.id == nested_folder_b.id)
+        .map(|item| item.original_path.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(nested_folder_paths, BTreeSet::from(["/Shared"]));
+
+    let root_folder_item = trash
+        .folders
+        .iter()
+        .find(|item| item.id == root_folder.id)
+        .unwrap();
+    assert_eq!(root_folder_item.original_path, "/");
+
+    let nested_file_paths = trash
+        .files
+        .iter()
+        .filter(|item| item.id == nested_file_a || item.id == nested_file_b)
+        .map(|item| item.original_path.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(nested_file_paths, BTreeSet::from(["/Shared/Docs"]));
+
+    let root_file_item = trash
+        .files
+        .iter()
+        .find(|item| item.id == root_file)
+        .unwrap();
+    assert_eq!(root_file_item.original_path, "/");
+}
+
+#[actix_web::test]
+async fn test_list_trash_zero_limits_keep_totals_and_empty_items() {
+    use aster_drive::services::{auth_service, file_service, folder_service, trash_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "trashzero", "trashzero@example.com", "password123")
+        .await
+        .unwrap();
+
+    let root_folder = folder_service::create(&state, user.id, "ZeroFolder", None)
+        .await
+        .unwrap();
+    let root_file = store_service_file(&state, user.id, None, "zero.txt", "zero").await;
+
+    folder_service::delete(&state, root_folder.id, user.id)
+        .await
+        .unwrap();
+    file_service::delete(&state, root_file, user.id)
+        .await
+        .unwrap();
+
+    let trash = trash_service::list_trash(&state, user.id, 0, 0, 0, None)
+        .await
+        .unwrap();
+
+    assert_eq!(trash.folders_total, 1);
+    assert_eq!(trash.files_total, 1);
+    assert!(trash.folders.is_empty());
+    assert!(trash.files.is_empty());
+    assert!(trash.next_file_cursor.is_none());
 }
 
 // ─── Lock Service ─────────────────────────────────────────────────

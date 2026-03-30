@@ -22,47 +22,28 @@ pub async fn collect_folder_tree(
 ) -> Result<(Vec<crate::entities::file::Model>, Vec<i64>)> {
     let mut files = Vec::new();
     let mut folder_ids = Vec::new();
-    collect_tree_inner(
-        db,
-        user_id,
-        folder_id,
-        include_deleted,
-        &mut files,
-        &mut folder_ids,
-    )
-    .await?;
-    Ok((files, folder_ids))
-}
+    let mut frontier = vec![folder_id];
 
-fn collect_tree_inner<'a>(
-    db: &'a sea_orm::DatabaseConnection,
-    user_id: i64,
-    folder_id: i64,
-    include_deleted: bool,
-    files: &'a mut Vec<crate::entities::file::Model>,
-    folder_ids: &'a mut Vec<i64>,
-) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>> {
-    Box::pin(async move {
-        folder_ids.push(folder_id);
+    while !frontier.is_empty() {
+        folder_ids.extend(frontier.iter().copied());
 
-        let folder_files = if include_deleted {
-            folder_repo::find_all_files_in_folder(db, folder_id).await?
+        let batch_files = if include_deleted {
+            file_repo::find_all_in_folders(db, &frontier).await?
         } else {
-            file_repo::find_by_folder(db, user_id, Some(folder_id)).await?
+            file_repo::find_by_folders(db, user_id, &frontier).await?
         };
-        files.extend(folder_files);
+        files.extend(batch_files);
 
         let children = if include_deleted {
-            folder_repo::find_all_children(db, folder_id).await?
+            folder_repo::find_all_children_in_parents(db, &frontier).await?
         } else {
-            folder_repo::find_children(db, user_id, Some(folder_id)).await?
+            folder_repo::find_children_in_parents(db, user_id, &frontier).await?
         };
-        for child in children {
-            collect_tree_inner(db, user_id, child.id, include_deleted, files, folder_ids).await?;
-        }
 
-        Ok(())
-    })
+        frontier = children.into_iter().map(|child| child.id).collect();
+    }
+
+    Ok((files, folder_ids))
 }
 
 /// 递归软删除文件夹及其所有内容（→ 回收站）
