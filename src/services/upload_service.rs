@@ -11,6 +11,7 @@ use crate::entities::{file, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{file_service, folder_service};
+use crate::storage::driver::StorageDriver;
 use crate::types::{
     DriverType, S3UploadStrategy, UploadMode, UploadSessionStatus,
     effective_s3_multipart_chunk_size, parse_storage_policy_options,
@@ -636,48 +637,19 @@ pub async fn complete_upload(
                 crate::utils::cleanup_temp_file(&assembled_path).await;
             }
             blob.model
+        } else if policy.driver_type == DriverType::S3 {
+            let blob =
+                file_service::create_s3_nondedup_blob(&txn, size, policy.id, upload_id).await?;
+            driver.put_file(&blob.storage_path, &assembled_path).await?;
+            blob
         } else {
             let blob = file_service::create_nondedup_blob(&txn, size, policy.id).await?;
             driver.put_file(&blob.storage_path, &assembled_path).await?;
             blob
         };
 
-        let final_name = file_repo::resolve_unique_filename(
-            &txn,
-            session.user_id,
-            session.folder_id,
-            &session.filename,
-        )
-        .await?;
-
-        let mime = mime_guess::from_path(&final_name)
-            .first_or_octet_stream()
-            .to_string();
-
-        let created = file_repo::create(
-            &txn,
-            file::ActiveModel {
-                name: Set(final_name),
-                folder_id: Set(session.folder_id),
-                blob_id: Set(blob.id),
-                size: Set(blob.size),
-                user_id: Set(session.user_id),
-                mime_type: Set(mime),
-                created_at: Set(now),
-                updated_at: Set(now),
-                ..Default::default()
-            },
-        )
-        .await?;
-
-        user_repo::update_storage_used(&txn, session.user_id, size).await?;
-
-        let session_fresh = upload_session_repo::find_by_id(&txn, &session.id).await?;
-        let mut active: upload_session::ActiveModel = session_fresh.into();
-        active.status = Set(UploadSessionStatus::Completed);
-        active.file_id = Set(Some(created.id));
-        active.updated_at = Set(Utc::now());
-        upload_session_repo::update(&txn, active).await?;
+        let created =
+            file_service::finalize_upload_session_blob(&txn, &session, &blob, now).await?;
 
         txn.commit().await.map_err(AsterError::from)?;
         Ok(created)
@@ -699,6 +671,136 @@ pub async fn complete_upload(
     }
 }
 
+fn upload_session_status_label(status: UploadSessionStatus) -> &'static str {
+    match status {
+        UploadSessionStatus::Uploading => "uploading",
+        UploadSessionStatus::Assembling => "assembling",
+        UploadSessionStatus::Completed => "completed",
+        UploadSessionStatus::Failed => "failed",
+        UploadSessionStatus::Presigned => "presigned",
+    }
+}
+
+async fn transition_upload_session_to_assembling<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    upload_id: &str,
+    actual_status: UploadSessionStatus,
+    expected_status: UploadSessionStatus,
+) -> Result<()> {
+    let transitioned = upload_session_repo::try_transition_status(
+        db,
+        upload_id,
+        expected_status,
+        UploadSessionStatus::Assembling,
+    )
+    .await?;
+    if !transitioned {
+        return Err(AsterError::upload_assembly_failed(format!(
+            "session status is '{:?}', expected '{}'",
+            actual_status,
+            upload_session_status_label(expected_status)
+        )));
+    }
+    Ok(())
+}
+
+async fn ensure_uploaded_s3_object_size(
+    driver: &dyn StorageDriver,
+    temp_key: &str,
+    declared_size: i64,
+    missing_message: &str,
+) -> Result<i64> {
+    let meta = driver
+        .metadata(temp_key)
+        .await
+        .map_err(|_| AsterError::upload_assembly_failed(missing_message))?;
+    let actual_size = meta.size as i64;
+
+    if actual_size != declared_size {
+        if let Err(e) = driver.delete(temp_key).await {
+            tracing::warn!("failed to delete S3 temp object: {e}");
+        }
+        return Err(AsterError::upload_assembly_failed(format!(
+            "size mismatch: declared {} but uploaded {}",
+            declared_size, actual_size
+        )));
+    }
+
+    Ok(actual_size)
+}
+
+async fn finalize_s3_upload_session(
+    state: &AppState,
+    session: &upload_session::Model,
+    policy_id: i64,
+    storage_path: &str,
+    size: i64,
+) -> Result<file::Model> {
+    file_service::finalize_upload_session_file(
+        state,
+        session,
+        &format!("s3-{}", session.id),
+        size,
+        policy_id,
+        storage_path,
+        Utc::now(),
+    )
+    .await
+}
+
+async fn complete_s3_multipart_upload_session(
+    state: &AppState,
+    session: upload_session::Model,
+    expected_status: UploadSessionStatus,
+    mut completed_parts: Vec<(i32, String)>,
+    missing_message: &str,
+) -> Result<file::Model> {
+    let db = &state.db;
+    let temp_key = session
+        .s3_temp_key
+        .as_deref()
+        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_temp_key"))?
+        .to_string();
+    let multipart_id = session
+        .s3_multipart_id
+        .as_deref()
+        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_multipart_id"))?
+        .to_string();
+
+    let policy = policy_repo::find_by_id(db, session.policy_id).await?;
+    let driver = state.driver_registry.get_driver(&policy)?;
+    let upload_id = session.id.clone();
+
+    transition_upload_session_to_assembling(db, &upload_id, session.status, expected_status)
+        .await?;
+
+    let result = async {
+        completed_parts.sort_by_key(|(part_number, _)| *part_number);
+        driver
+            .complete_multipart_upload(&temp_key, &multipart_id, completed_parts)
+            .await?;
+
+        let actual_size = ensure_uploaded_s3_object_size(
+            driver.as_ref(),
+            &temp_key,
+            session.total_size,
+            missing_message,
+        )
+        .await?;
+
+        finalize_s3_upload_session(state, &session, policy.id, &temp_key, actual_size).await
+    }
+    .await;
+
+    match result {
+        Ok(file) => Ok(file),
+        Err(e) => {
+            mark_session_failed(db, &upload_id).await;
+            Err(e)
+        }
+    }
+}
+
 /// 完成 presigned 上传：校验 S3 临时对象 → 直接建文件记录
 async fn complete_presigned_upload(
     state: &AppState,
@@ -714,64 +816,32 @@ async fn complete_presigned_upload(
     let policy = policy_repo::find_by_id(db, session.policy_id).await?;
     let driver = state.driver_registry.get_driver(&policy)?;
 
-    // ── [事务外] S3 metadata 检查 ──
-    let meta = driver.metadata(&temp_key).await.map_err(|_| {
-        AsterError::upload_assembly_failed(
-            "S3 temp object not found - upload may not have completed",
-        )
-    })?;
-    let actual_size = meta.size as i64;
-
-    if actual_size != session.total_size {
-        if let Err(e) = driver.delete(&temp_key).await {
-            tracing::warn!("failed to delete S3 temp object: {e}");
-        }
-        return Err(AsterError::upload_assembly_failed(format!(
-            "size mismatch: declared {} but uploaded {}",
-            session.total_size, actual_size
-        )));
-    }
-
-    // ── 原子状态转换 presigned → assembling（防止并发 complete 双重触发） ──
-    let upload_id = &session.id;
-    let transitioned = upload_session_repo::try_transition_status(
-        db,
-        upload_id,
-        UploadSessionStatus::Presigned,
-        UploadSessionStatus::Assembling,
+    let actual_size = ensure_uploaded_s3_object_size(
+        driver.as_ref(),
+        &temp_key,
+        session.total_size,
+        "S3 temp object not found - upload may not have completed",
     )
     .await?;
-    if !transitioned {
-        return Err(AsterError::upload_assembly_failed(format!(
-            "session status is '{:?}', expected 'presigned'",
-            session.status
-        )));
-    }
 
-    // ── [事务外] 直接用 temp_key 作为最终路径，不做 SHA256 也不做 copy（S3 不去重） ──
+    let upload_id = session.id.clone();
+    transition_upload_session_to_assembling(
+        db,
+        &upload_id,
+        session.status,
+        UploadSessionStatus::Presigned,
+    )
+    .await?;
+
     let result = async {
-        let file_hash = format!("s3-{}", upload_id); // 占位 hash，保证唯一性
-        let now = Utc::now();
-
-        let created = finalize_upload_session(
-            state,
-            &session,
-            &file_hash,
-            actual_size,
-            policy.id,
-            &temp_key, // 直接用 temp_key，无需 copy
-            now,
-        )
-        .await?;
-
-        Ok(created)
+        finalize_s3_upload_session(state, &session, policy.id, &temp_key, actual_size).await
     }
     .await;
 
     match result {
         Ok(f) => Ok(f),
         Err(e) => {
-            mark_session_failed(db, upload_id).await;
+            mark_session_failed(db, &upload_id).await;
             Err(e)
         }
     }
@@ -781,90 +851,16 @@ async fn complete_presigned_upload(
 async fn complete_s3_multipart(
     state: &AppState,
     session: upload_session::Model,
-    mut parts: Vec<(i32, String)>,
+    parts: Vec<(i32, String)>,
 ) -> Result<file::Model> {
-    let db = &state.db;
-    let temp_key = session
-        .s3_temp_key
-        .as_deref()
-        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_temp_key"))?
-        .to_string();
-    let multipart_id = session
-        .s3_multipart_id
-        .as_deref()
-        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_multipart_id"))?
-        .to_string();
-
-    let policy = policy_repo::find_by_id(db, session.policy_id).await?;
-    let driver = state.driver_registry.get_driver(&policy)?;
-
-    // ── 原子状态转换 presigned → assembling（防止并发 complete 双重触发） ──
-    let upload_id = &session.id;
-    let transitioned = upload_session_repo::try_transition_status(
-        db,
-        upload_id,
+    complete_s3_multipart_upload_session(
+        state,
+        session,
         UploadSessionStatus::Presigned,
-        UploadSessionStatus::Assembling,
+        parts,
+        "S3 object not found after multipart complete - assembly may have failed",
     )
-    .await?;
-    if !transitioned {
-        return Err(AsterError::upload_assembly_failed(format!(
-            "session status is '{:?}', expected 'presigned'",
-            session.status
-        )));
-    }
-
-    // ── 完成 S3 multipart → finalize（不做 SHA256，S3 不去重） ──
-    let result = async {
-        // 完成 S3 multipart upload（parts 按 part_number 排序）
-        parts.sort_by_key(|(num, _)| *num);
-        driver
-            .complete_multipart_upload(&temp_key, &multipart_id, parts)
-            .await?;
-
-        // 验证文件大小
-        let meta = driver.metadata(&temp_key).await.map_err(|_| {
-            AsterError::upload_assembly_failed(
-                "S3 object not found after multipart complete - assembly may have failed",
-            )
-        })?;
-        let actual_size = meta.size as i64;
-
-        if actual_size != session.total_size {
-            if let Err(e) = driver.delete(&temp_key).await {
-                tracing::warn!("failed to delete S3 temp object: {e}");
-            }
-            return Err(AsterError::upload_assembly_failed(format!(
-                "size mismatch: declared {} but uploaded {}",
-                session.total_size, actual_size
-            )));
-        }
-
-        let file_hash = format!("s3-{}", upload_id); // 占位 hash，S3 不去重
-        let now = Utc::now();
-
-        let created = finalize_upload_session(
-            state,
-            &session,
-            &file_hash,
-            actual_size,
-            policy.id,
-            &temp_key, // 直接用 temp_key，无需 copy
-            now,
-        )
-        .await?;
-
-        Ok(created)
-    }
-    .await;
-
-    match result {
-        Ok(f) => Ok(f),
-        Err(e) => {
-            mark_session_failed(db, upload_id).await;
-            Err(e)
-        }
-    }
+    .await
 }
 
 /// 完成 S3 relay multipart 上传：直接使用服务端保存的 parts 完成 multipart。
@@ -873,17 +869,6 @@ async fn complete_s3_relay_multipart(
     session: upload_session::Model,
 ) -> Result<file::Model> {
     let db = &state.db;
-    let temp_key = session
-        .s3_temp_key
-        .as_deref()
-        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_temp_key"))?
-        .to_string();
-    let multipart_id = session
-        .s3_multipart_id
-        .as_deref()
-        .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_multipart_id"))?
-        .to_string();
-
     let parts = upload_session_part_repo::list_by_upload(db, &session.id).await?;
     let expected_parts =
         numbers::i32_to_usize(session.total_chunks, "upload session total_chunks")?;
@@ -904,72 +889,18 @@ async fn complete_s3_relay_multipart(
         }
     }
 
-    let policy = policy_repo::find_by_id(db, session.policy_id).await?;
-    let driver = state.driver_registry.get_driver(&policy)?;
-
-    let upload_id = &session.id;
-    let transitioned = upload_session_repo::try_transition_status(
-        db,
-        upload_id,
+    let completed_parts = parts
+        .into_iter()
+        .map(|part| (part.part_number, part.etag))
+        .collect();
+    complete_s3_multipart_upload_session(
+        state,
+        session,
         UploadSessionStatus::Uploading,
-        UploadSessionStatus::Assembling,
+        completed_parts,
+        "S3 object not found after relay multipart complete - assembly may have failed",
     )
-    .await?;
-    if !transitioned {
-        return Err(AsterError::upload_assembly_failed(format!(
-            "session status is '{:?}', expected 'uploading'",
-            session.status
-        )));
-    }
-
-    let result = async {
-        let completed_parts = parts
-            .iter()
-            .map(|part| (part.part_number, part.etag.clone()))
-            .collect();
-        driver
-            .complete_multipart_upload(&temp_key, &multipart_id, completed_parts)
-            .await?;
-
-        let meta = driver.metadata(&temp_key).await.map_err(|_| {
-            AsterError::upload_assembly_failed(
-                "S3 object not found after relay multipart complete - assembly may have failed",
-            )
-        })?;
-        let actual_size = meta.size as i64;
-
-        if actual_size != session.total_size {
-            if let Err(e) = driver.delete(&temp_key).await {
-                tracing::warn!("failed to delete S3 temp object: {e}");
-            }
-            return Err(AsterError::upload_assembly_failed(format!(
-                "size mismatch: declared {} but uploaded {}",
-                session.total_size, actual_size
-            )));
-        }
-
-        let file_hash = format!("s3-{}", upload_id);
-        let now = Utc::now();
-        finalize_upload_session(
-            state,
-            &session,
-            &file_hash,
-            actual_size,
-            policy.id,
-            &temp_key,
-            now,
-        )
-        .await
-    }
-    .await;
-
-    match result {
-        Ok(file) => Ok(file),
-        Err(e) => {
-            mark_session_failed(db, upload_id).await;
-            Err(e)
-        }
-    }
+    .await
 }
 
 /// 将 session 标记为 Failed（best-effort，失败只记录日志）
@@ -982,62 +913,6 @@ async fn mark_session_failed<C: sea_orm::ConnectionTrait>(db: &C, upload_id: &st
             tracing::warn!("failed to mark session {upload_id} as failed: {e}");
         }
     }
-}
-
-/// 上传完成的事务内共用逻辑：blob 去重 → 文件记录 → 配额 → session 状态
-async fn finalize_upload_session(
-    state: &AppState,
-    session: &upload_session::Model,
-    file_hash: &str,
-    size: i64,
-    policy_id: i64,
-    storage_path: &str,
-    now: chrono::DateTime<Utc>,
-) -> Result<file::Model> {
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
-
-    let blob =
-        file_repo::find_or_create_blob(&txn, file_hash, size, policy_id, storage_path).await?;
-
-    let final_name = file_repo::resolve_unique_filename(
-        &txn,
-        session.user_id,
-        session.folder_id,
-        &session.filename,
-    )
-    .await?;
-
-    let mime = mime_guess::from_path(&final_name)
-        .first_or_octet_stream()
-        .to_string();
-
-    let created = file_repo::create(
-        &txn,
-        file::ActiveModel {
-            name: Set(final_name),
-            folder_id: Set(session.folder_id),
-            blob_id: Set(blob.model.id),
-            size: Set(blob.model.size),
-            user_id: Set(session.user_id),
-            mime_type: Set(mime),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        },
-    )
-    .await?;
-
-    user_repo::update_storage_used(&txn, session.user_id, size).await?;
-
-    let session_fresh = upload_session_repo::find_by_id(&txn, &session.id).await?;
-    let mut active: upload_session::ActiveModel = session_fresh.into();
-    active.status = Set(UploadSessionStatus::Completed);
-    active.file_id = Set(Some(created.id));
-    active.updated_at = Set(Utc::now());
-    upload_session_repo::update(&txn, active).await?;
-
-    txn.commit().await.map_err(AsterError::from)?;
-    Ok(created)
 }
 
 /// 根据 session 查找已完成的文件（幂等重试用）

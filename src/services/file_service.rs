@@ -78,36 +78,26 @@ pub(crate) async fn create_s3_nondedup_blob<C: ConnectionTrait>(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn create_s3_nondedup_file(
-    state: &AppState,
+pub(crate) async fn create_new_file_from_blob<C: ConnectionTrait>(
+    db: &C,
     user_id: i64,
     folder_id: Option<i64>,
     filename: &str,
-    size: i64,
-    policy_id: i64,
-    storage_path: &str,
-    file_hash: &str,
+    blob: &file_blob::Model,
+    now: chrono::DateTime<Utc>,
 ) -> Result<file::Model> {
-    let now = Utc::now();
-    let mime = mime_guess::from_path(filename)
+    let final_name = file_repo::resolve_unique_filename(db, user_id, folder_id, filename).await?;
+    let mime = mime_guess::from_path(&final_name)
         .first_or_octet_stream()
         .to_string();
 
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
-    user_repo::check_quota(&txn, user_id, size).await?;
-
-    let blob =
-        file_repo::find_or_create_blob(&txn, file_hash, size, policy_id, storage_path).await?;
-    let final_name = file_repo::resolve_unique_filename(&txn, user_id, folder_id, filename).await?;
-
-    let created = file_repo::create(
-        &txn,
+    file_repo::create(
+        db,
         file::ActiveModel {
             name: Set(final_name),
             folder_id: Set(folder_id),
-            blob_id: Set(blob.model.id),
-            size: Set(blob.model.size),
+            blob_id: Set(blob.id),
+            size: Set(blob.size),
             user_id: Set(user_id),
             mime_type: Set(mime),
             created_at: Set(now),
@@ -115,9 +105,61 @@ async fn create_s3_nondedup_file(
             ..Default::default()
         },
     )
+    .await
+}
+
+pub(crate) async fn mark_upload_session_completed<C: ConnectionTrait>(
+    db: &C,
+    session_id: &str,
+    file_id: i64,
+) -> Result<()> {
+    let session_fresh = upload_session_repo::find_by_id(db, session_id).await?;
+    let mut active: upload_session::ActiveModel = session_fresh.into();
+    active.status = Set(UploadSessionStatus::Completed);
+    active.file_id = Set(Some(file_id));
+    active.updated_at = Set(Utc::now());
+    upload_session_repo::update(db, active).await?;
+    Ok(())
+}
+
+pub(crate) async fn finalize_upload_session_blob<C: ConnectionTrait>(
+    db: &C,
+    session: &upload_session::Model,
+    blob: &file_blob::Model,
+    now: chrono::DateTime<Utc>,
+) -> Result<file::Model> {
+    let created = create_new_file_from_blob(
+        db,
+        session.user_id,
+        session.folder_id,
+        &session.filename,
+        blob,
+        now,
+    )
     .await?;
 
-    user_repo::update_storage_used(&txn, user_id, size).await?;
+    user_repo::update_storage_used(db, session.user_id, blob.size).await?;
+    mark_upload_session_completed(db, &session.id, created.id).await?;
+    Ok(created)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn finalize_upload_session_file(
+    state: &AppState,
+    session: &upload_session::Model,
+    file_hash: &str,
+    size: i64,
+    policy_id: i64,
+    storage_path: &str,
+    now: chrono::DateTime<Utc>,
+) -> Result<file::Model> {
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    user_repo::check_quota(&txn, session.user_id, size).await?;
+
+    let blob =
+        file_repo::find_or_create_blob(&txn, file_hash, size, policy_id, storage_path).await?;
+    let created = finalize_upload_session_blob(&txn, session, &blob.model, now).await?;
+
     txn.commit().await.map_err(AsterError::from)?;
     Ok(created)
 }
@@ -135,7 +177,7 @@ async fn create_relay_cleanup_handle(
     policy_id: i64,
     storage_path: &str,
     multipart_id: &str,
-) -> Result<()> {
+) -> Result<upload_session::Model> {
     let total_chunks = numbers::usize_to_i32(uploaded_part_count, "relay multipart part count")
         .map_err(|_| {
             AsterError::internal_error(format!(
@@ -165,39 +207,13 @@ async fn create_relay_cleanup_handle(
             updated_at: Set(now),
         },
     )
-    .await?;
-
-    Ok(())
+    .await
 }
 
-async fn clear_relay_cleanup_handle(state: &AppState, upload_id: &str, file_id: i64) {
-    match upload_session_repo::find_by_id(&state.db, upload_id).await {
-        Ok(session) => {
-            let mut active: upload_session::ActiveModel = session.into();
-            active.file_id = Set(Some(file_id));
-            active.updated_at = Set(Utc::now());
-            if let Err(e) = upload_session_repo::update(&state.db, active).await {
-                tracing::warn!(
-                    upload_id,
-                    file_id,
-                    "failed to mark relay cleanup handle with created file before deletion: {e}"
-                );
-            }
-        }
-        Err(e) if e.code() == "E054" => {}
-        Err(e) => {
-            tracing::warn!(
-                upload_id,
-                file_id,
-                "failed to load relay cleanup handle before deletion: {e}"
-            );
-        }
-    }
-
+async fn clear_relay_cleanup_handle(state: &AppState, upload_id: &str) {
     if let Err(e) = upload_session_repo::delete(&state.db, upload_id).await {
         tracing::warn!(
             upload_id,
-            file_id,
             "failed to delete relay cleanup handle after successful upload: {e}"
         );
     }
@@ -260,7 +276,7 @@ async fn relay_field_to_s3(
             uploaded_parts.push((part_number, final_part_etag));
         }
 
-        create_relay_cleanup_handle(
+        let cleanup_session = create_relay_cleanup_handle(
             state,
             &upload_id,
             user_id,
@@ -279,20 +295,18 @@ async fn relay_field_to_s3(
             .complete_multipart_upload(&storage_path, &multipart_id, uploaded_parts)
             .await?;
 
-        let file_hash = format!("s3-{upload_id}");
-        let created = create_s3_nondedup_file(
+        let created = finalize_upload_session_file(
             state,
-            user_id,
-            folder_id,
-            filename,
+            &cleanup_session,
+            &format!("s3-{upload_id}"),
             total_size,
             policy.id,
             &storage_path,
-            &file_hash,
+            Utc::now(),
         )
         .await?;
 
-        clear_relay_cleanup_handle(state, &upload_id, created.id).await;
+        clear_relay_cleanup_handle(state, &upload_id).await;
         Ok(created)
     }
     .await;
@@ -466,21 +480,8 @@ pub async fn store_from_temp(
         updated
     } else {
         // 新建文件
-        let final_name =
-            file_repo::resolve_unique_filename(&txn, user_id, folder_id, filename).await?;
-
-        let file_model = file::ActiveModel {
-            name: Set(final_name),
-            folder_id: Set(folder_id),
-            blob_id: Set(blob.id),
-            size: Set(blob.size),
-            user_id: Set(user_id),
-            mime_type: Set(mime),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        };
-        let created = file_repo::create(&txn, file_model).await?;
+        let created =
+            create_new_file_from_blob(&txn, user_id, folder_id, filename, &blob, now).await?;
         user_repo::update_storage_used(&txn, user_id, size).await?;
 
         created
@@ -1430,8 +1431,6 @@ pub async fn create_empty(
     filename: &str,
 ) -> Result<file::Model> {
     use crate::db::repository::{file_repo, user_repo};
-    use crate::entities::file;
-    use sea_orm::Set;
 
     let db = &state.db;
 
@@ -1446,9 +1445,6 @@ pub async fn create_empty(
     let should_dedup = local_content_dedup_enabled(&policy);
 
     let now = chrono::Utc::now();
-    let mime = mime_guess::from_path(filename)
-        .first_or_octet_stream()
-        .to_string();
 
     let txn = db.begin().await.map_err(AsterError::from)?;
 
@@ -1477,20 +1473,7 @@ pub async fn create_empty(
         blob
     };
 
-    let final_name = file_repo::resolve_unique_filename(&txn, user_id, folder_id, filename).await?;
-
-    let file_model = file::ActiveModel {
-        name: Set(final_name),
-        folder_id: Set(folder_id),
-        blob_id: Set(blob.id),
-        size: Set(EMPTY_SIZE),
-        user_id: Set(user_id),
-        mime_type: Set(mime),
-        created_at: Set(now),
-        updated_at: Set(now),
-        ..Default::default()
-    };
-    let created = file_repo::create(&txn, file_model).await?;
+    let created = create_new_file_from_blob(&txn, user_id, folder_id, filename, &blob, now).await?;
 
     // 空文件配额为 0，仍调用以保持一致性
     user_repo::update_storage_used(&txn, user_id, EMPTY_SIZE).await?;

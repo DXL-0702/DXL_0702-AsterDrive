@@ -68,7 +68,7 @@
 完成阶段的服务端行为分两类：
 
 - 本地路径：会校验大小和配额；若 local 策略开启了 `content_dedup`，还会计算 SHA-256 并做 Blob 去重，否则直接创建独立 Blob
-- 所有 S3 路径（`proxy_tempfile` / `relay_stream` / `presigned` / `presigned_multipart`）：都会校验大小和配额，但不会做 Blob 去重；其中 `proxy_tempfile` 会先写服务端临时文件，`relay_stream` / `presigned*` 则不会回读对象计算 SHA-256，并会为每次上传创建独立 Blob
+- 所有 S3 路径（`proxy_tempfile` / `relay_stream` / `presigned` / `presigned_multipart`）：都会校验大小和配额，但不会做 Blob 去重；最终会使用 `s3-{upload_id}` 风格的占位 hash 和 `files/{upload_id}` 风格的对象路径为每次上传创建独立 Blob。其中 `proxy_tempfile` 会先写服务端临时文件，`relay_stream` / `presigned*` 则不会回读对象计算 SHA-256
 
 `POST /files/new` 创建空文件时也遵循同样规则：只有 local 显式开启 `content_dedup` 才会复用 0 字节 Blob，S3 始终创建独立 Blob。
 

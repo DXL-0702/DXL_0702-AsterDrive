@@ -1564,7 +1564,11 @@ async fn test_proxy_tempfile_direct_upload_s3_e2e_no_dedup() {
     assert_eq!(blob.ref_count, 1);
     assert_eq!(blob2.ref_count, 1);
     assert_ne!(blob.id, blob2.id);
+    assert!(blob.hash.starts_with("s3-"));
+    assert!(blob2.hash.starts_with("s3-"));
     assert_ne!(blob.hash, blob2.hash);
+    assert!(blob.storage_path.starts_with("files/"));
+    assert!(blob2.storage_path.starts_with("files/"));
     assert_ne!(blob.storage_path, blob2.storage_path);
 
     let driver = driver_registry.get_driver(&policy).unwrap();
@@ -1680,8 +1684,10 @@ async fn test_proxy_tempfile_chunked_upload_s3_e2e_no_dedup() {
     assert_eq!(blob.ref_count, 1);
     assert_eq!(blob2.ref_count, 1);
     assert_ne!(blob.id, blob2.id);
-    assert_ne!(blob.hash, blob2.hash);
-    assert_ne!(blob.storage_path, blob2.storage_path);
+    assert_eq!(blob.hash, format!("s3-{upload_id}"));
+    assert_eq!(blob2.hash, format!("s3-{upload_id2}"));
+    assert_eq!(blob.storage_path, format!("files/{upload_id}"));
+    assert_eq!(blob2.storage_path, format!("files/{upload_id2}"));
 
     let driver = state.driver_registry.get_driver(&policy).unwrap();
     let stored = driver.get(&blob.storage_path).await.unwrap();
@@ -1766,7 +1772,11 @@ async fn test_create_empty_file_s3_no_dedup() {
     assert_eq!(blob.ref_count, 1);
     assert_eq!(blob2.ref_count, 1);
     assert_ne!(blob.id, blob2.id);
+    assert!(blob.hash.starts_with("s3-"));
+    assert!(blob2.hash.starts_with("s3-"));
     assert_ne!(blob.hash, blob2.hash);
+    assert!(blob.storage_path.starts_with("files/"));
+    assert!(blob2.storage_path.starts_with("files/"));
     assert_ne!(blob.storage_path, blob2.storage_path);
 
     let driver = driver_registry.get_driver(&policy).unwrap();
