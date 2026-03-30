@@ -5,8 +5,6 @@
   </picture>
 </p>
 
-<h1 align="center">AsterDrive</h1>
-
 <p align="center">
   基于 Rust 和 React 构建的自托管云存储系统。
   <br />

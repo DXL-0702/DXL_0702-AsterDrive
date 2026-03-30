@@ -5,8 +5,6 @@
   </picture>
 </p>
 
-<h1 align="center">AsterDrive</h1>
-
 <p align="center">
   Self-hosted cloud storage built with Rust and React.
   <br />
