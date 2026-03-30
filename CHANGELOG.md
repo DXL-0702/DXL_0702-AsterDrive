@@ -5,6 +5,115 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.12] - 2026-03-31
+
+### Release Highlights
+
+- **会话吊销机制** — 用户表新增 `session_version` 字段，JWT 嵌入版本号，管理员可一键吊销用户全部会话，改密码自动失效旧令牌
+- **内存运行时配置与策略快照** — 系统配置和存储策略缓存至 `RwLock<HashMap>`，热路径零 DB 查询，写入时即时同步
+- **批量 SQL 操作** — 删除/移动/复制重构为批量 SQL，单事务校验+执行，逐项错误上报，N 项操作 DB 往返从 ~6N 降至 ~10
+- **管理员权限中间件** — 提取 `RequireAdmin` 独立中间件，admin 路由嵌套 `JwtAuth → RequireAdmin`，移除 handler 内联角色检查
+- **本地存储可选内容去重** — 新增 `content_dedup` 策略选项，关闭时跳过 SHA256 计算，使用独立 blob 短令牌键
+- **数据库索引优化** — 新增目录列表与回收站分页复合索引，消除全表扫描
+
+
+### Added
+
+- **会话吊销**
+  - `users` 表新增 `session_version` 列（migration）
+  - `AuthSnapshot` 结构体携带 `status`、`role`、`session_version`
+  - 新增 `POST /api/v1/admin/users/{id}/sessions/revoke` — 管理员吊销用户全部会话
+  - 改密码/管理员重置密码自动递增 `session_version`，当前会话返回新 token 保持在线
+  - JWT Claims 嵌入 `session_version`，认证中间件校验一致性
+  - WebDAV Bearer 认证升级为 `authenticate_access_token`，拒绝 refresh token
+  - 新增审计动作：`AdminRevokeUserSessions`、`UserLogout`
+  - 前端用户详情对话框新增"吊销全部会话"按钮
+- **内存运行时配置**
+  - `RuntimeConfig` 结构体：`reload`、`apply`、`remove` + 类型化 getter（`get_bool`、`get_i64`、`get_u64` 等）
+  - `PolicySnapshot` 结构体：`reload`、`get_policy`、`resolve_default_policy_id`、`set_user_default_policy`
+  - 启动时预加载全部配置和策略到内存
+  - 所有服务（audit、auth、config、file、thumbnail、upload、trash、version、webdav）改为从快照读取
+- **本地存储内容去重选项**
+  - `StoragePolicyOptions` 新增 `content_dedup` 字段
+  - 关闭时：跳过 SHA256，使用 `new_short_token()` 生成独立 blob 键
+  - 开启时：写入临时文件后计算 SHA256，复用相同内容 blob
+  - `local_content_dedup_enabled()` / `create_nondedup_blob()` 公共函数
+- **管理后台关于页面**
+  - 新增 `AdminAboutPage`：展示版本号、发布渠道（alpha/beta/rc/stable）、许可证（MIT）、外部链接
+  - `AsterDriveWordmark` 主题感知 SVG 组件（dark/light 自动切换）
+  - `index.html` 注入 `asterdrive-version` meta 标签，构建时写入版本号
+  - 中英文 i18n 完整支持
+- **数据库索引**
+  - `idx_folders_user_deleted_parent_name` / `idx_files_user_deleted_folder_name` — 目录列表查询
+  - `idx_folders_user_deleted_at_id` / `idx_files_user_deleted_at_id` — 回收站分页查询
+- **测试覆盖**
+  - `test_batch.rs` — 批量操作测试（472 行）
+  - `test_db_indexes.rs` — 索引有效性验证（`EXPLAIN QUERY PLAN`）
+  - `test_webdav_path_resolver.rs` — WebDAV 路径解析测试（518 行）
+  - `test_services.rs` — 树可见性、空叶子、回收站路径等（332 行）
+
+
+### Changed
+
+- **上传完成逻辑重构**
+  - 提取 `create_new_file_from_blob`、`finalize_upload_session_blob`、`finalize_upload_session_file` 公共原语
+  - 提取 `complete_s3_multipart_upload_session` 统一 multipart 完成逻辑
+  - 提取 `ensure_uploaded_s3_object_size`、`transition_upload_session_to_assembling` 辅助函数
+  - 删除旧的 `finalize_upload_session` 和 `clear_relay_cleanup_handle` 实现
+- **批量操作重构为批量 SQL**
+  - 新增 `find_by_folders`、`find_all_in_folders`、`find_children_in_parents`、`find_all_children_in_parents` 批量查询方法
+  - `batch_delete`：单事务校验+递归子树收集+批量软删除
+  - `batch_move`：批量冲突/循环检测+批量更新，逐项错误上报
+  - `batch_copy`：预分配唯一文件名，支持重复 ID 重命名
+- **文件夹树遍历改为迭代式**
+  - BFS 迭代替换递归异步逐条查询
+  - `build_trash_path_cache` 批量预加载回收站父目录路径
+  - WebDAV 路径解析改用递归 CTE 查询
+- **管理员路由中间件化**
+  - admin 路由改为嵌套 scope：`JwtAuth` → `RequireAdmin`
+  - 移除 handler 中 `claims: web::ReqData<Claims>` 参数和 `require_admin()` 辅助函数
+- **搜索多数据库兼容**
+  - `name_search_condition` 根据数据库后端选择查询策略
+  - PostgreSQL 使用 `ilike`，MySQL 使用 `MATCH AGAINST BOOLEAN MODE`
+  - 新增 `escape_like_query` 防止通配符注入
+- **管理后台 UI 重构**
+  - 存储策略对话框拆分为概览/连接/存储详情/上传规则四个分区，编辑模式右侧新增策略摘要卡片
+  - 策略表格行改为整行可点击，移除独立编辑按钮
+  - 用户表格行改为整行可点击
+  - 创建向导新增步骤过渡动画
+  - 驱动类型徽章颜色区分（S3=蓝、本地=绿）
+  - 内置系统策略禁止删除，带 tooltip 提示
+- **认证服务调整**
+  - `refresh_token` 改为 async 函数
+  - `logout` 从 Authorization header 提取 token 记录审计日志
+  - 改密码返回新 access/refresh token（保持会话连续性）
+
+
+### Fixed
+
+- 修复 MySQL migration 中 `allowed_types` 和 `options` 列不兼容 `DEFAULT` 值语法的问题
+- 修复 raw SQL `Expr::cust_with_values` 替换为类型安全的 SeaORM 表达式（ref_count、storage_used、view_count）
+- 修复最大文件大小为 0 时显示 "0 bytes" 而非"无限制"的问题
+- 修复密码输入框浏览器自动填充问题（添加 `autoComplete="new-password"`）
+- 修复访问密钥输入框浏览器自动填充问题（添加 `autoComplete="off"`）
+
+
+### Breaking Changes
+
+- **API**: `PUT /api/v1/auth/password` 现在返回新的 access/refresh token（Cookie），保持当前会话连续性
+- **JWT**: 新 token 包含 `session_version` 字段；旧 token（无此字段）通过 `#[serde(default)]` 兼容
+- **行为**: S3 上传统一使用 `files/{upload_id}` 路径格式
+- **行为**: 本地存储默认 `content_dedup: false`，每次上传创建独立 blob（与之前隐式去重行为不同）
+- **内部**: 所有服务必须从快照读取配置/策略，禁止直接调用 `policy_repo`/`config_repo`
+
+
+---
+
+**统计数据**：
+- 113 files changed, 7,785 insertions(+), 1,815 deletions(-)
+- 13 commits
+
+
 ## [v0.0.1-alpha.11] - 2026-03-30
 
 ### Release Highlights
@@ -869,7 +978,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.11...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.12...HEAD
+[v0.0.1-alpha.12]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.11...v0.0.1-alpha.12
 [v0.0.1-alpha.11]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.10...v0.0.1-alpha.11
 [v0.0.1-alpha.10]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.9...v0.0.1-alpha.10
 [v0.0.1-alpha.9]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.8...v0.0.1-alpha.9
