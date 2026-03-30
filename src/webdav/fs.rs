@@ -12,10 +12,10 @@ use sea_orm::DatabaseConnection;
 use tokio::io::AsyncWriteExt;
 
 use crate::cache::CacheBackend;
-use crate::config::Config;
-use crate::db::repository::{file_repo, folder_repo, policy_repo, property_repo, user_repo};
+use crate::config::{Config, RuntimeConfig};
+use crate::db::repository::{file_repo, folder_repo, property_repo, user_repo};
 use crate::services::{file_service, folder_service, webdav_service};
-use crate::storage::DriverRegistry;
+use crate::storage::{DriverRegistry, PolicySnapshot};
 use crate::types::{EntityType, NullablePatch};
 use crate::webdav::dir_entry::AsterDavDirEntry;
 use crate::webdav::file::AsterDavFile;
@@ -27,6 +27,8 @@ use crate::webdav::path_resolver::{self, ResolvedNode};
 pub struct AsterDavFs {
     db: DatabaseConnection,
     driver_registry: Arc<DriverRegistry>,
+    runtime_config: Arc<RuntimeConfig>,
+    policy_snapshot: Arc<PolicySnapshot>,
     config: Arc<Config>,
     cache: Arc<dyn CacheBackend>,
     thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
@@ -48,6 +50,8 @@ impl AsterDavFs {
     pub fn new(
         db: DatabaseConnection,
         driver_registry: Arc<DriverRegistry>,
+        runtime_config: Arc<RuntimeConfig>,
+        policy_snapshot: Arc<PolicySnapshot>,
         config: Arc<Config>,
         cache: Arc<dyn CacheBackend>,
         thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
@@ -57,6 +61,8 @@ impl AsterDavFs {
         Self {
             db,
             driver_registry,
+            runtime_config,
+            policy_snapshot,
             config,
             cache,
             thumbnail_tx,
@@ -69,6 +75,8 @@ impl AsterDavFs {
         crate::runtime::AppState {
             db: self.db.clone(),
             driver_registry: self.driver_registry.clone(),
+            runtime_config: self.runtime_config.clone(),
+            policy_snapshot: self.policy_snapshot.clone(),
             config: self.config.clone(),
             cache: self.cache.clone(),
             thumbnail_tx: self.thumbnail_tx.clone(),
@@ -111,6 +119,8 @@ impl DavFileSystem for AsterDavFs {
                 let dav_file = AsterDavFile::for_write(
                     self.db.clone(),
                     self.driver_registry.clone(),
+                    self.runtime_config.clone(),
+                    self.policy_snapshot.clone(),
                     self.config.clone(),
                     self.cache.clone(),
                     self.thumbnail_tx.clone(),
@@ -133,9 +143,10 @@ impl DavFileSystem for AsterDavFs {
                         let blob = file_repo::find_blob_by_id(&self.db, f.blob_id)
                             .await
                             .map_err(|_| FsError::GeneralFailure)?;
-                        let policy = policy_repo::find_by_id(&self.db, blob.policy_id)
-                            .await
-                            .map_err(|_| FsError::GeneralFailure)?;
+                        let policy = self
+                            .policy_snapshot
+                            .get_policy(blob.policy_id)
+                            .ok_or(FsError::GeneralFailure)?;
                         let driver = self
                             .driver_registry
                             .get_driver(&policy)

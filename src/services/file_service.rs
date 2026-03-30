@@ -5,9 +5,8 @@ use futures::{StreamExt, stream};
 use sea_orm::{ActiveModelTrait, ConnectionTrait, Set, TransactionTrait};
 use tokio::io::AsyncWriteExt;
 
-use crate::cache::CacheExt;
-use crate::db::repository::{file_repo, policy_repo, upload_session_repo, user_repo};
-use crate::entities::{file, file_blob, upload_session, user_storage_policy};
+use crate::db::repository::{file_repo, upload_session_repo, user_repo};
+use crate::entities::{file, file_blob, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::thumbnail_service;
@@ -694,7 +693,7 @@ async fn build_stream_response(
             .finish());
     }
 
-    let policy = policy_repo::find_by_id(&state.db, blob.policy_id).await?;
+    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let stream = driver.get_stream(&blob.storage_path).await?;
 
@@ -790,17 +789,14 @@ pub(crate) async fn cleanup_unreferenced_blob(state: &AppState, blob: &file_blob
         );
     }
 
-    let policy = match policy_repo::find_by_id(&state.db, current_blob.policy_id).await {
-        Ok(policy) => policy,
-        Err(e) => {
-            tracing::warn!(
-                blob_id = current_blob.id,
-                policy_id = current_blob.policy_id,
-                "failed to load storage policy during blob cleanup: {e}"
-            );
-            restore_cleanup_claim(state, current_blob.id, "policy lookup failure").await;
-            return false;
-        }
+    let Some(policy) = state.policy_snapshot.get_policy(current_blob.policy_id) else {
+        tracing::warn!(
+            blob_id = current_blob.id,
+            policy_id = current_blob.policy_id,
+            "failed to load storage policy during blob cleanup: policy missing from snapshot"
+        );
+        restore_cleanup_claim(state, current_blob.id, "policy lookup failure").await;
+        return false;
     };
 
     let driver = match state.driver_registry.get_driver(&policy) {
@@ -1361,59 +1357,18 @@ pub async fn resolve_policy(
     user_id: i64,
     folder_id: Option<i64>,
 ) -> Result<crate::entities::storage_policy::Model> {
-    let db = &state.db;
-
     // 1. 文件夹级策略
     if let Some(fid) = folder_id {
-        let folder = crate::db::repository::folder_repo::find_by_id(db, fid).await?;
+        let folder = crate::db::repository::folder_repo::find_by_id(&state.db, fid).await?;
         if let Some(pid) = folder.policy_id {
-            let cache_key = format!("policy:{pid}");
-            if let Some(cached) = state
-                .cache
-                .get::<crate::entities::storage_policy::Model>(&cache_key)
-                .await
-            {
-                return Ok(cached);
-            }
-            let policy = policy_repo::find_by_id(db, pid).await?;
-            state.cache.set(&cache_key, &policy, None).await;
-            return Ok(policy);
+            return state.policy_snapshot.get_policy_or_err(pid);
         }
     }
 
-    // 2. 用户默认策略（缓存）
-    let usp_cache_key = format!("user_default_policy:{user_id}");
-    if let Some(usp) = state
-        .cache
-        .get::<user_storage_policy::Model>(&usp_cache_key)
-        .await
-    {
-        let policy_cache_key = format!("policy:{}", usp.policy_id);
-        if let Some(cached) = state
-            .cache
-            .get::<crate::entities::storage_policy::Model>(&policy_cache_key)
-            .await
-        {
-            return Ok(cached);
-        }
-        let policy = policy_repo::find_by_id(db, usp.policy_id).await?;
-        state.cache.set(&policy_cache_key, &policy, None).await;
-        return Ok(policy);
-    }
-
-    if let Some(usp) = policy_repo::find_user_default(db, user_id).await? {
-        state.cache.set(&usp_cache_key, &usp, None).await;
-        let policy = policy_repo::find_by_id(db, usp.policy_id).await?;
-        state
-            .cache
-            .set(&format!("policy:{}", policy.id), &policy, None)
-            .await;
-        return Ok(policy);
-    }
-
-    // 3. 系统默认策略
-    policy_repo::find_default(db)
-        .await?
+    // 2. 用户默认策略 → 系统默认策略
+    state
+        .policy_snapshot
+        .resolve_default_policy(user_id)
         .ok_or_else(|| AsterError::storage_policy_not_found("no default storage policy configured"))
 }
 

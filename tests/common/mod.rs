@@ -54,6 +54,10 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
     .await
     .unwrap();
 
+    aster_drive::db::repository::config_repo::ensure_defaults(&db)
+        .await
+        .unwrap();
+
     // 测试用 NoopCache
     let cache_config = aster_drive::config::CacheConfig {
         enabled: false,
@@ -80,11 +84,19 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
     // OnceLock 只设置一次，后续调用忽略
     let _ = aster_drive::config::set_config_for_test(config.clone());
 
+    let runtime_config = std::sync::Arc::new(aster_drive::config::RuntimeConfig::new());
+    runtime_config.reload(&db).await.unwrap();
+
+    let policy_snapshot = std::sync::Arc::new(aster_drive::storage::PolicySnapshot::new());
+    policy_snapshot.reload(&db).await.unwrap();
+
     let (thumbnail_tx, _thumbnail_rx) = tokio::sync::mpsc::channel::<i64>(16);
 
     AppState {
         db,
         driver_registry: std::sync::Arc::new(aster_drive::storage::DriverRegistry::new()),
+        runtime_config,
+        policy_snapshot,
         config,
         cache,
         thumbnail_tx,

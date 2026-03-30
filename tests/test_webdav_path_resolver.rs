@@ -375,6 +375,8 @@ async fn test_aster_dav_fs_handles_deep_paths_inside_scoped_root() {
     let dav_fs = AsterDavFs::new(
         state.db.clone(),
         state.driver_registry.clone(),
+        state.runtime_config.clone(),
+        state.policy_snapshot.clone(),
         state.config.clone(),
         state.cache.clone(),
         state.thumbnail_tx.clone(),
@@ -453,6 +455,8 @@ async fn test_aster_dav_fs_deep_write_create_new_and_overwrite_boundaries() {
     let dav_fs = AsterDavFs::new(
         state.db.clone(),
         state.driver_registry.clone(),
+        state.runtime_config.clone(),
+        state.policy_snapshot.clone(),
         state.config.clone(),
         state.cache.clone(),
         state.thumbnail_tx.clone(),

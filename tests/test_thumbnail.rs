@@ -86,12 +86,15 @@ async fn test_thumbnail_returns_200_after_generation() {
     aster_drive::services::thumbnail_service::spawn_worker(
         actix_web::web::Data::new(state.db.clone()),
         state.driver_registry.clone(),
+        state.policy_snapshot.clone(),
         rx,
     );
     // 替换 state 的 tx
     let state = aster_drive::runtime::AppState {
         db: state.db,
         driver_registry: state.driver_registry,
+        runtime_config: state.runtime_config,
+        policy_snapshot: state.policy_snapshot,
         config: state.config,
         cache: state.cache,
         thumbnail_tx: tx,
@@ -172,11 +175,14 @@ async fn test_thumbnail_dedup_same_blob() {
     aster_drive::services::thumbnail_service::spawn_worker(
         actix_web::web::Data::new(state.db.clone()),
         state.driver_registry.clone(),
+        state.policy_snapshot.clone(),
         rx,
     );
     let state = aster_drive::runtime::AppState {
         db: state.db,
         driver_registry: state.driver_registry,
+        runtime_config: state.runtime_config,
+        policy_snapshot: state.policy_snapshot,
         config: state.config,
         cache: state.cache,
         thumbnail_tx: tx,

@@ -107,6 +107,74 @@ async fn test_webdav_put_get_delete() {
 }
 
 #[actix_web::test]
+async fn test_webdav_runtime_toggle_takes_effect_immediately() {
+    use actix_web::{App, web};
+    use serde_json::Value;
+
+    let state = common::setup().await;
+    let db1 = state.db.clone();
+    let db2 = state.db.clone();
+    let webdav_config = aster_drive::config::WebDavConfig::default();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
+            .app_data(web::JsonConfig::default().limit(1024 * 1024))
+            .app_data(web::Data::new(state))
+            .configure(move |cfg| {
+                aster_drive::webdav::configure(cfg, &webdav_config, &db2);
+                aster_drive::api::configure(cfg, &db1);
+            }),
+    )
+    .await;
+
+    let (token, _) = register_and_login!(app);
+    let auth = format!("Bearer {token}");
+
+    let req = test::TestRequest::with_uri("/webdav/")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Depth", "0"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/admin/config/webdav_enabled")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "value": "false" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["key"], "webdav_enabled");
+    assert_eq!(body["data"]["value"], "false");
+
+    let req = test::TestRequest::with_uri("/webdav/")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth.clone()))
+        .insert_header(("Depth", "0"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 503);
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/admin/config/webdav_enabled")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "value": "true" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::with_uri("/webdav/")
+        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
+        .insert_header(("Authorization", auth))
+        .insert_header(("Depth", "0"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 207);
+}
+
+#[actix_web::test]
 async fn test_webdav_copy_move() {
     let app = setup_with_webdav!();
 

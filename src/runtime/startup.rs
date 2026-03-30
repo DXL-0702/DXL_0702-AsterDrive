@@ -24,13 +24,20 @@ pub async fn prepare() -> Result<AppState> {
     // 4. 确保默认运行时配置存在
     crate::db::repository::config_repo::ensure_defaults(&database).await?;
 
-    // 5. 驱动注册中心
+    // 5. 初始化运行时快照
+    let runtime_config = Arc::new(crate::config::RuntimeConfig::new());
+    runtime_config.reload(&database).await?;
+
+    let policy_snapshot = Arc::new(crate::storage::PolicySnapshot::new());
+    policy_snapshot.reload(&database).await?;
+
+    // 6. 驱动注册中心
     let driver_registry = Arc::new(DriverRegistry::new());
 
-    // 6. 初始化缓存
+    // 7. 初始化缓存
     let cache = crate::cache::create_cache(&cfg.cache).await;
 
-    // 7. 缩略图后台队列（channel 容量 1024，溢出时 drop）
+    // 8. 缩略图后台队列（channel 容量 1024，溢出时 drop）
     let (thumbnail_tx, thumbnail_rx) = tokio::sync::mpsc::channel::<i64>(1024);
 
     tracing::info!(
@@ -42,6 +49,8 @@ pub async fn prepare() -> Result<AppState> {
     let state = AppState {
         db: database,
         driver_registry,
+        runtime_config,
+        policy_snapshot,
         config: cfg,
         cache,
         thumbnail_tx,
@@ -53,6 +62,7 @@ pub async fn prepare() -> Result<AppState> {
     crate::services::thumbnail_service::spawn_worker(
         actix_web::web::Data::new(state.db.clone()),
         state.driver_registry.clone(),
+        state.policy_snapshot.clone(),
         thumbnail_rx,
     );
 

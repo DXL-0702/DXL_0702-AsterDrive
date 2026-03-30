@@ -51,7 +51,7 @@ async fn test_gravatar_custom_base_url() {
     .unwrap();
 
     // 设置自定义 gravatar base url
-    config_repo::upsert(
+    let config = config_repo::upsert(
         &state.db,
         "gravatar_base_url",
         "https://cravatar.cn/avatar",
@@ -59,6 +59,7 @@ async fn test_gravatar_custom_base_url() {
     )
     .await
     .unwrap();
+    state.runtime_config.apply(config);
 
     profile_service::set_avatar_source(&state, user.id, AvatarSource::Gravatar)
         .await
@@ -90,9 +91,10 @@ async fn test_gravatar_empty_config_fallback() {
     .unwrap();
 
     // 设置空字符串配置
-    config_repo::upsert(&state.db, "gravatar_base_url", "", user.id)
+    let config = config_repo::upsert(&state.db, "gravatar_base_url", "", user.id)
         .await
         .unwrap();
+    state.runtime_config.apply(config);
 
     profile_service::set_avatar_source(&state, user.id, AvatarSource::Gravatar)
         .await
@@ -123,7 +125,7 @@ async fn test_gravatar_trailing_slash_normalization() {
     .unwrap();
 
     // 配置带末尾斜杠
-    config_repo::upsert(
+    let config = config_repo::upsert(
         &state.db,
         "gravatar_base_url",
         "https://mirror.example.com/avatar/",
@@ -131,6 +133,7 @@ async fn test_gravatar_trailing_slash_normalization() {
     )
     .await
     .unwrap();
+    state.runtime_config.apply(config);
 
     profile_service::set_avatar_source(&state, user.id, AvatarSource::Gravatar)
         .await
@@ -167,9 +170,10 @@ async fn test_gravatar_whitespace_only_config_fallback() {
     .unwrap();
 
     // 配置只有空白字符
-    config_repo::upsert(&state.db, "gravatar_base_url", "   ", user.id)
+    let config = config_repo::upsert(&state.db, "gravatar_base_url", "   ", user.id)
         .await
         .unwrap();
+    state.runtime_config.apply(config);
 
     profile_service::set_avatar_source(&state, user.id, AvatarSource::Gravatar)
         .await

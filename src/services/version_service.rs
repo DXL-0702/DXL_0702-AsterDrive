@@ -1,7 +1,7 @@
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
 
-use crate::db::repository::{config_repo, file_repo, version_repo};
+use crate::db::repository::{file_repo, version_repo};
 use crate::entities::file_version;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
@@ -167,14 +167,13 @@ async fn cleanup_blob_if_unused(state: &AppState, blob_id: i64) -> Result<()> {
 }
 
 async fn get_max_versions(state: &AppState) -> u64 {
-    match config_repo::find_by_key(&state.db, "max_versions_per_file").await {
-        Ok(Some(cfg)) => cfg.value.parse().unwrap_or_else(|_| {
-            tracing::warn!(
-                "invalid max_versions_per_file value '{}', using 10",
-                cfg.value
-            );
+    state
+        .runtime_config
+        .get_u64("max_versions_per_file")
+        .unwrap_or_else(|| {
+            if let Some(raw) = state.runtime_config.get("max_versions_per_file") {
+                tracing::warn!("invalid max_versions_per_file value '{}', using 10", raw);
+            }
             10
-        }),
-        _ => 10,
-    }
+        })
 }

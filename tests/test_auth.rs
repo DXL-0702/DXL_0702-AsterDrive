@@ -261,6 +261,8 @@ async fn test_user_status_cached_in_auth_middleware() {
     let state = aster_drive::runtime::AppState {
         db: base.db,
         driver_registry: base.driver_registry,
+        runtime_config: base.runtime_config,
+        policy_snapshot: base.policy_snapshot,
         config: base.config,
         cache,
         thumbnail_tx: base.thumbnail_tx,
@@ -300,6 +302,8 @@ async fn test_disable_user_invalidates_status_cache() {
     let state = aster_drive::runtime::AppState {
         db: base.db,
         driver_registry: base.driver_registry,
+        runtime_config: base.runtime_config,
+        policy_snapshot: base.policy_snapshot,
         config: base.config,
         cache,
         thumbnail_tx: base.thumbnail_tx,

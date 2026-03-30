@@ -6,7 +6,7 @@ use std::fmt;
 use utoipa::IntoParams;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
-use crate::db::repository::{audit_log_repo, config_repo};
+use crate::db::repository::audit_log_repo;
 use crate::entities::audit_log;
 use crate::errors::Result;
 use crate::runtime::AppState;
@@ -231,13 +231,11 @@ pub async fn log(
     details: Option<serde_json::Value>,
 ) {
     // 检查运行时配置
-    match config_repo::find_by_key(&state.db, "audit_log_enabled").await {
-        Ok(Some(cfg)) if cfg.value == "false" => return,
-        Err(e) => {
-            tracing::warn!("failed to check audit_log_enabled: {e}");
-            // 读不到配置就默认启用，继续记录
-        }
-        _ => {}
+    if matches!(
+        state.runtime_config.get_bool("audit_log_enabled"),
+        Some(false)
+    ) {
+        return;
     }
 
     let model = audit_log::ActiveModel {
@@ -282,17 +280,18 @@ pub async fn query(
 
 /// 清理过期审计日志
 pub async fn cleanup_expired(state: &AppState) -> Result<u64> {
-    let retention_days =
-        match config_repo::find_by_key(&state.db, "audit_log_retention_days").await? {
-            Some(cfg) => cfg.value.parse::<i64>().unwrap_or_else(|_| {
+    let retention_days = state
+        .runtime_config
+        .get_i64("audit_log_retention_days")
+        .unwrap_or_else(|| {
+            if let Some(raw) = state.runtime_config.get("audit_log_retention_days") {
                 tracing::warn!(
                     "invalid audit_log_retention_days value '{}', using default",
-                    cfg.value
+                    raw
                 );
-                DEFAULT_RETENTION_DAYS
-            }),
-            None => DEFAULT_RETENTION_DAYS,
-        };
+            }
+            DEFAULT_RETENTION_DAYS
+        });
 
     let cutoff = Utc::now() - Duration::days(retention_days);
     let deleted = audit_log_repo::delete_before(&state.db, cutoff).await?;

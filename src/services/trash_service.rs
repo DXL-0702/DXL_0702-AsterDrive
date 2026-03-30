@@ -4,7 +4,7 @@ use sea_orm::TransactionTrait;
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use crate::db::repository::{config_repo, file_repo, folder_repo};
+use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
@@ -308,16 +308,18 @@ pub async fn purge_all(state: &AppState, user_id: i64) -> Result<u32> {
 
 /// 自动清理过期回收站条目（后台任务调用）
 pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
-    let retention_days = match config_repo::find_by_key(&state.db, "trash_retention_days").await? {
-        Some(cfg) => cfg.value.parse::<i64>().unwrap_or_else(|_| {
-            tracing::warn!(
-                "invalid trash_retention_days value '{}', using default",
-                cfg.value
-            );
+    let retention_days = state
+        .runtime_config
+        .get_i64("trash_retention_days")
+        .unwrap_or_else(|| {
+            if let Some(raw) = state.runtime_config.get("trash_retention_days") {
+                tracing::warn!(
+                    "invalid trash_retention_days value '{}', using default",
+                    raw
+                );
+            }
             DEFAULT_RETENTION_DAYS
-        }),
-        None => DEFAULT_RETENTION_DAYS,
-    };
+        });
 
     let cutoff = chrono::Utc::now() - chrono::Duration::days(retention_days);
     let mut count: u32 = 0;

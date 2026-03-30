@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::cache::CacheExt;
 use crate::config::AuthConfig;
-use crate::db::repository::{config_repo, policy_repo, user_repo};
+use crate::db::repository::{policy_repo, user_repo};
 use crate::entities::user;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
@@ -209,16 +209,15 @@ async fn create_user_with_role(
     let password_hash = hash::hash_password(password)?;
     let now = Utc::now();
 
-    let default_quota = match config_repo::find_by_key(db, "default_storage_quota").await? {
-        Some(cfg) => cfg.value.parse::<i64>().unwrap_or_else(|_| {
-            tracing::warn!(
-                "invalid default_storage_quota value '{}', using 0",
-                cfg.value
-            );
+    let default_quota = state
+        .runtime_config
+        .get_i64("default_storage_quota")
+        .unwrap_or_else(|| {
+            if let Some(raw) = state.runtime_config.get("default_storage_quota") {
+                tracing::warn!("invalid default_storage_quota value '{}', using 0", raw);
+            }
             0
-        }),
-        None => 0,
-    };
+        });
 
     let model = user::ActiveModel {
         username: Set(username.to_string()),
@@ -235,7 +234,7 @@ async fn create_user_with_role(
     };
     let user = user_repo::create(db, model).await?;
 
-    if let Ok(Some(default_policy)) = policy_repo::find_default(db).await {
+    if let Some(default_policy) = state.policy_snapshot.system_default_policy() {
         let usp = crate::entities::user_storage_policy::ActiveModel {
             user_id: Set(user.id),
             policy_id: Set(default_policy.id),
@@ -249,6 +248,10 @@ async fn create_user_with_role(
                 "failed to assign default policy to new user '{}': {e}",
                 username
             );
+        } else {
+            state
+                .policy_snapshot
+                .set_user_default_policy(user.id, default_policy.id);
         }
     }
 

@@ -7,6 +7,61 @@ use actix_web::test;
 use serde_json::Value;
 
 #[actix_web::test]
+async fn test_user_default_policy_switch_updates_snapshot_immediately() {
+    use aster_drive::services::{auth_service, file_service, policy_service};
+    use aster_drive::types::DriverType;
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "policysnapsw",
+        "policy-snapshot-switch@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let initial_policy = file_service::resolve_policy(&state, user.id, None)
+        .await
+        .unwrap();
+
+    let alternate_base_path = format!("/tmp/asterdrive-policy-switch-{}", uuid::Uuid::new_v4());
+    std::fs::create_dir_all(&alternate_base_path).unwrap();
+    let alternate_policy = policy_service::create(
+        &state,
+        "Alternate Local",
+        DriverType::Local,
+        "",
+        "",
+        "",
+        "",
+        &alternate_base_path,
+        0,
+        None,
+        false,
+        None,
+    )
+    .await
+    .unwrap();
+
+    assert_ne!(alternate_policy.id, initial_policy.id);
+
+    policy_service::assign_user_policy(&state, user.id, alternate_policy.id, true, 0)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        state.policy_snapshot.resolve_default_policy_id(user.id),
+        Some(alternate_policy.id)
+    );
+
+    let resolved_after_switch = file_service::resolve_policy(&state, user.id, None)
+        .await
+        .unwrap();
+    assert_eq!(resolved_after_switch.id, alternate_policy.id);
+}
+
+#[actix_web::test]
 async fn test_policy_crud() {
     let state = common::setup().await;
     let app = create_test_app!(state);

@@ -1,7 +1,9 @@
 pub mod definitions;
 mod loader;
+mod runtime_config;
 mod schema;
 
+pub use runtime_config::RuntimeConfig;
 pub use schema::{
     AuthConfig, CacheConfig, Config, DatabaseConfig, LoggingConfig, RateLimitConfig, RateLimitTier,
     ServerConfig, WebDavConfig,

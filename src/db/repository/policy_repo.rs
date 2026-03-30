@@ -58,6 +58,16 @@ pub async fn find_user_default<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+pub async fn find_all_user_defaults<C: ConnectionTrait>(
+    db: &C,
+) -> Result<Vec<user_storage_policy::Model>> {
+    UserStoragePolicy::find()
+        .filter(user_storage_policy::Column::IsDefault.eq(true))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn create<C: ConnectionTrait>(
     db: &C,
     model: storage_policy::ActiveModel,

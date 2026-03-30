@@ -71,9 +71,7 @@ pub async fn create(
         ..Default::default()
     };
     let result = policy_repo::create(&state.db, model).await?;
-    if is_default {
-        invalidate_policy_cache(state, result.id).await;
-    }
+    state.policy_snapshot.reload(&state.db).await?;
     Ok(result)
 }
 
@@ -117,7 +115,7 @@ pub async fn delete(state: &AppState, id: i64) -> Result<()> {
         .await
         .map_err(AsterError::from)?;
 
-    invalidate_policy_cache(state, id).await;
+    state.policy_snapshot.reload(&state.db).await?;
     state.driver_registry.invalidate(id);
     Ok(())
 }
@@ -199,8 +197,7 @@ pub async fn update(
     active.updated_at = Set(Utc::now());
     let result = active.update(&state.db).await.map_err(AsterError::from)?;
 
-    // 缓存失效：策略数据 + driver 实例
-    invalidate_policy_cache(state, id).await;
+    state.policy_snapshot.reload(&state.db).await?;
     state.driver_registry.invalidate(id);
 
     Ok(result)
@@ -337,13 +334,7 @@ pub async fn assign_user_policy(
         ..Default::default()
     };
     let result = policy_repo::create_user_policy(&state.db, model).await?;
-
-    // invalidate cache
-    state
-        .cache
-        .delete(&format!("user_default_policy:{user_id}"))
-        .await;
-
+    state.policy_snapshot.reload(&state.db).await?;
     Ok(result)
 }
 
@@ -373,7 +364,6 @@ pub async fn update_user_policy(
         policy_repo::clear_user_default(&state.db, existing.user_id).await?;
     }
 
-    let user_id = existing.user_id;
     let mut active: user_storage_policy::ActiveModel = existing.into();
     if let Some(v) = is_default {
         active.is_default = Set(v);
@@ -382,13 +372,7 @@ pub async fn update_user_policy(
         active.quota_bytes = Set(v);
     }
     let result = policy_repo::update_user_policy(&state.db, active).await?;
-
-    // invalidate cache
-    state
-        .cache
-        .delete(&format!("user_default_policy:{user_id}"))
-        .await;
-
+    state.policy_snapshot.reload(&state.db).await?;
     Ok(result)
 }
 
@@ -412,17 +396,6 @@ pub async fn remove_user_policy(state: &AppState, id: i64) -> Result<()> {
     }
 
     policy_repo::delete_user_policy(&state.db, id).await?;
-
-    state
-        .cache
-        .delete(&format!("user_default_policy:{user_id}"))
-        .await;
-
+    state.policy_snapshot.reload(&state.db).await?;
     Ok(())
-}
-
-/// 统一的策略缓存失效
-async fn invalidate_policy_cache(state: &AppState, policy_id: i64) {
-    state.cache.delete(&format!("policy:{policy_id}")).await;
-    state.cache.invalidate_prefix("user_default_policy:").await;
 }

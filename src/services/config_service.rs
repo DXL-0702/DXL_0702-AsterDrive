@@ -40,11 +40,15 @@ pub async fn set(
         validate_value_type(def.value_type, value)?;
     }
 
-    config_repo::upsert(&state.db, key, value, updated_by).await
+    let config = config_repo::upsert(&state.db, key, value, updated_by).await?;
+    state.runtime_config.apply(config.clone());
+    Ok(config)
 }
 
 pub async fn delete(state: &AppState, key: &str) -> Result<()> {
-    config_repo::delete_by_key(&state.db, key).await
+    config_repo::delete_by_key(&state.db, key).await?;
+    state.runtime_config.remove(key);
+    Ok(())
 }
 
 pub async fn set_with_audit(

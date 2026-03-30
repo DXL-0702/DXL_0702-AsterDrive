@@ -176,7 +176,7 @@ pub async fn to_user_infos(
     audience: profile_service::AvatarAudience,
 ) -> Result<Vec<UserInfo>> {
     let profile_map = profile_service::get_profile_info_map(state, &users, audience).await?;
-    let gravatar_base_url = profile_service::resolve_gravatar_base_url(&state.db).await;
+    let gravatar_base_url = profile_service::resolve_gravatar_base_url(state);
 
     Ok(users
         .into_iter()
@@ -415,11 +415,9 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
         .await
         .map_err(AsterError::from)?;
 
-    // 清理缓存
     state
-        .cache
-        .delete(&format!("user_default_policy:{target_user_id}"))
-        .await;
+        .policy_snapshot
+        .remove_user_default_policy(target_user_id);
 
     tracing::info!(
         "force-deleted user #{} ({}) and all associated data ({} files, {} folders)",

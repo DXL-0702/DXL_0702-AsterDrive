@@ -1,0 +1,194 @@
+use std::collections::HashMap;
+use std::sync::RwLock;
+
+use sea_orm::ConnectionTrait;
+
+use crate::db::repository::config_repo;
+use crate::entities::system_config;
+use crate::errors::Result;
+
+pub struct RuntimeConfig {
+    snapshot: RwLock<HashMap<String, system_config::Model>>,
+}
+
+impl RuntimeConfig {
+    pub fn new() -> Self {
+        Self {
+            snapshot: RwLock::new(HashMap::new()),
+        }
+    }
+
+    pub async fn reload<C: ConnectionTrait>(&self, db: &C) -> Result<()> {
+        let configs = config_repo::find_all(db).await?;
+        let snapshot = configs
+            .into_iter()
+            .map(|config| (config.key.clone(), config))
+            .collect();
+        *self
+            .snapshot
+            .write()
+            .expect("runtime config snapshot lock poisoned") = snapshot;
+        Ok(())
+    }
+
+    pub fn get_model(&self, key: &str) -> Option<system_config::Model> {
+        self.snapshot
+            .read()
+            .expect("runtime config snapshot lock poisoned")
+            .get(key)
+            .cloned()
+    }
+
+    pub fn get(&self, key: &str) -> Option<String> {
+        self.get_model(key).map(|config| config.value)
+    }
+
+    pub fn get_bool(&self, key: &str) -> Option<bool> {
+        let value = self.get(key)?;
+        parse_bool(&value)
+    }
+
+    pub fn get_i64(&self, key: &str) -> Option<i64> {
+        self.get(key)?.trim().parse().ok()
+    }
+
+    pub fn get_u64(&self, key: &str) -> Option<u64> {
+        self.get(key)?.trim().parse().ok()
+    }
+
+    pub fn get_string_or(&self, key: &str, default: &str) -> String {
+        self.get(key).unwrap_or_else(|| default.to_string())
+    }
+
+    pub fn get_bool_or(&self, key: &str, default: bool) -> bool {
+        self.get_bool(key).unwrap_or(default)
+    }
+
+    pub fn get_i64_or(&self, key: &str, default: i64) -> i64 {
+        self.get_i64(key).unwrap_or(default)
+    }
+
+    pub fn get_u64_or(&self, key: &str, default: u64) -> u64 {
+        self.get_u64(key).unwrap_or(default)
+    }
+
+    pub fn apply(&self, config: system_config::Model) {
+        let mut snapshot = self
+            .snapshot
+            .write()
+            .expect("runtime config snapshot lock poisoned");
+
+        if config.requires_restart && snapshot.contains_key(&config.key) {
+            return;
+        }
+
+        snapshot.insert(config.key.clone(), config);
+    }
+
+    pub fn remove(&self, key: &str) {
+        self.snapshot
+            .write()
+            .expect("runtime config snapshot lock poisoned")
+            .remove(key);
+    }
+}
+
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn parse_bool(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Some(true),
+        "false" | "0" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RuntimeConfig;
+    use crate::config::DatabaseConfig;
+    use crate::db;
+    use crate::db::repository::config_repo;
+    use crate::entities::system_config;
+    use chrono::Utc;
+    use migration::{Migrator, MigratorTrait};
+
+    async fn setup_db() -> sea_orm::DatabaseConnection {
+        let db = db::connect(&DatabaseConfig {
+            url: "sqlite::memory:".to_string(),
+            pool_size: 1,
+            retry_count: 0,
+        })
+        .await
+        .unwrap();
+        Migrator::up(&db, None).await.unwrap();
+        config_repo::ensure_defaults(&db).await.unwrap();
+        db
+    }
+
+    fn model(key: &str, value: &str, requires_restart: bool) -> system_config::Model {
+        system_config::Model {
+            id: 1,
+            key: key.to_string(),
+            value: value.to_string(),
+            value_type: "string".to_string(),
+            requires_restart,
+            is_sensitive: false,
+            source: "system".to_string(),
+            namespace: String::new(),
+            category: "test".to_string(),
+            description: "test".to_string(),
+            updated_at: Utc::now(),
+            updated_by: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn reload_loads_defaults_and_remove_hides_values() {
+        let db = setup_db().await;
+        let runtime_config = RuntimeConfig::new();
+
+        runtime_config.reload(&db).await.unwrap();
+        assert_eq!(runtime_config.get_bool("webdav_enabled"), Some(true));
+        assert_eq!(runtime_config.get_i64("max_versions_per_file"), Some(10));
+
+        runtime_config.remove("webdav_enabled");
+        assert_eq!(runtime_config.get("webdav_enabled"), None);
+    }
+
+    #[tokio::test]
+    async fn apply_updates_existing_runtime_values() {
+        let db = setup_db().await;
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.reload(&db).await.unwrap();
+
+        let mut updated = config_repo::find_by_key(&db, "gravatar_base_url")
+            .await
+            .unwrap()
+            .unwrap();
+        updated.value = "https://mirror.example.com/avatar".to_string();
+
+        runtime_config.apply(updated);
+
+        assert_eq!(
+            runtime_config.get("gravatar_base_url").as_deref(),
+            Some("https://mirror.example.com/avatar")
+        );
+    }
+
+    #[tokio::test]
+    async fn apply_keeps_existing_value_when_config_requires_restart() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(model("test.requires_restart", "old", false));
+        runtime_config.apply(model("test.requires_restart", "new", true));
+
+        assert_eq!(
+            runtime_config.get("test.requires_restart").as_deref(),
+            Some("old")
+        );
+    }
+}

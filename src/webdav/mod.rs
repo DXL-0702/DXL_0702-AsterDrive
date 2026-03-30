@@ -13,7 +13,6 @@ use dav_server::{DavConfig, DavHandler};
 use sea_orm::DatabaseConnection;
 
 use crate::config::WebDavConfig;
-use crate::db::repository::config_repo;
 use crate::runtime::AppState;
 
 /// WebDAV 共享状态（单例）
@@ -30,10 +29,7 @@ pub async fn webdav_handler(
     webdav: web::Data<WebDavState>,
 ) -> DavResponse {
     // 1. 检查运行时开关 (system_config: webdav_enabled)
-    let enabled = match config_repo::find_by_key(&state.db, "webdav_enabled").await {
-        Ok(Some(cfg)) => cfg.value != "false",
-        _ => true, // 默认启用
-    };
+    let enabled = state.runtime_config.get_bool_or("webdav_enabled", true);
 
     if !enabled {
         return http::Response::builder()
@@ -90,6 +86,8 @@ pub async fn webdav_handler(
     let dav_fs = fs::AsterDavFs::new(
         state.db.clone(),
         state.driver_registry.clone(),
+        state.runtime_config.clone(),
+        state.policy_snapshot.clone(),
         state.config.clone(),
         state.cache.clone(),
         state.thumbnail_tx.clone(),

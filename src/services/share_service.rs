@@ -194,7 +194,7 @@ async fn resolve_share_owner_info(
 ) -> Result<SharePublicOwnerInfo> {
     let user = user_repo::find_by_id(&state.db, share.user_id).await?;
     let profile = user_profile_repo::find_by_user_id(&state.db, share.user_id).await?;
-    let gravatar_base_url = profile_service::resolve_gravatar_base_url(&state.db).await;
+    let gravatar_base_url = profile_service::resolve_gravatar_base_url(state);
 
     Ok(SharePublicOwnerInfo {
         name: resolve_share_owner_name(&user, profile.as_ref()),

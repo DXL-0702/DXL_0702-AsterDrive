@@ -64,6 +64,8 @@ async fn test_aster_dav_file_write_mode_skips_empty_flush_and_persists_written_c
     let mut empty_file = AsterDavFile::for_write(
         state.db.clone(),
         state.driver_registry.clone(),
+        state.runtime_config.clone(),
+        state.policy_snapshot.clone(),
         state.config.clone(),
         state.cache.clone(),
         state.thumbnail_tx.clone(),
@@ -93,6 +95,8 @@ async fn test_aster_dav_file_write_mode_skips_empty_flush_and_persists_written_c
     let mut written_file = AsterDavFile::for_write(
         state.db.clone(),
         state.driver_registry.clone(),
+        state.runtime_config.clone(),
+        state.policy_snapshot.clone(),
         state.config.clone(),
         state.cache.clone(),
         state.thumbnail_tx.clone(),
@@ -155,6 +159,8 @@ async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
     let dav_fs = AsterDavFs::new(
         state.db.clone(),
         state.driver_registry.clone(),
+        state.runtime_config.clone(),
+        state.policy_snapshot.clone(),
         state.config.clone(),
         state.cache.clone(),
         state.thumbnail_tx.clone(),

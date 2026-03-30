@@ -14,7 +14,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::constants::YEAR_SECS;
-use crate::db::repository::{config_repo, policy_repo, user_profile_repo, user_repo};
+use crate::db::repository::{user_profile_repo, user_repo};
 use crate::entities::{user, user_profile};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
@@ -48,10 +48,15 @@ pub struct UserProfileInfo {
 
 const DEFAULT_GRAVATAR_BASE_URL: &str = "https://www.gravatar.com/avatar";
 
-pub async fn resolve_gravatar_base_url(db: &sea_orm::DatabaseConnection) -> String {
-    match config_repo::find_by_key(db, "gravatar_base_url").await {
-        Ok(Some(cfg)) if !cfg.value.trim().is_empty() => cfg.value,
-        _ => DEFAULT_GRAVATAR_BASE_URL.to_string(),
+pub fn resolve_gravatar_base_url(state: &AppState) -> String {
+    let base_url = state
+        .runtime_config
+        .get_string_or("gravatar_base_url", DEFAULT_GRAVATAR_BASE_URL);
+
+    if base_url.trim().is_empty() {
+        DEFAULT_GRAVATAR_BASE_URL.to_string()
+    } else {
+        base_url
     }
 }
 
@@ -193,7 +198,7 @@ async fn delete_upload_objects(state: &AppState, profile: &user_profile::Model) 
         return;
     };
 
-    let Ok(policy) = policy_repo::find_by_id(&state.db, policy_id).await else {
+    let Some(policy) = state.policy_snapshot.get_policy(policy_id) else {
         return;
     };
     let Ok(driver) = state.driver_registry.get_driver(&policy) else {
@@ -316,7 +321,7 @@ pub async fn get_profile_info(
     audience: AvatarAudience,
 ) -> Result<UserProfileInfo> {
     let profile = user_profile_repo::find_by_user_id(&state.db, user.id).await?;
-    let gravatar_base_url = resolve_gravatar_base_url(&state.db).await;
+    let gravatar_base_url = resolve_gravatar_base_url(state);
     Ok(build_profile_info(
         user,
         profile.as_ref(),
@@ -332,7 +337,7 @@ pub async fn get_profile_info_map(
 ) -> Result<HashMap<i64, UserProfileInfo>> {
     let user_ids: Vec<i64> = users.iter().map(|user| user.id).collect();
     let profiles = user_profile_repo::find_by_user_ids(&state.db, &user_ids).await?;
-    let gravatar_base_url = resolve_gravatar_base_url(&state.db).await;
+    let gravatar_base_url = resolve_gravatar_base_url(state);
 
     Ok(users
         .iter()
@@ -412,7 +417,7 @@ pub async fn upload_avatar(
         delete_upload_objects(state, previous).await;
     }
 
-    let gravatar_base_url = resolve_gravatar_base_url(&state.db).await;
+    let gravatar_base_url = resolve_gravatar_base_url(state);
     Ok(build_profile_info(
         &user,
         Some(&saved),
@@ -434,7 +439,7 @@ pub async fn set_avatar_source(
 
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
-    let gravatar_base_url = resolve_gravatar_base_url(&state.db).await;
+    let gravatar_base_url = resolve_gravatar_base_url(state);
 
     if existing.is_none() && source == AvatarSource::None {
         return Ok(build_profile_info(
@@ -494,7 +499,7 @@ pub async fn update_profile(
 ) -> Result<UserProfileInfo> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
-    let gravatar_base_url = resolve_gravatar_base_url(&state.db).await;
+    let gravatar_base_url = resolve_gravatar_base_url(state);
 
     let Some(display_name) = display_name else {
         return Ok(build_profile_info(
@@ -583,7 +588,7 @@ pub async fn get_avatar_bytes(state: &AppState, user_id: i64, size: u32) -> Resu
     let policy_id = profile
         .avatar_policy_id
         .ok_or_else(|| AsterError::record_not_found("avatar policy missing"))?;
-    let policy = policy_repo::find_by_id(&state.db, policy_id).await?;
+    let policy = state.policy_snapshot.get_policy_or_err(policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let path = avatar_object_key(prefix, size);
     driver

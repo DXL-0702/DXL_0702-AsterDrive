@@ -7,8 +7,8 @@ use sea_orm::DatabaseConnection;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use crate::cache::CacheBackend;
-use crate::config::Config;
-use crate::storage::DriverRegistry;
+use crate::config::{Config, RuntimeConfig};
+use crate::storage::{DriverRegistry, PolicySnapshot};
 use crate::webdav::metadata::AsterDavMeta;
 
 /// DavFile 实现，使用临时文件避免大文件内存爆炸
@@ -47,6 +47,8 @@ enum FileMode {
     Write {
         db: DatabaseConnection,
         driver_registry: Arc<DriverRegistry>,
+        runtime_config: Arc<RuntimeConfig>,
+        policy_snapshot: Arc<PolicySnapshot>,
         config: Arc<Config>,
         cache: Arc<dyn CacheBackend>,
         thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
@@ -84,6 +86,8 @@ impl AsterDavFile {
     pub async fn for_write(
         db: DatabaseConnection,
         driver_registry: Arc<DriverRegistry>,
+        runtime_config: Arc<RuntimeConfig>,
+        policy_snapshot: Arc<PolicySnapshot>,
         config: Arc<Config>,
         cache: Arc<dyn CacheBackend>,
         thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
@@ -106,6 +110,8 @@ impl AsterDavFile {
             mode: FileMode::Write {
                 db,
                 driver_registry,
+                runtime_config,
+                policy_snapshot,
                 config,
                 cache,
                 thumbnail_tx,
@@ -222,6 +228,8 @@ impl DavFile for AsterDavFile {
             let FileMode::Write {
                 db,
                 driver_registry,
+                runtime_config,
+                policy_snapshot,
                 config,
                 cache,
                 thumbnail_tx,
@@ -247,6 +255,8 @@ impl DavFile for AsterDavFile {
             let state = crate::runtime::AppState {
                 db: db.clone(),
                 driver_registry: driver_registry.clone(),
+                runtime_config: runtime_config.clone(),
+                policy_snapshot: policy_snapshot.clone(),
                 config: config.clone(),
                 cache: cache.clone(),
                 thumbnail_tx: thumbnail_tx.clone(),

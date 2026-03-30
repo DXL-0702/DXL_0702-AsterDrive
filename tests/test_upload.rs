@@ -10,6 +10,10 @@ use tokio::task::JoinSet;
 const TEST_CHUNK_SIZE: usize = 5_242_880;
 const RUSTFS_TEST_IMAGE_TAG: &str = "1.0.0-alpha.90";
 
+async fn reload_policy_snapshot(state: &aster_drive::runtime::AppState) {
+    state.policy_snapshot.reload(&state.db).await.unwrap();
+}
+
 async fn set_default_local_content_dedup(state: &aster_drive::runtime::AppState, enabled: bool) {
     use aster_drive::db::repository::policy_repo;
     use sea_orm::{ActiveModelTrait, Set};
@@ -26,6 +30,7 @@ async fn set_default_local_content_dedup(state: &aster_drive::runtime::AppState,
     }
     .to_string());
     active.update(&state.db).await.unwrap();
+    reload_policy_snapshot(state).await;
 }
 
 async fn upload_same_content_direct_and_chunked(
@@ -321,6 +326,8 @@ async fn create_s3_default_policy(
     )
     .await
     .unwrap();
+
+    reload_policy_snapshot(state).await;
 
     policy
 }
@@ -1236,6 +1243,7 @@ async fn test_presigned_upload_s3_e2e() {
     )
     .await
     .unwrap();
+    reload_policy_snapshot(&state).await;
 
     // 1. init_upload → 应返回 presigned 模式
     let data = b"hello presigned world!";
@@ -1384,6 +1392,7 @@ async fn test_presigned_multipart_upload_s3_e2e() {
     )
     .await
     .unwrap();
+    reload_policy_snapshot(&state).await;
 
     let mut data = vec![b'A'; 5_242_880];
     data.extend_from_slice(b"multipart tail");

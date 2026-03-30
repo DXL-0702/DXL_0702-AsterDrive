@@ -6,7 +6,7 @@ use sea_orm::{
     Set, sea_query::Expr,
 };
 
-use crate::db::repository::{file_repo, policy_repo, upload_session_repo};
+use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{
     file::{self, Entity as File},
     file_blob::{self, Entity as FileBlob},
@@ -229,7 +229,7 @@ async fn cleanup_broken_completed_session_object(
         return;
     }
 
-    let Ok(policy) = policy_repo::find_by_id(&state.db, session.policy_id).await else {
+    let Some(policy) = state.policy_snapshot.get_policy(session.policy_id) else {
         tracing::warn!(
             session_id = %session.id,
             policy_id = session.policy_id,

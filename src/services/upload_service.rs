@@ -4,9 +4,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::constants::HOUR_SECS;
-use crate::db::repository::{
-    file_repo, policy_repo, upload_session_part_repo, upload_session_repo, user_repo,
-};
+use crate::db::repository::{file_repo, upload_session_part_repo, upload_session_repo, user_repo};
 use crate::entities::{file, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
@@ -393,7 +391,7 @@ pub async fn upload_chunk(
             });
         }
 
-        let policy = policy_repo::find_by_id(db, session.policy_id).await?;
+        let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
         let driver = state.driver_registry.get_driver(&policy)?;
         let etag = match driver
             .upload_multipart_part(temp_key, multipart_id, s3_part_number, data)
@@ -568,7 +566,7 @@ pub async fn complete_upload(
         )));
     }
 
-    let policy = policy_repo::find_by_id(db, session.policy_id).await?;
+    let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let should_dedup = file_service::local_content_dedup_enabled(&policy);
 
@@ -767,7 +765,7 @@ async fn complete_s3_multipart_upload_session(
         .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_multipart_id"))?
         .to_string();
 
-    let policy = policy_repo::find_by_id(db, session.policy_id).await?;
+    let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let upload_id = session.id.clone();
 
@@ -813,7 +811,7 @@ async fn complete_presigned_upload(
         .ok_or_else(|| AsterError::upload_assembly_failed("missing s3_temp_key"))?
         .to_string();
 
-    let policy = policy_repo::find_by_id(db, session.policy_id).await?;
+    let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
 
     let actual_size = ensure_uploaded_s3_object_size(
@@ -935,7 +933,7 @@ pub async fn cancel_upload(state: &AppState, upload_id: &str, user_id: i64) -> R
 
     // 清理 S3 临时对象 / multipart upload
     if let Some(ref temp_key) = session.s3_temp_key {
-        let policy = policy_repo::find_by_id(&state.db, session.policy_id).await?;
+        let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
         if let Ok(driver) = state.driver_registry.get_driver(&policy) {
             if let Some(ref multipart_id) = session.s3_multipart_id {
                 if let Err(e) = driver.abort_multipart_upload(temp_key, multipart_id).await {
@@ -965,7 +963,7 @@ pub async fn get_progress(
     // S3 presigned multipart 仅在 Presigned 阶段查询远端已上传 parts；
     // 其他上传模式仍按本地临时分片扫描。
     let chunks_on_disk = if let Some(multipart_id) = session.s3_multipart_id.as_deref() {
-        let policy = policy_repo::find_by_id(&state.db, session.policy_id).await?;
+        let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
         let strategy = if policy.driver_type == DriverType::S3 {
             Some(parse_storage_policy_options(&policy.options).effective_s3_upload_strategy())
         } else {
@@ -1034,7 +1032,7 @@ pub async fn presign_parts(
         .as_deref()
         .ok_or_else(|| AsterError::validation_error("missing s3_temp_key"))?;
 
-    let policy = policy_repo::find_by_id(db, session.policy_id).await?;
+    let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
 
     let expires = std::time::Duration::from_secs(HOUR_SECS);
@@ -1075,7 +1073,7 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
     for session in expired {
         // 清理 S3 临时对象 / multipart upload
         if let Some(ref temp_key) = session.s3_temp_key
-            && let Ok(policy) = policy_repo::find_by_id(&state.db, session.policy_id).await
+            && let Some(policy) = state.policy_snapshot.get_policy(session.policy_id)
             && let Ok(driver) = state.driver_registry.get_driver(&policy)
         {
             if let Some(ref multipart_id) = session.s3_multipart_id {

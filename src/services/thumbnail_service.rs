@@ -7,11 +7,11 @@ use image::imageops::FilterType;
 use image::{ImageReader, Limits};
 use tokio::sync::{Mutex, Semaphore, mpsc};
 
-use crate::db::repository::{file_repo, policy_repo};
+use crate::db::repository::file_repo;
 use crate::entities::file_blob;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
-use crate::storage::DriverRegistry;
+use crate::storage::{DriverRegistry, PolicySnapshot};
 
 const THUMB_MAX_DIM: u32 = 200;
 const THUMB_PREFIX: &str = "_thumb";
@@ -39,7 +39,7 @@ fn thumb_path(blob_hash: &str) -> String {
 
 /// 尝试获取已有缩略图，如果不存在则入队后台生成并返回 None
 pub async fn get_or_enqueue(state: &AppState, blob: &file_blob::Model) -> Result<Option<Vec<u8>>> {
-    let policy = policy_repo::find_by_id(&state.db, blob.policy_id).await?;
+    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let path = thumb_path(&blob.hash);
 
@@ -61,7 +61,7 @@ pub async fn get_or_enqueue(state: &AppState, blob: &file_blob::Model) -> Result
 
 /// 获取或同步生成缩略图（仅用于公开分享等无法等待的场景）
 pub async fn get_or_generate(state: &AppState, blob: &file_blob::Model) -> Result<Vec<u8>> {
-    let policy = policy_repo::find_by_id(&state.db, blob.policy_id).await?;
+    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let path = thumb_path(&blob.hash);
 
@@ -88,7 +88,7 @@ pub async fn get_or_generate(state: &AppState, blob: &file_blob::Model) -> Resul
 
 /// 删除缩略图（blob 物理删除时调用）
 pub async fn delete_thumbnail(state: &AppState, blob: &file_blob::Model) -> Result<()> {
-    let policy = policy_repo::find_by_id(&state.db, blob.policy_id).await?;
+    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let path = thumb_path(&blob.hash);
 
@@ -145,6 +145,7 @@ fn max_concurrent_thumbnails() -> usize {
 pub fn spawn_worker(
     db: actix_web::web::Data<sea_orm::DatabaseConnection>,
     driver_registry: Arc<DriverRegistry>,
+    policy_snapshot: Arc<PolicySnapshot>,
     mut rx: mpsc::Receiver<i64>,
 ) {
     let pending = Arc::new(Mutex::new(HashSet::<i64>::new()));
@@ -168,6 +169,7 @@ pub fn spawn_worker(
 
             let db = db.clone();
             let registry = driver_registry.clone();
+            let policy_snapshot = policy_snapshot.clone();
             let pending_inner = pending.clone();
             let sem = semaphore.clone();
 
@@ -176,7 +178,9 @@ pub fn spawn_worker(
                 // 获取许可（背压：队列消费速度受限于并发上限）
                 let _permit = sem.acquire().await;
 
-                if let Err(e) = process_one_thumbnail(&db, &registry, blob_id).await {
+                if let Err(e) =
+                    process_one_thumbnail(&db, &registry, &policy_snapshot, blob_id).await
+                {
                     tracing::warn!("thumbnail generation failed for blob #{blob_id}: {e}");
                 }
 
@@ -192,10 +196,11 @@ pub fn spawn_worker(
 async fn process_one_thumbnail(
     db: &sea_orm::DatabaseConnection,
     driver_registry: &DriverRegistry,
+    policy_snapshot: &PolicySnapshot,
     blob_id: i64,
 ) -> Result<()> {
     let blob = file_repo::find_blob_by_id(db, blob_id).await?;
-    let policy = policy_repo::find_by_id(db, blob.policy_id).await?;
+    let policy = policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = driver_registry.get_driver(&policy)?;
     let path = thumb_path(&blob.hash);
 

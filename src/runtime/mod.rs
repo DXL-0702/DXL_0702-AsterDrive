@@ -5,14 +5,16 @@ pub mod startup;
 pub mod tasks;
 
 use crate::cache::CacheBackend;
-use crate::config::Config;
-use crate::storage::DriverRegistry;
+use crate::config::{Config, RuntimeConfig};
+use crate::storage::{DriverRegistry, PolicySnapshot};
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 
 pub struct AppState {
     pub db: DatabaseConnection,
     pub driver_registry: Arc<DriverRegistry>,
+    pub runtime_config: Arc<RuntimeConfig>,
+    pub policy_snapshot: Arc<PolicySnapshot>,
     pub config: Arc<Config>,
     pub cache: Arc<dyn CacheBackend>,
     /// 缩略图生成队列（blob_id），后台 worker 消费
