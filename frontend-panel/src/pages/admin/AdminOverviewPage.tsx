@@ -20,7 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription } from "@/components/ui/card";
 import { Icon, type IconName } from "@/components/ui/icon";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
 	Table,
@@ -438,9 +437,6 @@ export default function AdminOverviewPage() {
 				},
 			]
 		: [];
-	const dailyReportsHeightClass =
-		overview && overview.daily_reports.length > 12 ? "h-[420px]" : undefined;
-
 	return (
 		<AdminLayout>
 			<AdminPageShell className="pt-2 md:pt-3">
@@ -604,48 +600,46 @@ export default function AdminOverviewPage() {
 								<SkeletonTable columns={4} rows={8} />
 							</div>
 						) : overview?.recent_events.length ? (
-							<ScrollArea className="min-h-0 flex-1">
-								<Table>
-									<TableHeader>
-										<TableRow>
-											<TableHead>{t("audit_time")}</TableHead>
-											<TableHead>{t("audit_action")}</TableHead>
-											<TableHead>{t("audit_user")}</TableHead>
-											<TableHead>{t("audit_entity")}</TableHead>
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead>{t("audit_time")}</TableHead>
+										<TableHead>{t("audit_action")}</TableHead>
+										<TableHead>{t("audit_user")}</TableHead>
+										<TableHead>{t("audit_entity")}</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{overview.recent_events.map((event) => (
+										<TableRow key={event.id}>
+											<TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+												{formatDateAbsolute(event.created_at)}
+											</TableCell>
+											<TableCell>
+												<Badge
+													variant="outline"
+													className={getActionBadgeClass(event.action)}
+												>
+													{event.action}
+												</Badge>
+											</TableCell>
+											<TableCell className="text-muted-foreground">
+												#{event.user_id}
+											</TableCell>
+											<TableCell>
+												<div className="flex flex-col gap-1">
+													<span className="text-sm">
+														{event.entity_name ?? event.entity_type ?? "---"}
+													</span>
+													<span className="text-xs text-muted-foreground">
+														{event.entity_type ?? "---"}
+													</span>
+												</div>
+											</TableCell>
 										</TableRow>
-									</TableHeader>
-									<TableBody>
-										{overview.recent_events.map((event) => (
-											<TableRow key={event.id}>
-												<TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-													{formatDateAbsolute(event.created_at)}
-												</TableCell>
-												<TableCell>
-													<Badge
-														variant="outline"
-														className={getActionBadgeClass(event.action)}
-													>
-														{event.action}
-													</Badge>
-												</TableCell>
-												<TableCell className="text-muted-foreground">
-													#{event.user_id}
-												</TableCell>
-												<TableCell>
-													<div className="flex flex-col gap-1">
-														<span className="text-sm">
-															{event.entity_name ?? event.entity_type ?? "---"}
-														</span>
-														<span className="text-xs text-muted-foreground">
-															{event.entity_type ?? "---"}
-														</span>
-													</div>
-												</TableCell>
-											</TableRow>
-										))}
-									</TableBody>
-								</Table>
-							</ScrollArea>
+									))}
+								</TableBody>
+							</Table>
 						) : (
 							<EmptyState
 								icon={<Icon name="Scroll" className="h-10 w-10" />}
@@ -656,7 +650,10 @@ export default function AdminOverviewPage() {
 					</AdminSurface>
 				</div>
 
-				<AdminSurface padded={false} className="min-h-0 overflow-hidden">
+				<AdminSurface
+					padded={false}
+					className="flex-none min-h-0 overflow-hidden"
+				>
 					<div className={cn("border-b py-4", PAGE_SECTION_PADDING_CLASS)}>
 						<h3 className="text-base font-semibold">
 							{t("overview_daily_reports")}
@@ -673,36 +670,32 @@ export default function AdminOverviewPage() {
 							<SkeletonTable columns={7} rows={7} />
 						</div>
 					) : (
-						<ScrollArea className={cn("min-h-0", dailyReportsHeightClass)}>
-							<Table>
-								<TableHeader>
-									<TableRow>
-										<TableHead>{t("overview_report_date")}</TableHead>
-										<TableHead>{t("overview_report_sign_ins")}</TableHead>
-										<TableHead>{t("overview_report_new_users")}</TableHead>
-										<TableHead>{t("overview_report_uploads")}</TableHead>
-										<TableHead>{t("overview_report_shares")}</TableHead>
-										<TableHead>{t("overview_report_deletions")}</TableHead>
-										<TableHead>{t("overview_report_total_events")}</TableHead>
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead>{t("overview_report_date")}</TableHead>
+									<TableHead>{t("overview_report_sign_ins")}</TableHead>
+									<TableHead>{t("overview_report_new_users")}</TableHead>
+									<TableHead>{t("overview_report_uploads")}</TableHead>
+									<TableHead>{t("overview_report_shares")}</TableHead>
+									<TableHead>{t("overview_report_deletions")}</TableHead>
+									<TableHead>{t("overview_report_total_events")}</TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{overview?.daily_reports.map((report) => (
+									<TableRow key={report.date}>
+										<TableCell className="font-medium">{report.date}</TableCell>
+										<TableCell>{report.sign_ins}</TableCell>
+										<TableCell>{report.new_users}</TableCell>
+										<TableCell>{report.uploads}</TableCell>
+										<TableCell>{report.share_creations}</TableCell>
+										<TableCell>{report.deletions}</TableCell>
+										<TableCell>{report.total_events}</TableCell>
 									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{overview?.daily_reports.map((report) => (
-										<TableRow key={report.date}>
-											<TableCell className="font-medium">
-												{report.date}
-											</TableCell>
-											<TableCell>{report.sign_ins}</TableCell>
-											<TableCell>{report.new_users}</TableCell>
-											<TableCell>{report.uploads}</TableCell>
-											<TableCell>{report.share_creations}</TableCell>
-											<TableCell>{report.deletions}</TableCell>
-											<TableCell>{report.total_events}</TableCell>
-										</TableRow>
-									))}
-								</TableBody>
-							</Table>
-						</ScrollArea>
+								))}
+							</TableBody>
+						</Table>
 					)}
 				</AdminSurface>
 			</AdminPageShell>

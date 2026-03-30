@@ -1,0 +1,271 @@
+//! PostgreSQL / MySQL 生产数据库 smoke tests（使用 testcontainers）
+
+#[macro_use]
+mod common;
+
+use actix_web::test;
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use serde_json::Value;
+use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
+
+fn upload_named_file(name: &str, content: &str, mime: &str, boundary: &str) -> String {
+    format!(
+        "--{boundary}\r\n\
+         Content-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\n\
+         Content-Type: {mime}\r\n\r\n\
+         {content}\r\n\
+         --{boundary}--\r\n"
+    )
+}
+
+async fn wait_for_database(database_url: &str) {
+    let mut last_err: Option<String> = None;
+    let ready = tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        loop {
+            let cfg = aster_drive::config::DatabaseConfig {
+                url: database_url.to_string(),
+                pool_size: 1,
+                retry_count: 0,
+            };
+            match aster_drive::db::connect(&cfg).await {
+                Ok(_) => break,
+                Err(err) => {
+                    last_err = Some(err.to_string());
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+            }
+        }
+    })
+    .await;
+
+    if ready.is_err() {
+        panic!(
+            "timed out waiting for database {database_url}: {}",
+            last_err.unwrap_or_else(|| "unknown error".to_string())
+        );
+    }
+}
+
+async fn assert_postgres_search_objects(db: &DatabaseConnection) {
+    let extension = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT extname FROM pg_extension WHERE extname = 'pg_trgm'",
+        ))
+        .await
+        .unwrap();
+    assert!(extension.is_some(), "pg_trgm extension should exist");
+
+    let indexes = db
+        .query_all_raw(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT indexname FROM pg_indexes \
+             WHERE schemaname = 'public' \
+               AND indexname IN ('idx_files_live_name_trgm', 'idx_folders_live_name_trgm')",
+        ))
+        .await
+        .unwrap();
+    let names: Vec<String> = indexes
+        .into_iter()
+        .map(|row| row.try_get_by_index(0).unwrap())
+        .collect();
+    assert!(names.iter().any(|name| name == "idx_files_live_name_trgm"));
+    assert!(
+        names
+            .iter()
+            .any(|name| name == "idx_folders_live_name_trgm")
+    );
+}
+
+async fn assert_mysql_search_objects(db: &DatabaseConnection) {
+    let file_index = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::MySql,
+            "SHOW INDEX FROM files WHERE Key_name = 'idx_files_name_fulltext'",
+        ))
+        .await
+        .unwrap();
+    assert!(file_index.is_some(), "files fulltext index should exist");
+
+    let folder_index = db
+        .query_one_raw(Statement::from_string(
+            DbBackend::MySql,
+            "SHOW INDEX FROM folders WHERE Key_name = 'idx_folders_name_fulltext'",
+        ))
+        .await
+        .unwrap();
+    assert!(
+        folder_index.is_some(),
+        "folders fulltext index should exist"
+    );
+}
+
+async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
+    wait_for_database(database_url).await;
+
+    let state = common::setup_with_database_url(database_url).await;
+    match backend {
+        DbBackend::Postgres => assert_postgres_search_objects(&state.db).await,
+        DbBackend::MySql => assert_mysql_search_objects(&state.db).await,
+        _ => unreachable!("only postgres/mysql smoke tests use this helper"),
+    }
+
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let register_req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "backend-user",
+            "email": "backend-user@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let register_resp = test::call_service(&app, register_req).await;
+    assert_eq!(register_resp.status(), 201);
+
+    let boundary = "----BackendBoundary123";
+    for (name, mime, content) in [
+        ("report.pdf", "application/pdf", "pdf content"),
+        ("notes.txt", "text/plain", "notes content"),
+    ] {
+        let payload = upload_named_file(name, content, mime, boundary);
+        let req = test::TestRequest::post()
+            .uri("/api/v1/files/upload")
+            .insert_header(("Cookie", format!("aster_access={token}")))
+            .insert_header((
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            ))
+            .set_payload(payload)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        let status = resp.status();
+        if status != 201 {
+            let body = test::read_body(resp).await;
+            panic!(
+                "upload {name} returned {status}: {}",
+                String::from_utf8_lossy(&body)
+            );
+        }
+    }
+
+    for folder_name in ["Documents", "Photos"] {
+        let req = test::TestRequest::post()
+            .uri("/api/v1/folders")
+            .insert_header(("Cookie", format!("aster_access={token}")))
+            .set_json(serde_json::json!({ "name": folder_name, "parent_id": null }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+    }
+
+    let search_req = test::TestRequest::get()
+        .uri("/api/v1/search?q=rep")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let search_resp = test::call_service(&app, search_req).await;
+    let search_status = search_resp.status();
+    if search_status != 200 {
+        let body = test::read_body(search_resp).await;
+        panic!(
+            "search returned {search_status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let search_body: Value = test::read_body_json(search_resp).await;
+    assert_eq!(search_body["data"]["total_files"], 1);
+    assert_eq!(search_body["data"]["files"][0]["name"], "report.pdf");
+
+    let short_search_req = test::TestRequest::get()
+        .uri("/api/v1/search?q=r")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let short_search_resp = test::call_service(&app, short_search_req).await;
+    let short_search_status = short_search_resp.status();
+    if short_search_status != 200 {
+        let body = test::read_body(short_search_resp).await;
+        panic!(
+            "short search returned {short_search_status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let short_search_body: Value = test::read_body_json(short_search_resp).await;
+    assert_eq!(short_search_body["data"]["total_files"], 1);
+    assert_eq!(short_search_body["data"]["files"][0]["name"], "report.pdf");
+
+    let folder_search_req = test::TestRequest::get()
+        .uri("/api/v1/search?type=folder&q=doc")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let folder_search_resp = test::call_service(&app, folder_search_req).await;
+    let folder_search_status = folder_search_resp.status();
+    if folder_search_status != 200 {
+        let body = test::read_body(folder_search_resp).await;
+        panic!(
+            "folder search returned {folder_search_status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let folder_search_body: Value = test::read_body_json(folder_search_resp).await;
+    assert_eq!(folder_search_body["data"]["total_folders"], 1);
+    assert_eq!(
+        folder_search_body["data"]["folders"][0]["name"],
+        "Documents"
+    );
+
+    let overview_req = test::TestRequest::get()
+        .uri("/api/v1/admin/overview?days=3&timezone=UTC&event_limit=1")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let overview_resp = test::call_service(&app, overview_req).await;
+    let overview_status = overview_resp.status();
+    if overview_status != 200 {
+        let body = test::read_body(overview_resp).await;
+        panic!(
+            "admin overview returned {overview_status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let overview_body: Value = test::read_body_json(overview_resp).await;
+    assert_eq!(overview_body["data"]["days"], 3);
+    assert_eq!(overview_body["data"]["stats"]["total_users"], 2);
+    assert_eq!(overview_body["data"]["stats"]["total_files"], 2);
+    assert_eq!(overview_body["data"]["stats"]["uploads_today"], 2);
+}
+
+#[actix_web::test]
+async fn test_postgres_smoke_search_and_admin_overview() {
+    let container = GenericImage::new("postgres", "16")
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(5432))
+        .with_env_var("POSTGRES_USER", "postgres")
+        .with_env_var("POSTGRES_PASSWORD", "postgres")
+        .with_env_var("POSTGRES_DB", "asterdrive")
+        .start()
+        .await
+        .expect("failed to start postgres container");
+
+    let port = container.get_host_port_ipv4(5432).await.unwrap();
+    let database_url = format!("postgres://postgres:postgres@127.0.0.1:{port}/asterdrive");
+
+    exercise_backend_smoke(&database_url, DbBackend::Postgres).await;
+}
+
+#[actix_web::test]
+async fn test_mysql_smoke_search_and_admin_overview() {
+    let container = GenericImage::new("mysql", "8.4")
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(3306))
+        .with_env_var("MYSQL_DATABASE", "asterdrive")
+        .with_env_var("MYSQL_USER", "aster")
+        .with_env_var("MYSQL_PASSWORD", "asterpass")
+        .with_env_var("MYSQL_ROOT_PASSWORD", "rootpass")
+        .start()
+        .await
+        .expect("failed to start mysql container");
+
+    let port = container.get_host_port_ipv4(3306).await.unwrap();
+    let database_url = format!("mysql://aster:asterpass@127.0.0.1:{port}/asterdrive");
+
+    exercise_backend_smoke(&database_url, DbBackend::MySql).await;
+}

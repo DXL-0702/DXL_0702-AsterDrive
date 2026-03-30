@@ -1,3 +1,4 @@
+use sea_orm::{ConnectionTrait, DbBackend};
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]
@@ -6,6 +7,7 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let backend = manager.get_connection().get_database_backend();
         // source: "system" | "custom"
         manager
             .alter_table(
@@ -52,16 +54,17 @@ impl MigrationTrait for Migration {
             .await?;
 
         // description: 描述
+        let mut description = ColumnDef::new(SystemConfig::Description);
+        description.text().not_null();
+        if backend != DbBackend::MySql {
+            description.default("");
+        }
+
         manager
             .alter_table(
                 Table::alter()
                     .table(SystemConfig::Table)
-                    .add_column(
-                        ColumnDef::new(SystemConfig::Description)
-                            .text()
-                            .not_null()
-                            .default(""),
-                    )
+                    .add_column(description)
                     .to_owned(),
             )
             .await

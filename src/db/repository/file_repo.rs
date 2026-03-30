@@ -457,7 +457,7 @@ pub async fn increment_blob_ref_count<C: ConnectionTrait>(db: &C, id: i64) -> Re
     let result = FileBlob::update_many()
         .col_expr(
             file_blob::Column::RefCount,
-            Expr::cust_with_values("ref_count + ?", [1i32]),
+            Expr::col(file_blob::Column::RefCount).add(1i32),
         )
         .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
         .filter(file_blob::Column::Id.eq(id))
@@ -488,7 +488,7 @@ pub async fn increment_blob_ref_count_by<C: ConnectionTrait>(
     let result = FileBlob::update_many()
         .col_expr(
             file_blob::Column::RefCount,
-            Expr::cust_with_values("ref_count + ?", [delta]),
+            Expr::col(file_blob::Column::RefCount).add(delta),
         )
         .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
         .filter(file_blob::Column::Id.eq(id))
@@ -507,10 +507,9 @@ pub async fn decrement_blob_ref_count<C: ConnectionTrait>(db: &C, id: i64) -> Re
     FileBlob::update_many()
         .col_expr(
             file_blob::Column::RefCount,
-            Expr::cust_with_values(
-                "CASE WHEN ref_count < ? THEN 0 ELSE ref_count - ? END",
-                [1i32, 1i32],
-            ),
+            Expr::case(Expr::col(file_blob::Column::RefCount).lt(1i32), 0)
+                .finally(Expr::col(file_blob::Column::RefCount).sub(1i32))
+                .into(),
         )
         .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
         .filter(file_blob::Column::Id.eq(id))
@@ -537,10 +536,9 @@ pub async fn decrement_blob_ref_count_by<C: ConnectionTrait>(
     FileBlob::update_many()
         .col_expr(
             file_blob::Column::RefCount,
-            Expr::cust_with_values(
-                "CASE WHEN ref_count < ? THEN 0 ELSE ref_count - ? END",
-                [delta, delta],
-            ),
+            Expr::case(Expr::col(file_blob::Column::RefCount).lt(delta), 0)
+                .finally(Expr::col(file_blob::Column::RefCount).sub(delta))
+                .into(),
         )
         .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
         .filter(file_blob::Column::Id.eq(id))
@@ -662,10 +660,9 @@ pub async fn decrement_blob_ref_counts<C: ConnectionTrait>(db: &C, ids: &[i64]) 
     FileBlob::update_many()
         .col_expr(
             file_blob::Column::RefCount,
-            Expr::cust_with_values(
-                "CASE WHEN ref_count < ? THEN 0 ELSE ref_count - ? END",
-                [1i32, 1i32],
-            ),
+            Expr::case(Expr::col(file_blob::Column::RefCount).lt(1i32), 0)
+                .finally(Expr::col(file_blob::Column::RefCount).sub(1i32))
+                .into(),
         )
         .col_expr(file_blob::Column::UpdatedAt, Expr::value(Utc::now()))
         .filter(file_blob::Column::Id.is_in(ids.to_vec()))
@@ -822,4 +819,34 @@ pub async fn find_all_by_user<C: ConnectionTrait>(
         .all(db)
         .await
         .map_err(AsterError::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::{DbBackend, QueryTrait};
+
+    #[test]
+    fn postgres_find_or_create_blob_insert_sql_uses_valid_on_conflict() {
+        let now = Utc::now();
+        let sql = FileBlob::insert(file_blob::ActiveModel {
+            hash: Set("hash".to_string()),
+            size: Set(1),
+            policy_id: Set(2),
+            storage_path: Set("files/hash".to_string()),
+            ref_count: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        })
+        .on_conflict_do_nothing_on([file_blob::Column::Hash, file_blob::Column::PolicyId])
+        .build(DbBackend::Postgres)
+        .to_string();
+
+        assert!(
+            sql.contains(r#"ON CONFLICT ("hash", "policy_id") DO NOTHING"#),
+            "{sql}"
+        );
+        assert!(!sql.contains(" WHERE "), "{sql}");
+    }
 }

@@ -1,3 +1,4 @@
+use sea_orm::{ConnectionTrait, DbBackend};
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]
@@ -38,13 +39,20 @@ impl MigrationTrait for Migration {
             .await?;
 
         manager
-            .create_index(
-                Index::create()
+            .create_index({
+                let mut index = Index::create();
+                index
                     .name("idx_file_blobs_storage_path")
-                    .table(FileBlobs::Table)
-                    .col(FileBlobs::StoragePath)
-                    .to_owned(),
-            )
+                    .table(FileBlobs::Table);
+
+                if manager.get_connection().get_database_backend() == DbBackend::MySql {
+                    index.col((FileBlobs::StoragePath, 255));
+                } else {
+                    index.col(FileBlobs::StoragePath);
+                }
+
+                index.to_owned()
+            })
             .await
     }
 

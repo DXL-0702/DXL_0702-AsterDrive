@@ -1,10 +1,15 @@
 use aster_drive::runtime::AppState;
 
 /// 构建一个干净的测试 AppState（内存 SQLite）
+#[allow(dead_code)]
 pub async fn setup() -> AppState {
-    // 用内存数据库，每次测试隔离
+    setup_with_database_url("sqlite::memory:").await
+}
+
+/// 构建一个干净的测试 AppState（指定数据库 URL）
+pub async fn setup_with_database_url(database_url: &str) -> AppState {
     let db_cfg = aster_drive::config::DatabaseConfig {
-        url: "sqlite::memory:".to_string(),
+        url: database_url.to_string(),
         pool_size: 1,
         retry_count: 0,
     };

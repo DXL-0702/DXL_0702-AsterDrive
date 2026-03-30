@@ -3,8 +3,8 @@ use crate::entities::user::{self, Entity as User};
 use crate::errors::{AsterError, Result};
 use crate::types::{UserRole, UserStatus};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, sea_query::Expr,
 };
 
 pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<user::Model> {
@@ -92,12 +92,12 @@ pub async fn check_quota<C: ConnectionTrait>(db: &C, user_id: i64, needed_size: 
 
 pub async fn update_storage_used<C: ConnectionTrait>(db: &C, id: i64, delta: i64) -> Result<()> {
     let expr = if delta >= 0 {
-        Expr::cust_with_values("storage_used + ?", [delta])
+        Expr::col(user::Column::StorageUsed).add(delta)
     } else {
-        Expr::cust_with_values(
-            "CASE WHEN storage_used < ? THEN 0 ELSE storage_used - ? END",
-            [-delta, -delta],
-        )
+        let decrement_by = -delta;
+        Expr::case(Expr::col(user::Column::StorageUsed).lt(decrement_by), 0)
+            .finally(Expr::col(user::Column::StorageUsed).sub(decrement_by))
+            .into()
     };
 
     let result = User::update_many()
@@ -112,4 +112,28 @@ pub async fn update_storage_used<C: ConnectionTrait>(db: &C, id: i64, delta: i64
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::{DbBackend, QueryTrait};
+
+    #[test]
+    fn postgres_update_storage_used_sql_is_valid() {
+        let sql = User::update_many()
+            .col_expr(
+                user::Column::StorageUsed,
+                Expr::col(user::Column::StorageUsed).add(1i64),
+            )
+            .filter(user::Column::Id.eq(7))
+            .build(DbBackend::Postgres)
+            .to_string();
+
+        assert!(
+            sql.contains(r#""storage_used" = "storage_used" + 1"#),
+            "{sql}"
+        );
+        assert!(sql.contains(r#"WHERE "users"."id" = 7"#), "{sql}");
+    }
 }

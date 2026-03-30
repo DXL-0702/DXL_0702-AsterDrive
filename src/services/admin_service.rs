@@ -1,9 +1,11 @@
 use chrono::{DateTime, Duration, LocalResult, NaiveDate, TimeZone, Utc};
 use chrono_tz::Tz;
 use sea_orm::{
-    ColumnTrait, EntityTrait, ExprTrait, PaginatorTrait, QueryFilter, QuerySelect, sea_query::Expr,
+    ColumnTrait, DbBackend, EntityTrait, ExprTrait, PaginatorTrait, QueryFilter, QuerySelect,
+    sea_query::Expr,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use utoipa::{IntoParams, ToSchema};
 
 use crate::entities::{
@@ -179,94 +181,69 @@ async fn build_daily_reports(
     timezone: Tz,
 ) -> Result<Vec<AdminOverviewDailyReport>> {
     let mut reports = Vec::with_capacity(days as usize);
+    let mut report_indexes = HashMap::with_capacity(days as usize);
 
     for offset in 0..days {
         let date = today - Duration::days(offset as i64);
-        let start = start_of_local_day(date, timezone)?;
-        let end = start_of_local_day(date + Duration::days(1), timezone)?;
-
-        let sign_ins = count_audit_events_between(
-            &state.db,
-            start,
-            end,
-            &[audit_service::AuditAction::UserLogin],
-        )
-        .await?;
-        let new_users = count_audit_events_between(
-            &state.db,
-            start,
-            end,
-            &[
-                audit_service::AuditAction::UserRegister,
-                audit_service::AuditAction::AdminCreateUser,
-            ],
-        )
-        .await?;
-        let uploads = count_audit_events_between(
-            &state.db,
-            start,
-            end,
-            &[audit_service::AuditAction::FileUpload],
-        )
-        .await?;
-        let share_creations = count_audit_events_between(
-            &state.db,
-            start,
-            end,
-            &[audit_service::AuditAction::ShareCreate],
-        )
-        .await?;
-        let deletions = count_audit_events_between(
-            &state.db,
-            start,
-            end,
-            &[
-                audit_service::AuditAction::BatchDelete,
-                audit_service::AuditAction::FileDelete,
-                audit_service::AuditAction::FolderDelete,
-            ],
-        )
-        .await?;
-        let total_events = count_audit_events_between(&state.db, start, end, &[]).await?;
+        report_indexes.insert(date, reports.len());
 
         reports.push(AdminOverviewDailyReport {
             date: date.to_string(),
-            sign_ins,
-            new_users,
-            uploads,
-            share_creations,
-            deletions,
-            total_events,
+            sign_ins: 0,
+            new_users: 0,
+            uploads: 0,
+            share_creations: 0,
+            deletions: 0,
+            total_events: 0,
         });
     }
 
-    reports.sort_by(|left, right| right.date.cmp(&left.date));
+    let oldest_date = today - Duration::days(days.saturating_sub(1) as i64);
+    let start = start_of_local_day(oldest_date, timezone)?;
+    let end = start_of_local_day(today + Duration::days(1), timezone)?;
+
+    let events = AuditLog::find()
+        .select_only()
+        .column(audit_log::Column::Action)
+        .column(audit_log::Column::CreatedAt)
+        .filter(audit_log::Column::CreatedAt.gte(start))
+        .filter(audit_log::Column::CreatedAt.lt(end))
+        .into_tuple::<(String, DateTimeUtc)>()
+        .all(&state.db)
+        .await?;
+
+    for (action, created_at) in events {
+        let date = created_at.with_timezone(&timezone).date_naive();
+        let Some(report_index) = report_indexes.get(&date).copied() else {
+            continue;
+        };
+        let report = &mut reports[report_index];
+        record_audit_action(report, action.as_str());
+    }
 
     Ok(reports)
 }
 
-async fn count_audit_events_between(
-    db: &sea_orm::DatabaseConnection,
-    start: DateTimeUtc,
-    end: DateTimeUtc,
-    actions: &[audit_service::AuditAction],
-) -> Result<u64> {
-    let mut query = AuditLog::find()
-        .filter(audit_log::Column::CreatedAt.gte(start))
-        .filter(audit_log::Column::CreatedAt.lt(end));
+fn record_audit_action(report: &mut AdminOverviewDailyReport, action: &str) {
+    report.total_events += 1;
 
-    if !actions.is_empty() {
-        let action_names: Vec<&str> = actions.iter().map(|action| action.as_str()).collect();
-        query = query.filter(audit_log::Column::Action.is_in(action_names));
+    match action {
+        "user_login" => report.sign_ins += 1,
+        "user_register" | "admin_create_user" => report.new_users += 1,
+        "file_upload" => report.uploads += 1,
+        "share_create" => report.share_creations += 1,
+        "batch_delete" | "file_delete" | "folder_delete" => report.deletions += 1,
+        _ => {}
     }
-
-    Ok(query.count(db).await?)
 }
 
 async fn sum_live_file_bytes(state: &AppState) -> Result<i64> {
     Ok(File::find()
         .select_only()
-        .column_as(Expr::col(file::Column::Size).sum(), "sum")
+        .column_as(
+            sum_as_i64_expr(state.db.get_database_backend(), file::Column::Size),
+            "sum",
+        )
         .filter(file::Column::DeletedAt.is_null())
         .into_tuple::<Option<i64>>()
         .one(&state.db)
@@ -279,7 +256,10 @@ async fn sum_blob_bytes(state: &AppState) -> Result<i64> {
     Ok(FileBlob::find()
         .select_only()
         .column_as(
-            Expr::col(crate::entities::file_blob::Column::Size).sum(),
+            sum_as_i64_expr(
+                state.db.get_database_backend(),
+                crate::entities::file_blob::Column::Size,
+            ),
             "sum",
         )
         .into_tuple::<Option<i64>>()
@@ -287,6 +267,19 @@ async fn sum_blob_bytes(state: &AppState) -> Result<i64> {
         .await?
         .flatten()
         .unwrap_or(0))
+}
+
+fn sum_as_i64_expr(
+    backend: DbBackend,
+    column: impl sea_orm::sea_query::IntoColumnRef + Copy,
+) -> sea_orm::sea_query::SimpleExpr {
+    let type_name = match backend {
+        DbBackend::Postgres => "bigint",
+        DbBackend::MySql => "signed",
+        _ => "integer",
+    };
+
+    Expr::col(column).sum().cast_as(type_name)
 }
 
 fn parse_timezone(timezone_name: &str) -> Result<Tz> {
@@ -307,5 +300,65 @@ fn start_of_local_day(date: NaiveDate, timezone: Tz) -> Result<DateTimeUtc> {
             timezone.name(),
             date
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AdminOverviewDailyReport, record_audit_action, sum_as_i64_expr};
+    use sea_orm::{
+        DbBackend,
+        sea_query::{PostgresQueryBuilder, Query},
+    };
+
+    fn empty_report() -> AdminOverviewDailyReport {
+        AdminOverviewDailyReport {
+            date: "2026-03-30".to_string(),
+            sign_ins: 0,
+            new_users: 0,
+            uploads: 0,
+            share_creations: 0,
+            deletions: 0,
+            total_events: 0,
+        }
+    }
+
+    #[test]
+    fn record_audit_action_counts_categories() {
+        let mut report = empty_report();
+
+        for action in [
+            "user_login",
+            "user_register",
+            "admin_create_user",
+            "file_upload",
+            "share_create",
+            "batch_delete",
+            "file_delete",
+            "folder_delete",
+            "ignored",
+        ] {
+            record_audit_action(&mut report, action);
+        }
+
+        assert_eq!(report.sign_ins, 1);
+        assert_eq!(report.new_users, 2);
+        assert_eq!(report.uploads, 1);
+        assert_eq!(report.share_creations, 1);
+        assert_eq!(report.deletions, 3);
+        assert_eq!(report.total_events, 9);
+    }
+
+    #[test]
+    fn postgres_sum_expr_casts_to_bigint() {
+        let sql = Query::select()
+            .expr(sum_as_i64_expr(
+                DbBackend::Postgres,
+                super::file::Column::Size,
+            ))
+            .from(super::File)
+            .to_string(PostgresQueryBuilder);
+
+        assert!(sql.contains(r#"CAST(SUM("size") AS bigint)"#), "{sql}");
     }
 }

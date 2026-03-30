@@ -30,7 +30,7 @@ impl MigrationTrait for Migration {
                     )
                     .col(
                         ColumnDef::new(EntityProperties::Namespace)
-                            .string_len(512)
+                            .string_len(256)
                             .not_null()
                             .default(""),
                     )

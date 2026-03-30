@@ -1,3 +1,4 @@
+use sea_orm::{ConnectionTrait, DbBackend};
 use sea_orm_migration::prelude::*;
 
 #[derive(DeriveMigrationName)]
@@ -6,6 +7,19 @@ pub struct Migration;
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let backend = manager.get_connection().get_database_backend();
+        let mut storage_policy_allowed_types = ColumnDef::new(StoragePolicies::AllowedTypes);
+        storage_policy_allowed_types.text().not_null();
+        if backend != DbBackend::MySql {
+            storage_policy_allowed_types.default("[]");
+        }
+
+        let mut storage_policy_options = ColumnDef::new(StoragePolicies::Options);
+        storage_policy_options.text().not_null();
+        if backend != DbBackend::MySql {
+            storage_policy_options.default("{}");
+        }
+
         // users
         manager
             .create_table(
@@ -127,18 +141,8 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default(0),
                     )
-                    .col(
-                        ColumnDef::new(StoragePolicies::AllowedTypes)
-                            .text()
-                            .not_null()
-                            .default("[]"),
-                    )
-                    .col(
-                        ColumnDef::new(StoragePolicies::Options)
-                            .text()
-                            .not_null()
-                            .default("{}"),
-                    )
+                    .col(storage_policy_allowed_types)
+                    .col(storage_policy_options)
                     .col(
                         ColumnDef::new(StoragePolicies::IsDefault)
                             .boolean()

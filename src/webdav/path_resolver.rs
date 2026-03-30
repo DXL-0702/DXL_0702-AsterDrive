@@ -30,10 +30,7 @@ fn path_segments(path: &DavPath) -> Vec<String> {
 
 /// 解析 WebDAV 路径到数据库实体
 ///
-/// 路径 `/Documents/Photos/vacation.jpg` 会逐段 walk：
-/// 1. "Documents" → find_by_name_in_parent(None)
-/// 2. "Photos" → find_by_name_in_parent(Some(docs_id))
-/// 3. "vacation.jpg" → 先查 folder，再查 file
+/// 路径中的 folder 前缀通过单次递归查询解析，只有最后一个 file 候选需要额外查库。
 pub async fn resolve_path(
     db: &DatabaseConnection,
     user_id: i64,
@@ -46,26 +43,28 @@ pub async fn resolve_path(
         return Ok(ResolvedNode::Root);
     }
 
-    let mut current_parent: Option<i64> = root_folder_id;
-
-    // 前 N-1 段必须是文件夹
-    for segment in &segments[..segments.len() - 1] {
-        let folder = folder_repo::find_by_name_in_parent(db, user_id, current_parent, segment)
-            .await
-            .map_err(|_| FsError::GeneralFailure)?
-            .ok_or(FsError::NotFound)?;
-        current_parent = Some(folder.id);
-    }
-
-    // 最后一段：先查文件夹，再查文件
-    let last = &segments[segments.len() - 1];
-
-    if let Some(folder) = folder_repo::find_by_name_in_parent(db, user_id, current_parent, last)
+    let folders = folder_repo::resolve_path_chain(db, user_id, root_folder_id, &segments)
         .await
-        .map_err(|_| FsError::GeneralFailure)?
-    {
-        return Ok(ResolvedNode::Folder(folder));
+        .map_err(|_| FsError::GeneralFailure)?;
+
+    if folders.len() == segments.len() {
+        return Ok(ResolvedNode::Folder(
+            folders
+                .last()
+                .cloned()
+                .expect("non-empty path must have a last segment"),
+        ));
     }
+
+    // Only the last segment may be a file; anything earlier must have resolved as a folder chain.
+    if folders.len() + 1 < segments.len() {
+        return Err(FsError::NotFound);
+    }
+
+    let current_parent = folders.last().map(|folder| folder.id).or(root_folder_id);
+    let last = segments
+        .last()
+        .expect("non-empty path must have a last segment");
 
     if let Some(file) = file_repo::find_by_name_in_folder(db, user_id, current_parent, last)
         .await
@@ -93,16 +92,16 @@ pub async fn resolve_parent(
         return Err(FsError::Forbidden); // 不能操作根目录本身
     }
 
-    let mut current_parent: Option<i64> = root_folder_id;
+    let parent_segments = &segments[..segments.len() - 1];
+    let folders = folder_repo::resolve_path_chain(db, user_id, root_folder_id, parent_segments)
+        .await
+        .map_err(|_| FsError::GeneralFailure)?;
 
-    for segment in &segments[..segments.len() - 1] {
-        let folder = folder_repo::find_by_name_in_parent(db, user_id, current_parent, segment)
-            .await
-            .map_err(|_| FsError::GeneralFailure)?
-            .ok_or(FsError::NotFound)?;
-        current_parent = Some(folder.id);
+    if folders.len() != parent_segments.len() {
+        return Err(FsError::NotFound);
     }
 
+    let current_parent = folders.last().map(|folder| folder.id).or(root_folder_id);
     let last = segments[segments.len() - 1].clone();
     Ok((current_parent, last))
 }

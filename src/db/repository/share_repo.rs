@@ -5,7 +5,7 @@ use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::share::{self, Entity as Share};
 use crate::errors::{AsterError, Result};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, QueryFilter,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
     QueryOrder, QuerySelect, sea_query::Expr,
 };
 
@@ -100,9 +100,13 @@ fn active_share_condition() -> Condition {
                 .add(share::Column::ExpiresAt.is_null())
                 .add(share::Column::ExpiresAt.gte(Utc::now())),
         )
-        .add(Expr::cust(
-            "max_downloads = 0 OR download_count < max_downloads",
-        ))
+        .add(available_downloads_condition())
+}
+
+fn available_downloads_condition() -> Condition {
+    Condition::any()
+        .add(share::Column::MaxDownloads.eq(0))
+        .add(Expr::col(share::Column::DownloadCount).lt(Expr::col(share::Column::MaxDownloads)))
 }
 
 pub async fn find_active_file_ids<C: ConnectionTrait>(
@@ -174,7 +178,7 @@ pub async fn increment_view_count<C: ConnectionTrait>(db: &C, id: i64) -> Result
     Share::update_many()
         .col_expr(
             share::Column::ViewCount,
-            Expr::cust_with_values("view_count + ?", [1i64]),
+            Expr::col(share::Column::ViewCount).add(1i64),
         )
         .filter(share::Column::Id.eq(id))
         .exec(db)
@@ -189,13 +193,11 @@ pub async fn increment_download_count<C: ConnectionTrait>(db: &C, id: i64) -> Re
     let result = Share::update_many()
         .col_expr(
             share::Column::DownloadCount,
-            Expr::cust_with_values("download_count + ?", [1i64]),
+            Expr::col(share::Column::DownloadCount).add(1i64),
         )
         .filter(share::Column::Id.eq(id))
         // 只在未达上限时递增（max_downloads=0 表示不限）
-        .filter(Expr::cust(
-            "max_downloads = 0 OR download_count < max_downloads",
-        ))
+        .filter(available_downloads_condition())
         .exec(db)
         .await
         .map_err(AsterError::from)?;

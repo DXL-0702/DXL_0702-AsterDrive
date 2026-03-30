@@ -1,0 +1,514 @@
+#[macro_use]
+mod common;
+
+use bytes::Bytes;
+use dav_server::davpath::DavPath;
+use dav_server::fs::{DavFileSystem, FsError, OpenOptions, ReadDirMeta};
+use futures::StreamExt;
+use sea_orm::{ActiveModelTrait, Set};
+
+fn write_temp_fixture(name: &str, contents: &str) -> String {
+    let dir = format!("/tmp/asterdrive-webdav-path-test-{}", uuid::Uuid::new_v4());
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = format!("{dir}/{name}");
+    std::fs::write(&path, contents).unwrap();
+    path
+}
+
+fn write_open_options(create_new: bool) -> OpenOptions {
+    OpenOptions {
+        read: false,
+        write: true,
+        append: false,
+        truncate: false,
+        create: false,
+        create_new,
+        size: None,
+        checksum: None,
+    }
+}
+
+async fn seed_nested_file(
+    state: &aster_drive::runtime::AppState,
+    user_id: i64,
+    root_parent_id: Option<i64>,
+) -> (
+    aster_drive::entities::folder::Model,
+    aster_drive::entities::folder::Model,
+    aster_drive::entities::folder::Model,
+    aster_drive::entities::file::Model,
+    String,
+) {
+    use aster_drive::services::{file_service, folder_service};
+
+    let projects = folder_service::create(state, user_id, "projects", root_parent_id)
+        .await
+        .unwrap();
+    let docs = folder_service::create(state, user_id, "docs", Some(projects.id))
+        .await
+        .unwrap();
+    let reports = folder_service::create(state, user_id, "reports", Some(docs.id))
+        .await
+        .unwrap();
+
+    let contents = "deep path contents".to_string();
+    let temp_path = write_temp_fixture("q1.txt", &contents);
+    let file = file_service::store_from_temp(
+        state,
+        user_id,
+        Some(reports.id),
+        "q1.txt",
+        &temp_path,
+        contents.len() as i64,
+        None,
+        false,
+    )
+    .await
+    .unwrap();
+
+    (projects, docs, reports, file, contents)
+}
+
+#[actix_web::test]
+async fn test_path_resolver_resolves_deep_folder_file_and_parent_paths() {
+    use aster_drive::services::auth_service;
+    use aster_drive::webdav::path_resolver::{ResolvedNode, resolve_parent, resolve_path};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "davresolverdeep",
+        "davresolverdeep@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
+
+    let (_projects, _docs, reports, file, _contents) =
+        seed_nested_file(&state, user.id, None).await;
+
+    let folder_path = DavPath::new("/projects/docs/reports").unwrap();
+    match resolve_path(&state.db, user.id, &folder_path, None)
+        .await
+        .unwrap()
+    {
+        ResolvedNode::Folder(folder) => assert_eq!(folder.id, reports.id),
+        other => panic!("expected folder, got {other:?}"),
+    }
+
+    let file_path = DavPath::new("/projects/docs/reports/q1.txt").unwrap();
+    match resolve_path(&state.db, user.id, &file_path, None)
+        .await
+        .unwrap()
+    {
+        ResolvedNode::File(found) => assert_eq!(found.id, file.id),
+        other => panic!("expected file, got {other:?}"),
+    }
+
+    let missing_intermediate = DavPath::new("/projects/docs/q1.txt/final.txt").unwrap();
+    assert!(matches!(
+        resolve_path(&state.db, user.id, &missing_intermediate, None).await,
+        Err(FsError::NotFound)
+    ));
+
+    let (parent_id, leaf_name) = resolve_parent(&state.db, user.id, &file_path, None)
+        .await
+        .unwrap();
+    assert_eq!(parent_id, Some(reports.id));
+    assert_eq!(leaf_name, "q1.txt");
+}
+
+#[actix_web::test]
+async fn test_path_resolver_honors_scoped_root_semantics() {
+    use aster_drive::services::{auth_service, folder_service};
+    use aster_drive::webdav::path_resolver::{ResolvedNode, resolve_parent, resolve_path};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "davresolverscope",
+        "davresolverscope@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
+
+    let scoped_root = folder_service::create(&state, user.id, "scoped-root", None)
+        .await
+        .unwrap();
+    let (_projects, _docs, _reports, file, _contents) =
+        seed_nested_file(&state, user.id, Some(scoped_root.id)).await;
+
+    let root_path = DavPath::new("/").unwrap();
+    assert!(matches!(
+        resolve_path(&state.db, user.id, &root_path, Some(scoped_root.id))
+            .await
+            .unwrap(),
+        ResolvedNode::Root
+    ));
+
+    let scoped_file_path = DavPath::new("/projects/docs/reports/q1.txt").unwrap();
+    match resolve_path(&state.db, user.id, &scoped_file_path, Some(scoped_root.id))
+        .await
+        .unwrap()
+    {
+        ResolvedNode::File(found) => assert_eq!(found.id, file.id),
+        other => panic!("expected scoped file, got {other:?}"),
+    }
+
+    let escaped_scope = DavPath::new("/scoped-root/projects/docs/reports/q1.txt").unwrap();
+    assert!(matches!(
+        resolve_path(&state.db, user.id, &escaped_scope, Some(scoped_root.id)).await,
+        Err(FsError::NotFound)
+    ));
+
+    let (parent_id, leaf_name) = resolve_parent(
+        &state.db,
+        user.id,
+        &DavPath::new("/draft.txt").unwrap(),
+        Some(scoped_root.id),
+    )
+    .await
+    .unwrap();
+    assert_eq!(parent_id, Some(scoped_root.id));
+    assert_eq!(leaf_name, "draft.txt");
+}
+
+#[actix_web::test]
+async fn test_path_resolver_handles_root_level_and_missing_path_boundaries() {
+    use aster_drive::services::{auth_service, file_service};
+    use aster_drive::webdav::path_resolver::{ResolvedNode, resolve_parent, resolve_path};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "davresolverroot",
+        "davresolverroot@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
+
+    let contents = "root level file";
+    let temp_path = write_temp_fixture("root.txt", contents);
+    let file = file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "root.txt",
+        &temp_path,
+        contents.len() as i64,
+        None,
+        false,
+    )
+    .await
+    .unwrap();
+
+    assert!(matches!(
+        resolve_path(&state.db, user.id, &DavPath::new("/").unwrap(), None)
+            .await
+            .unwrap(),
+        ResolvedNode::Root
+    ));
+    assert!(matches!(
+        resolve_parent(&state.db, user.id, &DavPath::new("/").unwrap(), None).await,
+        Err(FsError::Forbidden)
+    ));
+
+    match resolve_path(
+        &state.db,
+        user.id,
+        &DavPath::new("/root.txt").unwrap(),
+        None,
+    )
+    .await
+    .unwrap()
+    {
+        ResolvedNode::File(found) => assert_eq!(found.id, file.id),
+        other => panic!("expected root-level file, got {other:?}"),
+    }
+
+    assert!(matches!(
+        resolve_path(
+            &state.db,
+            user.id,
+            &DavPath::new("/missing.txt").unwrap(),
+            None
+        )
+        .await,
+        Err(FsError::NotFound)
+    ));
+    assert!(matches!(
+        resolve_path(
+            &state.db,
+            user.id,
+            &DavPath::new("/missing/final.txt").unwrap(),
+            None,
+        )
+        .await,
+        Err(FsError::NotFound)
+    ));
+    assert!(matches!(
+        resolve_parent(
+            &state.db,
+            user.id,
+            &DavPath::new("/missing/final.txt").unwrap(),
+            None,
+        )
+        .await,
+        Err(FsError::NotFound)
+    ));
+}
+
+#[actix_web::test]
+async fn test_path_resolver_prefers_folder_when_file_and_folder_share_name() {
+    use aster_drive::services::{auth_service, file_service, folder_service};
+    use aster_drive::webdav::path_resolver::{ResolvedNode, resolve_parent, resolve_path};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "davresolverdupe",
+        "davresolverdupe@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
+
+    let folder = folder_service::create(&state, user.id, "shared-name", None)
+        .await
+        .unwrap();
+    let temp_path = write_temp_fixture("shared-name", "same name as folder");
+    let file = file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "shared-name",
+        &temp_path,
+        19,
+        None,
+        false,
+    )
+    .await
+    .unwrap();
+
+    match resolve_path(
+        &state.db,
+        user.id,
+        &DavPath::new("/shared-name").unwrap(),
+        None,
+    )
+    .await
+    .unwrap()
+    {
+        ResolvedNode::Folder(found) => assert_eq!(found.id, folder.id),
+        other => panic!("expected folder precedence, got {other:?}"),
+    }
+
+    let (parent_id, leaf_name) = resolve_parent(
+        &state.db,
+        user.id,
+        &DavPath::new("/shared-name/child.txt").unwrap(),
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(parent_id, Some(folder.id));
+    assert_eq!(leaf_name, "child.txt");
+
+    let root_level_file = resolve_path(
+        &state.db,
+        user.id,
+        &DavPath::new("/shared-name").unwrap(),
+        None,
+    )
+    .await
+    .unwrap();
+    assert!(!matches!(root_level_file, ResolvedNode::File(found) if found.id == file.id));
+}
+
+#[actix_web::test]
+async fn test_path_resolver_hides_deleted_intermediate_folders() {
+    use aster_drive::services::auth_service;
+    use aster_drive::webdav::path_resolver::{resolve_parent, resolve_path};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "davresdel", "davresdel@example.com", "pass123")
+        .await
+        .unwrap();
+
+    let (_projects, docs, _reports, _file, _contents) =
+        seed_nested_file(&state, user.id, None).await;
+
+    let mut deleted_docs: aster_drive::entities::folder::ActiveModel = docs.into();
+    deleted_docs.deleted_at = Set(Some(chrono::Utc::now()));
+    deleted_docs.updated_at = Set(chrono::Utc::now());
+    deleted_docs.update(&state.db).await.unwrap();
+
+    let file_path = DavPath::new("/projects/docs/reports/q1.txt").unwrap();
+    assert!(matches!(
+        resolve_path(&state.db, user.id, &file_path, None).await,
+        Err(FsError::NotFound)
+    ));
+    assert!(matches!(
+        resolve_parent(&state.db, user.id, &file_path, None).await,
+        Err(FsError::NotFound)
+    ));
+}
+
+#[actix_web::test]
+async fn test_aster_dav_fs_handles_deep_paths_inside_scoped_root() {
+    use aster_drive::services::{auth_service, folder_service};
+    use aster_drive::webdav::fs::AsterDavFs;
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "davfsdeep", "davfsdeep@example.com", "pass123")
+        .await
+        .unwrap();
+
+    let scoped_root = folder_service::create(&state, user.id, "scoped-root", None)
+        .await
+        .unwrap();
+    let (_projects, _docs, _reports, _file, contents) =
+        seed_nested_file(&state, user.id, Some(scoped_root.id)).await;
+
+    let dav_fs = AsterDavFs::new(
+        state.db.clone(),
+        state.driver_registry.clone(),
+        state.config.clone(),
+        state.cache.clone(),
+        state.thumbnail_tx.clone(),
+        user.id,
+        Some(scoped_root.id),
+    );
+
+    let root_path = DavPath::new("/").unwrap();
+    let mut root_entries = dav_fs
+        .read_dir(&root_path, ReadDirMeta::Data)
+        .await
+        .unwrap();
+    let mut root_names = Vec::new();
+    while let Some(entry) = root_entries.next().await {
+        root_names.push(String::from_utf8(entry.unwrap().name()).unwrap());
+    }
+    assert_eq!(root_names, vec!["projects"]);
+
+    let file_path = DavPath::new("/projects/docs/reports/q1.txt").unwrap();
+    let metadata = dav_fs.metadata(&file_path).await.unwrap();
+    assert_eq!(metadata.len(), contents.len() as u64);
+    assert!(!metadata.is_dir());
+
+    let dir_path = DavPath::new("/projects/docs/reports").unwrap();
+    let mut dir_entries = dav_fs.read_dir(&dir_path, ReadDirMeta::Data).await.unwrap();
+    let mut dir_names = Vec::new();
+    while let Some(entry) = dir_entries.next().await {
+        dir_names.push(String::from_utf8(entry.unwrap().name()).unwrap());
+    }
+    assert_eq!(dir_names, vec!["q1.txt"]);
+
+    let mut dav_file = dav_fs
+        .open(
+            &file_path,
+            OpenOptions {
+                read: true,
+                write: false,
+                append: false,
+                truncate: false,
+                create: false,
+                create_new: false,
+                size: None,
+                checksum: None,
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        dav_file.read_bytes(contents.len()).await.unwrap(),
+        Bytes::from(contents)
+    );
+}
+
+#[actix_web::test]
+async fn test_aster_dav_fs_deep_write_create_new_and_overwrite_boundaries() {
+    use aster_drive::db::repository::file_repo;
+    use aster_drive::services::{auth_service, folder_service};
+    use aster_drive::webdav::fs::AsterDavFs;
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "davfswriteroot",
+        "davfswriteroot@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
+
+    let scoped_root = folder_service::create(&state, user.id, "scoped-root", None)
+        .await
+        .unwrap();
+    let (projects, docs, reports, _file, _contents) =
+        seed_nested_file(&state, user.id, Some(scoped_root.id)).await;
+
+    let dav_fs = AsterDavFs::new(
+        state.db.clone(),
+        state.driver_registry.clone(),
+        state.config.clone(),
+        state.cache.clone(),
+        state.thumbnail_tx.clone(),
+        user.id,
+        Some(scoped_root.id),
+    );
+
+    let new_file_path = DavPath::new("/projects/docs/reports/new.txt").unwrap();
+    let mut new_file = dav_fs
+        .open(&new_file_path, write_open_options(true))
+        .await
+        .unwrap();
+    new_file
+        .write_bytes(Bytes::from_static(b"first version"))
+        .await
+        .unwrap();
+    new_file.flush().await.unwrap();
+
+    let stored = file_repo::find_by_name_in_folder(&state.db, user.id, Some(reports.id), "new.txt")
+        .await
+        .unwrap()
+        .expect("deep WebDAV write should create a file");
+    assert_eq!(stored.size, "first version".len() as i64);
+
+    assert!(matches!(
+        dav_fs.open(&new_file_path, write_open_options(true)).await,
+        Err(FsError::Exists)
+    ));
+
+    let mut overwrite = dav_fs
+        .open(&new_file_path, write_open_options(false))
+        .await
+        .unwrap();
+    overwrite
+        .write_bytes(Bytes::from_static(b"updated"))
+        .await
+        .unwrap();
+    overwrite.flush().await.unwrap();
+
+    let overwritten =
+        file_repo::find_by_name_in_folder(&state.db, user.id, Some(reports.id), "new.txt")
+            .await
+            .unwrap()
+            .expect("overwritten file should still exist");
+    assert_eq!(overwritten.size, "updated".len() as i64);
+
+    assert!(matches!(
+        dav_fs
+            .open(
+                &DavPath::new("/projects/missing/new.txt").unwrap(),
+                write_open_options(false),
+            )
+            .await,
+        Err(FsError::NotFound)
+    ));
+
+    let parent_names = [projects.name, docs.name, reports.name];
+    assert_eq!(parent_names, ["projects", "docs", "reports"]);
+}

@@ -91,8 +91,16 @@ vi.mock("@/components/layout/AdminPageShell", () => ({
 }));
 
 vi.mock("@/components/layout/AdminSurface", () => ({
-	AdminSurface: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
+	AdminSurface: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => (
+		<section data-testid="admin-surface" className={className}>
+			{children}
+		</section>
 	),
 }));
 
@@ -351,5 +359,19 @@ describe("AdminOverviewPage", () => {
 		await waitFor(() => {
 			expect(mockState.get).toHaveBeenCalledTimes(2);
 		});
+	});
+
+	it("keeps the daily reports block naturally expanded", async () => {
+		render(<AdminOverviewPage />);
+
+		const dailyReportsHeading = await screen.findByText(
+			"overview_daily_reports",
+		);
+		const dailyReportsSurface = dailyReportsHeading.closest(
+			'[data-testid="admin-surface"]',
+		);
+
+		expect(dailyReportsSurface).toHaveClass("flex-none");
+		expect(dailyReportsSurface).not.toHaveClass("flex-1");
 	});
 });
