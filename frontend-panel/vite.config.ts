@@ -124,13 +124,6 @@ export default defineConfig(({ command }) => {
 					globIgnores: isDevServer
 						? []
 						: [
-								"assets/*contribution-*.js",
-								"assets/editor*.js",
-								"assets/editor*.css",
-								"assets/toggleHighContrast-*.js",
-								"assets/toggleHighContrast-*.css",
-								"assets/json.worker-*.js",
-								"assets/jsonMode-*.js",
 								"assets/PdfPreview-*.js",
 								"assets/PdfPreview-*.css",
 								"assets/pdf.worker.min-*.mjs",
@@ -160,16 +153,19 @@ export default defineConfig(({ command }) => {
 		],
 		base: "/",
 		resolve: {
-			alias: {
-				"@": path.resolve(__dirname, "./src"),
-				"react/jsx-dev-runtime": path.resolve(
-					rootReactPath,
-					"./jsx-dev-runtime.js",
-				),
-				"react/jsx-runtime": path.resolve(rootReactPath, "./jsx-runtime.js"),
-				"react-dom": rootReactDomPath,
-				react: rootReactPath,
-			},
+			alias: [
+				{ find: "@", replacement: path.resolve(__dirname, "./src") },
+				{
+					find: "react/jsx-dev-runtime",
+					replacement: path.resolve(rootReactPath, "./jsx-dev-runtime.js"),
+				},
+				{
+					find: "react/jsx-runtime",
+					replacement: path.resolve(rootReactPath, "./jsx-runtime.js"),
+				},
+				{ find: "react-dom", replacement: rootReactDomPath },
+				{ find: "react", replacement: rootReactPath },
+			],
 			dedupe: ["react", "react-dom"],
 		},
 		server: {

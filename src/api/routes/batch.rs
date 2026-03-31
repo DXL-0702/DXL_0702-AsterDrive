@@ -13,6 +13,7 @@ use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -26,7 +27,8 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/copy", web::post().to(batch_copy))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct BatchDeleteReq {
     #[serde(default)]
     pub file_ids: Vec<i64>,
@@ -34,7 +36,8 @@ pub struct BatchDeleteReq {
     pub folder_ids: Vec<i64>,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct BatchMoveReq {
     #[serde(default)]
     pub file_ids: Vec<i64>,
@@ -44,7 +47,8 @@ pub struct BatchMoveReq {
     pub target_folder_id: Option<i64>,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct BatchCopyReq {
     #[serde(default)]
     pub file_ids: Vec<i64>,
@@ -54,7 +58,7 @@ pub struct BatchCopyReq {
     pub target_folder_id: Option<i64>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/batch/delete",
     tag = "batch",
@@ -97,7 +101,7 @@ pub async fn batch_delete(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/batch/move",
     tag = "batch",
@@ -146,7 +150,7 @@ pub async fn batch_move(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/batch/copy",
     tag = "batch",

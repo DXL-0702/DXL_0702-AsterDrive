@@ -1,5 +1,7 @@
 use crate::api::middleware::{admin::RequireAdmin, auth::JwtAuth, rate_limit};
-use crate::api::pagination::{LimitOffsetQuery, OffsetPage};
+use crate::api::pagination::LimitOffsetQuery;
+#[cfg(all(debug_assertions, feature = "openapi"))]
+use crate::api::pagination::OffsetPage;
 use crate::api::response::{ApiResponse, RemovedCountResponse};
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
@@ -14,6 +16,7 @@ use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -87,7 +90,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
 
 // ── Policies ─────────────────────────────────────────────────────────
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/admin/overview",
     tag = "admin",
@@ -114,7 +117,7 @@ pub async fn get_overview(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(overview)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/admin/policies",
     tag = "admin",
@@ -136,7 +139,8 @@ pub async fn list_policies(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policies)))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CreatePolicyReq {
     pub name: String,
     pub driver_type: DriverType,
@@ -151,7 +155,7 @@ pub struct CreatePolicyReq {
     pub options: Option<String>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/admin/policies",
     tag = "admin",
@@ -186,7 +190,7 @@ pub async fn create_policy(
     Ok(HttpResponse::Created().json(ApiResponse::ok(policy)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/admin/policies/{id}",
     tag = "admin",
@@ -205,7 +209,8 @@ pub async fn get_policy(state: web::Data<AppState>, path: web::Path<i64>) -> Res
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct PatchPolicyReq {
     pub name: Option<String>,
     pub endpoint: Option<String>,
@@ -219,7 +224,7 @@ pub struct PatchPolicyReq {
     pub options: Option<String>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     patch,
     path = "/api/v1/admin/policies/{id}",
     tag = "admin",
@@ -258,7 +263,7 @@ pub async fn update_policy(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/admin/policies/{id}",
     tag = "admin",
@@ -280,7 +285,8 @@ pub async fn delete_policy(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct TestPolicyParamsReq {
     pub driver_type: DriverType,
     pub endpoint: Option<String>,
@@ -290,7 +296,7 @@ pub struct TestPolicyParamsReq {
     pub base_path: Option<String>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/admin/policies/{id}/test",
     tag = "admin",
@@ -311,7 +317,7 @@ pub async fn test_policy_connection(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/admin/policies/test",
     tag = "admin",
@@ -339,21 +345,23 @@ pub async fn test_policy_params(body: web::Json<TestPolicyParamsReq>) -> Result<
 
 // ── Users ────────────────────────────────────────────────────────────
 
-#[derive(Deserialize, IntoParams)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
 pub struct AdminUserListQuery {
     pub keyword: Option<String>,
     pub role: Option<UserRole>,
     pub status: Option<UserStatus>,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CreateUserReq {
     pub username: String,
     pub email: String,
     pub password: String,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/admin/users",
     tag = "admin",
@@ -393,7 +401,7 @@ pub async fn create_user(
     Ok(HttpResponse::Created().json(ApiResponse::ok(user)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/admin/users",
     tag = "admin",
@@ -423,7 +431,7 @@ pub async fn list_users(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(users)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/admin/users/{id}",
     tag = "admin",
@@ -442,19 +450,21 @@ pub async fn get_user(state: web::Data<AppState>, path: web::Path<i64>) -> Resul
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct PatchUserReq {
     pub role: Option<UserRole>,
     pub status: Option<UserStatus>,
     pub storage_quota: Option<i64>,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ResetUserPasswordReq {
     pub password: String,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/admin/users/{id}/sessions/revoke",
     tag = "admin",
@@ -489,7 +499,7 @@ pub async fn revoke_user_sessions(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     patch,
     path = "/api/v1/admin/users/{id}",
     tag = "admin",
@@ -539,7 +549,7 @@ pub async fn update_user(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     put,
     path = "/api/v1/admin/users/{id}/password",
     tag = "admin",
@@ -577,7 +587,7 @@ pub async fn reset_user_password(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/admin/users/{id}",
     tag = "admin",
@@ -600,7 +610,7 @@ pub async fn force_delete_user(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/admin/users/{id}/avatar/{size}",
     tag = "admin",
@@ -628,18 +638,20 @@ pub async fn get_user_avatar(
 
 // ── User Storage Policies ───────────────────────────────────────────
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct UserPolicyPath {
     pub user_id: i64,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct UserPolicyItemPath {
     pub user_id: i64,
     pub id: i64,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/admin/users/{user_id}/policies",
     tag = "admin",
@@ -667,7 +679,8 @@ pub async fn list_user_policies(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policies)))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AssignUserPolicyReq {
     pub policy_id: i64,
     #[serde(default)]
@@ -676,7 +689,7 @@ pub struct AssignUserPolicyReq {
     pub quota_bytes: i64,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/admin/users/{user_id}/policies",
     tag = "admin",
@@ -707,13 +720,14 @@ pub async fn assign_user_policy(
     Ok(HttpResponse::Created().json(ApiResponse::ok(usp)))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct PatchUserPolicyReq {
     pub is_default: Option<bool>,
     pub quota_bytes: Option<i64>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     patch,
     path = "/api/v1/admin/users/{user_id}/policies/{id}",
     tag = "admin",
@@ -742,7 +756,7 @@ pub async fn update_user_policy(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(usp)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/admin/users/{user_id}/policies/{id}",
     tag = "admin",
@@ -769,7 +783,7 @@ pub async fn remove_user_policy(
 
 // ── Shares ──────────────────────────────────────────────────────────
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/admin/shares",
     tag = "admin",
@@ -791,7 +805,7 @@ pub async fn list_all_shares(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(shares)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/admin/shares/{id}",
     tag = "admin",
@@ -815,7 +829,7 @@ pub async fn admin_delete_share(
 
 // ── System Config ────────────────────────────────────────────────────
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/admin/config",
     tag = "admin",
@@ -837,7 +851,7 @@ pub async fn list_config(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(configs)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/admin/config/schema",
     tag = "admin",
@@ -854,7 +868,7 @@ pub async fn config_schema() -> Result<HttpResponse> {
     Ok(HttpResponse::Ok().json(ApiResponse::ok(schema)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/admin/config/{key}",
     tag = "admin",
@@ -876,12 +890,13 @@ pub async fn get_config(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(config)))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct SetConfigReq {
     pub value: String,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     put,
     path = "/api/v1/admin/config/{key}",
     tag = "admin",
@@ -908,7 +923,7 @@ pub async fn set_config(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(config)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/admin/config/{key}",
     tag = "admin",
@@ -932,7 +947,7 @@ pub async fn delete_config(
 
 // ── WebDAV Locks ────────────────────────────────────────────────────
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/admin/locks",
     tag = "admin",
@@ -957,7 +972,7 @@ pub async fn list_locks(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(locks)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/admin/locks/{id}",
     tag = "admin",
@@ -978,7 +993,7 @@ pub async fn force_unlock(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/admin/locks/expired",
     tag = "admin",
@@ -996,7 +1011,7 @@ pub async fn cleanup_expired_locks(state: web::Data<AppState>) -> Result<HttpRes
 
 // ── Audit Logs ─────────────────────────────────────────────────────
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/admin/audit-logs",
     tag = "admin",

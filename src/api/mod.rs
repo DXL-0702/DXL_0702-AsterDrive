@@ -1,6 +1,7 @@
 pub mod constants;
 pub mod error_code;
 pub mod middleware;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 pub mod openapi;
 pub mod pagination;
 pub mod response;
@@ -33,8 +34,9 @@ pub fn configure(cfg: &mut web::ServiceConfig, db: &sea_orm::DatabaseConnection)
     .service(routes::health::routes());
 
     // OpenAPI + Swagger UI — 仅 debug 构建
-    #[cfg(debug_assertions)]
+    #[cfg(all(debug_assertions, feature = "openapi"))]
     {
+        #[cfg(all(debug_assertions, feature = "openapi"))]
         use utoipa::OpenApi;
         use utoipa_swagger_ui::SwaggerUi;
         let spec = openapi::ApiDoc::openapi();

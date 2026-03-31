@@ -21,15 +21,15 @@ vi.mock("react-i18next", () => ({
 	}),
 }));
 
-vi.mock("@/components/files/preview/MonacoCodeEditor", () => ({
-	MonacoCodeEditor: (props: {
+vi.mock("@/components/files/preview/CodePreviewEditor", () => ({
+	CodePreviewEditor: (props: {
 		language: string;
 		onChange?: (value: string) => void;
 		onMount?: (
 			editor: {
 				addCommand: (keybinding: number, handler: () => void) => void;
 			},
-			monaco: {
+			shortcutApi: {
 				KeyCode: { KeyS: number };
 				KeyMod: { CtrlCmd: number };
 			},

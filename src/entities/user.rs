@@ -1,11 +1,13 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::types::{UserRole, UserStatus};
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize, ToSchema)]
-#[schema(as = UserInfo)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), schema(as = UserInfo))]
 #[sea_orm(table_name = "users")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -22,9 +24,9 @@ pub struct Model {
     pub session_version: i64,
     pub storage_used: i64,
     pub storage_quota: i64, // 0 = unlimited
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTimeUtc,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: DateTimeUtc,
     #[serde(skip_serializing)]
     pub config: Option<String>, // JSON blob, nullable

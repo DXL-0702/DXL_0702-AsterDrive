@@ -10,6 +10,7 @@ use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -42,7 +43,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/{token}/avatar/{size}", web::get().to(shared_avatar))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/s/{token}",
     tag = "shares",
@@ -61,12 +62,13 @@ pub async fn get_share_info(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(info)))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct VerifyPasswordReq {
     pub password: String,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/s/{token}/verify",
     tag = "shares",
@@ -101,7 +103,7 @@ pub async fn verify_password(
         .json(ApiResponse::<()>::ok_empty()))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/s/{token}/download",
     tag = "shares",
@@ -133,7 +135,7 @@ pub async fn download_shared(
     .await
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/s/{token}/files/{file_id}/download",
     tag = "shares",
@@ -170,7 +172,7 @@ pub async fn download_shared_folder_file(
     .await
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/s/{token}/content",
     tag = "shares",
@@ -207,7 +209,7 @@ pub async fn list_shared_content(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/s/{token}/folders/{folder_id}/content",
     tag = "shares",
@@ -250,7 +252,7 @@ pub async fn list_shared_subfolder_content(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/s/{token}/avatar/{size}",
     tag = "shares",
@@ -280,7 +282,7 @@ pub async fn shared_avatar(
     Ok(profile_service::avatar_image_response(bytes))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/s/{token}/thumbnail",
     tag = "shares",
@@ -313,7 +315,7 @@ pub async fn shared_thumbnail(
         .body(data))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/s/{token}/files/{file_id}/thumbnail",
     tag = "shares",

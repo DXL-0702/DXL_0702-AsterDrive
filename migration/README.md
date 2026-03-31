@@ -2,40 +2,40 @@
 
 - Generate a new migration file
     ```sh
-    cargo run -- generate MIGRATION_NAME
+    cargo run -p migration --features cli -- generate MIGRATION_NAME
     ```
 - Apply all pending migrations
     ```sh
-    cargo run
+    cargo run -p migration --features cli
     ```
     ```sh
-    cargo run -- up
+    cargo run -p migration --features cli -- up
     ```
 - Apply first 10 pending migrations
     ```sh
-    cargo run -- up -n 10
+    cargo run -p migration --features cli -- up -n 10
     ```
 - Rollback last applied migrations
     ```sh
-    cargo run -- down
+    cargo run -p migration --features cli -- down
     ```
 - Rollback last 10 applied migrations
     ```sh
-    cargo run -- down -n 10
+    cargo run -p migration --features cli -- down -n 10
     ```
 - Drop all tables from the database, then reapply all migrations
     ```sh
-    cargo run -- fresh
+    cargo run -p migration --features cli -- fresh
     ```
 - Rollback all applied migrations, then reapply all migrations
     ```sh
-    cargo run -- refresh
+    cargo run -p migration --features cli -- refresh
     ```
 - Rollback all applied migrations
     ```sh
-    cargo run -- reset
+    cargo run -p migration --features cli -- reset
     ```
 - Check the status of all migrations
     ```sh
-    cargo run -- status
+    cargo run -p migration --features cli -- status
     ```

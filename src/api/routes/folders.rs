@@ -15,6 +15,7 @@ use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -33,13 +34,14 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/{id}", web::patch().to(patch_folder))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CreateFolderReq {
     pub name: String,
     pub parent_id: Option<i64>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/folders",
     tag = "folders",
@@ -72,7 +74,7 @@ pub async fn create_folder(
     Ok(HttpResponse::Created().json(ApiResponse::ok(folder)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/folders",
     tag = "folders",
@@ -104,7 +106,7 @@ pub async fn list_root(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/folders/{id}",
     tag = "folders",
@@ -138,7 +140,7 @@ pub async fn list_folder(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/folders/{id}/ancestors",
     tag = "folders",
@@ -160,7 +162,7 @@ pub async fn get_ancestors(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(ancestors)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/folders/{id}",
     tag = "folders",
@@ -195,18 +197,19 @@ pub async fn delete_folder(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct PatchFolderReq {
     pub name: Option<String>,
     #[serde(default)]
-    #[schema(value_type = Option<i64>)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<i64>))]
     pub parent_id: NullablePatch<i64>,
     #[serde(default)]
-    #[schema(value_type = Option<i64>)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<i64>))]
     pub policy_id: NullablePatch<i64>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     patch,
     path = "/api/v1/folders/{id}",
     tag = "folders",
@@ -257,12 +260,13 @@ pub async fn patch_folder(
 
 // ── Lock ────────────────────────────────────────────────────────────
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct SetLockReq {
     pub locked: bool,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/folders/{id}/lock",
     tag = "folders",
@@ -288,13 +292,14 @@ pub async fn set_lock(
 
 // ── Copy ───────────────────────────────────────────────────────────
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CopyFolderReq {
     /// 目标父文件夹 ID（null = 根目录）
     pub parent_id: Option<i64>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/folders/{id}/copy",
     tag = "folders",

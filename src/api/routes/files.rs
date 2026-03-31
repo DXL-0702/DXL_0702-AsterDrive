@@ -14,6 +14,7 @@ use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -60,13 +61,15 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/{id}", web::patch().to(patch_file))
 }
 
-#[derive(Deserialize, IntoParams, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct FileQuery {
     pub folder_id: Option<i64>,
     pub relative_path: Option<String>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/files/upload",
     tag = "files",
@@ -108,13 +111,14 @@ pub async fn upload(
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CreateEmptyRequest {
     pub name: String,
     pub folder_id: Option<i64>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/files/new",
     tag = "files",
@@ -137,7 +141,7 @@ pub async fn create_empty(
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/files/{id}",
     tag = "files",
@@ -159,7 +163,7 @@ pub async fn get_file(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/files/{id}/download",
     tag = "files",
@@ -198,7 +202,7 @@ pub async fn download(
     Ok(response)
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/files/{id}/thumbnail",
     tag = "files",
@@ -236,7 +240,7 @@ pub async fn get_thumbnail(
     }
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/files/{id}",
     tag = "files",
@@ -271,15 +275,16 @@ pub async fn delete_file(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct PatchFileReq {
     pub name: Option<String>,
     #[serde(default)]
-    #[schema(value_type = Option<i64>)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<i64>))]
     pub folder_id: NullablePatch<i64>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     patch,
     path = "/api/v1/files/{id}",
     tag = "files",
@@ -329,7 +334,8 @@ pub async fn patch_file(
 
 // ── Chunked Upload ──────────────────────────────────────────────────
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct InitUploadReq {
     pub filename: String,
     pub total_size: i64,
@@ -348,7 +354,7 @@ pub struct UploadIdPath {
     pub upload_id: String,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/files/upload/init",
     tag = "files",
@@ -377,7 +383,7 @@ pub async fn init_chunked_upload(
     Ok(HttpResponse::Created().json(ApiResponse::ok(resp)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     put,
     path = "/api/v1/files/upload/{upload_id}/{chunk_number}",
     tag = "files",
@@ -411,18 +417,20 @@ pub async fn upload_chunk(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CompleteUploadReq {
     pub parts: Option<Vec<CompletedPartReq>>,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CompletedPartReq {
     pub part_number: i32,
     pub etag: String,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/files/upload/{upload_id}/complete",
     tag = "files",
@@ -450,7 +458,7 @@ pub async fn complete_upload(
     Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/files/upload/{upload_id}",
     tag = "files",
@@ -472,7 +480,7 @@ pub async fn get_upload_progress(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/files/upload/{upload_id}",
     tag = "files",
@@ -496,12 +504,13 @@ pub async fn cancel_upload(
 
 // ── Presign Parts (S3 Multipart) ────────────────────────────────────
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct PresignPartsReq {
     pub part_numbers: Vec<i32>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/files/upload/{upload_id}/presign-parts",
     tag = "files",
@@ -533,7 +542,7 @@ pub async fn presign_parts(
 
 // ── Content (Edit) ──────────────────────────────────────────────────
 
-#[utoipa::path(
+#[api_docs_macros::path(
     put,
     path = "/api/v1/files/{id}/content",
     tag = "files",
@@ -580,12 +589,13 @@ pub async fn update_content(
 
 // ── Lock ────────────────────────────────────────────────────────────
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct SetLockReq {
     pub locked: bool,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/files/{id}/lock",
     tag = "files",
@@ -611,13 +621,14 @@ pub async fn set_lock(
 
 // ── Copy ───────────────────────────────────────────────────────────
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CopyFileReq {
     /// 目标文件夹 ID（null = 根目录）
     pub folder_id: Option<i64>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/files/{id}/copy",
     tag = "files",
@@ -663,7 +674,7 @@ pub struct VersionPath {
     pub version_id: i64,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/files/{id}/versions",
     tag = "files",
@@ -684,7 +695,7 @@ pub async fn list_versions(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(versions)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/files/{id}/versions/{version_id}/restore",
     tag = "files",
@@ -710,7 +721,7 @@ pub async fn restore_version(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/files/{id}/versions/{version_id}",
     tag = "files",

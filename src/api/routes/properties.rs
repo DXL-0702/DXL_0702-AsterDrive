@@ -10,6 +10,7 @@ use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -26,13 +27,15 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         )
 }
 
-#[derive(Deserialize, IntoParams)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
 pub struct EntityPath {
     pub entity_type: EntityType,
     pub entity_id: i64,
 }
 
-#[derive(Deserialize, IntoParams)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
 pub struct PropPath {
     pub entity_type: EntityType,
     pub entity_id: i64,
@@ -40,14 +43,15 @@ pub struct PropPath {
     pub name: String,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct SetPropReq {
     pub namespace: String,
     pub name: String,
     pub value: Option<String>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/properties/{entity_type}/{entity_id}",
     tag = "properties",
@@ -73,7 +77,7 @@ pub async fn list_props(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(props)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     put,
     path = "/api/v1/properties/{entity_type}/{entity_id}",
     tag = "properties",
@@ -110,7 +114,7 @@ pub async fn set_prop(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(prop)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/properties/{entity_type}/{entity_id}/{namespace}/{name}",
     tag = "properties",

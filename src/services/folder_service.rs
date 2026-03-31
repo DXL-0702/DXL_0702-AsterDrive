@@ -2,6 +2,7 @@ use chrono::Utc;
 use sea_orm::{ConnectionTrait, Set, TransactionTrait};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::db::repository::{file_repo, folder_repo, share_repo};
@@ -10,13 +11,15 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::types::NullablePatch;
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct FolderAncestorItem {
     pub id: i64,
     pub name: String,
 }
 
-#[derive(Clone, Serialize, ToSchema)]
+#[derive(Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct FileListItem {
     pub id: i64,
     pub name: String,
@@ -25,37 +28,40 @@ pub struct FileListItem {
     pub size: i64,
     pub user_id: i64,
     pub mime_type: String,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<chrono::Utc>,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub is_locked: bool,
     pub is_shared: bool,
 }
 
-#[derive(Clone, Serialize, ToSchema)]
+#[derive(Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct FolderListItem {
     pub id: i64,
     pub name: String,
     pub parent_id: Option<i64>,
     pub user_id: i64,
     pub policy_id: Option<i64>,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<chrono::Utc>,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub is_locked: bool,
     pub is_shared: bool,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct FileCursor {
     /// 排序字段值（序列化为字符串）
     pub value: String,
     pub id: i64,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct FolderContents {
     pub folders: Vec<FolderListItem>,
     pub files: Vec<FileListItem>,

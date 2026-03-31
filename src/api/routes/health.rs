@@ -9,7 +9,7 @@ pub fn routes() -> actix_web::Scope {
         .route("/ready", web::get().to(ready))
         .route("/ready", web::head().to(ready));
 
-    #[cfg(debug_assertions)]
+    #[cfg(all(debug_assertions, feature = "openapi"))]
     let scope = scope.route("/memory", web::get().to(memory));
 
     #[cfg(feature = "metrics")]
@@ -18,7 +18,7 @@ pub fn routes() -> actix_web::Scope {
     scope
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/health",
     tag = "health",
@@ -31,7 +31,7 @@ pub async fn health() -> HttpResponse {
     HttpResponse::Ok().json(ApiResponse::ok(status_response("ok")))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/health/ready",
     tag = "health",

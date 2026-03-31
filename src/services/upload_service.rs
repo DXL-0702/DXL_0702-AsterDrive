@@ -1,6 +1,7 @@
 use chrono::Utc;
 use sea_orm::{Set, TransactionTrait};
 use serde::Serialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::api::constants::HOUR_SECS;
@@ -16,7 +17,8 @@ use crate::types::{
 };
 use crate::utils::{id, numbers, paths};
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct InitUploadResponse {
     pub mode: UploadMode,
     pub upload_id: Option<String>,
@@ -26,13 +28,15 @@ pub struct InitUploadResponse {
     pub presigned_url: Option<String>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ChunkUploadResponse {
     pub received_count: i32,
     pub total_chunks: i32,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct UploadProgressResponse {
     pub upload_id: String,
     pub status: UploadSessionStatus,

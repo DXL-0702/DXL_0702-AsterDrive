@@ -3,6 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use sea_orm::Set;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::IntoParams;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
@@ -103,7 +104,8 @@ impl fmt::Display for AuditAction {
     }
 }
 
-#[derive(Deserialize, IntoParams)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
 pub struct AuditLogFilterQuery {
     pub user_id: Option<i64>,
     pub action: Option<String>,

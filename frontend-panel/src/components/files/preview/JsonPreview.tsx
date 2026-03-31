@@ -5,6 +5,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useTextContent } from "@/hooks/useTextContent";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
+import { withScopedPrismClassName } from "./prismClassNames";
 
 interface JsonPreviewProps {
 	path: string;
@@ -57,15 +58,19 @@ export function JsonPreview({ path }: JsonPreviewProps) {
 								{tokens.map((line) => {
 									const lineText = line.map((token) => token.content).join("");
 									const lineKey = `line-${lineText}`;
-									const lineProps = getLineProps({ line, key: lineKey });
+									const lineProps = withScopedPrismClassName(
+										getLineProps({ line, key: lineKey }),
+									);
 									return (
 										<div key={lineKey} {...lineProps}>
 											{line.map((token) => {
 												const tokenKey = `${lineKey}-${token.types.join("-")}-${token.content}`;
-												const tokenProps = getTokenProps({
-													key: tokenKey,
-													token,
-												});
+												const tokenProps = withScopedPrismClassName(
+													getTokenProps({
+														key: tokenKey,
+														token,
+													}),
+												);
 												return <span key={tokenKey} {...tokenProps} />;
 											})}
 										</div>

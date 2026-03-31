@@ -1,5 +1,8 @@
+#![cfg(all(debug_assertions, feature = "openapi"))]
+
 use aster_drive::api::openapi::ApiDoc;
 use std::fs;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::OpenApi;
 
 #[test]

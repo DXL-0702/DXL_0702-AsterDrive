@@ -40,11 +40,17 @@ describe("file preview capabilities", () => {
 			getEditorLanguage({ name: "main.tf", mime_type: "text/plain" }),
 		).toBe("hcl");
 		expect(
+			getEditorLanguage({ name: "config.toml", mime_type: "text/plain" }),
+		).toBe("toml");
+		expect(
 			getEditorLanguage({ name: "build.sbt", mime_type: "text/plain" }),
 		).toBe("scala");
 		expect(getEditorLanguage({ name: "app.ex", mime_type: "text/plain" })).toBe(
 			"elixir",
 		);
+		expect(
+			getEditorLanguage({ name: "job.groovy", mime_type: "text/plain" }),
+		).toBe("groovy");
 		expect(
 			getEditorLanguage({ name: "build.gradle", mime_type: "text/plain" }),
 		).toBe("java");

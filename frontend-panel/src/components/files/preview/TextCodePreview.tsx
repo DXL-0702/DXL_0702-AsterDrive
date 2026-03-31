@@ -4,11 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { useFileEditorSession } from "@/hooks/useFileEditorSession";
 import { useTextContent } from "@/hooks/useTextContent";
-import { getEditorLanguage } from "./file-capabilities";
 import {
-	MonacoCodeEditor,
-	type MonacoCodeEditorMountHandler,
-} from "./MonacoCodeEditor";
+	CodePreviewEditor,
+	type CodePreviewEditorMountHandler,
+} from "./CodePreviewEditor";
+import { getEditorLanguage } from "./file-capabilities";
 import { PreviewError } from "./PreviewError";
 import { PreviewLoadingState } from "./PreviewLoadingState";
 import type { PreviewableFileLike } from "./types";
@@ -83,11 +83,14 @@ export function TextCodePreview({
 		onDirtyChange?.(dirty);
 	}, [dirty, onDirtyChange]);
 
-	const handleEditorMount = useCallback<MonacoCodeEditorMountHandler>(
-		(editor, monaco) => {
-			editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-				saveRef.current();
-			});
+	const handleEditorMount = useCallback<CodePreviewEditorMountHandler>(
+		(editor, shortcutApi) => {
+			editor.addCommand(
+				shortcutApi.KeyMod.CtrlCmd | shortcutApi.KeyCode.KeyS,
+				() => {
+					saveRef.current();
+				},
+			);
 		},
 		[],
 	);
@@ -157,7 +160,7 @@ export function TextCodePreview({
 				) : null}
 			</div>
 			<div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden bg-background">
-				<MonacoCodeEditor
+				<CodePreviewEditor
 					key={path}
 					language={language}
 					theme={isDark ? "vs-dark" : "vs"}

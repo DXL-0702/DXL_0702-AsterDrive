@@ -1,6 +1,7 @@
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
 use serde::{Deserialize, Serialize};
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, SortBy, SortOrder, load_offset_page};
@@ -15,7 +16,8 @@ use crate::services::{auth_service, profile_service};
 use crate::types::{UserRole, UserStatus};
 
 /// Theme mode for the UI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ToSchema, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ThemeMode {
     #[default]
@@ -25,7 +27,8 @@ pub enum ThemeMode {
 }
 
 /// Color preset for the UI accent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ToSchema, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ColorPreset {
     #[default]
@@ -36,7 +39,8 @@ pub enum ColorPreset {
 }
 
 /// File browser view mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ToSchema, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PrefViewMode {
     #[default]
@@ -45,7 +49,8 @@ pub enum PrefViewMode {
 }
 
 /// Interface display language.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, ToSchema, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Language {
     #[default]
@@ -55,7 +60,8 @@ pub enum Language {
 
 /// Stored user preferences (serialized as JSON in `users.config`).
 /// Empty struct (all fields None) is treated as null by `get_preferences`.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct UserPreferences {
     pub theme_mode: Option<ThemeMode>,
     pub color_preset: Option<ColorPreset>,
@@ -73,7 +79,8 @@ impl UserPreferences {
 }
 
 /// PATCH request — only non-null fields are merged into existing preferences.
-#[derive(Debug, Deserialize, ToSchema)]
+#[derive(Debug, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct UpdatePreferencesReq {
     pub theme_mode: Option<ThemeMode>,
     pub color_preset: Option<ColorPreset>,
@@ -86,7 +93,8 @@ pub struct UpdatePreferencesReq {
 // ── MeResponse (从 auth route 迁移) ──────────────────────────────────
 
 /// 用户信息核心字段（不含 password_hash），用于 API 响应
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct UserCore {
     pub id: i64,
     pub username: String,
@@ -95,14 +103,15 @@ pub struct UserCore {
     pub status: crate::types::UserStatus,
     pub storage_used: i64,
     pub storage_quota: i64,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<chrono::Utc>,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 /// /auth/me 响应：用户信息 + 偏好设置
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct MeResponse {
     pub id: i64,
     pub username: String,
@@ -111,16 +120,17 @@ pub struct MeResponse {
     pub status: crate::types::UserStatus,
     pub storage_used: i64,
     pub storage_quota: i64,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<chrono::Utc>,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub preferences: Option<UserPreferences>,
     pub profile: profile_service::UserProfileInfo,
 }
 
 /// 通用用户响应：核心字段 + profile
-#[derive(Debug, Serialize, ToSchema)]
+#[derive(Debug, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct UserInfo {
     pub id: i64,
     pub username: String,
@@ -129,9 +139,9 @@ pub struct UserInfo {
     pub status: crate::types::UserStatus,
     pub storage_used: i64,
     pub storage_quota: i64,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<chrono::Utc>,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub profile: profile_service::UserProfileInfo,
 }

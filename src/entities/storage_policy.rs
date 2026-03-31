@@ -1,10 +1,13 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+#[cfg(all(debug_assertions, feature = "openapi"))]
+use utoipa::ToSchema;
 
 use crate::types::DriverType;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize, utoipa::ToSchema)]
-#[schema(as = StoragePolicy)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), schema(as = StoragePolicy))]
 #[sea_orm(table_name = "storage_policies")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -23,9 +26,9 @@ pub struct Model {
     pub options: String,       // JSON object
     pub is_default: bool,
     pub chunk_size: i64, // 0 = single upload, >0 = chunk size in bytes
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTimeUtc,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: DateTimeUtc,
 }
 

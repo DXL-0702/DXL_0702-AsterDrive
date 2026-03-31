@@ -1,5 +1,6 @@
 use chrono::DateTime;
 use serde::{Deserialize, Serialize};
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
 use crate::db::repository::{search_repo, share_repo};
@@ -7,7 +8,9 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::folder_service::{FileListItem, FolderListItem, build_folder_list_items};
 
-#[derive(Deserialize, IntoParams, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct SearchParams {
     /// Name search pattern (case-insensitive substring match)
     pub q: Option<String>,
@@ -32,7 +35,8 @@ pub struct SearchParams {
     pub offset: Option<u64>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct SearchResults {
     pub files: Vec<FileListItem>,
     pub folders: Vec<FolderListItem>,

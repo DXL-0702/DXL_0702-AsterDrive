@@ -1,9 +1,11 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize, ToSchema)]
-#[schema(as = FileInfo)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), schema(as = FileInfo))]
 #[sea_orm(table_name = "files")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -14,12 +16,12 @@ pub struct Model {
     pub size: i64,
     pub user_id: i64,
     pub mime_type: String,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTimeUtc,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: DateTimeUtc,
     #[serde(skip_serializing_if = "Option::is_none")]
-    #[schema(value_type = Option<String>)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub deleted_at: Option<DateTimeUtc>,
     #[serde(default)]
     pub is_locked: bool,

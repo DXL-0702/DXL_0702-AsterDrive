@@ -6,6 +6,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::audit_service::{self, AuditContext};
 use serde::Serialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 pub async fn list_all(state: &AppState) -> Result<Vec<system_config::Model>> {
@@ -97,7 +98,8 @@ fn validate_value_type(value_type: &str, value: &str) -> Result<()> {
 // ── Config Schema ─────────────────────────────────────────────────────
 
 /// 系统配置的 schema 信息（从 ALL_CONFIGS 生成）
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ConfigSchemaItem {
     pub key: String,
     pub value_type: String,

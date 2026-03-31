@@ -1,11 +1,13 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::types::AvatarSource;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize, ToSchema)]
-#[schema(as = UserProfileModel)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), schema(as = UserProfileModel))]
 #[sea_orm(table_name = "user_profiles")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
@@ -15,9 +17,9 @@ pub struct Model {
     pub avatar_policy_id: Option<i64>,
     pub avatar_key: Option<String>,
     pub avatar_version: i32,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTimeUtc,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: DateTimeUtc,
 }
 

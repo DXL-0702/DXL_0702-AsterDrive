@@ -1,6 +1,7 @@
 use chrono::Utc;
 use sea_orm::Set;
 use serde::Serialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
@@ -11,7 +12,8 @@ use crate::runtime::AppState;
 use crate::utils::hash;
 
 /// 创建账号后返回的响应（包含一次性明文密码）
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct WebdavAccountCreated {
     pub id: i64,
     pub username: String,
@@ -21,7 +23,8 @@ pub struct WebdavAccountCreated {
 }
 
 /// 列表返回用的带路径的账号信息
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct WebdavAccountInfo {
     pub id: i64,
     pub username: String,
@@ -29,9 +32,9 @@ pub struct WebdavAccountInfo {
     /// 文件夹路径，如 "/Documents/Photos"，None 表示全部访问
     pub root_folder_path: Option<String>,
     pub is_active: bool,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<Utc>,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<Utc>,
 }
 

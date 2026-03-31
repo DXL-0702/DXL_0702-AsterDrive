@@ -6,6 +6,7 @@ use sea_orm::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
 use crate::entities::{
@@ -28,7 +29,8 @@ const DEFAULT_EVENT_LIMIT: u64 = 8;
 const MAX_EVENT_LIMIT: u64 = 50;
 const DEFAULT_TIMEZONE: &str = "UTC";
 
-#[derive(Clone, Debug, Deserialize, IntoParams)]
+#[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
 pub struct AdminOverviewQuery {
     pub days: Option<u32>,
     pub timezone: Option<String>,
@@ -56,7 +58,8 @@ impl AdminOverviewQuery {
     }
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AdminOverviewStats {
     pub total_users: u64,
     pub active_users: u64,
@@ -72,7 +75,8 @@ pub struct AdminOverviewStats {
     pub shares_today: u64,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AdminOverviewDailyReport {
     pub date: String,
     pub sign_ins: u64,
@@ -83,9 +87,10 @@ pub struct AdminOverviewDailyReport {
     pub total_events: u64,
 }
 
-#[derive(Clone, Debug, Serialize, ToSchema)]
+#[derive(Clone, Debug, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AdminOverview {
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub generated_at: DateTimeUtc,
     pub timezone: String,
     pub days: u32,

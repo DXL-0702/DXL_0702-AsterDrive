@@ -5,6 +5,7 @@ use sea_orm::{
     sea_query::{Expr, Func},
 };
 use serde::Serialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::entities::{
@@ -18,7 +19,8 @@ use sea_orm::sea_query::extension::postgres::PgExpr;
 type DateTimeUtc = DateTime<Utc>;
 
 /// Search result file item (includes blob size from JOIN)
-#[derive(Debug, Serialize, ToSchema, FromQueryResult)]
+#[derive(Debug, Serialize, FromQueryResult)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct FileSearchItem {
     pub id: i64,
     pub name: String,
@@ -27,9 +29,9 @@ pub struct FileSearchItem {
     pub user_id: i64,
     pub mime_type: String,
     pub size: i64,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTimeUtc,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: DateTimeUtc,
     pub is_locked: bool,
 }

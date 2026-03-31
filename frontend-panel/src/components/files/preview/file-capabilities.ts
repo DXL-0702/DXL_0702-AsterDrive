@@ -159,7 +159,7 @@ const LANGUAGE_BY_EXTENSION: Record<string, string> = {
 	xml: "xml",
 	yaml: "yaml",
 	yml: "yaml",
-	toml: "plaintext",
+	toml: "toml",
 	md: "markdown",
 	markdown: "markdown",
 	rst: "restructuredtext",
@@ -187,7 +187,7 @@ const LANGUAGE_BY_EXTENSION: Record<string, string> = {
 	kts: "kotlin",
 	scala: "scala",
 	sbt: "scala",
-	groovy: "plaintext",
+	groovy: "groovy",
 	clj: "clojure",
 	cljs: "clojure",
 	// Scripting

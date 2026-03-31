@@ -2,6 +2,7 @@ use chrono::Utc;
 use sea_orm::{Set, TransactionTrait};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::db::repository::{file_repo, folder_repo, user_repo};
@@ -28,14 +29,16 @@ pub fn validate_batch_ids(file_ids: &[i64], folder_ids: &[i64]) -> Result<()> {
     Ok(())
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct BatchResult {
     pub succeeded: u32,
     pub failed: u32,
     pub errors: Vec<BatchItemError>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct BatchItemError {
     pub entity_type: String,
     pub entity_id: i64,

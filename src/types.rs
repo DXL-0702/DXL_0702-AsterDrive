@@ -1,5 +1,6 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 /// PATCH 请求里的可空字段三态：
@@ -45,9 +46,8 @@ where
 }
 
 /// 用户角色
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize, ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::N(16))")]
 #[serde(rename_all = "lowercase")]
 pub enum UserRole {
@@ -64,9 +64,8 @@ impl UserRole {
 }
 
 /// 用户状态
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize, ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::N(16))")]
 #[serde(rename_all = "lowercase")]
 pub enum UserStatus {
@@ -83,9 +82,8 @@ impl UserStatus {
 }
 
 /// 用户头像来源
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize, ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::N(16))")]
 #[serde(rename_all = "snake_case")]
 pub enum AvatarSource {
@@ -98,9 +96,8 @@ pub enum AvatarSource {
 }
 
 /// 存储驱动类型
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize, ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::N(32))")]
 #[serde(rename_all = "lowercase")]
 pub enum DriverType {
@@ -111,9 +108,8 @@ pub enum DriverType {
 }
 
 /// 上传 session 状态
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize, ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::N(16))")]
 #[serde(rename_all = "lowercase")]
 pub enum UploadSessionStatus {
@@ -130,7 +126,8 @@ pub enum UploadSessionStatus {
 }
 
 /// 上传模式（不存 DB，仅 API 响应用）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum UploadMode {
     Direct,
@@ -191,9 +188,8 @@ pub fn effective_s3_multipart_chunk_size(configured: i64) -> i64 {
 }
 
 /// 实体类型（文件/文件夹）
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize, ToSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::N(16))")]
 #[serde(rename_all = "lowercase")]
 pub enum EntityType {
@@ -204,7 +200,8 @@ pub enum EntityType {
 }
 
 /// JWT Token 类型（不存 DB）
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum TokenType {
     Access,

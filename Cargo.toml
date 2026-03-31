@@ -42,20 +42,22 @@ panic = "abort"
 strip = true
 
 [workspace]
-members = [".", "migration"]
+members = [".", "migration", "api-docs-macros"]
 
 [features]
 default = ["server"]
 server = []
 cli = ["server", "dep:clap"]
 metrics = ["server", "dep:prometheus", "dep:sysinfo"]
-full = ["server", "cli", "metrics"]
+openapi = ["dep:utoipa", "dep:utoipa-swagger-ui", "api-docs-macros/openapi"]
+full = ["server", "cli", "metrics", "openapi"]
 
 [dependencies]
 actix-cors = "0.7"
 actix-governor = "0.10"
 actix-multipart = "0.7"
 actix-web = { version = "4.13.0", features = ["compress-brotli", "compress-gzip"] }
+api-docs-macros = { path = "api-docs-macros" }
 argon2 = "0.5.3"
 async-trait = "0.1"
 base64 = "0.22"
@@ -97,8 +99,8 @@ toml = "1.1"
 tracing = { version = "0.1.44", default-features = false}
 tracing-appender = "0.2.4"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "env-filter", "fmt", "json"] }
-utoipa = { version = "5.4.0", features = ["chrono", "actix_extras", "repr"] }
-utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"] }
+utoipa = { version = "5.4.0", features = ["chrono", "actix_extras", "repr"], optional = true }
+utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"], optional = true }
 uuid = { version = "1", features = ["v4"] }
 xmltree = "0.12"
 

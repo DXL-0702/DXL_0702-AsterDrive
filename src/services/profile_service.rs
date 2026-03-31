@@ -11,6 +11,7 @@ use image::{DynamicImage, GenericImageView, ImageReader, Limits};
 use md5::{Digest, Md5};
 use sea_orm::Set;
 use serde::Serialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::api::constants::YEAR_SECS;
@@ -32,7 +33,8 @@ pub enum AvatarAudience {
     AdminUser,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AvatarInfo {
     pub source: AvatarSource,
     pub url_512: Option<String>,
@@ -40,7 +42,8 @@ pub struct AvatarInfo {
     pub version: i32,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct UserProfileInfo {
     pub display_name: Option<String>,
     pub avatar: AvatarInfo,

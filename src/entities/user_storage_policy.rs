@@ -1,9 +1,11 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize, ToSchema)]
-#[schema(as = UserStoragePolicy)]
+#[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), schema(as = UserStoragePolicy))]
 #[sea_orm(table_name = "user_storage_policies")]
 pub struct Model {
     #[sea_orm(primary_key)]
@@ -12,7 +14,7 @@ pub struct Model {
     pub policy_id: i64,
     pub is_default: bool,
     pub quota_bytes: i64, // 0 = unlimited
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTimeUtc,
 }
 

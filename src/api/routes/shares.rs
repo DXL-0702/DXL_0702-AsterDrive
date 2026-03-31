@@ -1,19 +1,24 @@
 use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
-use crate::api::pagination::{LimitOffsetQuery, OffsetPage};
+use crate::api::pagination::LimitOffsetQuery;
+#[cfg(all(debug_assertions, feature = "openapi"))]
+use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
+#[cfg(all(debug_assertions, feature = "openapi"))]
+use crate::services::batch_service;
 use crate::services::{
     audit_service::{self, AuditContext},
     auth_service::Claims,
-    batch_service, share_service,
+    share_service,
 };
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -29,33 +34,36 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/{id}", web::delete().to(delete_share))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CreateShareReq {
     pub file_id: Option<i64>,
     pub folder_id: Option<i64>,
     pub password: Option<String>,
-    #[schema(value_type = Option<String>)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     #[serde(default)]
     pub max_downloads: i64,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct UpdateShareReq {
     /// `None` = keep existing password, `Some(\"\")` = remove password, non-empty = replace password
     pub password: Option<String>,
-    #[schema(value_type = Option<String>)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     pub max_downloads: i64,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct BatchDeleteSharesReq {
     #[serde(default)]
     pub share_ids: Vec<i64>,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/shares",
     tag = "shares",
@@ -97,7 +105,7 @@ pub async fn create_share(
     Ok(HttpResponse::Created().json(ApiResponse::ok(share)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/shares",
     tag = "shares",
@@ -124,7 +132,7 @@ pub async fn list_shares(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(shares)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     patch,
     path = "/api/v1/shares/{id}",
     tag = "shares",
@@ -174,7 +182,7 @@ pub async fn update_share(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(share)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/shares/{id}",
     tag = "shares",
@@ -209,7 +217,7 @@ pub async fn delete_share(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/shares/batch-delete",
     tag = "shares",

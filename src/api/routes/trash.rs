@@ -11,6 +11,7 @@ use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -25,13 +26,14 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/{entity_type}/{id}", web::delete().to(purge_one))
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct TrashItemPath {
     pub entity_type: EntityType,
     pub id: i64,
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/trash",
     tag = "trash",
@@ -60,7 +62,7 @@ pub async fn list_trash(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/trash/{entity_type}/{id}/restore",
     tag = "trash",
@@ -90,7 +92,7 @@ pub async fn restore(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/trash/{entity_type}/{id}",
     tag = "trash",
@@ -118,7 +120,7 @@ pub async fn purge_one(
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     delete,
     path = "/api/v1/trash",
     tag = "trash",

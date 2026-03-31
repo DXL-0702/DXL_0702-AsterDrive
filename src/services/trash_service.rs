@@ -2,6 +2,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use sea_orm::TransactionTrait;
 use serde::Serialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::db::repository::{file_repo, folder_repo};
@@ -12,37 +13,40 @@ use crate::services::{file_service, folder_service, webdav_service};
 
 const DEFAULT_RETENTION_DAYS: i64 = 7;
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct TrashFileItem {
     pub id: i64,
     pub name: String,
     pub size: i64,
     pub mime_type: String,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<chrono::Utc>,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub deleted_at: chrono::DateTime<chrono::Utc>,
     pub is_locked: bool,
     pub original_path: String,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct TrashFolderItem {
     pub id: i64,
     pub name: String,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<chrono::Utc>,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub deleted_at: chrono::DateTime<chrono::Utc>,
     pub is_locked: bool,
     pub original_path: String,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct TrashContents {
     pub folders: Vec<TrashFolderItem>,
     pub files: Vec<TrashFileItem>,
@@ -52,7 +56,8 @@ pub struct TrashContents {
     pub next_file_cursor: Option<TrashFileCursor>,
 }
 
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct TrashFileCursor {
     pub deleted_at: chrono::DateTime<chrono::Utc>,
     pub id: i64,

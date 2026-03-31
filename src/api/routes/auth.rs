@@ -9,6 +9,7 @@ use actix_web::cookie::{Cookie, SameSite};
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::api::middleware::rate_limit;
@@ -53,48 +54,56 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         )
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct RegisterReq {
     pub username: String,
     pub email: String,
     pub password: String,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CheckReq {
     pub identifier: String,
 }
 
-#[derive(serde::Serialize, ToSchema)]
+#[derive(serde::Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CheckResp {
     pub exists: bool,
     pub has_users: bool,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct SetupReq {
     pub username: String,
     pub email: String,
     pub password: String,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct LoginReq {
     pub identifier: String,
     pub password: String,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct UpdateAvatarSourceReq {
     pub source: AvatarSource,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct UpdateProfileReq {
     pub display_name: Option<String>,
 }
 
-#[derive(Deserialize, ToSchema)]
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ChangePasswordReq {
     pub current_password: String,
     pub new_password: String,
@@ -129,7 +138,7 @@ fn bearer_token(req: &actix_web::HttpRequest) -> Option<String> {
         .map(str::to_string)
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/auth/check",
     tag = "auth",
@@ -144,7 +153,7 @@ pub async fn check(state: web::Data<AppState>, body: web::Json<CheckReq>) -> Res
     Ok(HttpResponse::Ok().json(ApiResponse::ok(CheckResp { exists, has_users })))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/auth/setup",
     tag = "auth",
@@ -189,7 +198,7 @@ pub async fn setup(
     Ok(HttpResponse::Created().json(ApiResponse::ok(user_info)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/auth/register",
     tag = "auth",
@@ -234,7 +243,7 @@ pub async fn register(
     Ok(HttpResponse::Created().json(ApiResponse::ok(user_info)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/auth/login",
     tag = "auth",
@@ -293,7 +302,7 @@ pub async fn login(
         .json(ApiResponse::<()>::ok_empty()))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/auth/refresh",
     tag = "auth",
@@ -325,7 +334,7 @@ pub async fn refresh(
         .json(ApiResponse::<()>::ok_empty()))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/auth/logout",
     tag = "auth",
@@ -381,7 +390,7 @@ pub async fn logout(state: web::Data<AppState>, req: actix_web::HttpRequest) -> 
         .json(ApiResponse::<()>::ok_empty())
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/auth/me",
     tag = "auth",
@@ -397,7 +406,7 @@ pub async fn me(state: web::Data<AppState>, claims: web::ReqData<Claims>) -> Res
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     put,
     path = "/api/v1/auth/password",
     tag = "auth",
@@ -459,7 +468,7 @@ pub async fn put_password(
 ///
 /// Only non-null fields in the request body are merged into the existing
 /// preferences. Returns the full updated preferences object.
-#[utoipa::path(
+#[api_docs_macros::path(
     patch,
     path = "/api/v1/auth/preferences",
     tag = "auth",
@@ -480,7 +489,7 @@ pub async fn patch_preferences(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(prefs)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     patch,
     path = "/api/v1/auth/profile",
     tag = "auth",
@@ -503,7 +512,7 @@ pub async fn patch_profile(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(profile)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     post,
     path = "/api/v1/auth/profile/avatar/upload",
     tag = "auth",
@@ -525,7 +534,7 @@ pub async fn upload_avatar(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(profile)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     put,
     path = "/api/v1/auth/profile/avatar/source",
     tag = "auth",
@@ -547,7 +556,7 @@ pub async fn put_avatar_source(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(profile)))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/auth/profile/avatar/{size}",
     tag = "auth",

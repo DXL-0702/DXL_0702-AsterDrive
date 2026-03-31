@@ -10,13 +10,15 @@
 //! - 6000-6099: 分享错误
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::errors::AsterError;
 
 /// API 错误码，序列化为数字
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr, ToSchema)]
-#[schema(example = 0)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize_repr, Deserialize_repr)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), schema(example = 0))]
 #[repr(i32)]
 pub enum ErrorCode {
     // 成功

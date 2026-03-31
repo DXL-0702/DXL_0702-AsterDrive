@@ -1,4 +1,6 @@
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{Modify, OpenApi};
 
 #[derive(OpenApi)]

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use chrono::Utc;
 use sea_orm::{DatabaseConnection, Set};
 use serde::Serialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
@@ -14,7 +15,8 @@ use crate::services::{batch_service, file_service, folder_service, profile_servi
 use crate::types::EntityType;
 use crate::utils::{hash, id};
 
-#[derive(Debug, Clone, Copy, Serialize, ToSchema)]
+#[derive(Debug, Clone, Copy, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ShareStatus {
     Active,
@@ -23,7 +25,8 @@ pub enum ShareStatus {
     Deleted,
 }
 
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct MyShareInfo {
     pub id: i64,
     pub token: String,
@@ -33,27 +36,29 @@ pub struct MyShareInfo {
     pub resource_deleted: bool,
     pub has_password: bool,
     pub status: ShareStatus,
-    #[schema(value_type = Option<String>)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub expires_at: Option<chrono::DateTime<Utc>>,
     pub max_downloads: i64,
     pub download_count: i64,
     pub view_count: i64,
     pub remaining_downloads: Option<i64>,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<Utc>,
-    #[schema(value_type = String)]
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<Utc>,
 }
 
 /// 公开返回给前端的分享信息（不含密码哈希和内部 ID）
-#[derive(Debug, Clone, Serialize, ToSchema)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct SharePublicOwnerInfo {
     pub name: String,
     pub avatar: profile_service::AvatarInfo,
 }
 
 /// 公开返回给前端的分享信息（不含密码哈希和内部 ID）
-#[derive(Serialize, ToSchema)]
+#[derive(Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct SharePublicInfo {
     pub token: String,
     pub name: String,

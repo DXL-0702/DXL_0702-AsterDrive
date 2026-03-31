@@ -4,9 +4,11 @@ use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
+#[cfg(all(debug_assertions, feature = "openapi"))]
+use crate::services::search_service::SearchResults;
 use crate::services::{
     auth_service::Claims,
-    search_service::{self, SearchParams, SearchResults},
+    search_service::{self, SearchParams},
 };
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
@@ -21,7 +23,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("", web::get().to(search))
 }
 
-#[utoipa::path(
+#[api_docs_macros::path(
     get,
     path = "/api/v1/search",
     tag = "search",
