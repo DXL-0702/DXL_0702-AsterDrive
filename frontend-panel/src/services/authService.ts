@@ -1,5 +1,6 @@
 import type {
 	ApiResponse,
+	AuthTokenResp,
 	AvatarSource,
 	ChangePasswordRequest,
 	CheckResp,
@@ -13,12 +14,26 @@ import type {
 import { ErrorCode } from "@/types/api";
 import { ApiError, api } from "./http";
 
+export interface AuthSessionInfo {
+	expiresIn: number;
+}
+
 export const authService = {
 	check: (identifier: string) =>
 		api.post<CheckResp>("/auth/check", { identifier }),
 
-	login: (identifier: string, password: string) =>
-		api.post<void>("/auth/login", { identifier, password }),
+	login: async (
+		identifier: string,
+		password: string,
+	): Promise<AuthSessionInfo> => {
+		const data = await api.post<AuthTokenResp>("/auth/login", {
+			identifier,
+			password,
+		});
+		return {
+			expiresIn: Number(data.expires_in) || 900,
+		};
+	},
 
 	register: (username: string, email: string, password: string) =>
 		api.post<UserInfo>("/auth/register", { username, email, password }),
@@ -28,13 +43,26 @@ export const authService = {
 
 	logout: () => api.post<void>("/auth/logout"),
 
+	refreshToken: async (): Promise<AuthSessionInfo> => {
+		const data = await api.post<AuthTokenResp>("/auth/refresh");
+		return {
+			expiresIn: Number(data.expires_in) || 900,
+		};
+	},
+
 	me: () => api.get<MeResponse>("/auth/me"),
 
 	updatePreferences: (prefs: UpdatePreferencesRequest) =>
 		api.patch<UserPreferences>("/auth/preferences", prefs),
 
-	changePassword: (payload: ChangePasswordRequest) =>
-		api.put<void>("/auth/password", payload),
+	changePassword: async (
+		payload: ChangePasswordRequest,
+	): Promise<AuthSessionInfo> => {
+		const data = await api.put<AuthTokenResp>("/auth/password", payload);
+		return {
+			expiresIn: Number(data.expires_in) || 900,
+		};
+	},
 
 	updateProfile: (profile: UpdateProfileRequest) =>
 		api.patch<UserProfileInfo>("/auth/profile", profile),

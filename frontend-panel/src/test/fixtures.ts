@@ -22,6 +22,7 @@ export function createMeResponse(
 		email: "alice@example.com",
 		role: "user",
 		status: "active",
+		access_token_expires_at: Math.floor(Date.now() / 1000) + 900,
 		profile: {
 			avatar: {
 				source: "none",

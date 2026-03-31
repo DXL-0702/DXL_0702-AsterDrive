@@ -161,6 +161,7 @@ use utoipa::{Modify, OpenApi};
             crate::api::routes::auth::SetupReq,
             crate::api::routes::auth::RegisterReq,
             crate::api::routes::auth::LoginReq,
+            crate::api::routes::auth::AuthTokenResp,
             crate::services::user_service::UserCore,
             crate::services::user_service::UserInfo,
             crate::services::user_service::MeResponse,

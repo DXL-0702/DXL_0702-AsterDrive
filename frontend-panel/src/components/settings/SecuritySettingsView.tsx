@@ -18,6 +18,7 @@ type FormErrors = Partial<
 export function SecuritySettingsView() {
 	const { t } = useTranslation(["core", "settings"]);
 	const user = useAuthStore((s) => s.user);
+	const syncSession = useAuthStore((s) => s.syncSession);
 	const [busy, setBusy] = useState(false);
 	const [currentPassword, setCurrentPassword] = useState("");
 	const [newPassword, setNewPassword] = useState("");
@@ -61,10 +62,11 @@ export function SecuritySettingsView() {
 
 		try {
 			setBusy(true);
-			await authService.changePassword({
+			const session = await authService.changePassword({
 				current_password: currentPassword,
 				new_password: newPassword,
 			});
+			syncSession(session.expiresIn);
 			setCurrentPassword("");
 			setNewPassword("");
 			setConfirmPassword("");

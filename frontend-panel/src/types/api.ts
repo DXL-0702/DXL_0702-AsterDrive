@@ -9,6 +9,7 @@ export type MemoryStatsResponse = components["schemas"]["MemoryStatsResponse"];
 // Auth and user
 export type AvatarInfo = components["schemas"]["AvatarInfo"];
 export type AvatarSource = components["schemas"]["AvatarSource"];
+export type AuthTokenResp = components["schemas"]["AuthTokenResp"];
 export type CheckResp = components["schemas"]["CheckResp"];
 export type ChangePasswordRequest = components["schemas"]["ChangePasswordReq"];
 export type CreateUserReq = components["schemas"]["CreateUserReq"];

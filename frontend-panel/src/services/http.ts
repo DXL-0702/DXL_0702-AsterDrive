@@ -27,7 +27,7 @@ function shouldSkipRefresh(url: string) {
 }
 
 let isRefreshing = false;
-let refreshQueue: Array<() => void> = [];
+let refreshPromise: Promise<void> | null = null;
 
 client.interceptors.response.use(
 	(res) => res,
@@ -41,34 +41,30 @@ client.interceptors.response.use(
 			original._retry = true;
 
 			if (isRefreshing) {
-				return new Promise((resolve) => {
-					refreshQueue.push(() => resolve(client(original)));
+				await refreshPromise;
+			} else {
+				isRefreshing = true;
+				refreshPromise = (async () => {
+					const { useAuthStore } = await import("@/stores/authStore");
+					await useAuthStore.getState().refreshToken();
+				})().finally(() => {
+					isRefreshing = false;
+					refreshPromise = null;
 				});
 			}
 
-			isRefreshing = true;
 			try {
-				await axios.post(`${config.apiBaseUrl}/auth/refresh`, null, {
-					withCredentials: true,
-				});
-				refreshQueue.forEach((cb) => {
-					cb();
-				});
-				refreshQueue = [];
+				await refreshPromise;
 				return client(original);
 			} catch (refreshError) {
-				refreshQueue = [];
 				// 网络错误（离线）时不强制登出
 				if (!axios.isAxiosError(refreshError) || !refreshError.response) {
 					return Promise.reject(error);
 				}
-				// Refresh failed — session expired, force logout
-				const { useAuthStore } = await import("@/stores/authStore");
-				useAuthStore.getState().logout();
+				const { forceLogout } = await import("@/stores/authStore");
+				forceLogout();
 				window.location.href = "/login";
 				return Promise.reject(error);
-			} finally {
-				isRefreshing = false;
 			}
 		}
 		return Promise.reject(error);

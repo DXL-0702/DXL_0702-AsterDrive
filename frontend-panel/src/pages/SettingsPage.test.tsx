@@ -12,6 +12,7 @@ const mockState = vi.hoisted(() => ({
 	},
 	authStore: {
 		refreshUser: vi.fn(),
+		syncSession: vi.fn(),
 		user: {
 			email: "alice@example.com",
 			id: 1,
@@ -238,10 +239,12 @@ vi.mock("@/stores/themeStore", () => ({
 describe("SettingsPage", () => {
 	beforeEach(() => {
 		mockState.authService.changePassword.mockReset();
+		mockState.authService.changePassword.mockResolvedValue({ expiresIn: 900 });
 		mockState.authService.setAvatarSource.mockReset();
 		mockState.authService.uploadAvatar.mockReset();
 		mockState.authService.updateProfile.mockReset();
 		mockState.authStore.refreshUser.mockReset();
+		mockState.authStore.syncSession.mockReset();
 		mockState.changeLanguage.mockReset();
 		mockState.fileStore.setViewMode.mockReset();
 		mockState.fileStore.viewMode = "list";
@@ -333,6 +336,7 @@ describe("SettingsPage", () => {
 				new_password: "newsecret456",
 			}),
 		);
+		expect(mockState.authStore.syncSession).toHaveBeenCalledWith(900);
 	});
 
 	it("saves the display name through the profile endpoint", async () => {

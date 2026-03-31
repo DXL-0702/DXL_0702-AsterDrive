@@ -43,12 +43,14 @@ const mockState = vi.hoisted(() => {
 	return {
 		axiosModule,
 		client,
+		forceLogout: vi.fn(),
 		getErrorHandler: () => {
 			if (!errorHandler)
 				throw new Error("response error handler not registered");
 			return errorHandler;
 		},
 		logout,
+		refreshToken: vi.fn(async () => undefined),
 	};
 });
 
@@ -57,9 +59,11 @@ vi.mock("axios", () => ({
 }));
 
 vi.mock("@/stores/authStore", () => ({
+	forceLogout: mockState.forceLogout,
 	useAuthStore: {
 		getState: () => ({
 			logout: mockState.logout,
+			refreshToken: mockState.refreshToken,
 		}),
 	},
 }));
@@ -81,7 +85,10 @@ describe("http api helpers", () => {
 		mockState.client.post.mockReset();
 		mockState.client.put.mockReset();
 		mockState.client.interceptors.response.use.mockClear();
+		mockState.forceLogout.mockClear();
 		mockState.logout.mockClear();
+		mockState.refreshToken.mockReset();
+		mockState.refreshToken.mockResolvedValue(undefined);
 	});
 
 	it("unwraps successful responses from api.get", async () => {
@@ -126,7 +133,6 @@ describe("http api helpers", () => {
 	});
 
 	it("refreshes and retries a protected request after a 401", async () => {
-		mockState.axiosModule.post.mockResolvedValue({});
 		mockState.client.mockResolvedValue({
 			data: {
 				code: ErrorCode.Success,
@@ -151,13 +157,7 @@ describe("http api helpers", () => {
 				data: { retried: true },
 			},
 		});
-		expect(mockState.axiosModule.post).toHaveBeenCalledWith(
-			"/api/v1/auth/refresh",
-			null,
-			{
-				withCredentials: true,
-			},
-		);
+		expect(mockState.refreshToken).toHaveBeenCalledTimes(1);
 		expect(mockState.client).toHaveBeenCalledWith(
 			expect.objectContaining({
 				url: "/files",

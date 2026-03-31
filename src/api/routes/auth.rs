@@ -90,6 +90,12 @@ pub struct LoginReq {
     pub password: String,
 }
 
+#[derive(serde::Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AuthTokenResp {
+    pub expires_in: u64,
+}
+
 #[derive(Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct UpdateAvatarSourceReq {
@@ -250,7 +256,7 @@ pub async fn register(
     operation_id = "login",
     request_body = LoginReq,
     responses(
-        (status = 200, description = "Login successful, tokens set in HttpOnly cookies"),
+        (status = 200, description = "Login successful, tokens set in HttpOnly cookies", body = inline(ApiResponse<AuthTokenResp>)),
         (status = 401, description = "Invalid credentials"),
     ),
 )]
@@ -299,7 +305,9 @@ pub async fn login(
             state.config.auth.refresh_token_ttl_secs as i64,
             secure,
         ))
-        .json(ApiResponse::<()>::ok_empty()))
+        .json(ApiResponse::ok(AuthTokenResp {
+            expires_in: state.config.auth.access_token_ttl_secs,
+        })))
 }
 
 #[api_docs_macros::path(
@@ -308,7 +316,7 @@ pub async fn login(
     tag = "auth",
     operation_id = "refresh",
     responses(
-        (status = 200, description = "Token refreshed, new access token set in HttpOnly cookie"),
+        (status = 200, description = "Token refreshed, new access token set in HttpOnly cookie", body = inline(ApiResponse<AuthTokenResp>)),
         (status = 401, description = "Invalid refresh token"),
     ),
 )]
@@ -331,7 +339,9 @@ pub async fn refresh(
             state.config.auth.access_token_ttl_secs as i64,
             secure,
         ))
-        .json(ApiResponse::<()>::ok_empty()))
+        .json(ApiResponse::ok(AuthTokenResp {
+            expires_in: state.config.auth.access_token_ttl_secs,
+        })))
 }
 
 #[api_docs_macros::path(
@@ -402,7 +412,7 @@ pub async fn logout(state: web::Data<AppState>, req: actix_web::HttpRequest) -> 
     security(("bearer" = [])),
 )]
 pub async fn me(state: web::Data<AppState>, claims: web::ReqData<Claims>) -> Result<HttpResponse> {
-    let resp = user_service::get_me(&state, claims.user_id).await?;
+    let resp = user_service::get_me(&state, claims.user_id, claims.exp as i64).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))
 }
 
@@ -413,7 +423,7 @@ pub async fn me(state: web::Data<AppState>, claims: web::ReqData<Claims>) -> Res
     operation_id = "change_password",
     request_body = ChangePasswordReq,
     responses(
-        (status = 200, description = "Password updated"),
+        (status = 200, description = "Password updated", body = inline(ApiResponse<AuthTokenResp>)),
         (status = 400, description = "Invalid new password"),
         (status = 401, description = "Current password is invalid"),
     ),
@@ -461,7 +471,9 @@ pub async fn put_password(
             state.config.auth.refresh_token_ttl_secs as i64,
             secure,
         ))
-        .json(ApiResponse::<()>::ok_empty()))
+        .json(ApiResponse::ok(AuthTokenResp {
+            expires_in: state.config.auth.access_token_ttl_secs,
+        })))
 }
 
 /// Update the current user's preferences.

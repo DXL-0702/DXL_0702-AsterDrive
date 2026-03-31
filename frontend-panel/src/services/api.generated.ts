@@ -1435,6 +1435,10 @@ export interface components {
             /** Format: int64 */
             user_id: number;
         };
+        AuthTokenResp: {
+            /** Format: int64 */
+            expires_in: number;
+        };
         AvatarInfo: {
             source: components["schemas"]["AvatarSource"];
             url_1024?: string | null;
@@ -1763,6 +1767,8 @@ export interface components {
         };
         /** @description /auth/me 响应：用户信息 + 偏好设置 */
         MeResponse: {
+            /** Format: int64 */
+            access_token_expires_at: number;
             created_at: string;
             email: string;
             /** Format: int64 */
@@ -4265,7 +4271,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            expires_in: number;
+                        };
+                        msg: string;
+                    };
+                };
             };
             /** @description Invalid credentials */
             401: {
@@ -4313,6 +4328,8 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         /** @description /auth/me 响应：用户信息 + 偏好设置 */
                         data?: {
+                            /** Format: int64 */
+                            access_token_expires_at: number;
                             created_at: string;
                             email: string;
                             /** Format: int64 */
@@ -4359,7 +4376,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            expires_in: number;
+                        };
+                        msg: string;
+                    };
+                };
             };
             /** @description Invalid new password */
             400: {
@@ -4608,7 +4634,16 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            expires_in: number;
+                        };
+                        msg: string;
+                    };
+                };
             };
             /** @description Invalid refresh token */
             401: {

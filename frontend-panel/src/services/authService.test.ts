@@ -29,22 +29,45 @@ vi.mock("@/services/http", () => ({
 }));
 
 describe("authService", () => {
-	it("uses the expected auth endpoints and payloads", () => {
+	it("uses the expected auth endpoints and payloads", async () => {
 		const prefs = {
 			language: "zh",
 			sort_by: "updated_at",
 		};
+		mockState.post.mockImplementation((url: string) => {
+			if (url === "/auth/login" || url === "/auth/refresh") {
+				return { expires_in: 900 };
+			}
+			return undefined;
+		});
+		mockState.put.mockImplementation((url: string) => {
+			if (url === "/auth/password") {
+				return { expires_in: 900 };
+			}
+			return undefined;
+		});
 
 		authService.check("alice@example.com");
-		authService.login("alice@example.com", "secret");
+		await expect(
+			authService.login("alice@example.com", "secret"),
+		).resolves.toEqual({
+			expiresIn: 900,
+		});
 		authService.register("alice", "alice@example.com", "secret");
 		authService.setup("owner", "owner@example.com", "secret");
 		authService.logout();
+		await expect(authService.refreshToken()).resolves.toEqual({
+			expiresIn: 900,
+		});
 		authService.me();
 		authService.updatePreferences(prefs);
-		authService.changePassword({
-			current_password: "secret",
-			new_password: "newsecret",
+		await expect(
+			authService.changePassword({
+				current_password: "secret",
+				new_password: "newsecret",
+			}),
+		).resolves.toEqual({
+			expiresIn: 900,
 		});
 		authService.updateProfile({ display_name: "Alice" });
 		authService.setAvatarSource("gravatar");
@@ -67,6 +90,7 @@ describe("authService", () => {
 			password: "secret",
 		});
 		expect(mockState.post).toHaveBeenNthCalledWith(5, "/auth/logout");
+		expect(mockState.post).toHaveBeenNthCalledWith(6, "/auth/refresh");
 		expect(mockState.get).toHaveBeenCalledWith("/auth/me");
 		expect(mockState.patch).toHaveBeenNthCalledWith(
 			1,

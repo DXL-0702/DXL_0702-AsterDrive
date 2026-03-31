@@ -76,9 +76,14 @@ async fn test_register_and_login() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    let access = common::extract_cookie(&resp, "aster_access");
+    let refresh = common::extract_cookie(&resp, "aster_refresh");
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["expires_in"], 900);
     // tokens 在 cookie 里
-    assert!(common::extract_cookie(&resp, "aster_access").is_some());
-    assert!(common::extract_cookie(&resp, "aster_refresh").is_some());
+    assert!(access.is_some());
+    assert!(refresh.is_some());
 
     // 错误密码
     let req = test::TestRequest::post()
@@ -107,7 +112,11 @@ async fn test_token_refresh() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
-    assert!(common::extract_cookie(&resp, "aster_access").is_some());
+    let access = common::extract_cookie(&resp, "aster_access");
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["expires_in"], 900);
+    assert!(access.is_some());
 }
 
 #[actix_web::test]
@@ -179,6 +188,7 @@ async fn test_auth_me() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["username"], "testuser");
+    assert!(body["data"]["access_token_expires_at"].as_i64().unwrap() > 0);
     assert!(body["data"]["password_hash"].is_null());
     assert!(body["data"]["profile"]["display_name"].is_null());
     assert_eq!(body["data"]["profile"]["avatar"]["source"], "none");
@@ -632,6 +642,7 @@ async fn test_change_password_rotates_session_and_updates_login_secret() {
     let rotated_refresh = common::extract_cookie(&resp, "aster_refresh").unwrap();
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["code"], 0);
+    assert_eq!(body["data"]["expires_in"], 900);
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")

@@ -47,6 +47,7 @@ impl std::fmt::Debug for AsterDavFs {
 }
 
 impl AsterDavFs {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         db: DatabaseConnection,
         driver_registry: Arc<DriverRegistry>,

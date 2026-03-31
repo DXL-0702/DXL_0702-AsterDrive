@@ -11,6 +11,12 @@ import { useThemeStore } from "@/stores/themeStore";
 import type { MeResponse, UserPreferences } from "@/types/api";
 
 const CACHED_USER_KEY = "aster-cached-user";
+const EXPIRES_AT_KEY = "aster-auth-expires-at";
+const REFRESH_BUFFER_MS = 120_000;
+const REFRESH_RETRY_MS = 60_000;
+
+let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+let inFlightRefresh: Promise<void> | null = null;
 
 function getCachedUser(): MeResponse | null {
 	try {
@@ -29,19 +35,87 @@ function setCachedUser(user: MeResponse | null) {
 	}
 }
 
+function getExpiresAtFromUser(
+	user: Pick<MeResponse, "access_token_expires_at"> | null,
+) {
+	const expiresAtSeconds = Number(user?.access_token_expires_at);
+	if (!Number.isFinite(expiresAtSeconds) || expiresAtSeconds <= 0) {
+		return null;
+	}
+	return expiresAtSeconds * 1000;
+}
+
+function getStoredExpiresAt(): number | null {
+	try {
+		const raw = sessionStorage.getItem(EXPIRES_AT_KEY);
+		if (!raw) return null;
+
+		const expiresAt = Number(raw);
+		if (Number.isNaN(expiresAt) || expiresAt <= Date.now()) {
+			sessionStorage.removeItem(EXPIRES_AT_KEY);
+			return null;
+		}
+
+		return expiresAt;
+	} catch {
+		return null;
+	}
+}
+
+function setStoredExpiresAt(expiresAt: number | null) {
+	try {
+		if (expiresAt === null) {
+			sessionStorage.removeItem(EXPIRES_AT_KEY);
+			return;
+		}
+		sessionStorage.setItem(EXPIRES_AT_KEY, String(expiresAt));
+	} catch {
+		// ignore storage failures
+	}
+}
+
+function clearRefreshTimer() {
+	if (refreshTimer !== null) {
+		clearTimeout(refreshTimer);
+		refreshTimer = null;
+	}
+}
+
 interface AuthState {
 	isAuthenticated: boolean;
 	isChecking: boolean;
 	isAuthStale: boolean;
 	bootOffline: boolean;
 	user: MeResponse | null;
+	expiresAt: number | null;
 	login: (identifier: string, password: string) => Promise<void>;
 	logout: () => Promise<void>;
 	checkAuth: () => Promise<void>;
+	refreshToken: () => Promise<void>;
 	refreshUser: () => Promise<void>;
+	syncSession: (expiresIn: number) => void;
+	startAutoRefresh: (delayMs?: number) => void;
+	stopAutoRefresh: () => void;
 }
 
 const initialCachedUser = getCachedUser();
+const initialExpiresAt = getStoredExpiresAt();
+const LOGGED_OUT_STATE = {
+	isAuthenticated: false,
+	isChecking: false,
+	isAuthStale: false,
+	bootOffline: false,
+	user: null,
+	expiresAt: null,
+} satisfies Pick<
+	AuthState,
+	| "isAuthenticated"
+	| "isChecking"
+	| "isAuthStale"
+	| "bootOffline"
+	| "user"
+	| "expiresAt"
+>;
 
 function applyServerPreferences(prefs: UserPreferences): void {
 	const themeStore = useThemeStore.getState();
@@ -59,15 +133,26 @@ function applyServerPreferences(prefs: UserPreferences): void {
 	if (prefs.language) void i18n.changeLanguage(prefs.language);
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+function applyLoggedOutState(
+	setAuthState: (state: Partial<AuthState>) => void,
+) {
+	cancelPreferenceSync();
+	clearRefreshTimer();
+	setStoredExpiresAt(null);
+	setCachedUser(null);
+	setAuthState(LOGGED_OUT_STATE);
+}
+
+export const useAuthStore = create<AuthState>((set, get) => ({
 	isAuthenticated: initialCachedUser !== null,
 	isChecking: true,
 	isAuthStale: initialCachedUser !== null,
 	bootOffline: false,
 	user: initialCachedUser,
+	expiresAt: initialExpiresAt,
 
 	login: async (identifier, password) => {
-		await authService.login(identifier, password);
+		const session = await authService.login(identifier, password);
 		const user = await authService.me();
 		if (user.preferences) applyServerPreferences(user.preferences);
 		setCachedUser(user);
@@ -78,42 +163,55 @@ export const useAuthStore = create<AuthState>((set) => ({
 			bootOffline: false,
 			user,
 		});
+		get().syncSession(session.expiresIn);
 	},
 
 	logout: async () => {
-		cancelPreferenceSync();
+		get().stopAutoRefresh();
+		setStoredExpiresAt(null);
 		try {
 			await authService.logout();
 		} catch {
 			// logout 失败不阻塞
 		}
-		setCachedUser(null);
-		set({
-			isAuthenticated: false,
-			isChecking: false,
-			isAuthStale: false,
-			bootOffline: false,
-			user: null,
-		});
+		applyLoggedOutState(set);
 	},
 
 	checkAuth: async () => {
 		set({ isChecking: true, bootOffline: false });
 		try {
 			const user = await authService.me();
+			const expiresAt =
+				getExpiresAtFromUser(user) ?? get().expiresAt ?? getStoredExpiresAt();
 			if (user.preferences) applyServerPreferences(user.preferences);
 			setCachedUser(user);
+			if (expiresAt !== null) setStoredExpiresAt(expiresAt);
 			set({
 				isAuthenticated: true,
 				isChecking: false,
 				isAuthStale: false,
 				bootOffline: false,
 				user,
+				expiresAt,
 			});
+
+			if (!expiresAt || expiresAt - Date.now() <= REFRESH_BUFFER_MS) {
+				try {
+					await get().refreshToken();
+				} catch (error) {
+					logger.warn("checkAuth bootstrap refresh failed", error);
+				}
+			} else {
+				get().startAutoRefresh();
+			}
 		} catch (error) {
 			// 网络错误（离线）时用缓存的用户信息保持登录态
 			if (!axios.isAxiosError(error) || !error.response) {
 				const cached = getCachedUser();
+				const expiresAt =
+					getExpiresAtFromUser(cached) ??
+					get().expiresAt ??
+					getStoredExpiresAt();
 				if (cached) {
 					set({
 						isAuthenticated: true,
@@ -121,7 +219,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 						isAuthStale: true,
 						bootOffline: false,
 						user: cached,
+						expiresAt,
 					});
+					if (expiresAt) get().startAutoRefresh();
 				} else {
 					set({
 						isAuthenticated: false,
@@ -129,34 +229,108 @@ export const useAuthStore = create<AuthState>((set) => ({
 						isAuthStale: false,
 						bootOffline: true,
 						user: null,
+						expiresAt: null,
 					});
 				}
 				return;
 			}
-			setCachedUser(null);
-			set({
-				isAuthenticated: false,
-				isChecking: false,
-				isAuthStale: false,
-				bootOffline: false,
-				user: null,
-			});
+			applyLoggedOutState(set);
 		}
+	},
+
+	refreshToken: async () => {
+		if (inFlightRefresh) return inFlightRefresh;
+
+		inFlightRefresh = (async () => {
+			try {
+				const session = await authService.refreshToken();
+				get().syncSession(session.expiresIn);
+			} catch (error) {
+				if (axios.isAxiosError(error) && error.response) {
+					applyLoggedOutState(set);
+				} else {
+					get().startAutoRefresh(REFRESH_RETRY_MS);
+				}
+				throw error;
+			} finally {
+				inFlightRefresh = null;
+			}
+		})();
+
+		return inFlightRefresh;
 	},
 
 	refreshUser: async () => {
 		try {
 			const user = await authService.me();
+			const expiresAt =
+				getExpiresAtFromUser(user) ?? get().expiresAt ?? getStoredExpiresAt();
 			if (user.preferences) applyServerPreferences(user.preferences);
 			setCachedUser(user);
+			if (expiresAt !== null) {
+				setStoredExpiresAt(expiresAt);
+				get().startAutoRefresh();
+			}
 			set({
 				user,
 				isAuthenticated: true,
 				isAuthStale: false,
 				bootOffline: false,
+				expiresAt,
 			});
 		} catch (e) {
 			logger.warn("refreshUser failed", e);
 		}
 	},
+
+	syncSession: (expiresIn) => {
+		const expiresAt = Date.now() + expiresIn * 1000;
+		setStoredExpiresAt(expiresAt);
+		set({
+			expiresAt,
+			isAuthenticated: true,
+			isAuthStale: false,
+			bootOffline: false,
+		});
+		get().startAutoRefresh();
+	},
+
+	startAutoRefresh: (delayMs) => {
+		clearRefreshTimer();
+
+		const expiresAt = get().expiresAt;
+		const refreshIn =
+			delayMs ??
+			(expiresAt ? expiresAt - Date.now() - REFRESH_BUFFER_MS : null);
+		if (refreshIn === null) return;
+
+		if (refreshIn <= 0) {
+			void get()
+				.refreshToken()
+				.catch((error) => {
+					logger.warn("auto refresh failed", error);
+				});
+			return;
+		}
+
+		refreshTimer = setTimeout(() => {
+			void get()
+				.refreshToken()
+				.catch((error) => {
+					logger.warn("auto refresh failed", error);
+				});
+		}, refreshIn);
+	},
+
+	stopAutoRefresh: () => {
+		clearRefreshTimer();
+	},
 }));
+
+export function forceLogout() {
+	cancelPreferenceSync();
+	clearRefreshTimer();
+	setStoredExpiresAt(null);
+	setCachedUser(null);
+	useAuthStore.setState(LOGGED_OUT_STATE);
+}

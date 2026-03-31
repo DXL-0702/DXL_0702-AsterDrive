@@ -6,8 +6,10 @@ const mockState = vi.hoisted(() => ({
 	cancelPreferenceSync: vi.fn(),
 	changeLanguage: vi.fn(async () => undefined),
 	isAxiosError: vi.fn(),
+	login: vi.fn(),
 	logout: vi.fn(),
 	me: vi.fn(),
+	refreshToken: vi.fn(),
 	warn: vi.fn(),
 }));
 
@@ -35,8 +37,10 @@ vi.mock("@/lib/preferenceSync", () => ({
 
 vi.mock("@/services/authService", () => ({
 	authService: {
+		login: mockState.login,
 		logout: mockState.logout,
 		me: mockState.me,
+		refreshToken: mockState.refreshToken,
 	},
 }));
 
@@ -77,13 +81,16 @@ async function loadStore() {
 describe("useAuthStore edge cases", () => {
 	beforeEach(() => {
 		localStorage.clear();
+		sessionStorage.clear();
 		mockState.applyFilePrefs.mockReset();
 		mockState.applyThemePrefs.mockReset();
 		mockState.cancelPreferenceSync.mockReset();
 		mockState.changeLanguage.mockReset();
 		mockState.isAxiosError.mockReset();
+		mockState.login.mockReset();
 		mockState.logout.mockReset();
 		mockState.me.mockReset();
+		mockState.refreshToken.mockReset();
 		mockState.warn.mockReset();
 	});
 
@@ -106,6 +113,7 @@ describe("useAuthStore edge cases", () => {
 			user: null,
 		});
 		expect(localStorage.getItem("aster-cached-user")).toBeNull();
+		expect(sessionStorage.getItem("aster-auth-expires-at")).toBeNull();
 	});
 
 	it("boots into offline mode when auth check fails without a cached user", async () => {
@@ -159,5 +167,59 @@ describe("useAuthStore edge cases", () => {
 		await useAuthStore.getState().refreshUser();
 
 		expect(mockState.warn).toHaveBeenCalledWith("refreshUser failed", failure);
+	});
+
+	it("clears local session state when refresh fails with an auth response", async () => {
+		localStorage.setItem(
+			"aster-cached-user",
+			JSON.stringify(createCachedUser()),
+		);
+		sessionStorage.setItem(
+			"aster-auth-expires-at",
+			String(Date.now() + 60_000),
+		);
+		mockState.refreshToken.mockRejectedValue({
+			response: { status: 401 },
+		});
+		mockState.isAxiosError.mockReturnValue(true);
+		const { useAuthStore } = await loadStore();
+
+		await expect(useAuthStore.getState().refreshToken()).rejects.toEqual(
+			expect.objectContaining({
+				response: { status: 401 },
+			}),
+		);
+		expect(useAuthStore.getState()).toMatchObject({
+			isAuthenticated: false,
+			isChecking: false,
+			isAuthStale: false,
+			bootOffline: false,
+			user: null,
+			expiresAt: null,
+		});
+		expect(localStorage.getItem("aster-cached-user")).toBeNull();
+		expect(sessionStorage.getItem("aster-auth-expires-at")).toBeNull();
+	});
+
+	it("forceLogout clears cached auth artifacts", async () => {
+		localStorage.setItem(
+			"aster-cached-user",
+			JSON.stringify(createCachedUser()),
+		);
+		sessionStorage.setItem(
+			"aster-auth-expires-at",
+			String(Date.now() + 60_000),
+		);
+		const { forceLogout, useAuthStore } = await loadStore();
+
+		forceLogout();
+
+		expect(useAuthStore.getState()).toMatchObject({
+			isAuthenticated: false,
+			user: null,
+			expiresAt: null,
+		});
+		expect(localStorage.getItem("aster-cached-user")).toBeNull();
+		expect(sessionStorage.getItem("aster-auth-expires-at")).toBeNull();
 	});
 });

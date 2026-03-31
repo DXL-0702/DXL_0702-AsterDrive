@@ -120,6 +120,7 @@ pub struct MeResponse {
     pub status: crate::types::UserStatus,
     pub storage_used: i64,
     pub storage_quota: i64,
+    pub access_token_expires_at: i64,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -208,7 +209,11 @@ pub async fn to_user_infos(
 }
 
 /// 获取当前用户完整信息（含偏好设置）
-pub async fn get_me(state: &AppState, user_id: i64) -> Result<MeResponse> {
+pub async fn get_me(
+    state: &AppState,
+    user_id: i64,
+    access_token_expires_at: i64,
+) -> Result<MeResponse> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let prefs = parse_preferences(&user);
     let core = user_core(&user);
@@ -220,6 +225,7 @@ pub async fn get_me(state: &AppState, user_id: i64) -> Result<MeResponse> {
         status: core.status,
         storage_used: core.storage_used,
         storage_quota: core.storage_quota,
+        access_token_expires_at,
         created_at: core.created_at,
         updated_at: core.updated_at,
         preferences: prefs,

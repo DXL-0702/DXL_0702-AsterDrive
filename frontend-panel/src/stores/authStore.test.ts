@@ -1,5 +1,5 @@
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiResponse, createMeResponse } from "@/test/fixtures";
 import { server } from "@/test/server";
 
@@ -25,6 +25,16 @@ async function loadStores() {
 }
 
 describe("useAuthStore", () => {
+	beforeEach(() => {
+		localStorage.clear();
+		sessionStorage.clear();
+		vi.useRealTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
 	it("logs in, caches the user, and applies server preferences", async () => {
 		changeLanguage.mockClear();
 
@@ -34,7 +44,7 @@ describe("useAuthStore", () => {
 		server.use(
 			http.post("*/api/v1/auth/login", async ({ request }) => {
 				loginPayload = await request.json();
-				return HttpResponse.json(apiResponse(null));
+				return HttpResponse.json(apiResponse({ expires_in: 900 }));
 			}),
 			http.get("*/api/v1/auth/me", () => HttpResponse.json(apiResponse(user))),
 		);
@@ -54,7 +64,9 @@ describe("useAuthStore", () => {
 			bootOffline: false,
 			user,
 		});
+		expect(useAuthStore.getState().expiresAt).toEqual(expect.any(Number));
 		expect(localStorage.getItem("aster-cached-user")).not.toBeNull();
+		expect(sessionStorage.getItem("aster-auth-expires-at")).not.toBeNull();
 		expect(useThemeStore.getState()).toMatchObject({
 			mode: "dark",
 			colorPreset: "orange",
@@ -87,5 +99,51 @@ describe("useAuthStore", () => {
 			bootOffline: false,
 			user: cachedUser,
 		});
+	});
+
+	it("hydrates expiresAt from auth me when bootstrapping auth state", async () => {
+		const accessTokenExpiresAt = Math.floor(Date.now() / 1000) + 900;
+		const user = createMeResponse({
+			access_token_expires_at: accessTokenExpiresAt,
+		});
+
+		server.use(
+			http.get("*/api/v1/auth/me", () => HttpResponse.json(apiResponse(user))),
+		);
+
+		const { useAuthStore } = await loadStores();
+
+		await useAuthStore.getState().checkAuth();
+
+		expect(useAuthStore.getState().expiresAt).toBe(accessTokenExpiresAt * 1000);
+		expect(sessionStorage.getItem("aster-auth-expires-at")).toBe(
+			String(accessTokenExpiresAt * 1000),
+		);
+	});
+
+	it("refreshes access token before expiry", async () => {
+		vi.useFakeTimers();
+
+		let refreshCount = 0;
+		const user = createMeResponse();
+
+		server.use(
+			http.post("*/api/v1/auth/login", () =>
+				HttpResponse.json(apiResponse({ expires_in: 900 })),
+			),
+			http.post("*/api/v1/auth/refresh", () => {
+				refreshCount += 1;
+				return HttpResponse.json(apiResponse({ expires_in: 900 }));
+			}),
+			http.get("*/api/v1/auth/me", () => HttpResponse.json(apiResponse(user))),
+		);
+
+		const { useAuthStore } = await loadStores();
+
+		await useAuthStore.getState().login("alice@example.com", "secret");
+		await vi.advanceTimersByTimeAsync(780_000);
+
+		expect(refreshCount).toBe(1);
+		useAuthStore.getState().stopAutoRefresh();
 	});
 });
