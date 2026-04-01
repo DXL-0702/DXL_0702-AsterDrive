@@ -5,6 +5,99 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.13] - 2026-04-02
+
+### Release Highlights
+
+- **存储策略组** — 新增策略组子系统，替代原来的用户-策略一对一分配。策略组支持多策略规则（按优先级+文件大小区间匹配），用户绑定策略组后上传自动路由到最合适的存储策略
+- **Access Token 自动续期** — 前端新增基于 `expires_at` 的自动续期机制，提前 2 分钟触发 refresh，登录/改密码响应返回 `expires_in`，会话生命周期全程可追踪
+- **代码预览轻量化** — 移除 Monaco Editor 依赖（~350 行），替换为基于 Prism 的轻量代码编辑器，按需加载 40+ 语言，构建产物体积大幅缩减
+- **OpenAPI 可选编译** — utoipa 全系列依赖改为 optional feature，release 构建默认不编译 OpenAPI 支持，二进制体积更小
+- **管理后台策略组页面** — 完整的策略组 CRUD 页面，含规则编辑、用户迁移确认、系统默认策略组自动种子化
+- **前端基础设施增强** — 新增分页/查询参数工具函数、分享对话框共享逻辑提取、useApiList 竞态保护
+
+
+### Added
+
+- **存储策略组**
+  - `storage_policy_groups` + `storage_policy_group_items` 数据库表（migration）
+  - `users` 表新增 `policy_group_id` 列（FK + SET NULL 级联）
+  - 6 个 Admin API 路由：CRUD + 用户迁移（`/admin/policy-groups/*`）
+  - `PolicySnapshot` 扩展：缓存策略组/条目/用户绑定，新增 `resolve_policy_in_group`、`resolve_user_policy_for_size` 等方法
+  - 启动时 `ensure_policy_groups_seeded`：系统默认策略自动包装为默认策略组，旧 `user_storage_policies` 记录自动迁移
+  - 上传时按文件大小在策略组中匹配最合适的策略
+  - 审计日志新增 4 种 action：`AdminCreatePolicyGroup`、`AdminUpdatePolicyGroup`、`AdminDeletePolicyGroup`、`AdminMigratePolicyGroupUsers`
+  - 前端 `AdminPolicyGroupsPage` 完整策略组管理页面（1439 行）
+  - `UserDetailDialog` 重构：存储策略分配改为单策略组选择
+  - 中英文 i18n 各增加约 40 条策略组翻译
+- **Access Token 自动续期**
+  - 后端 auth 响应体返回 `expires_in` 和 `access_token_expires_at`
+  - `authStore` 新增 `expiresAt` 状态、sessionStorage 持久化、`refreshToken()` 去重复用
+  - `startAutoRefresh()` / `stopAutoRefresh()`：基于 setTimeout 提前 2 分钟自动续期
+  - HTTP 拦截器 refresh 队列从数组改为 `refreshPromise` 复用
+- **Prism 代码编辑器**
+  - 新增 `CodePreviewEditor` 替代 MonacoCodeEditor，基于 prism-react-renderer
+  - 按需动态加载 40+ 种语言的 Prism 组件
+  - 新增 `prismClassNames` 模块解决 Scoped CSS className 冲突
+  - 新增 `toml` 和 `groovy` 语言映射
+- **前端基础设施**
+  - `lib/pagination.ts`：通用 offset 分页参数解析与构建
+  - `lib/queryParams.ts`：通用 query string 构建工具
+  - `components/files/shareDialogShared.ts`：分享对话框共享逻辑（过期计算、下载次数归一化）
+  - `api-docs-macros` workspace crate：自定义 proc-macro，debug+openapi feature 下展开为 `#[utoipa::path]`
+- **测试覆盖**
+  - 新增 `AdminPolicyGroupsPage.test.tsx`（873 行）
+  - 新增 `policyGroupDialogShared.test.ts`、`storagePolicyDialogShared.test.ts`、`shareDialogShared.test.ts`
+  - 新增 `prismClassNames.test.ts`、`file-capabilities.test.ts`
+  - 新增 `useApiList.test.tsx`、`pagination.test.ts`、`queryParams.test.ts`
+  - 新增 `authStore.edge.test.ts`
+
+
+### Changed
+
+- **OpenAPI 可选编译**
+  - `utoipa` / `utoipa-swagger-ui` 改为 `optional = true`，新增 `openapi` feature
+  - 全项目 `#[derive(ToSchema)]` / `#[derive(IntoParams)]` 改为 `#[cfg_attr]` 条件编译
+  - `#[utoipa::path]` 替换为 `#[api_docs_macros::path]`
+  - `openapi` 模块整体条件编译
+- **管理后台页面重构**
+  - `AdminUsersPage` 大幅重构，使用 `useApiList` hook + URL search params 管理
+  - `AdminPoliciesPage` 使用新分页工具函数
+  - `AdminAuditPage` 从手动 `useCallback + useEffect` 改为 `useApiList` hook
+  - `adminService.ts` 全面使用 `withQuery()` 构建 query string，参数改用生成的请求类型
+- **上传策略解析改为基于文件大小路由**
+  - `upload_service` 调用新的 `resolve_policy_for_size` 替代原 `resolve_policy`
+- **用户创建流程简化**
+  - `create_user_with_role` 不再创建 `user_storage_policies` 行，改为设置 `policy_group_id`
+- **`useApiList` hook 增强**
+  - 新增 `requestIdRef` 竞态保护，快速切换 filter/offset 时丢弃过期响应
+  - 新增 `setTotal` 返回值
+- **移除 relay 上传模式**
+  - 删除 `relay_field_to_s3`、`create_relay_cleanup_handle` 等函数（约 170 行）
+
+
+### Fixed
+
+- 修复 `StoragePolicyDialog` 策略摘要卡片在大屏下粘性定位失效问题（添加 `self-start`）
+
+
+### Breaking Changes
+
+- **API**: 移除 4 个旧的 user-storage-policy 路由（`/admin/users/{user_id}/policies/*`），替代方案为 `/admin/policy-groups/*` + `PATCH /admin/users/{id}` 的 `policy_group_id`
+- **API**: `POST /auth/login`、`POST /auth/refresh`、`PUT /auth/password` 响应体从 `{ data: null }` 变为 `{ data: { expires_in } }`
+- **API**: `GET /auth/me` 响应新增 `access_token_expires_at` 和 `policy_group_id` 字段
+- **API**: 所有用户信息响应体新增 `policy_group_id` 字段
+- **行为**: `user_storage_policies` 标记为 deprecated，新代码应使用策略组体系
+- **前端**: 移除 `monaco-editor` 依赖，替换为 `prismjs` + `prism-react-renderer`
+
+
+---
+
+**统计数据**：
+- 137 files changed, 10,275 insertions(+), 3,305 deletions(-)
+- 4 commits
+
+
 ## [v0.0.1-alpha.12] - 2026-03-31
 
 ### Release Highlights
@@ -978,7 +1071,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.12...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.13...HEAD
+[v0.0.1-alpha.13]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.12...v0.0.1-alpha.13
 [v0.0.1-alpha.12]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.11...v0.0.1-alpha.12
 [v0.0.1-alpha.11]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.10...v0.0.1-alpha.11
 [v0.0.1-alpha.10]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.9...v0.0.1-alpha.10
