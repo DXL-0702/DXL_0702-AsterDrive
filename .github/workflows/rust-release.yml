@@ -186,22 +186,52 @@ jobs:
           find artifacts -type f -name "aster_drive_*" -exec cp {} release/ \;
           cd release && sha256sum * > checksums.txt
 
+      - name: Extract changelog
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+          # 提取当前版本的 changelog（从 ## [version] 到下一个 ## [ 或文件结束）
+          awk '/^## \['"${VERSION}"'\]/{flag=1; next} /^## \[/{flag=0} flag' CHANGELOG.md > release_notes.md
+
+          if [ ! -s release_notes.md ]; then
+            echo "No changelog found for ${VERSION}, using fallback"
+            echo "## What's Changed" > release_notes.md
+            echo "See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details." >> release_notes.md
+          fi
+
+          echo "--- Changelog for ${VERSION} ---"
+          cat release_notes.md
+
+      - name: Build release body
+        run: |
+          cat > release_body.md << 'EOF'
+          ${{ steps.changelog.outputs.body }}
+          EOF
+
+          # 合并 changelog + download 表格
+          {
+            cat release_notes.md
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Download"
+            echo ""
+            echo "| Platform | Architecture | Download |"
+            echo "|----------|--------------|----------|"
+            echo "| Linux | x86_64 | [aster_drive_${{ github.ref_name }}_linux_x86_64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_x86_64) |"
+            echo "| Linux | ARM64 | [aster_drive_${{ github.ref_name }}_linux_aarch64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_aarch64) |"
+            echo "| Windows | x86_64 | [aster_drive_${{ github.ref_name }}_windows_x86_64.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_windows_x86_64.exe) |"
+            echo "| macOS | x86_64 | [aster_drive_${{ github.ref_name }}_macos_x86_64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_macos_x86_64) |"
+            echo "| macOS | ARM64 | [aster_drive_${{ github.ref_name }}_macos_aarch64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_macos_aarch64) |"
+            echo ""
+            echo "**Checksums**: [checksums.txt](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/checksums.txt)"
+          } > release_body.md
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           name: AsterDrive ${{ github.ref_name }}
-          body: |
-            ## Download
-
-            | Platform | Architecture | Download |
-            |----------|--------------|----------|
-            | Linux | x86_64 | [aster_drive_${{ github.ref_name }}_linux_x86_64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_x86_64) |
-            | Linux | ARM64 | [aster_drive_${{ github.ref_name }}_linux_aarch64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_aarch64) |
-            | Windows | x86_64 | [aster_drive_${{ github.ref_name }}_windows_x86_64.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_windows_x86_64.exe) |
-            | macOS | x86_64 | [aster_drive_${{ github.ref_name }}_macos_x86_64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_macos_x86_64) |
-            | macOS | ARM64 | [aster_drive_${{ github.ref_name }}_macos_aarch64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_macos_aarch64) |
-
-            **Checksums**: [checksums.txt](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/checksums.txt)
+          body_path: release_body.md
           files: release/*
           draft: false
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}

@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.14] - 2026-04-05
+
+### Release Highlights
+
+- **团队工作空间** — 新增完整团队生命周期管理，支持创建团队、成员邀请、角色分配（Owner/Member）、多空间文件隔离。分享链接新增团队范围支持，团队协作更顺畅
+- **上传性能优化** — 移除 proxy_tempfile 中间策略，新增 relay_stream 无暂存直传快速路径；本地存储上传跳过全局临时目录，小文件上传延迟降低
+- **自定义 CORS 中间件** — 替换 actix-cors 为运行时可配置的自定义实现，支持动态调整跨域策略，管理后台可实时生效
+- **Admin 路由重构** — 将臃肿的 admin.rs 拆分为 8 个独立子模块（users/policies/teams/shares/config/locks/audit_logs/overview），代码可维护性提升
+- **缩略图错误精细化** — 区分 202（生成中）、400（不支持类型）、500（生成失败）状态码，前端可做出更精确的用户反馈
+
+
+### Added
+
+- **团队功能**
+  - 新增 `teams` / `team_members` / `team_spaces` 数据库表，支持软删除
+  - 完整 Team API：创建、更新、删除、成员管理、空间列表
+  - 团队空间文件管理：独立于用户空间的团队文件存储
+  - 分享支持团队范围（`team_id` 字段），团队成员可访问团队分享
+  - 前端 `TeamManagePage` / `TeamsSettingsView` / `TeamManageDialog` 完整界面
+  - 支持团队维度批量操作、搜索、回收站、分享管理
+  - 审计日志覆盖团队相关操作
+- **团队文件存储服务** (`workspace_storage_service`)
+  - 独立的空间配额计算与权限校验
+  - 支持团队内文件夹/文件的完整生命周期管理
+  - 团队文件版本历史支持
+- **上传优化**
+  - `relay_stream` 无暂存直传模式（替代原 relay 模式）
+  - 本地存储快速路径：小文件直接写入目标路径，跳过全局临时目录
+- **自定义 CORS 中间件**
+  - `CorsConfig` 运行时配置支持
+  - 基于 `http` crate 的手动 CORS 头处理
+  - 管理后台配置变更实时生效
+- **缩略图 API 细化**
+  - `ThumbnailStatus` 枚举：Generating/Unsupported/Error
+  - HTTP 202 + `Retry-After` 头表示生成中
+  - HTTP 400 明确标识不支持的 MIME 类型
+
+
+### Changed
+
+- **Admin 路由重构**
+  - 拆分 `admin.rs` 为 8 个子模块：users/policies/teams/shares/config/locks/audit_logs/overview
+  - 共享工具函数抽离至 `admin/common.rs`
+- **上传策略**
+  - 移除 `S3UploadStrategy::ProxyTempfile` 变体
+  - `relay_stream` 成为新的 relay 模式实现
+- **文件仓库**
+  - `find_or_create_blob` 重试策略改为指数退避（减少高并发冲突）
+- **分享服务**
+  - 重构分享权限校验，支持团队范围校验
+  - 分享列表查询优化，支持团队过滤
+- **缩略图错误处理**
+  - 生成失败返回 500（原为 404）
+  - 不支持的类型返回 400（带有明确错误信息）
+
+
+### Fixed
+
+- **安全性**
+  - 优化 API 错误信息，避免泄露敏感内部细节（如数据库结构、内部路径）
+- **S3 驱动**
+  - 修复负数 content_length 处理边界情况
+- **应用关闭**
+  - 重构优雅关闭逻辑，确保缩略图 worker 和后台任务正确收尾
+
+
+### Breaking Changes
+
+- **API**: `POST /api/v1/uploads` 移除 `proxy_tempfile` 策略选项（已自动迁移至 `relay_stream`）
+- **API**: 缩略图端点状态码语义变更：
+  - 202: 缩略图正在生成中（原行为返回 404）
+  - 400: 不支持的文件类型（新增）
+  - 500: 生成失败（原行为返回 404）
+- **内部**: `S3UploadStrategy` 枚举移除 `ProxyTempfile` 变体
+
+
+---
+
+**统计数据**：
+- 180 files changed, 33,028 insertions(+), 6,842 deletions(-)
+- 12 commits
+
+
 ## [v0.0.1-alpha.13] - 2026-04-02
 
 ### Release Highlights
@@ -1071,7 +1154,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.13...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.14...HEAD
+[v0.0.1-alpha.14]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.13...v0.0.1-alpha.14
 [v0.0.1-alpha.13]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.12...v0.0.1-alpha.13
 [v0.0.1-alpha.12]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.11...v0.0.1-alpha.12
 [v0.0.1-alpha.11]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.10...v0.0.1-alpha.11
