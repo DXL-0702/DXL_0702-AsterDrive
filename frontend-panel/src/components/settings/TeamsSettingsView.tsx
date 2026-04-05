@@ -4,7 +4,6 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SettingsSection } from "@/components/common/SettingsScaffold";
-import { TeamManageDialog } from "@/components/settings/TeamManageDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -26,7 +25,6 @@ export function TeamsSettingsView() {
 	const reloadTeams = useTeamStore((state) => state.reload);
 	const [archivedTeams, setArchivedTeams] = useState<TeamInfo[]>([]);
 	const [archivedLoading, setArchivedLoading] = useState(false);
-	const [managingTeamId, setManagingTeamId] = useState<number | null>(null);
 	const [restoringTeamId, setRestoringTeamId] = useState<number | null>(null);
 
 	const roleLabel = (role: TeamMemberRole) =>
@@ -53,21 +51,14 @@ export function TeamsSettingsView() {
 		void loadArchivedTeams();
 	}, [ensureTeamsLoaded, loadArchivedTeams, user?.id]);
 
-	useEffect(() => {
-		if (
-			managingTeamId != null &&
-			!teams.some((team) => team.id === managingTeamId)
-		) {
-			setManagingTeamId(null);
-		}
-	}, [managingTeamId, teams]);
-
 	const handleRestoreTeam = async (teamId: number) => {
 		try {
 			setRestoringTeamId(teamId);
 			const restored = await teamService.restore(teamId);
 			await Promise.all([reloadTeams(user?.id ?? null), loadArchivedTeams()]);
-			setManagingTeamId(restored.id);
+			navigate(`/settings/teams/${restored.id}/overview`, {
+				viewTransition: true,
+			});
 			toast.success(t("settings:settings_team_restored"));
 		} catch (error) {
 			handleApiError(error);
@@ -75,11 +66,6 @@ export function TeamsSettingsView() {
 			setRestoringTeamId(null);
 		}
 	};
-
-	const managingTeamSummary =
-		managingTeamId != null
-			? (teams.find((team) => team.id === managingTeamId) ?? null)
-			: null;
 
 	return (
 		<>
@@ -140,7 +126,11 @@ export function TeamsSettingsView() {
 								<div className="mt-4 flex gap-2">
 									<Button
 										type="button"
-										onClick={() => setManagingTeamId(team.id)}
+										onClick={() =>
+											navigate(`/settings/teams/${team.id}/overview`, {
+												viewTransition: true,
+											})
+										}
 									>
 										{t("core:manage")}
 									</Button>
@@ -246,20 +236,6 @@ export function TeamsSettingsView() {
 					)}
 				</SettingsSection>
 			) : null}
-
-			<TeamManageDialog
-				currentUserId={user?.id ?? null}
-				onArchivedReload={loadArchivedTeams}
-				onOpenChange={(open) => {
-					if (!open) {
-						setManagingTeamId(null);
-					}
-				}}
-				onTeamsReload={() => reloadTeams(user?.id ?? null)}
-				open={managingTeamId !== null}
-				teamId={managingTeamId}
-				teamSummary={managingTeamSummary}
-			/>
 		</>
 	);
 }

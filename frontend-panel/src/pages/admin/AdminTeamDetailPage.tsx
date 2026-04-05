@@ -1,0 +1,92 @@
+import { useCallback, useEffect, useState } from "react";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
+import {
+	AdminTeamDetailDialog,
+	type AdminTeamDetailTab,
+} from "@/components/admin/AdminTeamDetailDialog";
+import { AdminLayout } from "@/components/layout/AdminLayout";
+import { AdminPageShell } from "@/components/layout/AdminPageShell";
+import { handleApiError } from "@/hooks/useApiError";
+import { adminPolicyGroupService } from "@/services/adminService";
+import type { StoragePolicyGroup } from "@/types/api";
+
+const POLICY_GROUP_PAGE_SIZE = 100;
+
+function isAdminTeamDetailTab(
+	value: string | undefined,
+): value is AdminTeamDetailTab {
+	return (
+		value === "overview" ||
+		value === "members" ||
+		value === "audit" ||
+		value === "danger"
+	);
+}
+
+export default function AdminTeamDetailPage() {
+	const navigate = useNavigate();
+	const { teamId, section } = useParams<{
+		teamId?: string;
+		section?: string;
+	}>();
+	const parsedTeamId = Number(teamId);
+	const [policyGroups, setPolicyGroups] = useState<StoragePolicyGroup[]>([]);
+	const [policyGroupsLoading, setPolicyGroupsLoading] = useState(true);
+
+	const loadPolicyGroups = useCallback(async () => {
+		setPolicyGroupsLoading(true);
+		try {
+			setPolicyGroups(
+				await adminPolicyGroupService.listAll(POLICY_GROUP_PAGE_SIZE),
+			);
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setPolicyGroupsLoading(false);
+		}
+	}, []);
+
+	useEffect(() => {
+		void loadPolicyGroups();
+	}, [loadPolicyGroups]);
+
+	if (!Number.isSafeInteger(parsedTeamId) || parsedTeamId <= 0) {
+		return <Navigate to="/admin/teams" replace />;
+	}
+
+	if (section == null) {
+		return <Navigate to={`/admin/teams/${parsedTeamId}/overview`} replace />;
+	}
+
+	if (!isAdminTeamDetailTab(section)) {
+		return <Navigate to={`/admin/teams/${parsedTeamId}/overview`} replace />;
+	}
+
+	return (
+		<AdminLayout>
+			<AdminPageShell>
+				<AdminTeamDetailDialog
+					layout="page"
+					open
+					teamId={parsedTeamId}
+					policyGroups={policyGroups}
+					policyGroupsLoading={policyGroupsLoading}
+					onListChange={async () => undefined}
+					onOpenChange={(open) => {
+						if (!open) {
+							navigate("/admin/teams", { viewTransition: true });
+						}
+					}}
+					onPageTabChange={(tab, options) => {
+						navigate(`/admin/teams/${parsedTeamId}/${tab}`, {
+							replace: options?.replace,
+							viewTransition: !options?.replace,
+						});
+					}}
+					onRefreshPolicyGroups={loadPolicyGroups}
+					pageTab={section}
+				/>
+			</AdminPageShell>
+		</AdminLayout>
+	);
+}

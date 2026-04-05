@@ -147,6 +147,7 @@ pub async fn get_overview(
             user_id: None,
             action: None,
             entity_type: None,
+            entity_id: None,
             after: None,
             before: None,
         },

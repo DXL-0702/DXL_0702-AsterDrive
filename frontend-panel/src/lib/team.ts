@@ -1,4 +1,4 @@
-import type { TeamMemberRole } from "@/types/api";
+import type { TeamAuditEntryInfo, TeamMemberRole } from "@/types/api";
 
 export function isTeamManager(role: TeamMemberRole | null | undefined) {
 	return role === "owner" || role === "admin";
@@ -16,4 +16,36 @@ export function getTeamRoleBadgeClass(role: TeamMemberRole) {
 		return "border-blue-500/60 bg-blue-500/10 text-blue-700 dark:text-blue-300";
 	}
 	return "border-border bg-muted/40 text-muted-foreground";
+}
+
+export function compareTeamMemberRole(a: TeamMemberRole, b: TeamMemberRole) {
+	const rank: Record<TeamMemberRole, number> = {
+		owner: 0,
+		admin: 1,
+		member: 2,
+	};
+	return rank[a] - rank[b];
+}
+
+export function formatTeamAuditSummary(
+	entry: TeamAuditEntryInfo,
+	roleLabel: (role: TeamMemberRole) => string,
+) {
+	if (!entry.member_username) {
+		return null;
+	}
+
+	if (entry.action === "team_member_update") {
+		if (entry.previous_role && entry.next_role) {
+			return `@${entry.member_username} · ${roleLabel(entry.previous_role)} -> ${roleLabel(entry.next_role)}`;
+		}
+
+		return `@${entry.member_username}`;
+	}
+
+	if (entry.role) {
+		return `@${entry.member_username} · ${roleLabel(entry.role)}`;
+	}
+
+	return `@${entry.member_username}`;
 }

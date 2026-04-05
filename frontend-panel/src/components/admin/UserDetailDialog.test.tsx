@@ -528,7 +528,21 @@ describe("UserDetailDialog", () => {
 			screen.getByRole("button", { name: "select-item:user" }),
 		).toBeDisabled();
 		expect(screen.queryByRole("button", { name: /save_changes/i })).toBeNull();
-		expect(screen.getAllByText("no_policies_assigned")).toHaveLength(2);
+		expect(
+			screen.getByText("policy_group_no_assignable_groups"),
+		).toBeInTheDocument();
+	});
+
+	it("shows unlimited instead of 0 for an unlimited quota user", async () => {
+		renderDialog({
+			storage_quota: 0,
+		});
+
+		await waitForPolicyLoad();
+
+		const quotaInput = screen.getByLabelText("quota_mb");
+		expect(quotaInput).toHaveValue(null);
+		expect(quotaInput).toHaveAttribute("placeholder", "quota_unlimited_short");
 	});
 
 	it("caps the dialog height and keeps the detail column scrollable", async () => {
@@ -541,7 +555,7 @@ describe("UserDetailDialog", () => {
 				".overflow-hidden.max-h-\\[min\\(860px\\,calc\\(100vh-2rem\\)\\)\\]",
 			),
 		).not.toBeNull();
-		expect(container.querySelector(".overflow-y-auto.p-6")).not.toBeNull();
+		expect(container.querySelector(".p-6.lg\\:overflow-y-auto")).not.toBeNull();
 	});
 
 	it("resets the user's password from the detail dialog", async () => {

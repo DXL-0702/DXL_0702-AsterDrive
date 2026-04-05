@@ -62,6 +62,10 @@ export type AdminCreateTeamRequest =
 export type AdminTeamInfo = components["schemas"]["AdminTeamInfo"];
 export type AdminTeamPage = components["schemas"]["OffsetPage_AdminTeamInfo"];
 export type AdminUpdateTeamRequest = components["schemas"]["AdminPatchTeamReq"];
+export type TeamAuditEntryInfo = components["schemas"]["TeamAuditEntryInfo"];
+export type TeamAuditPage =
+	components["schemas"]["OffsetPage_TeamAuditEntryInfo"];
+export type TeamMemberPage = components["schemas"]["TeamMemberPage"];
 export type CreatePolicyGroupRequest =
 	components["schemas"]["CreatePolicyGroupReq"];
 export type CreatePolicyRequest = components["schemas"]["CreatePolicyReq"];

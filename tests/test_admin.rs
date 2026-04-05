@@ -299,15 +299,18 @@ async fn test_admin_team_crud() {
     assert_eq!(resp.status(), 201);
 
     let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/admin/teams/{team_id}/members"))
+        .uri(&format!("/api/v1/admin/teams/{team_id}/members?limit=1"))
         .insert_header(("Cookie", format!("aster_access={admin_token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"].as_array().unwrap().len(), 1);
-    assert_eq!(body["data"][0]["username"], "team-admin");
-    assert_eq!(body["data"][0]["role"], "admin");
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["owner_count"], 0);
+    assert_eq!(body["data"]["manager_count"], 1);
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"]["items"][0]["username"], "team-admin");
+    assert_eq!(body["data"]["items"][0]["role"], "admin");
 
     let req = test::TestRequest::post()
         .uri(&format!("/api/v1/admin/teams/{team_id}/members"))
@@ -337,6 +340,23 @@ async fn test_admin_team_crud() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["role"], "admin");
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/admin/teams/{team_id}/members?role=admin&status=active&limit=1&offset=1"
+        ))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["total"], 2);
+    assert_eq!(body["data"]["limit"], 1);
+    assert_eq!(body["data"]["offset"], 1);
+    assert_eq!(body["data"]["owner_count"], 0);
+    assert_eq!(body["data"]["manager_count"], 2);
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"]["items"][0]["username"], "team-analyst");
 
     let req = test::TestRequest::delete()
         .uri(&format!(
@@ -370,8 +390,8 @@ async fn test_admin_team_crud() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"].as_array().unwrap().len(), 1);
-    assert_eq!(body["data"][0]["username"], "team-admin");
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"]["items"][0]["username"], "team-admin");
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/teams")
@@ -400,6 +420,78 @@ async fn test_admin_team_crud() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["id"], team_id);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/teams/{team_id}/audit-logs"))
+        .insert_header(("Cookie", format!("aster_access={team_admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let user_audit_items = body["data"]["items"].as_array().unwrap();
+    let user_actions: Vec<&str> = user_audit_items
+        .iter()
+        .filter_map(|entry| entry["action"].as_str())
+        .collect();
+    assert!(user_actions.contains(&"admin_create_team"));
+    assert!(user_actions.contains(&"admin_update_team"));
+    assert!(user_actions.contains(&"team_member_add"));
+    assert!(user_actions.contains(&"team_member_update"));
+    assert!(user_actions.contains(&"team_member_remove"));
+    assert!(user_actions.contains(&"admin_archive_team"));
+    assert!(user_actions.contains(&"admin_restore_team"));
+    assert!(
+        user_audit_items
+            .iter()
+            .all(|entry| entry.get("ip_address").is_none())
+    );
+    assert!(
+        user_audit_items
+            .iter()
+            .all(|entry| entry.get("details").is_none())
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/admin/audit-logs?entity_type=team&entity_id={team_id}"
+        ))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let admin_actions: Vec<&str> = body["data"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|entry| entry["action"].as_str())
+        .collect();
+    assert!(admin_actions.contains(&"admin_create_team"));
+    assert!(admin_actions.contains(&"admin_update_team"));
+    assert!(admin_actions.contains(&"team_member_add"));
+    assert!(admin_actions.contains(&"team_member_update"));
+    assert!(admin_actions.contains(&"team_member_remove"));
+    assert!(admin_actions.contains(&"admin_archive_team"));
+    assert!(admin_actions.contains(&"admin_restore_team"));
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/admin/teams/{team_id}/audit-logs"))
+        .insert_header(("Cookie", format!("aster_access={admin_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let admin_team_audit_items = body["data"]["items"].as_array().unwrap();
+    assert!(
+        admin_team_audit_items
+            .iter()
+            .all(|entry| entry.get("ip_address").is_none())
+    );
+    assert!(
+        admin_team_audit_items
+            .iter()
+            .all(|entry| entry.get("details").is_none())
+    );
 
     let req = test::TestRequest::get()
         .uri("/api/v1/admin/teams")

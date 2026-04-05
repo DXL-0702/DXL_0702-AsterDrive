@@ -64,16 +64,6 @@ vi.mock("sonner", () => ({
 	},
 }));
 
-vi.mock("@/components/settings/TeamManageDialog", () => ({
-	TeamManageDialog: ({
-		open,
-		teamId,
-	}: {
-		open: boolean;
-		teamId: number | null;
-	}) => (open ? <div>{`manage:${teamId}`}</div> : null),
-}));
-
 vi.mock("@/hooks/useApiError", () => ({
 	handleApiError: (...args: unknown[]) => mockState.handleApiError(...args),
 }));
@@ -126,7 +116,7 @@ describe("TeamsSettingsView", () => {
 		});
 	});
 
-	it("opens the team management dialog from the active team card", async () => {
+	it("navigates to the team management page from the active team card", async () => {
 		render(<TeamsSettingsView />);
 
 		await screen.findByText("Design");
@@ -135,10 +125,15 @@ describe("TeamsSettingsView", () => {
 
 		fireEvent.click(screen.getByRole("button", { name: "core:manage" }));
 
-		expect(screen.getByText("manage:11")).toBeInTheDocument();
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			"/settings/teams/11/overview",
+			{
+				viewTransition: true,
+			},
+		);
 	});
 
-	it("restores an archived team and opens its management dialog", async () => {
+	it("restores an archived team and navigates to its management page", async () => {
 		render(<TeamsSettingsView />);
 
 		await screen.findByText("Legacy");
@@ -155,6 +150,11 @@ describe("TeamsSettingsView", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith(
 			"settings:settings_team_restored",
 		);
-		expect(screen.getByText("manage:23")).toBeInTheDocument();
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			"/settings/teams/23/overview",
+			{
+				viewTransition: true,
+			},
+		);
 	});
 });

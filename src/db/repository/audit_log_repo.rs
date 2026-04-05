@@ -21,6 +21,7 @@ pub async fn find_with_filters<C: ConnectionTrait>(
     user_id: Option<i64>,
     action: Option<&str>,
     entity_type: Option<&str>,
+    entity_id: Option<i64>,
     after: Option<DateTime<Utc>>,
     before: Option<DateTime<Utc>>,
     limit: u64,
@@ -36,6 +37,9 @@ pub async fn find_with_filters<C: ConnectionTrait>(
     }
     if let Some(et) = entity_type {
         q = q.filter(audit_log::Column::EntityType.eq(et));
+    }
+    if let Some(eid) = entity_id {
+        q = q.filter(audit_log::Column::EntityId.eq(eid));
     }
     if let Some(after) = after {
         q = q.filter(audit_log::Column::CreatedAt.gte(after));

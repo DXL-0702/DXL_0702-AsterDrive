@@ -7,12 +7,13 @@ use std::fmt;
 use utoipa::IntoParams;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
-use crate::db::repository::audit_log_repo;
+use crate::db::repository::{audit_log_repo, user_repo};
 use crate::entities::audit_log;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::auth_service::Claims;
 use crate::types::{TeamMemberRole, UserRole, UserStatus};
+use std::collections::{HashMap, HashSet};
 
 const DEFAULT_RETENTION_DAYS: i64 = 90;
 
@@ -62,6 +63,9 @@ pub enum AuditAction {
     TeamArchive,
     TeamCleanupExpired,
     TeamCreate,
+    TeamMemberAdd,
+    TeamMemberRemove,
+    TeamMemberUpdate,
     TeamRestore,
     TeamUpdate,
     UserChangePassword,
@@ -110,6 +114,9 @@ impl AuditAction {
             Self::TeamArchive => "team_archive",
             Self::TeamCleanupExpired => "team_cleanup_expired",
             Self::TeamCreate => "team_create",
+            Self::TeamMemberAdd => "team_member_add",
+            Self::TeamMemberRemove => "team_member_remove",
+            Self::TeamMemberUpdate => "team_member_update",
             Self::TeamRestore => "team_restore",
             Self::TeamUpdate => "team_update",
             Self::UserChangePassword => "user_change_password",
@@ -138,6 +145,7 @@ pub struct AuditLogFilterQuery {
     pub user_id: Option<i64>,
     pub action: Option<String>,
     pub entity_type: Option<String>,
+    pub entity_id: Option<i64>,
     pub after: Option<String>,
     pub before: Option<String>,
 }
@@ -146,6 +154,7 @@ pub struct AuditLogFilters {
     pub user_id: Option<i64>,
     pub action: Option<String>,
     pub entity_type: Option<String>,
+    pub entity_id: Option<i64>,
     pub after: Option<DateTime<Utc>>,
     pub before: Option<DateTime<Utc>>,
 }
@@ -156,6 +165,7 @@ impl AuditLogFilters {
             user_id: query.user_id,
             action: query.action.clone(),
             entity_type: query.entity_type.clone(),
+            entity_id: query.entity_id,
             after: query
                 .after
                 .as_deref()
@@ -242,18 +252,69 @@ pub struct ShareUpdateDetails {
 
 #[derive(Serialize)]
 pub struct TeamAuditDetails<'a> {
+    #[serde(skip_serializing_if = "str::is_empty")]
     pub description: &'a str,
     pub member_count: u64,
     pub storage_quota: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub policy_group_id: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub archived_at: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub actor_role: Option<TeamMemberRole>,
 }
 
 #[derive(Serialize)]
 pub struct TeamCleanupAuditDetails {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub archived_at: Option<DateTime<Utc>>,
     pub retention_days: i64,
+}
+
+#[derive(Serialize)]
+pub struct TeamMemberAddAuditDetails<'a> {
+    pub member_user_id: i64,
+    pub member_username: &'a str,
+    pub role: TeamMemberRole,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor_role: Option<TeamMemberRole>,
+}
+
+#[derive(Serialize)]
+pub struct TeamMemberUpdateAuditDetails<'a> {
+    pub member_user_id: i64,
+    pub member_username: &'a str,
+    pub previous_role: TeamMemberRole,
+    pub next_role: TeamMemberRole,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor_role: Option<TeamMemberRole>,
+}
+
+#[derive(Serialize)]
+pub struct TeamMemberRemoveAuditDetails<'a> {
+    pub member_user_id: i64,
+    pub member_username: &'a str,
+    pub removed_role: TeamMemberRole,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor_role: Option<TeamMemberRole>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
+pub struct TeamAuditEntryInfo {
+    pub id: i64,
+    pub action: String,
+    pub actor_username: String,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member_username: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<TeamMemberRole>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_role: Option<TeamMemberRole>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_role: Option<TeamMemberRole>,
 }
 
 pub fn details<T: Serialize>(value: T) -> Option<serde_json::Value> {
@@ -341,6 +402,7 @@ pub async fn query(
             filters.user_id,
             filters.action.as_deref(),
             filters.entity_type.as_deref(),
+            filters.entity_id,
             filters.after,
             filters.before,
             limit,
@@ -349,6 +411,85 @@ pub async fn query(
         .await
     })
     .await
+}
+
+fn parse_team_member_role(value: Option<&serde_json::Value>) -> Option<TeamMemberRole> {
+    serde_json::from_value(value?.clone()).ok()
+}
+
+fn parse_string_field(details: &serde_json::Value, key: &str) -> Option<String> {
+    details.get(key)?.as_str().map(ToOwned::to_owned)
+}
+
+fn build_team_audit_entry(
+    entry: audit_log::Model,
+    usernames: &HashMap<i64, String>,
+) -> TeamAuditEntryInfo {
+    let actor_username = usernames
+        .get(&entry.user_id)
+        .cloned()
+        .unwrap_or_else(|| format!("#{}", entry.user_id));
+    let parsed_details = entry
+        .details
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok());
+
+    let member_username = parsed_details
+        .as_ref()
+        .and_then(|details| parse_string_field(details, "member_username"));
+    let role = parsed_details
+        .as_ref()
+        .and_then(|details| parse_team_member_role(details.get("role")))
+        .or_else(|| {
+            parsed_details
+                .as_ref()
+                .and_then(|details| parse_team_member_role(details.get("removed_role")))
+        });
+    let previous_role = parsed_details
+        .as_ref()
+        .and_then(|details| parse_team_member_role(details.get("previous_role")));
+    let next_role = parsed_details
+        .as_ref()
+        .and_then(|details| parse_team_member_role(details.get("next_role")));
+
+    TeamAuditEntryInfo {
+        id: entry.id,
+        action: entry.action,
+        actor_username,
+        created_at: entry.created_at,
+        member_username,
+        role,
+        previous_role,
+        next_role,
+    }
+}
+
+pub async fn query_team_entries(
+    state: &AppState,
+    filters: AuditLogFilters,
+    limit: u64,
+    offset: u64,
+) -> Result<OffsetPage<TeamAuditEntryInfo>> {
+    let page = query(state, filters, limit, offset).await?;
+    let user_ids: Vec<i64> = page
+        .items
+        .iter()
+        .map(|entry| entry.user_id)
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let usernames = user_repo::find_by_ids(&state.db, &user_ids)
+        .await?
+        .into_iter()
+        .map(|user| (user.id, user.username))
+        .collect::<HashMap<_, _>>();
+    let items = page
+        .items
+        .into_iter()
+        .map(|entry| build_team_audit_entry(entry, &usernames))
+        .collect();
+
+    Ok(OffsetPage::new(items, page.total, page.limit, page.offset))
 }
 
 /// 清理过期审计日志
@@ -436,6 +577,9 @@ mod tests {
             (AuditAction::TeamArchive, "team_archive"),
             (AuditAction::TeamCleanupExpired, "team_cleanup_expired"),
             (AuditAction::TeamCreate, "team_create"),
+            (AuditAction::TeamMemberAdd, "team_member_add"),
+            (AuditAction::TeamMemberRemove, "team_member_remove"),
+            (AuditAction::TeamMemberUpdate, "team_member_update"),
             (AuditAction::TeamRestore, "team_restore"),
             (AuditAction::TeamUpdate, "team_update"),
             (AuditAction::UserChangePassword, "user_change_password"),

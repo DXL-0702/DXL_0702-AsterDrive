@@ -54,6 +54,7 @@ export default function AdminAuditPage() {
 		{ label: t("audit_all_types"), value: "__all__" },
 		{ label: t("core:file"), value: "file" },
 		{ label: t("core:folder"), value: "folder" },
+		{ label: t("teams"), value: "team" },
 	] satisfies ReadonlyArray<{ label: string; value: string }>;
 
 	return (
@@ -128,7 +129,7 @@ export default function AdminAuditPage() {
 											<TableCell>{item.user_id}</TableCell>
 											<TableCell>
 												<span className="inline-flex items-center rounded-full bg-blue-50 dark:bg-blue-950 px-2 py-0.5 text-xs font-medium text-blue-700 dark:text-blue-300">
-													{item.action}
+													{t(item.action, { defaultValue: item.action })}
 												</span>
 											</TableCell>
 											<TableCell className="text-muted-foreground">

@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
@@ -88,6 +89,24 @@ pub struct TeamMemberInfo {
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct TeamMemberListFilters {
+    pub keyword: Option<String>,
+    pub role: Option<TeamMemberRole>,
+    pub status: Option<UserStatus>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct TeamMemberPage {
+    pub items: Vec<TeamMemberInfo>,
+    pub total: u64,
+    pub limit: u64,
+    pub offset: u64,
+    pub owner_count: u64,
+    pub manager_count: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -249,6 +268,76 @@ fn build_team_member_info(membership: team_member::Model, user: user::Model) -> 
         role: membership.role,
         created_at: membership.created_at,
         updated_at: membership.updated_at,
+    }
+}
+
+fn team_member_role_rank(role: TeamMemberRole) -> u8 {
+    match role {
+        TeamMemberRole::Owner => 0,
+        TeamMemberRole::Admin => 1,
+        TeamMemberRole::Member => 2,
+    }
+}
+
+fn compare_team_members(a: &TeamMemberInfo, b: &TeamMemberInfo) -> Ordering {
+    team_member_role_rank(a.role)
+        .cmp(&team_member_role_rank(b.role))
+        .then_with(|| a.username.cmp(&b.username))
+        .then_with(|| a.user_id.cmp(&b.user_id))
+}
+
+fn matches_team_member_filters(member: &TeamMemberInfo, filters: &TeamMemberListFilters) -> bool {
+    if filters.role.is_some_and(|role| member.role != role) {
+        return false;
+    }
+    if filters.status.is_some_and(|status| member.status != status) {
+        return false;
+    }
+
+    let Some(keyword) = filters.keyword.as_deref() else {
+        return true;
+    };
+    if keyword.is_empty() {
+        return true;
+    }
+
+    member.username.to_lowercase().contains(keyword)
+        || member.email.to_lowercase().contains(keyword)
+        || member.user_id.to_string().contains(keyword)
+}
+
+fn build_team_member_page(
+    mut members: Vec<TeamMemberInfo>,
+    filters: &TeamMemberListFilters,
+    limit: u64,
+    offset: u64,
+) -> TeamMemberPage {
+    let limit = limit.clamp(1, 100);
+    let owner_count = members
+        .iter()
+        .filter(|member| member.role.is_owner())
+        .count() as u64;
+    let manager_count = members
+        .iter()
+        .filter(|member| member.role.can_manage_team())
+        .count() as u64;
+
+    members.sort_by(compare_team_members);
+    let filtered: Vec<TeamMemberInfo> = members
+        .into_iter()
+        .filter(|member| matches_team_member_filters(member, filters))
+        .collect();
+    let total = filtered.len() as u64;
+    let start = (offset.min(total)) as usize;
+    let end = ((start as u64 + limit).min(total)) as usize;
+
+    TeamMemberPage {
+        items: filtered[start..end].to_vec(),
+        total,
+        limit,
+        offset,
+        owner_count,
+        manager_count,
     }
 }
 
@@ -775,13 +864,35 @@ pub async fn restore_admin_team(state: &AppState, team_id: i64) -> Result<AdminT
     build_admin_team_info(state, &restored).await
 }
 
-pub async fn list_admin_members(state: &AppState, team_id: i64) -> Result<Vec<TeamMemberInfo>> {
+pub async fn list_admin_members(
+    state: &AppState,
+    team_id: i64,
+    filters: TeamMemberListFilters,
+    limit: u64,
+    offset: u64,
+) -> Result<TeamMemberPage> {
     team_repo::find_by_id(&state.db, team_id).await?;
     let rows = team_member_repo::list_by_team_with_user(&state.db, team_id).await?;
-    Ok(rows
+    let members = rows
         .into_iter()
         .map(|(membership, user)| build_team_member_info(membership, user))
-        .collect())
+        .collect();
+    Ok(build_team_member_page(members, &filters, limit, offset))
+}
+
+pub async fn get_admin_member(
+    state: &AppState,
+    team_id: i64,
+    member_user_id: i64,
+) -> Result<TeamMemberInfo> {
+    team_repo::find_by_id(&state.db, team_id).await?;
+    let membership = team_member_repo::find_by_team_and_user(&state.db, team_id, member_user_id)
+        .await?
+        .ok_or_else(|| {
+            AsterError::record_not_found(format!("team member user #{member_user_id}"))
+        })?;
+    let user = user_repo::find_by_id(&state.db, member_user_id).await?;
+    Ok(build_team_member_info(membership, user))
 }
 
 pub async fn add_admin_member(
@@ -922,13 +1033,33 @@ pub async fn list_members(
     state: &AppState,
     team_id: i64,
     actor_user_id: i64,
-) -> Result<Vec<TeamMemberInfo>> {
+    filters: TeamMemberListFilters,
+    limit: u64,
+    offset: u64,
+) -> Result<TeamMemberPage> {
     require_team_membership(state, team_id, actor_user_id).await?;
     let rows = team_member_repo::list_by_team_with_user(&state.db, team_id).await?;
-    Ok(rows
+    let members = rows
         .into_iter()
         .map(|(membership, user)| build_team_member_info(membership, user))
-        .collect())
+        .collect();
+    Ok(build_team_member_page(members, &filters, limit, offset))
+}
+
+pub async fn get_member(
+    state: &AppState,
+    team_id: i64,
+    actor_user_id: i64,
+    member_user_id: i64,
+) -> Result<TeamMemberInfo> {
+    require_team_membership(state, team_id, actor_user_id).await?;
+    let membership = team_member_repo::find_by_team_and_user(&state.db, team_id, member_user_id)
+        .await?
+        .ok_or_else(|| {
+            AsterError::record_not_found(format!("team member user #{member_user_id}"))
+        })?;
+    let user = user_repo::find_by_id(&state.db, member_user_id).await?;
+    Ok(build_team_member_info(membership, user))
 }
 
 pub async fn add_member(

@@ -6,8 +6,8 @@ import {
 	useState,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { AdminTeamDetailDialog } from "@/components/admin/AdminTeamDetailDialog";
 import { AdminTableList } from "@/components/common/AdminTableList";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
@@ -145,11 +145,11 @@ function TeamStorageBadge({
 
 export default function AdminTeamsPage() {
 	const { t } = useTranslation(["admin", "core"]);
+	const navigate = useNavigate();
 	const [keyword, setKeyword] = useState("");
 	const [showArchived, setShowArchived] = useState(false);
 	const deferredKeyword = useDeferredValue(keyword.trim());
 	const [createDialogOpen, setCreateDialogOpen] = useState(false);
-	const [detailTeamId, setDetailTeamId] = useState<number | null>(null);
 	const [createForm, setCreateForm] =
 		useState<CreateTeamFormState>(EMPTY_CREATE_FORM);
 	const [submitting, setSubmitting] = useState(false);
@@ -320,11 +320,17 @@ export default function AdminTeamsPage() {
 						<TableRow
 							key={team.id}
 							className={INTERACTIVE_TABLE_ROW_CLASS}
-							onClick={() => setDetailTeamId(team.id)}
+							onClick={() =>
+								navigate(`/admin/teams/${team.id}/overview`, {
+									viewTransition: true,
+								})
+							}
 							onKeyDown={(event) => {
 								if (event.key === "Enter" || event.key === " ") {
 									event.preventDefault();
-									setDetailTeamId(team.id);
+									navigate(`/admin/teams/${team.id}/overview`, {
+										viewTransition: true,
+									});
 								}
 							}}
 							tabIndex={0}
@@ -372,7 +378,11 @@ export default function AdminTeamsPage() {
 										variant="ghost"
 										size="icon"
 										className={ADMIN_ICON_BUTTON_CLASS}
-										onClick={() => setDetailTeamId(team.id)}
+										onClick={() =>
+											navigate(`/admin/teams/${team.id}/overview`, {
+												viewTransition: true,
+											})
+										}
 										title={t("view_details")}
 										aria-label={t("view_details")}
 									>
@@ -502,20 +512,6 @@ export default function AdminTeamsPage() {
 					</form>
 				</DialogContent>
 			</Dialog>
-
-			<AdminTeamDetailDialog
-				open={detailTeamId !== null}
-				teamId={detailTeamId}
-				policyGroups={policyGroups}
-				policyGroupsLoading={policyGroupsLoading}
-				onListChange={reload}
-				onOpenChange={(open) => {
-					if (!open) {
-						setDetailTeamId(null);
-					}
-				}}
-				onRefreshPolicyGroups={loadPolicyGroups}
-			/>
 		</AdminLayout>
 	);
 }

@@ -80,13 +80,21 @@ async fn test_team_crud_and_member_lifecycle() {
     assert_eq!(body["data"]["role"], "member");
 
     let req = test::TestRequest::get()
-        .uri(&format!("/api/v1/teams/{team_id}/members"))
+        .uri(&format!(
+            "/api/v1/teams/{team_id}/members?limit=1&offset=0&keyword=member1"
+        ))
         .insert_header(("Cookie", format!("aster_access={owner_token}")))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["data"].as_array().unwrap().len(), 2);
+    assert_eq!(body["data"]["total"], 1);
+    assert_eq!(body["data"]["limit"], 1);
+    assert_eq!(body["data"]["offset"], 0);
+    assert_eq!(body["data"]["owner_count"], 1);
+    assert_eq!(body["data"]["manager_count"], 1);
+    assert_eq!(body["data"]["items"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"]["items"][0]["username"], "member1");
 
     let req = test::TestRequest::get()
         .uri("/api/v1/teams")

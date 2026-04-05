@@ -6,6 +6,7 @@ interface AuditLogQuery {
 	user_id?: number;
 	action?: string;
 	entity_type?: string;
+	entity_id?: number;
 	after?: string;
 	before?: string;
 	limit?: number;

@@ -23,7 +23,9 @@ import type {
 	StoragePolicyPage,
 	SystemConfig,
 	SystemConfigPage,
-	TeamMemberInfo,
+	TeamAuditPage,
+	TeamMemberPage,
+	TeamMemberRole,
 	UpdatePolicyGroupRequest,
 	UpdatePolicyRequest,
 	UpdateTeamMemberRequest,
@@ -126,16 +128,58 @@ export const adminTeamService = {
 	delete: (id: number) => api.delete<void>(`/admin/teams/${id}`),
 	restore: (id: number) =>
 		api.post<AdminTeamInfo>(`/admin/teams/${id}/restore`),
-	listMembers: (id: number) =>
-		api.get<TeamMemberInfo[]>(`/admin/teams/${id}/members`),
+	listAuditLogs: (
+		id: number,
+		params: {
+			user_id?: number;
+			action?: string;
+			after?: string;
+			before?: string;
+			limit?: number;
+			offset?: number;
+		} = {},
+	) => {
+		const { limit, offset, ...filters } = params;
+
+		return api.get<TeamAuditPage>(
+			withQuery(`/admin/teams/${id}/audit-logs`, {
+				limit,
+				offset,
+				...filters,
+			}),
+		);
+	},
+	listMembers: (
+		id: number,
+		params: {
+			keyword?: string;
+			role?: TeamMemberRole;
+			status?: UserStatus;
+			limit?: number;
+			offset?: number;
+		} = {},
+	) => {
+		const { limit, offset, ...filters } = params;
+
+		return api.get<TeamMemberPage>(
+			withQuery(`/admin/teams/${id}/members`, {
+				limit,
+				offset,
+				...filters,
+			}),
+		);
+	},
 	addMember: (id: number, data: AddTeamMemberRequest) =>
-		api.post<TeamMemberInfo>(`/admin/teams/${id}/members`, data),
+		api.post<TeamMemberPage["items"][number]>(
+			`/admin/teams/${id}/members`,
+			data,
+		),
 	updateMember: (
 		id: number,
 		memberUserId: number,
 		data: UpdateTeamMemberRequest,
 	) =>
-		api.patch<TeamMemberInfo>(
+		api.patch<TeamMemberPage["items"][number]>(
 			`/admin/teams/${id}/members/${memberUserId}`,
 			data,
 		),

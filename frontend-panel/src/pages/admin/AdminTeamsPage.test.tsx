@@ -6,6 +6,7 @@ import AdminTeamsPage from "@/pages/admin/AdminTeamsPage";
 const mockState = vi.hoisted(() => ({
 	handleApiError: vi.fn(),
 	listPolicyGroups: vi.fn(),
+	navigate: vi.fn(),
 	reload: vi.fn(),
 	toastSuccess: vi.fn(),
 }));
@@ -39,14 +40,8 @@ vi.mock("sonner", () => ({
 	},
 }));
 
-vi.mock("@/components/admin/AdminTeamDetailDialog", () => ({
-	AdminTeamDetailDialog: ({
-		open,
-		teamId,
-	}: {
-		open: boolean;
-		teamId: number | null;
-	}) => (open ? <div>{`detail:${teamId}`}</div> : null),
+vi.mock("react-router-dom", () => ({
+	useNavigate: () => mockState.navigate,
 }));
 
 vi.mock("@/components/common/AdminTableList", () => ({
@@ -209,6 +204,7 @@ describe("AdminTeamsPage", () => {
 	beforeEach(() => {
 		mockState.handleApiError.mockReset();
 		mockState.listPolicyGroups.mockReset();
+		mockState.navigate.mockReset();
 		mockState.reload.mockReset();
 		mockState.toastSuccess.mockReset();
 
@@ -216,11 +212,16 @@ describe("AdminTeamsPage", () => {
 		mockState.reload.mockResolvedValue(undefined);
 	});
 
-	it("opens the team detail dialog when clicking a team row", async () => {
+	it("navigates to the team detail page when clicking a team row", async () => {
 		render(<AdminTeamsPage />);
 
 		fireEvent.click(screen.getByText("Product"));
 
-		expect(screen.getByText("detail:14")).toBeInTheDocument();
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			"/admin/teams/14/overview",
+			{
+				viewTransition: true,
+			},
+		);
 	});
 });

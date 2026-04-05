@@ -28,8 +28,8 @@ pub use policies::{
 pub use shares::{admin_delete_share, list_all_shares};
 pub use teams::{
     AdminCreateTeamReq, AdminPatchTeamReq, AdminTeamListQuery, add_team_member, create_team,
-    delete_team, delete_team_member, get_team, list_team_members, list_teams, patch_team_member,
-    restore_team, update_team,
+    delete_team, delete_team_member, get_team, list_team_audit_logs, list_team_members, list_teams,
+    patch_team_member, restore_team, update_team,
 };
 pub use users::{
     AdminUserListQuery, CreateUserReq, PatchUserReq, ResetUserPasswordReq, create_user,
@@ -87,6 +87,10 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                     .route("/teams/{id}", web::patch().to(update_team))
                     .route("/teams/{id}", web::delete().to(delete_team))
                     .route("/teams/{id}/restore", web::post().to(restore_team))
+                    .route(
+                        "/teams/{id}/audit-logs",
+                        web::get().to(list_team_audit_logs),
+                    )
                     .route("/teams/{id}/members", web::get().to(list_team_members))
                     .route("/teams/{id}/members", web::post().to(add_team_member))
                     .route(

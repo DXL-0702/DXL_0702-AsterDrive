@@ -3,11 +3,31 @@ import { api } from "@/services/http";
 import type {
 	AddTeamMemberRequest,
 	CreateTeamRequest,
+	TeamAuditPage,
 	TeamInfo,
-	TeamMemberInfo,
+	TeamMemberPage,
+	TeamMemberRole,
 	UpdateTeamMemberRequest,
 	UpdateTeamRequest,
+	UserStatus,
 } from "@/types/api";
+
+interface TeamAuditLogQuery {
+	user_id?: number;
+	action?: string;
+	after?: string;
+	before?: string;
+	limit?: number;
+	offset?: number;
+}
+
+interface TeamMemberListQuery {
+	keyword?: string;
+	role?: TeamMemberRole;
+	status?: UserStatus;
+	limit?: number;
+	offset?: number;
+}
 
 export const teamService = {
 	list: (params?: { archived?: boolean }) =>
@@ -22,15 +42,39 @@ export const teamService = {
 		api.patch<TeamInfo>(`/teams/${id}`, data),
 	delete: (id: number) => api.delete<void>(`/teams/${id}`),
 	restore: (id: number) => api.post<TeamInfo>(`/teams/${id}/restore`),
-	listMembers: (id: number) =>
-		api.get<TeamMemberInfo[]>(`/teams/${id}/members`),
+	listAuditLogs: (id: number, params: TeamAuditLogQuery = {}) => {
+		const { limit, offset, ...filters } = params;
+
+		return api.get<TeamAuditPage>(
+			withQuery(`/teams/${id}/audit-logs`, {
+				limit,
+				offset,
+				...filters,
+			}),
+		);
+	},
+	listMembers: (id: number, params: TeamMemberListQuery = {}) => {
+		const { limit, offset, ...filters } = params;
+
+		return api.get<TeamMemberPage>(
+			withQuery(`/teams/${id}/members`, {
+				limit,
+				offset,
+				...filters,
+			}),
+		);
+	},
 	addMember: (id: number, data: AddTeamMemberRequest) =>
-		api.post<TeamMemberInfo>(`/teams/${id}/members`, data),
+		api.post<TeamMemberPage["items"][number]>(`/teams/${id}/members`, data),
 	updateMember: (
 		id: number,
 		memberUserId: number,
 		data: UpdateTeamMemberRequest,
-	) => api.patch<TeamMemberInfo>(`/teams/${id}/members/${memberUserId}`, data),
+	) =>
+		api.patch<TeamMemberPage["items"][number]>(
+			`/teams/${id}/members/${memberUserId}`,
+			data,
+		),
 	removeMember: (id: number, memberUserId: number) =>
 		api.delete<void>(`/teams/${id}/members/${memberUserId}`),
 };

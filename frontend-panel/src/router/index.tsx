@@ -20,6 +20,9 @@ const FileBrowserPage = lazy(() => import("@/pages/FileBrowserPage"));
 const AdminOverviewPage = lazy(() => import("@/pages/admin/AdminOverviewPage"));
 const AdminUsersPage = lazy(() => import("@/pages/admin/AdminUsersPage"));
 const AdminTeamsPage = lazy(() => import("@/pages/admin/AdminTeamsPage"));
+const AdminTeamDetailPage = lazy(
+	() => import("@/pages/admin/AdminTeamDetailPage"),
+);
 const AdminPoliciesPage = lazy(() => import("@/pages/admin/AdminPoliciesPage"));
 const AdminPolicyGroupsPage = lazy(
 	() => import("@/pages/admin/AdminPolicyGroupsPage"),
@@ -32,6 +35,7 @@ const ShareViewPage = lazy(() => import("@/pages/ShareViewPage"));
 const WebdavAccountsPage = lazy(() => import("@/pages/WebdavAccountsPage"));
 const TrashPage = lazy(() => import("@/pages/TrashPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
+const TeamManagePage = lazy(() => import("@/pages/TeamManagePage"));
 const MySharesPage = lazy(() => import("@/pages/MySharesPage"));
 const AdminAuditPage = lazy(() => import("@/pages/admin/AdminAuditPage"));
 
@@ -154,6 +158,14 @@ export const router = createBrowserRouter([
 						path: "/settings/teams",
 						element: <SettingsPage section="teams" />,
 					},
+					{
+						path: "/settings/teams/:teamId",
+						element: <TeamManagePage />,
+					},
+					{
+						path: "/settings/teams/:teamId/:section",
+						element: <TeamManagePage />,
+					},
 				],
 			},
 			{
@@ -186,6 +198,11 @@ export const router = createBrowserRouter([
 			{ path: "/admin/overview", element: <AdminOverviewPage /> },
 			{ path: "/admin/users", element: <AdminUsersPage /> },
 			{ path: "/admin/teams", element: <AdminTeamsPage /> },
+			{ path: "/admin/teams/:teamId", element: <AdminTeamDetailPage /> },
+			{
+				path: "/admin/teams/:teamId/:section",
+				element: <AdminTeamDetailPage />,
+			},
 			{ path: "/admin/policies", element: <AdminPoliciesPage /> },
 			{ path: "/admin/policy-groups", element: <AdminPolicyGroupsPage /> },
 			{ path: "/admin/shares", element: <AdminSharesPage /> },

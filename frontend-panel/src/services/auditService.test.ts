@@ -19,6 +19,7 @@ describe("auditService", () => {
 			user_id: 7,
 			action: "login",
 			entity_type: "",
+			entity_id: 9,
 			after: "2026-01-01T00:00:00Z",
 			before: null as never,
 			limit: 20,
@@ -26,7 +27,7 @@ describe("auditService", () => {
 		});
 
 		expect(apiGet).toHaveBeenCalledWith(
-			"/admin/audit-logs?limit=20&offset=40&user_id=7&action=login&after=2026-01-01T00%3A00%3A00Z",
+			"/admin/audit-logs?limit=20&offset=40&user_id=7&action=login&entity_id=9&after=2026-01-01T00%3A00%3A00Z",
 		);
 	});
 
