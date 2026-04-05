@@ -7,8 +7,10 @@
 当前大多数“列表类”管理员接口都已经是 offset 分页：
 
 - `/admin/policies`
+- `/admin/policy-groups`
 - `/admin/users`
-- `/admin/users/{user_id}/policies`
+- `/admin/teams`
+- `/admin/teams/{team_id}/members`
 - `/admin/shares`
 - `/admin/config`
 - `/admin/locks`
@@ -51,6 +53,58 @@
 - REST 仍然不能管理 `allowed_types`
 - 当前 `PATCH` 不能修改 `driver_type`
 
+## 策略组
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/admin/policy-groups` | 列出全部存储策略组 |
+| `POST` | `/admin/policy-groups` | 创建策略组 |
+| `GET` | `/admin/policy-groups/{id}` | 读取策略组详情 |
+| `PATCH` | `/admin/policy-groups/{id}` | 更新策略组 |
+| `DELETE` | `/admin/policy-groups/{id}` | 删除策略组 |
+| `POST` | `/admin/policy-groups/{id}/migrate-users` | 把用户批量迁移到另一个策略组 |
+
+创建示例：
+
+```json
+{
+  "name": "default-hot-cold",
+  "description": "小文件走本地，大文件走对象存储",
+  "is_enabled": true,
+  "is_default": false,
+  "items": [
+    {
+      "policy_id": 1,
+      "priority": 10,
+      "min_file_size": 0,
+      "max_file_size": 10485760
+    },
+    {
+      "policy_id": 2,
+      "priority": 20,
+      "min_file_size": 10485761,
+      "max_file_size": 0
+    }
+  ]
+}
+```
+
+当前实现注意点：
+
+- 策略组至少要包含一个策略项
+- 同一组里 `policy_id` 和 `priority` 都不能重复
+- `is_default = true` 的组必须保持启用
+- 已被用户或团队绑定的策略组不能直接删掉；被绑定时也不能随便禁用
+- `/migrate-users` 只迁移 `users.policy_group_id`，不会替你改团队绑定
+
+迁移请求体很简单：
+
+```json
+{
+  "target_group_id": 9
+}
+```
+
 ## 总览面板
 
 | 方法 | 路径 | 说明 |
@@ -73,21 +127,18 @@
 
 这个接口当前的日报和“最近活动”都基于审计日志统计，因此如果审计日志关闭，对应数据会偏少或为 0。总量类指标（用户 / 文件 / blob / 分享 / 字节数）不依赖审计日志。
 
-## 用户与用户策略
+## 用户
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/admin/users` | 列出用户 |
 | `POST` | `/admin/users` | 管理员直接创建用户 |
 | `GET` | `/admin/users/{id}` | 获取用户详情 |
-| `PATCH` | `/admin/users/{id}` | 更新角色、状态、总配额 |
+| `PATCH` | `/admin/users/{id}` | 更新角色、状态、总配额和策略组绑定 |
 | `PUT` | `/admin/users/{id}/password` | 管理员直接重置用户密码 |
+| `POST` | `/admin/users/{id}/sessions/revoke` | 吊销该用户所有现有会话 |
 | `DELETE` | `/admin/users/{id}` | 永久删除用户及其全部数据 |
 | `GET` | `/admin/users/{id}/avatar/{size}` | 读取指定用户已上传头像 |
-| `GET` | `/admin/users/{user_id}/policies` | 列出用户绑定的策略 |
-| `POST` | `/admin/users/{user_id}/policies` | 给用户分配策略 |
-| `PATCH` | `/admin/users/{user_id}/policies/{id}` | 更新用户策略项 |
-| `DELETE` | `/admin/users/{user_id}/policies/{id}` | 删除用户策略项 |
 
 `GET /admin/users` 现在支持：
 
@@ -96,11 +147,6 @@
 - `keyword`
 - `role`
 - `status`
-
-`GET /admin/users/{user_id}/policies` 也支持：
-
-- `limit`
-- `offset`
 
 `POST /admin/users` 的请求体与普通注册类似：
 
@@ -118,30 +164,63 @@
 {
   "role": "user",
   "status": "active",
-  "storage_quota": 107374182400
+  "storage_quota": 107374182400,
+  "policy_group_id": 3
 }
 ```
 
 注意：
 
 - `storage_quota = 0` 表示不限
+- `policy_group_id` 不传表示保持不变；当前实现明确拒绝 `null`
 - 当前实现禁止禁用初始管理员 `id = 1`
 - 当前实现也禁止把初始管理员 `id = 1` 降级为非管理员
 - `PUT /admin/users/{id}/password` 使用 `{ "password": "new-secret" }`
+- `POST /admin/users/{id}/sessions/revoke` 会让这个用户现有 JWT / Cookie 会话全部失效
 - `GET /admin/users/{id}/avatar/{size}` 只会返回“已上传头像”的二进制资源；Gravatar 应看用户详情里的 `profile.avatar.url_*`
 - `DELETE /admin/users/{id}` 是物理删除，不是软删除；当前也不允许删除管理员用户
 
-### 分配用户策略示例
+## 团队
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/admin/teams` | 分页查看全部团队 |
+| `POST` | `/admin/teams` | 创建团队并指定初始团队管理员 |
+| `GET` | `/admin/teams/{id}` | 读取团队详情 |
+| `PATCH` | `/admin/teams/{id}` | 更新团队名称、描述、策略组 |
+| `DELETE` | `/admin/teams/{id}` | 归档团队 |
+| `POST` | `/admin/teams/{id}/restore` | 恢复已归档团队 |
+| `GET` | `/admin/teams/{id}/audit-logs` | 查看团队审计记录 |
+| `GET` | `/admin/teams/{id}/members` | 分页查看团队成员 |
+| `POST` | `/admin/teams/{id}/members` | 添加团队成员 |
+| `PATCH` | `/admin/teams/{id}/members/{member_user_id}` | 调整成员角色 |
+| `DELETE` | `/admin/teams/{id}/members/{member_user_id}` | 移除团队成员 |
+
+`GET /admin/teams` 支持：
+
+- `limit`
+- `offset`
+- `keyword`
+- `archived`
+
+创建示例：
 
 ```json
 {
-  "policy_id": 3,
-  "is_default": true,
-  "quota_bytes": 53687091200
+  "name": "Operations",
+  "description": "跨职能运营空间",
+  "admin_identifier": "lead@example.com",
+  "policy_group_id": 4
 }
 ```
 
-`quota_bytes` 是“用户在该策略项上的额度”，与用户总配额不是同一个概念。
+当前实现注意点：
+
+- `admin_user_id` 和 `admin_identifier` 二选一，不能同时传，也不能都不传
+- 创建团队时如果没传 `policy_group_id`，会退回系统默认策略组；如果系统没有默认组，创建会失败
+- 团队更新接口也支持 `policy_group_id`，但和用户一样，当前实现拒绝显式传 `null`
+- 团队成员列表支持 `keyword`、`role`、`status`、`limit`、`offset`
+- 团队审计接口支持 `user_id`、`action`、`after`、`before`、`limit`、`offset`
 
 ## 系统运行时配置
 
@@ -158,9 +237,13 @@
 - `default_storage_quota`
 - `webdav_enabled`
 - `trash_retention_days`
+- `team_archive_retention_days`
 - `max_versions_per_file`
 - `audit_log_enabled`
 - `audit_log_retention_days`
+- `cors_allowed_origins`
+- `cors_allow_credentials`
+- `cors_max_age_secs`
 - `gravatar_base_url`
 
 `GET /admin/config` 当前也支持：

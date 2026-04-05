@@ -20,7 +20,7 @@ const VERSION = getVersion()
 
 export default defineConfig({
   title: 'AsterDrive',
-  description: 'AsterDrive 部署、使用与维护手册，按当前版本的实际页面和配置编写',
+  description: 'AsterDrive 部署、使用与维护手册，按当前版本的实际页面、后台入口和默认行为编写',
 
   locales: {
     root: {
@@ -32,7 +32,7 @@ export default defineConfig({
           { text: '快速开始', link: '/guide/getting-started' },
           { text: '使用手册', link: '/guide/user-guide' },
           { text: '管理后台', link: '/guide/admin-console' },
-          { text: '管理员配置', link: '/config/' },
+          { text: '配置说明', link: '/config/' },
           { text: '部署与升级', link: '/deployment/' },
           {
             text: `v${VERSION}`,
@@ -81,7 +81,7 @@ export default defineConfig({
           text: '使用手册',
           items: [
             { text: '快速开始', link: '/guide/getting-started' },
-            { text: '安装部署', link: '/guide/installation' },
+            { text: '部署手册', link: '/guide/installation' },
             { text: '用户手册', link: '/guide/user-guide' },
             { text: '常用流程', link: '/guide/core-workflows' },
             { text: '分享与公开访问', link: '/guide/sharing' },
@@ -143,11 +143,6 @@ export default defineConfig({
           }
         }
       }
-    },
-
-    editLink: {
-      pattern: 'https://github.com/AptS-1547/AsterDrive/edit/master/docs/:path',
-      text: '编辑此页面'
     }
   },
 

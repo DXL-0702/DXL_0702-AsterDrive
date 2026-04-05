@@ -64,11 +64,32 @@
 - `Authorization: Basic ...`
 - `Authorization: Bearer <jwt>`
 
+## 工作空间作用域
+
+当前有两类受保护工作空间：
+
+- 个人空间：接口直接挂在 `/files`、`/folders`、`/batch`、`/search`、`/shares`、`/trash`
+- 团队空间：复用同一套语义，但统一加前缀 `/teams/{team_id}`
+
+常见团队路径长这样：
+
+```text
+/api/v1/teams/{team_id}/folders
+/api/v1/teams/{team_id}/files/{id}
+/api/v1/teams/{team_id}/batch/move
+/api/v1/teams/{team_id}/search
+/api/v1/teams/{team_id}/shares
+/api/v1/teams/{team_id}/trash
+```
+
+也就是说，团队空间不是另一套业务模型，而是把同一套文件 / 文件夹 / 搜索 / 回收站语义切到团队作用域下执行。
+
 ## 模块索引
 
 - [认证](/api/auth)
 - [文件](/api/files)
 - [文件夹](/api/folders)
+- [团队与团队空间](/api/teams)
 - [批量操作](/api/batch)
 - [分享](/api/shares)
 - [回收站](/api/trash)
@@ -84,6 +105,7 @@
 - 批量删除 / 移动 / 复制：见 [批量操作](/api/batch)
 - 回收站恢复与清理：见 [回收站](/api/trash)
 - 搜索与筛选：见 [搜索](/api/search)
+- 团队管理与团队工作空间：见 [团队与团队空间](/api/teams)
 - 公开分享：见 [分享](/api/shares)
 - WebDAV 协议、账号与 DeltaV：见 [WebDAV](/api/webdav)
 - 后台策略、锁、运行时配置与审计：见 [管理](/api/admin)
@@ -99,6 +121,7 @@
 
 - [认证](/api/auth)
 - [文件](/api/files)
+- [团队与团队空间](/api/teams)
 - [搜索](/api/search)
 - [分享](/api/shares)
 - [管理](/api/admin)

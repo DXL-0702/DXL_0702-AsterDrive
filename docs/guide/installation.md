@@ -1,7 +1,7 @@
-# 安装部署
+# 部署手册
 
 AsterDrive 只需要启动一个服务。
-浏览器页面、公开分享页和 WebDAV 都由这个服务提供，不需要再单独部署一套前端站点。
+浏览器页面、公开分享页、管理后台和 WebDAV 都由这个服务提供，不需要再单独部署前端站点。
 
 ## 先选部署方式
 
@@ -67,7 +67,7 @@ cookie_secure = false
 - Endpoint
 - Bucket
 - Access Key / Secret Key
-- 浏览器直传需要的 CORS 设置
+- 如果要用浏览器直传，再准备对象存储的 CORS 设置
 
 ## Docker 部署
 
@@ -125,6 +125,7 @@ ASTER__AUTH__COOKIE_SECURE=false ./aster_drive
 - 生成默认 `config.toml`
 - 连接数据库并自动更新数据库结构
 - 创建默认本地存储策略 `Local Default`
+- 创建默认策略组 `Default Policy Group`
 - 创建默认上传目录和临时目录
 - 初始化系统设置
 
@@ -143,5 +144,6 @@ http://服务器地址:3000
 - 可以创建文件夹并上传文件
 - 可以把文件移到回收站并恢复
 - 管理后台可以打开
+- `管理 -> 存储策略` 和 `管理 -> 策略组` 都能正常打开
 - `GET /health` 和 `GET /health/ready` 返回正常
 - 如果启用了 WebDAV，客户端可以成功连接

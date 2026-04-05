@@ -88,6 +88,7 @@ volumes:
 - `auth.jwt_secret` 是否已经固定
 - 如果暂时是纯 HTTP 测试，`auth.cookie_secure` 是否是 `false`
 - 数据库、上传目录和临时目录是否确实落在持久化卷里
+- 默认策略组是否已经创建
 - 如果以后要走 S3 / MinIO，是否已经计划好对象存储的 CORS 和密钥管理
 
 ## 查看运行状态
@@ -105,4 +106,4 @@ docker compose pull
 docker compose up -d
 ```
 
-升级后建议重新打开浏览器页面，再检查一次登录、上传、分享和 WebDAV。
+升级后建议重新打开浏览器页面，再检查一次登录、上传、分享、策略组和 WebDAV。
