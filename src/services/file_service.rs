@@ -12,6 +12,7 @@ use crate::services::{
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 use crate::types::NullablePatch;
+use sha2::{Digest, Sha256};
 
 const BLOB_CLEANUP_CONCURRENCY: usize = 8;
 
@@ -836,29 +837,69 @@ pub(crate) async fn update_content_in_scope(
         }
     }
 
-    let temp_dir = &state.config.server.temp_dir;
-    let temp_path =
-        crate::utils::paths::temp_file_path(temp_dir, &uuid::Uuid::new_v4().to_string());
-    tokio::fs::create_dir_all(temp_dir)
-        .await
-        .map_aster_err(AsterError::storage_driver_error)?;
-    tokio::fs::write(&temp_path, &body)
-        .await
-        .map_aster_err(AsterError::storage_driver_error)?;
-
     let size = body.len() as i64;
-    let result = workspace_storage_service::store_from_temp(
-        state,
-        scope,
-        f.folder_id,
-        &f.name,
-        &temp_path,
-        size,
-        Some(file_id),
-        true,
-    )
-    .await;
-    crate::utils::cleanup_temp_file(&temp_path).await;
+    let resolved_policy =
+        workspace_storage_service::resolve_policy_for_size(state, scope, f.folder_id, size).await?;
+    let result = if resolved_policy.driver_type == crate::types::DriverType::Local {
+        let should_dedup = workspace_storage_service::local_content_dedup_enabled(&resolved_policy);
+        let staging_token = format!("{}.upload", uuid::Uuid::new_v4());
+        let staging_path =
+            crate::storage::local::upload_staging_path(&resolved_policy, &staging_token);
+        if let Some(parent) = staging_path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_aster_err(AsterError::storage_driver_error)?;
+        }
+        tokio::fs::write(&staging_path, &body)
+            .await
+            .map_aster_err(AsterError::storage_driver_error)?;
+
+        let precomputed_hash = should_dedup.then(|| {
+            let mut hasher = Sha256::new();
+            hasher.update(&body);
+            crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
+        });
+        let staging_path = staging_path.to_string_lossy().into_owned();
+        let result = workspace_storage_service::store_from_temp_with_hints(
+            state,
+            scope,
+            f.folder_id,
+            &f.name,
+            &staging_path,
+            size,
+            Some(file_id),
+            true,
+            Some(resolved_policy),
+            precomputed_hash.as_deref(),
+        )
+        .await;
+        crate::utils::cleanup_temp_file(&staging_path).await;
+        result
+    } else {
+        let temp_dir = &state.config.server.temp_dir;
+        let temp_path =
+            crate::utils::paths::temp_file_path(temp_dir, &uuid::Uuid::new_v4().to_string());
+        tokio::fs::create_dir_all(temp_dir)
+            .await
+            .map_aster_err(AsterError::storage_driver_error)?;
+        tokio::fs::write(&temp_path, &body)
+            .await
+            .map_aster_err(AsterError::storage_driver_error)?;
+
+        let result = workspace_storage_service::store_from_temp(
+            state,
+            scope,
+            f.folder_id,
+            &f.name,
+            &temp_path,
+            size,
+            Some(file_id),
+            true,
+        )
+        .await;
+        crate::utils::cleanup_temp_file(&temp_path).await;
+        result
+    };
 
     let updated = result?;
     let new_blob = file_repo::find_blob_by_id(db, updated.blob_id).await?;

@@ -14,6 +14,7 @@ use crate::types::{
     DriverType, S3UploadStrategy, UploadSessionStatus, effective_s3_multipart_chunk_size,
     parse_storage_policy_options,
 };
+use sha2::{Digest, Sha256};
 
 const HASH_BUF_SIZE: usize = 65536;
 
@@ -618,11 +619,42 @@ pub(crate) async fn store_from_temp(
     existing_file_id: Option<i64>,
     skip_lock_check: bool,
 ) -> Result<file::Model> {
+    store_from_temp_with_hints(
+        state,
+        scope,
+        folder_id,
+        filename,
+        temp_path,
+        size,
+        existing_file_id,
+        skip_lock_check,
+        None,
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn store_from_temp_with_hints(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &str,
+    temp_path: &str,
+    size: i64,
+    existing_file_id: Option<i64>,
+    skip_lock_check: bool,
+    resolved_policy: Option<crate::entities::storage_policy::Model>,
+    precomputed_hash: Option<&str>,
+) -> Result<file::Model> {
     let db = &state.db;
 
     crate::utils::validate_name(filename)?;
 
-    let policy = resolve_policy_for_size(state, scope, folder_id, size).await?;
+    let policy = match resolved_policy {
+        Some(policy) => policy,
+        None => resolve_policy_for_size(state, scope, folder_id, size).await?,
+    };
     let should_dedup = local_content_dedup_enabled(&policy);
 
     if policy.max_file_size > 0 && size > policy.max_file_size {
@@ -638,25 +670,29 @@ pub(crate) async fn store_from_temp(
     let driver = state.driver_registry.get_driver(&policy)?;
 
     let dedup_target = if should_dedup {
-        use sha2::{Digest, Sha256};
         use tokio::io::AsyncReadExt;
 
-        let mut hasher = Sha256::new();
-        let mut reader = tokio::fs::File::open(temp_path)
-            .await
-            .map_aster_err_ctx("open temp", AsterError::file_upload_failed)?;
-        let mut buf = vec![0u8; HASH_BUF_SIZE];
-        loop {
-            let n = reader
-                .read(&mut buf)
-                .await
-                .map_aster_err_ctx("read temp", AsterError::file_upload_failed)?;
-            if n == 0 {
-                break;
+        let file_hash = match precomputed_hash {
+            Some(file_hash) => file_hash.to_string(),
+            None => {
+                let mut hasher = Sha256::new();
+                let mut reader = tokio::fs::File::open(temp_path)
+                    .await
+                    .map_aster_err_ctx("open temp", AsterError::file_upload_failed)?;
+                let mut buf = vec![0u8; HASH_BUF_SIZE];
+                loop {
+                    let n = reader
+                        .read(&mut buf)
+                        .await
+                        .map_aster_err_ctx("read temp", AsterError::file_upload_failed)?;
+                    if n == 0 {
+                        break;
+                    }
+                    hasher.update(&buf[..n]);
+                }
+                crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
             }
-            hasher.update(&buf[..n]);
-        }
-        let file_hash = crate::utils::hash::sha256_digest_to_hex(&hasher.finalize());
+        };
         let storage_path = crate::utils::storage_path_from_hash(&file_hash);
         Some((file_hash, storage_path))
     } else {
@@ -743,6 +779,105 @@ pub(crate) async fn store_from_temp(
     }
 
     Ok(result)
+}
+
+async fn upload_local_direct(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    payload: &mut Multipart,
+    folder_id: Option<i64>,
+    relative_path: Option<&str>,
+    resolved_filename: &str,
+    policy: &crate::entities::storage_policy::Model,
+    declared_size: i64,
+) -> Result<file::Model> {
+    let should_dedup = local_content_dedup_enabled(policy);
+
+    while let Some(field) = payload.next().await {
+        let mut field = field.map_aster_err(AsterError::file_upload_failed)?;
+        let is_file = field
+            .content_disposition()
+            .and_then(|content| content.get_filename().map(|name| name.to_string()));
+
+        if let Some(name) = is_file {
+            let filename = if relative_path.is_some() {
+                resolved_filename.to_string()
+            } else {
+                name
+            };
+            crate::utils::validate_name(&filename)?;
+
+            let staging_token = format!("{}.upload", crate::utils::id::new_uuid());
+            let staging_path = crate::storage::local::upload_staging_path(policy, &staging_token);
+            if let Some(parent) = staging_path.parent() {
+                tokio::fs::create_dir_all(parent).await.map_aster_err_ctx(
+                    "create local staging dir",
+                    AsterError::file_upload_failed,
+                )?;
+            }
+
+            let mut staging_file = tokio::fs::File::create(&staging_path)
+                .await
+                .map_aster_err_ctx("create local staging file", AsterError::file_upload_failed)?;
+            let mut hasher = should_dedup.then(Sha256::new);
+            let mut size: i64 = 0;
+            let staging_path = staging_path.to_string_lossy().into_owned();
+
+            let write_result = async {
+                while let Some(chunk) = field.next().await {
+                    let chunk = chunk.map_aster_err(AsterError::file_upload_failed)?;
+                    if let Some(hasher) = hasher.as_mut() {
+                        hasher.update(&chunk);
+                    }
+                    staging_file.write_all(&chunk).await.map_aster_err_ctx(
+                        "write local staging file",
+                        AsterError::file_upload_failed,
+                    )?;
+                    size += chunk.len() as i64;
+                }
+                staging_file.flush().await.map_aster_err_ctx(
+                    "flush local staging file",
+                    AsterError::file_upload_failed,
+                )?;
+                Ok::<(), AsterError>(())
+            }
+            .await;
+
+            drop(staging_file);
+
+            if let Err(err) = write_result {
+                crate::utils::cleanup_temp_file(&staging_path).await;
+                return Err(err);
+            }
+
+            if size == 0 {
+                crate::utils::cleanup_temp_file(&staging_path).await;
+                return Err(AsterError::validation_error("empty file"));
+            }
+
+            let precomputed_hash =
+                hasher.map(|hasher| crate::utils::hash::sha256_digest_to_hex(&hasher.finalize()));
+            let resolved_policy = (size == declared_size).then_some(policy.clone());
+            let result = store_from_temp_with_hints(
+                state,
+                scope,
+                folder_id,
+                &filename,
+                &staging_path,
+                size,
+                None,
+                false,
+                resolved_policy,
+                precomputed_hash.as_deref(),
+            )
+            .await;
+
+            crate::utils::cleanup_temp_file(&staging_path).await;
+            return result;
+        }
+    }
+
+    Err(AsterError::validation_error("empty file"))
 }
 
 async fn upload_s3_relay_direct(
@@ -906,6 +1041,19 @@ pub(crate) async fn upload(
             resolve_policy_for_size(state, scope, effective_folder_id, declared_size).await?;
         if relay_stream_direct_upload_eligible(&policy, declared_size) {
             return upload_s3_relay_direct(
+                state,
+                scope,
+                payload,
+                effective_folder_id,
+                relative_path,
+                &resolved_filename,
+                &policy,
+                declared_size,
+            )
+            .await;
+        }
+        if policy.driver_type == DriverType::Local {
+            return upload_local_direct(
                 state,
                 scope,
                 payload,

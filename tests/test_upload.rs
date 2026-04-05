@@ -511,6 +511,82 @@ async fn test_direct_and_chunked_upload_share_blob_when_local_dedup_enabled() {
 }
 
 #[actix_web::test]
+async fn test_local_direct_upload_with_declared_size_avoids_global_temp_dirs_and_reuses_blob() {
+    use aster_drive::db::repository::{file_repo, policy_repo};
+
+    let state = common::setup().await;
+    set_default_local_content_dedup(&state, true).await;
+    let db = state.db.clone();
+    let driver_registry = state.driver_registry.clone();
+    let temp_roots = vec![
+        state.config.server.temp_dir.clone(),
+        state.config.server.upload_temp_dir.clone(),
+    ];
+    let temp_snapshot_before = snapshot_temp_roots(&temp_roots).unwrap();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let data = b"hello local direct dedup";
+    let (boundary, payload) = build_multipart_payload("local-a.txt", data);
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/files/upload?declared_size={}",
+            data.len()
+        ))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+
+    let (boundary2, payload2) = build_multipart_payload("local-b.txt", data);
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/files/upload?declared_size={}",
+            data.len()
+        ))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary2}"),
+        ))
+        .set_payload(payload2)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id2 = body["data"]["id"].as_i64().unwrap();
+
+    let temp_snapshot_after = snapshot_temp_roots(&temp_roots).unwrap();
+    assert_eq!(
+        temp_snapshot_after, temp_snapshot_before,
+        "local direct upload fast path should not touch global temp/upload temp dirs"
+    );
+
+    let file = file_repo::find_by_id(&db, file_id).await.unwrap();
+    let file2 = file_repo::find_by_id(&db, file_id2).await.unwrap();
+    let blob = file_repo::find_blob_by_id(&db, file.blob_id).await.unwrap();
+    let blob2 = file_repo::find_blob_by_id(&db, file2.blob_id)
+        .await
+        .unwrap();
+
+    assert_eq!(blob.id, blob2.id);
+    assert_eq!(blob.hash, blob2.hash);
+    assert_eq!(blob.ref_count, 2);
+
+    let policy = policy_repo::find_by_id(&db, blob.policy_id).await.unwrap();
+    let driver = driver_registry.get_driver(&policy).unwrap();
+    let stored = driver.get(&blob.storage_path).await.unwrap();
+    assert_eq!(stored, data);
+}
+
+#[actix_web::test]
 async fn test_chunked_upload_cancel() {
     let state = common::setup().await;
     let app = create_test_app!(state);

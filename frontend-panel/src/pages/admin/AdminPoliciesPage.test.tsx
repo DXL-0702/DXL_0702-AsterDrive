@@ -832,7 +832,11 @@ describe("AdminPoliciesPage", () => {
 		openEditPolicy("Edit Me");
 
 		const editShell = screen.getByTestId("policy-edit-shell");
-		expect(editShell).toHaveClass("grid", "gap-6");
+		expect(editShell).toHaveClass(
+			"grid",
+			"gap-6",
+			"lg:grid-cols-[300px_minmax(0,1fr)]",
+		);
 		expect(
 			screen.getByText("policy_editor_overview_title"),
 		).toBeInTheDocument();
@@ -840,8 +844,10 @@ describe("AdminPoliciesPage", () => {
 		expect(screen.getByText("policy_editor_rules_title")).toBeInTheDocument();
 		expect(screen.getByTestId("policy-summary-card")).toBeInTheDocument();
 		expect(screen.getByTestId("policy-summary-card").parentElement).toHaveClass(
+			"order-2",
 			"lg:sticky",
 			"lg:top-0",
+			"lg:order-1",
 			"lg:self-start",
 		);
 		expect(

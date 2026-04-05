@@ -757,9 +757,13 @@ export function StoragePolicyDialog({
 							) : (
 								<div
 									data-testid="policy-edit-shell"
-									className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]"
+									className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]"
 								>
-									<div className="space-y-4">
+									<div className="order-2 space-y-4 lg:sticky lg:top-0 lg:order-1 lg:self-start">
+										{renderPolicySummaryCard(t("policy_editor_summary_desc"))}
+									</div>
+
+									<div className="order-1 space-y-4 lg:order-2">
 										<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
 											{renderSectionIntro(
 												t("policy_editor_overview_title"),
@@ -823,10 +827,6 @@ export function StoragePolicyDialog({
 												{renderDefaultToggle()}
 											</div>
 										</section>
-									</div>
-
-									<div className="space-y-4 lg:sticky lg:top-0 lg:self-start">
-										{renderPolicySummaryCard(t("policy_editor_summary_desc"))}
 									</div>
 								</div>
 							)}

@@ -10,14 +10,25 @@ pub struct LocalDriver {
     base_path: PathBuf,
 }
 
+pub fn effective_base_path(policy: &storage_policy::Model) -> PathBuf {
+    if policy.base_path.is_empty() {
+        PathBuf::from("./data")
+    } else {
+        PathBuf::from(&policy.base_path)
+    }
+}
+
+pub fn upload_staging_path(policy: &storage_policy::Model, name: &str) -> PathBuf {
+    effective_base_path(policy)
+        .join(".staging")
+        .join(name.trim_start_matches('/'))
+}
+
 impl LocalDriver {
     pub fn new(policy: &storage_policy::Model) -> Result<Self> {
-        let base = if policy.base_path.is_empty() {
-            PathBuf::from("./data")
-        } else {
-            PathBuf::from(&policy.base_path)
-        };
-        Ok(Self { base_path: base })
+        Ok(Self {
+            base_path: effective_base_path(policy),
+        })
     }
 
     fn full_path(&self, path: &str) -> PathBuf {

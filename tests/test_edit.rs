@@ -5,6 +5,41 @@ use actix_web::body::to_bytes;
 use actix_web::test;
 use serde_json::Value;
 
+fn snapshot_dir_tree(
+    path: &std::path::Path,
+) -> std::io::Result<std::collections::BTreeSet<String>> {
+    fn walk(
+        root: &std::path::Path,
+        current: &std::path::Path,
+        entries: &mut std::collections::BTreeSet<String>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(current)? {
+            let entry = entry?;
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                entries.insert(format!("{relative}/"));
+                walk(root, &path, entries)?;
+            } else {
+                entries.insert(relative);
+            }
+        }
+        Ok(())
+    }
+
+    let mut entries = std::collections::BTreeSet::new();
+    if !path.exists() {
+        return Ok(entries);
+    }
+    walk(path, path, &mut entries)?;
+    Ok(entries)
+}
+
 // ── PUT /content 基本覆盖写入 ───────────────────────────────
 
 #[actix_web::test]
@@ -48,6 +83,31 @@ async fn test_update_content_basic() {
         .map(|v| v.to_str().unwrap().to_string());
     assert!(dl_etag.is_some(), "download should have ETag");
     assert_eq!(etag, dl_etag, "ETag should match between PUT and GET");
+}
+
+#[actix_web::test]
+async fn test_update_content_local_fast_path_avoids_global_temp_dir() {
+    let state = common::setup().await;
+    let temp_dir = state.config.server.temp_dir.clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+    let temp_snapshot_before = snapshot_dir_tree(std::path::Path::new(&temp_dir)).unwrap();
+
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/files/{file_id}/content"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload("updated through local staging")
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let temp_snapshot_after = snapshot_dir_tree(std::path::Path::new(&temp_dir)).unwrap();
+    assert_eq!(
+        temp_snapshot_after, temp_snapshot_before,
+        "local PUT /content should not create files in the global temp dir"
+    );
 }
 
 // ── PUT /content 自动创建版本 ───────────────────────────────
