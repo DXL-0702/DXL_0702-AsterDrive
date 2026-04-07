@@ -12,12 +12,18 @@ const mockState = vi.hoisted(() => ({
 	toastSuccess: vi.fn(),
 }));
 
+const translationMap: Record<string, string> = {
+	settings_item_auth_access_token_ttl_secs_desc:
+		"Access token lifetime in seconds",
+	settings_item_auth_access_token_ttl_secs_label: "Access token lifetime",
+};
+
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string, options?: Record<string, unknown>) => {
 			if (key === "settings_save_notice")
 				return `settings_save_notice:${options?.count}`;
-			return key;
+			return translationMap[key] ?? key;
 		},
 	}),
 }));
@@ -269,8 +275,10 @@ function createSchemaItem(overrides: Record<string, unknown> = {}) {
 		category: "storage",
 		default_value: "true",
 		description: "desc",
+		description_i18n_key: undefined,
 		is_sensitive: false,
 		key: "storage.enabled",
+		label_i18n_key: undefined,
 		requires_restart: false,
 		value_type: "boolean",
 		...overrides,
@@ -325,7 +333,9 @@ describe("AdminSettingsPage", () => {
 				category: "auth",
 				default_value: "900",
 				description: "ttl desc",
+				description_i18n_key: "settings_item_auth_access_token_ttl_secs_desc",
 				key: "auth_access_token_ttl_secs",
+				label_i18n_key: "settings_item_auth_access_token_ttl_secs_label",
 				value_type: "number",
 			}),
 		]);
@@ -532,6 +542,21 @@ describe("AdminSettingsPage", () => {
 			);
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
+	});
+
+	it("renders translated system config metadata without exposing the raw config key", async () => {
+		render(<AdminSettingsPage section="auth" />);
+
+		await screen.findByDisplayValue("1200");
+
+		expect(screen.getByText("Access token lifetime")).toBeInTheDocument();
+		expect(
+			screen.getByText("Access token lifetime in seconds"),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByText("auth_access_token_ttl_secs"),
+		).not.toBeInTheDocument();
+		expect(screen.queryByText("ttl desc")).not.toBeInTheDocument();
 	});
 
 	it("discards draft changes without sending any requests", async () => {

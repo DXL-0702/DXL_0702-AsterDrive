@@ -7,6 +7,10 @@
 pub struct ConfigDef {
     /// 配置键（数据库 unique key）
     pub key: &'static str,
+    /// 前端显示名称的 i18n key
+    pub label_i18n_key: &'static str,
+    /// 前端描述文案的 i18n key
+    pub description_i18n_key: &'static str,
     /// 值类型：前端渲染用
     pub value_type: &'static str,
     /// 默认值生成函数
@@ -26,6 +30,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     // ── Auth ────────────────────────────────────────────────
     ConfigDef {
         key: "auth_cookie_secure",
+        label_i18n_key: "settings_item_auth_cookie_secure_label",
+        description_i18n_key: "settings_item_auth_cookie_secure_desc",
         value_type: "boolean",
         default_fn: || "true".to_string(),
         requires_restart: false,
@@ -35,6 +41,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     ConfigDef {
         key: "auth_access_token_ttl_secs",
+        label_i18n_key: "settings_item_auth_access_token_ttl_secs_label",
+        description_i18n_key: "settings_item_auth_access_token_ttl_secs_desc",
         value_type: "number",
         default_fn: || "900".to_string(),
         requires_restart: false,
@@ -44,6 +52,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     ConfigDef {
         key: "auth_refresh_token_ttl_secs",
+        label_i18n_key: "settings_item_auth_refresh_token_ttl_secs_label",
+        description_i18n_key: "settings_item_auth_refresh_token_ttl_secs_desc",
         value_type: "number",
         default_fn: || "604800".to_string(),
         requires_restart: false,
@@ -54,6 +64,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     // ── WebDAV ──────────────────────────────────────────────
     ConfigDef {
         key: "webdav_enabled",
+        label_i18n_key: "settings_item_webdav_enabled_label",
+        description_i18n_key: "settings_item_webdav_enabled_desc",
         value_type: "boolean",
         default_fn: || "true".to_string(),
         requires_restart: false,
@@ -64,6 +76,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     // ── Network ─────────────────────────────────────────────
     ConfigDef {
         key: "cors_allowed_origins",
+        label_i18n_key: "settings_item_cors_allowed_origins_label",
+        description_i18n_key: "settings_item_cors_allowed_origins_desc",
         value_type: "string",
         default_fn: || String::new(),
         requires_restart: false,
@@ -73,6 +87,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     ConfigDef {
         key: "cors_allow_credentials",
+        label_i18n_key: "settings_item_cors_allow_credentials_label",
+        description_i18n_key: "settings_item_cors_allow_credentials_desc",
         value_type: "boolean",
         default_fn: || "false".to_string(),
         requires_restart: false,
@@ -82,6 +98,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     ConfigDef {
         key: "cors_max_age_secs",
+        label_i18n_key: "settings_item_cors_max_age_secs_label",
+        description_i18n_key: "settings_item_cors_max_age_secs_desc",
         value_type: "number",
         default_fn: || "3600".to_string(),
         requires_restart: false,
@@ -92,6 +110,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     // ── Storage ─────────────────────────────────────────────
     ConfigDef {
         key: "max_versions_per_file",
+        label_i18n_key: "settings_item_max_versions_per_file_label",
+        description_i18n_key: "settings_item_max_versions_per_file_desc",
         value_type: "number",
         default_fn: || "10".to_string(),
         requires_restart: false,
@@ -101,6 +121,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     ConfigDef {
         key: "trash_retention_days",
+        label_i18n_key: "settings_item_trash_retention_days_label",
+        description_i18n_key: "settings_item_trash_retention_days_desc",
         value_type: "number",
         default_fn: || "7".to_string(),
         requires_restart: false,
@@ -110,6 +132,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     ConfigDef {
         key: "team_archive_retention_days",
+        label_i18n_key: "settings_item_team_archive_retention_days_label",
+        description_i18n_key: "settings_item_team_archive_retention_days_desc",
         value_type: "number",
         default_fn: || "7".to_string(),
         requires_restart: false,
@@ -119,6 +143,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     ConfigDef {
         key: "default_storage_quota",
+        label_i18n_key: "settings_item_default_storage_quota_label",
+        description_i18n_key: "settings_item_default_storage_quota_desc",
         value_type: "number",
         default_fn: || "0".to_string(),
         requires_restart: false,
@@ -129,6 +155,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     // ── Audit ─────────────────────────────────────────────
     ConfigDef {
         key: "audit_log_enabled",
+        label_i18n_key: "settings_item_audit_log_enabled_label",
+        description_i18n_key: "settings_item_audit_log_enabled_desc",
         value_type: "boolean",
         default_fn: || "true".to_string(),
         requires_restart: false,
@@ -138,6 +166,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     ConfigDef {
         key: "audit_log_retention_days",
+        label_i18n_key: "settings_item_audit_log_retention_days_label",
+        description_i18n_key: "settings_item_audit_log_retention_days_desc",
         value_type: "number",
         default_fn: || "90".to_string(),
         requires_restart: false,
@@ -148,6 +178,8 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     // ── General ─────────────────────────────────────────────
     ConfigDef {
         key: "gravatar_base_url",
+        label_i18n_key: "settings_item_gravatar_base_url_label",
+        description_i18n_key: "settings_item_gravatar_base_url_desc",
         value_type: "string",
         default_fn: || "https://www.gravatar.com/avatar".to_string(),
         requires_restart: false,

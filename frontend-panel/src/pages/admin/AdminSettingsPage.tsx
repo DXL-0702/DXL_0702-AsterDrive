@@ -27,11 +27,8 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { handleApiError } from "@/hooks/useApiError";
-import {
-	adminConfigService,
-	type ConfigSchemaItem,
-} from "@/services/adminService";
-import type { SystemConfig } from "@/types/api";
+import { adminConfigService } from "@/services/adminService";
+import type { ConfigSchemaItem, SystemConfig } from "@/types/api";
 
 const CATEGORY_ORDER = [
 	"auth",
@@ -230,6 +227,38 @@ export default function AdminSettingsPage({
 		}
 		return map;
 	}, [schemas]);
+
+	const resolveSchemaTranslation = useCallback(
+		(translationKey: string | undefined, fallback?: string) => {
+			if (!translationKey) {
+				return fallback;
+			}
+
+			const translated = t(translationKey);
+			return translated === translationKey ? fallback : translated;
+		},
+		[t],
+	);
+
+	const getSystemConfigLabel = useCallback(
+		(config: SystemConfig) => {
+			const schema = schemaMap.get(config.key);
+			return (
+				resolveSchemaTranslation(schema?.label_i18n_key, config.key) ??
+				config.key
+			);
+		},
+		[resolveSchemaTranslation, schemaMap],
+	);
+
+	const getSystemConfigDescription = useCallback(
+		(config: SystemConfig) => {
+			const schema = schemaMap.get(config.key);
+			const fallback = schema?.description || getConfigDescription(config);
+			return resolveSchemaTranslation(schema?.description_i18n_key, fallback);
+		},
+		[resolveSchemaTranslation, schemaMap],
+	);
 
 	const systemConfigs = useMemo(
 		() =>
@@ -738,12 +767,21 @@ export default function AdminSettingsPage({
 		const defaultValue = getDefaultDisplayValue(config);
 		const draftChanged = getDraftValue(config) !== config.value;
 		const requiresRestart = getConfigRequiresRestart(config);
+		const configLabel = getSystemConfigLabel(config);
+		const configDescription = getSystemConfigDescription(config);
+		const showRawKey = configLabel !== config.key;
 
 		return (
 			<div className="space-y-1">
 				<div className="flex flex-wrap items-center gap-2">
-					<p className="break-all font-mono text-sm font-medium">
-						{config.key}
+					<p
+						className={
+							showRawKey
+								? "break-words text-sm font-medium"
+								: "break-all font-mono text-sm font-medium"
+						}
+					>
+						{configLabel}
 					</p>
 					{draftChanged ? (
 						<span className="text-xs font-medium text-primary">
@@ -756,9 +794,9 @@ export default function AdminSettingsPage({
 						</span>
 					) : null}
 				</div>
-				{getConfigDescription(config) ? (
+				{configDescription ? (
 					<p className="max-w-3xl break-words text-sm text-muted-foreground">
-						{getConfigDescription(config)}
+						{configDescription}
 					</p>
 				) : null}
 				{defaultValue ? (

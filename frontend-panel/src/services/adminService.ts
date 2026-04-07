@@ -7,6 +7,7 @@ import type {
 	AdminTeamInfo,
 	AdminTeamPage,
 	AdminUpdateTeamRequest,
+	ConfigSchemaItem,
 	CreatePolicyGroupRequest,
 	CreatePolicyRequest,
 	CreateUserReq,
@@ -321,18 +322,6 @@ export const adminLockService = {
 	cleanupExpired: () =>
 		api.delete<RemovedCountResponse>("/admin/locks/expired"),
 };
-
-// --- System Config ---
-
-export interface ConfigSchemaItem {
-	key: string;
-	value_type: string;
-	default_value: string;
-	category: string;
-	description: string;
-	requires_restart: boolean;
-	is_sensitive: boolean;
-}
 
 export const adminConfigService = {
 	list: (params?: { limit?: number; offset?: number }) =>

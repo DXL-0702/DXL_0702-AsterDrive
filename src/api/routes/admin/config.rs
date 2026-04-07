@@ -44,7 +44,7 @@ pub async fn list_config(
     tag = "admin",
     operation_id = "config_schema",
     responses(
-        (status = 200, description = "Config schema", body = inline(ApiResponse<Vec<config_service::ConfigSchemaItem>>)),
+        (status = 200, description = "Config schema", body = ApiResponse<Vec<config_service::ConfigSchemaItem>>),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),

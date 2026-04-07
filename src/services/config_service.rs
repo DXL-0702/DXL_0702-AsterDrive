@@ -143,6 +143,8 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ConfigSchemaItem {
     pub key: String,
+    pub label_i18n_key: String,
+    pub description_i18n_key: String,
     pub value_type: String,
     pub default_value: String,
     pub category: String,
@@ -157,6 +159,8 @@ pub fn get_schema() -> Vec<ConfigSchemaItem> {
         .iter()
         .map(|def| ConfigSchemaItem {
             key: def.key.to_string(),
+            label_i18n_key: def.label_i18n_key.to_string(),
+            description_i18n_key: def.description_i18n_key.to_string(),
             value_type: def.value_type.to_string(),
             default_value: (def.default_fn)(),
             category: def.category.to_string(),

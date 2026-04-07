@@ -275,6 +275,7 @@ use utoipa::{Modify, OpenApi};
             crate::api::routes::admin::TestPolicyParamsReq,
             crate::api::routes::admin::SetConfigReq,
             crate::entities::system_config::Model,
+            crate::services::config_service::ConfigSchemaItem,
             crate::services::policy_service::StoragePolicyGroupItemInfo,
             crate::services::policy_service::StoragePolicyGroupInfo,
             crate::services::policy_service::StoragePolicyGroupItemInput,

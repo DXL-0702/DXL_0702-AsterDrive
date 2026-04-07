@@ -200,6 +200,14 @@ async fn test_config_schema_returns_non_empty_with_required_fields() {
     for item in &full_schema {
         assert!(!item.key.is_empty(), "key should not be empty");
         assert!(
+            !item.label_i18n_key.is_empty(),
+            "label_i18n_key should not be empty"
+        );
+        assert!(
+            !item.description_i18n_key.is_empty(),
+            "description_i18n_key should not be empty"
+        );
+        assert!(
             !item.value_type.is_empty(),
             "value_type should not be empty"
         );

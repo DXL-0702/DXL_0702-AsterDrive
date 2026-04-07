@@ -94,6 +94,7 @@ export type PolicyGroupUserMigrationResult =
 	components["schemas"]["PolicyGroupUserMigrationResult"];
 export type StoragePolicyGroupPage =
 	components["schemas"]["OffsetPage_StoragePolicyGroupInfo"];
+export type ConfigSchemaItem = components["schemas"]["ConfigSchemaItem"];
 export type SystemConfig = components["schemas"]["SystemConfig"];
 export type SystemConfigPage = components["schemas"]["OffsetPage_SystemConfig"];
 export type WebdavAccount = components["schemas"]["WebdavAccount"];

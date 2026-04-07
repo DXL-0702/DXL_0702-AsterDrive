@@ -2162,6 +2162,27 @@ export interface components {
             };
             msg: string;
         };
+        /**
+         * @description 统一 API 响应格式
+         *
+         *     成功: `{ "code": 0, "msg": "", "data": {...} }`
+         *     失败: `{ "code": 2000, "msg": "Invalid Credentials", "data": null }`
+         */
+        ApiResponse_Vec_ConfigSchemaItem: {
+            code: components["schemas"]["ErrorCode"];
+            data?: {
+                category: string;
+                default_value: string;
+                description: string;
+                description_i18n_key: string;
+                is_sensitive: boolean;
+                key: string;
+                label_i18n_key: string;
+                requires_restart: boolean;
+                value_type: string;
+            }[];
+            msg: string;
+        };
         AuditLogEntry: {
             action: string;
             created_at: string;
@@ -2260,6 +2281,18 @@ export interface components {
             etag: string;
             /** Format: int32 */
             part_number: number;
+        };
+        /** @description 系统配置的 schema 信息（从 ALL_CONFIGS 生成） */
+        ConfigSchemaItem: {
+            category: string;
+            default_value: string;
+            description: string;
+            description_i18n_key: string;
+            is_sensitive: boolean;
+            key: string;
+            label_i18n_key: string;
+            requires_restart: boolean;
+            value_type: string;
         };
         CopyFileReq: {
             /**
@@ -3648,19 +3681,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        code: components["schemas"]["ErrorCode"];
-                        data?: {
-                            category: string;
-                            default_value: string;
-                            description: string;
-                            is_sensitive: boolean;
-                            key: string;
-                            requires_restart: boolean;
-                            value_type: string;
-                        }[];
-                        msg: string;
-                    };
+                    "application/json": components["schemas"]["ApiResponse_Vec_ConfigSchemaItem"];
                 };
             };
             /** @description Unauthorized */
