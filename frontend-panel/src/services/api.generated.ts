@@ -2404,6 +2404,8 @@ export interface components {
         };
         FileQuery: {
             /** Format: int64 */
+            declared_size?: number | null;
+            /** Format: int64 */
             folder_id?: number | null;
             relative_path?: string | null;
         };
@@ -6798,6 +6800,7 @@ export interface operations {
             query?: {
                 folder_id?: number | null;
                 relative_path?: string | null;
+                declared_size?: number | null;
             };
             header?: never;
             path?: never;
@@ -10024,6 +10027,7 @@ export interface operations {
             query?: {
                 folder_id?: number | null;
                 relative_path?: string | null;
+                declared_size?: number | null;
             };
             header?: never;
             path: {

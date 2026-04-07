@@ -1,26 +1,30 @@
 import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
-import { forwardRef } from "react";
+import { createContext, forwardRef } from "react";
 
 import { cn } from "@/lib/utils";
+
+export const ScrollAreaContext = createContext(false);
 
 const ScrollArea = forwardRef<HTMLDivElement, ScrollAreaPrimitive.Root.Props>(
 	function ScrollArea({ className, children, ...props }, ref) {
 		return (
-			<ScrollAreaPrimitive.Root
-				data-slot="scroll-area"
-				className={cn("relative min-h-0 overflow-hidden", className)}
-				{...props}
-			>
-				<ScrollAreaPrimitive.Viewport
-					ref={ref}
-					data-slot="scroll-area-viewport"
-					className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
+			<ScrollAreaContext.Provider value>
+				<ScrollAreaPrimitive.Root
+					data-slot="scroll-area"
+					className={cn("relative min-h-0 overflow-hidden", className)}
+					{...props}
 				>
-					{children}
-				</ScrollAreaPrimitive.Viewport>
-				<ScrollBar />
-				<ScrollAreaPrimitive.Corner />
-			</ScrollAreaPrimitive.Root>
+					<ScrollAreaPrimitive.Viewport
+						ref={ref}
+						data-slot="scroll-area-viewport"
+						className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
+					>
+						{children}
+					</ScrollAreaPrimitive.Viewport>
+					<ScrollBar />
+					<ScrollAreaPrimitive.Corner />
+				</ScrollAreaPrimitive.Root>
+			</ScrollAreaContext.Provider>
 		);
 	},
 );

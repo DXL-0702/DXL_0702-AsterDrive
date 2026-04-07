@@ -373,10 +373,7 @@ export function StoragePolicyDialog({
 					onFieldChange("s3_upload_strategy", value as S3UploadStrategy)
 				}
 			>
-				<SelectTrigger
-					id="s3_upload_strategy"
-					className={ADMIN_CONTROL_HEIGHT_CLASS}
-				>
+				<SelectTrigger id="s3_upload_strategy">
 					<SelectValue />
 				</SelectTrigger>
 				<SelectContent>

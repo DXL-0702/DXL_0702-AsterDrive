@@ -89,9 +89,13 @@ vi.mock("@/components/ui/dialog", () => ({
 		children: React.ReactNode;
 		className?: string;
 	}) => <div className={className}>{children}</div>,
-	DialogFooter: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
+	DialogFooter: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => <div className={className}>{children}</div>,
 	DialogHeader: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
@@ -545,17 +549,48 @@ describe("UserDetailDialog", () => {
 		expect(quotaInput).toHaveAttribute("placeholder", "quota_unlimited_short");
 	});
 
-	it("caps the dialog height and keeps the detail column scrollable", async () => {
+	it("caps the dialog height and keeps the two columns independently scrollable on desktop", async () => {
 		const { container } = renderDialog();
 
 		await waitForPolicyLoad();
+
+		const shell = container.querySelector(
+			".flex.min-h-0.flex-1.flex-col.overflow-y-auto.lg\\:overflow-hidden",
+		);
+		const leftColumn = container.querySelector(
+			".border-b.bg-muted\\/20.lg\\:min-h-0.lg\\:w-80.lg\\:flex-none.lg\\:overflow-y-auto",
+		);
+		const rightColumn = container.querySelector(
+			".min-h-0.min-w-0.lg\\:flex-1.lg\\:overflow-y-auto",
+		);
+		const footer = screen.getByText("user_details_footer_hint").parentElement;
 
 		expect(
 			container.querySelector(
 				".overflow-hidden.max-h-\\[min\\(860px\\,calc\\(100vh-2rem\\)\\)\\]",
 			),
 		).not.toBeNull();
-		expect(container.querySelector(".p-6.lg\\:overflow-y-auto")).not.toBeNull();
+		expect(shell).not.toBeNull();
+		expect(
+			container.querySelector(
+				".flex.min-h-full.flex-col.lg\\:h-full.lg\\:min-h-0.lg\\:flex-1.lg\\:flex-row",
+			),
+		).not.toBeNull();
+		expect(leftColumn).not.toBeNull();
+		expect(rightColumn).not.toBeNull();
+		expect(container.querySelector(".space-y-4.p-6")).not.toBeNull();
+		expect(
+			container.querySelector(".min-w-0.p-6.lg\\:overflow-y-auto"),
+		).toBeNull();
+		expect(
+			container.querySelector(
+				".mx-0.mb-0.w-full.shrink-0.border-t.bg-muted\\/10.px-6.py-4",
+			),
+		).not.toBeNull();
+		expect(footer).not.toBeNull();
+		expect(shell?.contains(footer as Node)).toBe(false);
+		expect(leftColumn?.contains(footer as Node)).toBe(false);
+		expect(rightColumn?.contains(footer as Node)).toBe(false);
 	});
 
 	it("resets the user's password from the detail dialog", async () => {

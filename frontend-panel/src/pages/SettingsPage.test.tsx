@@ -70,6 +70,40 @@ vi.mock("@/components/common/UserAvatarImage", () => ({
 	),
 }));
 
+vi.mock("@/components/settings/AvatarCropDialog", () => ({
+	AvatarCropDialog: ({
+		file,
+		onConfirm,
+		onOpenChange,
+		open,
+	}: {
+		file: File | null;
+		onConfirm: (file: File) => Promise<boolean>;
+		onOpenChange: (open: boolean) => void;
+		open: boolean;
+	}) =>
+		open ? (
+			<div data-testid="avatar-crop-dialog">
+				<div>{file?.name ?? ""}</div>
+				<button
+					type="button"
+					onClick={() =>
+						onConfirm(
+							new File(["cropped"], "cropped-avatar.webp", {
+								type: "image/webp",
+							}),
+						)
+					}
+				>
+					settings:settings_avatar_crop_apply
+				</button>
+				<button type="button" onClick={() => onOpenChange(false)}>
+					close-crop-dialog
+				</button>
+			</div>
+		) : null,
+}));
+
 vi.mock("@/components/common/SettingsScaffold", () => ({
 	SettingsPageIntro: ({
 		title,
@@ -358,5 +392,39 @@ describe("SettingsPage", () => {
 		await waitFor(() =>
 			expect(mockState.authStore.refreshUser).toHaveBeenCalledTimes(1),
 		);
+	});
+
+	it("uploads the confirmed cropped avatar through the profile flow", async () => {
+		const { container } = render(<SettingsPage section="profile" />);
+		const fileInput = container.querySelector('input[type="file"]');
+		const originalFile = new File(["raw"], "portrait.png", {
+			type: "image/png",
+		});
+
+		expect(fileInput).not.toBeNull();
+
+		fireEvent.change(fileInput as HTMLInputElement, {
+			target: { files: [originalFile] },
+		});
+
+		expect(screen.getByTestId("avatar-crop-dialog")).toBeInTheDocument();
+		expect(screen.getByText("portrait.png")).toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_avatar_crop_apply",
+			}),
+		);
+
+		await waitFor(() =>
+			expect(mockState.authService.uploadAvatar).toHaveBeenCalledTimes(1),
+		);
+		await waitFor(() =>
+			expect(mockState.authStore.refreshUser).toHaveBeenCalledTimes(1),
+		);
+
+		const uploadedFile = mockState.authService.uploadAvatar.mock.calls[0]?.[0];
+		expect(uploadedFile).toBeInstanceOf(File);
+		expect(uploadedFile?.name).toBe("cropped-avatar.webp");
 	});
 });

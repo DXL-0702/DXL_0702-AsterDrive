@@ -49,8 +49,8 @@ export default function TeamManagePage() {
 
 	return (
 		<AppLayout>
-			<div className="min-h-0 flex-1 overflow-auto">
-				<div className="mx-auto flex min-h-full w-full max-w-7xl flex-col p-4 md:p-6">
+			<div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+				<div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col p-4 md:p-6">
 					<TeamManageDialog
 						layout="page"
 						currentUserId={user?.id ?? null}
@@ -63,7 +63,7 @@ export default function TeamManagePage() {
 						onPageTabChange={(tab, options) => {
 							navigate(`/settings/teams/${parsedTeamId}/${tab}`, {
 								replace: options?.replace,
-								viewTransition: !options?.replace,
+								viewTransition: false,
 							});
 						}}
 						onTeamsReload={() => reloadTeams(user?.id ?? null)}

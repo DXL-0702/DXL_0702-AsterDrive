@@ -523,9 +523,7 @@ export default function AdminUsersPage() {
 								value={roleFilter}
 								onValueChange={handleRoleFilterChange}
 							>
-								<SelectTrigger
-									className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-[140px]`}
-								>
+								<SelectTrigger width="compact">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
@@ -541,9 +539,7 @@ export default function AdminUsersPage() {
 								value={statusFilter}
 								onValueChange={handleStatusFilterChange}
 							>
-								<SelectTrigger
-									className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-[150px]`}
-								>
+								<SelectTrigger width="compact">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
@@ -733,9 +729,7 @@ export default function AdminUsersPage() {
 								value={String(pageSize)}
 								onValueChange={handlePageSizeChange}
 							>
-								<SelectTrigger
-									className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-[120px]`}
-								>
+								<SelectTrigger width="page-size">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>

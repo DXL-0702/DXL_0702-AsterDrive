@@ -9,6 +9,7 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { SettingsSection } from "@/components/common/SettingsScaffold";
 import { UserAvatarImage } from "@/components/common/UserAvatarImage";
+import { AvatarCropDialog } from "@/components/settings/AvatarCropDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { handleApiError } from "@/hooks/useApiError";
@@ -22,6 +23,8 @@ export function ProfileSettingsView() {
 	const refreshUser = useAuthStore((s) => s.refreshUser);
 	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const [avatarBusy, setAvatarBusy] = useState(false);
+	const [avatarCropOpen, setAvatarCropOpen] = useState(false);
+	const [avatarFile, setAvatarFile] = useState<File | null>(null);
 	const [profileBusy, setProfileBusy] = useState(false);
 	const [displayNameValue, setDisplayNameValue] = useState("");
 
@@ -35,19 +38,33 @@ export function ProfileSettingsView() {
 		setDisplayNameValue(user?.profile.display_name ?? "");
 	}, [user?.profile.display_name]);
 
-	const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+	const handleAvatarSelect = (event: ChangeEvent<HTMLInputElement>) => {
 		const file = event.target.files?.[0];
 		event.target.value = "";
 		if (!file) return;
+		setAvatarFile(file);
+		setAvatarCropOpen(true);
+	};
+
+	const handleAvatarUpload = async (file: File) => {
 		try {
 			setAvatarBusy(true);
 			await authService.uploadAvatar(file);
 			await refreshUser();
 			toast.success(t("settings:settings_avatar_updated"));
+			return true;
 		} catch (error) {
 			handleApiError(error);
+			return false;
 		} finally {
 			setAvatarBusy(false);
+		}
+	};
+
+	const handleAvatarCropOpenChange = (nextOpen: boolean) => {
+		setAvatarCropOpen(nextOpen);
+		if (!nextOpen) {
+			setAvatarFile(null);
 		}
 	};
 
@@ -118,7 +135,7 @@ export function ProfileSettingsView() {
 								type="file"
 								accept="image/*"
 								className="hidden"
-								onChange={handleAvatarUpload}
+								onChange={handleAvatarSelect}
 							/>
 							<Button
 								type="button"
@@ -127,7 +144,7 @@ export function ProfileSettingsView() {
 								disabled={avatarBusy}
 								onClick={() => fileInputRef.current?.click()}
 							>
-								{t("files:upload")}
+								{t("settings:settings_avatar_upload_and_crop")}
 							</Button>
 							<Button
 								type="button"
@@ -211,6 +228,14 @@ export function ProfileSettingsView() {
 					</div>
 				</div>
 			</form>
+
+			<AvatarCropDialog
+				open={avatarCropOpen}
+				file={avatarFile}
+				busy={avatarBusy}
+				onOpenChange={handleAvatarCropOpenChange}
+				onConfirm={handleAvatarUpload}
+			/>
 		</SettingsSection>
 	);
 }

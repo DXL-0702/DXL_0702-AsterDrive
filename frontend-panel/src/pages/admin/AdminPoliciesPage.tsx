@@ -552,12 +552,11 @@ export default function AdminPoliciesPage() {
 								})}
 							</span>
 							<Select
+								items={pageSizeOptions}
 								value={String(pageSize)}
 								onValueChange={handlePageSizeChange}
 							>
-								<SelectTrigger
-									className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-[120px]`}
-								>
+								<SelectTrigger width="page-size">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>

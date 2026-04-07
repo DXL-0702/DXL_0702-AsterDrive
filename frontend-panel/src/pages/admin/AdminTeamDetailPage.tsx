@@ -64,7 +64,7 @@ export default function AdminTeamDetailPage() {
 
 	return (
 		<AdminLayout>
-			<AdminPageShell>
+			<AdminPageShell className="overflow-hidden">
 				<AdminTeamDetailDialog
 					layout="page"
 					open
@@ -80,7 +80,7 @@ export default function AdminTeamDetailPage() {
 					onPageTabChange={(tab, options) => {
 						navigate(`/admin/teams/${parsedTeamId}/${tab}`, {
 							replace: options?.replace,
-							viewTransition: !options?.replace,
+							viewTransition: false,
 						});
 					}}
 					onRefreshPolicyGroups={loadPolicyGroups}

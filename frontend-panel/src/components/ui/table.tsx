@@ -1,18 +1,29 @@
 import type * as React from "react";
+import { useContext } from "react";
 
+import { ScrollAreaContext } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 function Table({ className, ...props }: React.ComponentProps<"table">) {
+	const isInsideScrollArea = useContext(ScrollAreaContext);
+	const table = (
+		<table
+			data-slot="table"
+			className={cn("w-full caption-bottom text-sm", className)}
+			{...props}
+		/>
+	);
+
+	if (isInsideScrollArea) {
+		return table;
+	}
+
 	return (
 		<div
 			data-slot="table-container"
 			className="relative w-full overflow-x-auto"
 		>
-			<table
-				data-slot="table"
-				className={cn("w-full caption-bottom text-sm", className)}
-				{...props}
-			/>
+			{table}
 		</div>
 	);
 }
@@ -68,7 +79,7 @@ function TableHead({ className, ...props }: React.ComponentProps<"th">) {
 		<th
 			data-slot="table-head"
 			className={cn(
-				"h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground first:pl-4 last:pr-4 md:first:pl-6 md:last:pr-6 [&:has([role=checkbox])]:pr-0",
+				"sticky top-0 z-10 h-10 bg-background px-2 text-left align-middle font-medium whitespace-nowrap text-foreground first:pl-4 last:pr-4 md:first:pl-6 md:last:pr-6 [&:has([role=checkbox])]:pr-0",
 				className,
 			)}
 			{...props}

@@ -10,6 +10,7 @@ describe("AdminSurface", () => {
 		expect(container.firstChild).toHaveClass(
 			"flex",
 			"min-h-0",
+			"overflow-hidden",
 			"rounded-xl",
 			"border",
 			"bg-background",

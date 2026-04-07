@@ -287,7 +287,7 @@ export default function WebdavAccountsPage() {
 									)
 								}
 							>
-								<SelectTrigger id="rootFolder" className="w-full">
+								<SelectTrigger id="rootFolder">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>

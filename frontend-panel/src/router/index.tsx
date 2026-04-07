@@ -207,7 +207,46 @@ export const router = createBrowserRouter([
 			{ path: "/admin/policy-groups", element: <AdminPolicyGroupsPage /> },
 			{ path: "/admin/shares", element: <AdminSharesPage /> },
 			{ path: "/admin/locks", element: <AdminLocksPage /> },
-			{ path: "/admin/settings", element: <AdminSettingsPage /> },
+			{
+				path: "/admin/settings",
+				element: <Navigate to="/admin/settings/auth" replace />,
+			},
+			{
+				path: "/admin/settings/auth",
+				element: <AdminSettingsPage section="auth" />,
+			},
+			{
+				path: "/admin/settings/network",
+				element: <AdminSettingsPage section="network" />,
+			},
+			{
+				path: "/admin/settings/storage",
+				element: <AdminSettingsPage section="storage" />,
+			},
+			{
+				path: "/admin/settings/webdav",
+				element: <AdminSettingsPage section="webdav" />,
+			},
+			{
+				path: "/admin/settings/audit",
+				element: <AdminSettingsPage section="audit" />,
+			},
+			{
+				path: "/admin/settings/general",
+				element: <AdminSettingsPage section="general" />,
+			},
+			{
+				path: "/admin/settings/custom",
+				element: <AdminSettingsPage section="custom" />,
+			},
+			{
+				path: "/admin/settings/other",
+				element: <AdminSettingsPage section="other" />,
+			},
+			{
+				path: "/admin/settings/:section",
+				element: <Navigate to="/admin/settings/auth" replace />,
+			},
 			{ path: "/admin/audit", element: <AdminAuditPage /> },
 			{ path: "/admin/about", element: <AdminAboutPage /> },
 		],

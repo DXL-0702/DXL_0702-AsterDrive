@@ -3,6 +3,7 @@ import {
 	type ReactNode,
 	useEffect,
 	useEffectEvent,
+	useLayoutEffect,
 	useRef,
 	useState,
 } from "react";
@@ -23,7 +24,6 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
 	Select,
 	SelectContent,
@@ -82,6 +82,7 @@ export type AdminTeamDetailTab = "overview" | "members" | "audit" | "danger";
 
 const MEMBER_PAGE_SIZE = 10;
 const AUDIT_PAGE_SIZE = 10;
+const adminTeamDetailSidebarScrollPositions = new Map<number, number>();
 
 function buildPolicyGroupOptions(
 	policyGroups: StoragePolicyGroup[],
@@ -159,6 +160,7 @@ export function AdminTeamDetailDialog({
 	const auditRequestIdRef = useRef(0);
 	const detailRequestIdRef = useRef(0);
 	const memberRequestIdRef = useRef(0);
+	const sidebarRef = useRef<HTMLElement | null>(null);
 	const roleOptions: TeamMemberRole[] = ["owner", "admin", "member"];
 	const statusFilterOptions = [
 		{ label: t("member_status_filter_all"), value: "__all__" },
@@ -326,6 +328,30 @@ export function AdminTeamDetailDialog({
 		setDialogTab("overview");
 		void loadTeamDetail(teamId);
 	}, [open, teamId]);
+
+	useLayoutEffect(() => {
+		if (!isPageLayout || teamId == null || pageTab == null) {
+			return;
+		}
+
+		const sidebar = sidebarRef.current;
+		if (sidebar == null) {
+			return;
+		}
+
+		sidebar.scrollTop = adminTeamDetailSidebarScrollPositions.get(teamId) ?? 0;
+
+		return () => {
+			if (sidebarRef.current == null) {
+				return;
+			}
+
+			adminTeamDetailSidebarScrollPositions.set(
+				teamId,
+				sidebarRef.current.scrollTop,
+			);
+		};
+	}, [isPageLayout, pageTab, teamId]);
 
 	useEffect(() => {
 		if (!open || teamId == null) {
@@ -690,7 +716,6 @@ export function AdminTeamDetailDialog({
 								onValueChange={(value) => setPolicyGroupId(value ?? "")}
 							>
 								<SelectTrigger
-									className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
 									disabled={
 										detailLoading ||
 										saving ||
@@ -804,7 +829,7 @@ export function AdminTeamDetailDialog({
 							);
 						}}
 					>
-						<SelectTrigger className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}>
+						<SelectTrigger>
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
@@ -825,7 +850,7 @@ export function AdminTeamDetailDialog({
 							);
 						}}
 					>
-						<SelectTrigger className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}>
+						<SelectTrigger>
 							<SelectValue />
 						</SelectTrigger>
 						<SelectContent>
@@ -901,7 +926,7 @@ export function AdminTeamDetailDialog({
 							value={memberRole}
 							onValueChange={(value) => setMemberRole(value as TeamMemberRole)}
 						>
-							<SelectTrigger className="w-full">
+							<SelectTrigger>
 								<SelectValue />
 							</SelectTrigger>
 							<SelectContent>
@@ -1020,7 +1045,7 @@ export function AdminTeamDetailDialog({
 															}
 														}}
 													>
-														<SelectTrigger className="w-[150px]">
+														<SelectTrigger width="compact">
 															<SelectValue />
 														</SelectTrigger>
 														<SelectContent>
@@ -1332,10 +1357,23 @@ export function AdminTeamDetailDialog({
 						</DialogTitle>
 					</DialogHeader>
 				)}
-				<div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
-					<div className="grid min-h-full gap-0 lg:h-full lg:min-h-0 lg:grid-cols-[320px_minmax(0,1fr)]">
-						<aside className="border-b bg-muted/20 lg:border-r lg:border-b-0">
-							<div className="space-y-5 p-6 lg:sticky lg:top-0">
+				<div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden">
+					<div className="flex min-h-full flex-col lg:h-full lg:min-h-0 lg:flex-1 lg:flex-row">
+						<aside
+							ref={sidebarRef}
+							className="border-b bg-muted/20 lg:min-h-0 lg:w-80 lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0"
+							onScroll={() => {
+								if (teamId == null || sidebarRef.current == null) {
+									return;
+								}
+
+								adminTeamDetailSidebarScrollPositions.set(
+									teamId,
+									sidebarRef.current.scrollTop,
+								);
+							}}
+						>
+							<div className="space-y-5 p-6">
 								<div className="space-y-3">
 									<div className="flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
 										<Icon name="Cloud" className="h-7 w-7" />
@@ -1410,7 +1448,6 @@ export function AdminTeamDetailDialog({
 										</div>
 									) : null}
 								</div>
-
 								<div className="space-y-3 rounded-xl border bg-background/60 p-4">
 									<div>
 										<p className="text-sm font-medium text-foreground">
@@ -1444,55 +1481,66 @@ export function AdminTeamDetailDialog({
 							</div>
 						</aside>
 
-						<ScrollArea className="min-h-0">
+						<div
+							className={cn(
+								"min-h-0 min-w-0 lg:flex-1",
+								isPageLayout
+									? "flex h-full flex-col overflow-hidden"
+									: "lg:overflow-y-auto",
+							)}
+						>
 							{isPageLayout ? (
 								<Tabs
 									value={currentTab}
 									onValueChange={handleTabChange}
-									className="flex flex-col gap-4 p-6"
+									className="flex h-full min-h-0 flex-1 flex-col overflow-hidden"
 								>
-									<TabsList
-										variant="line"
-										className="w-full justify-start gap-5 overflow-x-auto border-b px-0"
-									>
-										<TabsTrigger
-											value="overview"
-											className="h-10 flex-none rounded-none px-0"
+									<div className="shrink-0 px-6 pt-6">
+										<TabsList
+											variant="line"
+											className="w-full justify-start gap-5 overflow-x-auto border-b px-0"
 										>
-											{t("overview")}
-										</TabsTrigger>
-										<TabsTrigger
-											value="members"
-											className="h-10 flex-none rounded-none px-0"
-										>
-											{t("settings:settings_team_members")}
-										</TabsTrigger>
-										<TabsTrigger
-											value="audit"
-											className="h-10 flex-none rounded-none px-0"
-										>
-											{t("team_audit_title")}
-										</TabsTrigger>
-										<TabsTrigger
-											value="danger"
-											className="h-10 flex-none rounded-none px-0"
-										>
-											{t("team_danger_zone")}
-										</TabsTrigger>
-									</TabsList>
+											<TabsTrigger
+												value="overview"
+												className="h-10 flex-none rounded-none px-0"
+											>
+												{t("overview")}
+											</TabsTrigger>
+											<TabsTrigger
+												value="members"
+												className="h-10 flex-none rounded-none px-0"
+											>
+												{t("settings:settings_team_members")}
+											</TabsTrigger>
+											<TabsTrigger
+												value="audit"
+												className="h-10 flex-none rounded-none px-0"
+											>
+												{t("team_audit_title")}
+											</TabsTrigger>
+											<TabsTrigger
+												value="danger"
+												className="h-10 flex-none rounded-none px-0"
+											>
+												{t("team_danger_zone")}
+											</TabsTrigger>
+										</TabsList>
+									</div>
 
-									<TabsContent value="overview" className="outline-none">
-										{overviewSection}
-									</TabsContent>
-									<TabsContent value="members" className="outline-none">
-										{membersSection}
-									</TabsContent>
-									<TabsContent value="audit" className="outline-none">
-										{auditSection}
-									</TabsContent>
-									<TabsContent value="danger" className="outline-none">
-										{dangerSection}
-									</TabsContent>
+									<div className="min-h-0 flex-1 overflow-y-auto px-6 pt-4 pb-6">
+										<TabsContent value="overview" className="outline-none">
+											{overviewSection}
+										</TabsContent>
+										<TabsContent value="members" className="outline-none">
+											{membersSection}
+										</TabsContent>
+										<TabsContent value="audit" className="outline-none">
+											{auditSection}
+										</TabsContent>
+										<TabsContent value="danger" className="outline-none">
+											{dangerSection}
+										</TabsContent>
+									</div>
 								</Tabs>
 							) : (
 								<div className="space-y-4 p-6">
@@ -1502,7 +1550,7 @@ export function AdminTeamDetailDialog({
 									{dangerSection}
 								</div>
 							)}
-						</ScrollArea>
+						</div>
 					</div>
 				</div>
 			</Wrapper>

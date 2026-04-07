@@ -6,6 +6,7 @@ const mockState = vi.hoisted(() => ({
 	deleteConfig: vi.fn(),
 	handleApiError: vi.fn(),
 	listConfigs: vi.fn(),
+	navigate: vi.fn(),
 	schema: vi.fn(),
 	setConfig: vi.fn(),
 	toastSuccess: vi.fn(),
@@ -14,41 +15,21 @@ const mockState = vi.hoisted(() => ({
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string, options?: Record<string, unknown>) => {
-			if (key === "config_reset") return `config_reset:${options?.value}`;
+			if (key === "settings_save_notice")
+				return `settings_save_notice:${options?.count}`;
 			return key;
 		},
 	}),
+}));
+
+vi.mock("react-router-dom", () => ({
+	useNavigate: () => mockState.navigate,
 }));
 
 vi.mock("sonner", () => ({
 	toast: {
 		success: (...args: unknown[]) => mockState.toastSuccess(...args),
 	},
-}));
-
-vi.mock("@/components/common/ConfirmDialog", () => ({
-	ConfirmDialog: ({
-		open,
-		title,
-		description,
-		confirmLabel,
-		onConfirm,
-	}: {
-		open: boolean;
-		title: string;
-		description: string;
-		confirmLabel: string;
-		onConfirm: () => void;
-	}) =>
-		open ? (
-			<div>
-				<div>{title}</div>
-				<div>{description}</div>
-				<button type="button" onClick={onConfirm}>
-					{confirmLabel}
-				</button>
-			</div>
-		) : null,
 }));
 
 vi.mock("@/components/common/EmptyState", () => ({
@@ -71,16 +52,13 @@ vi.mock("@/components/layout/AdminPageHeader", () => ({
 	AdminPageHeader: ({
 		title,
 		description,
-		actions,
 	}: {
 		title: string;
 		description: string;
-		actions?: React.ReactNode;
 	}) => (
 		<div>
 			<h1>{title}</h1>
 			<p>{description}</p>
-			<div>{actions}</div>
 		</div>
 	),
 }));
@@ -89,26 +67,6 @@ vi.mock("@/components/layout/AdminPageShell", () => ({
 	AdminPageShell: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
-}));
-
-vi.mock("@/components/layout/AdminSurface", () => ({
-	AdminSurface: ({
-		children,
-		className,
-	}: {
-		children: React.ReactNode;
-		className?: string;
-	}) => <div className={className}>{children}</div>,
-}));
-
-vi.mock("@/components/ui/badge", () => ({
-	Badge: ({
-		children,
-		className,
-	}: {
-		children: React.ReactNode;
-		className?: string;
-	}) => <span className={className}>{children}</span>,
 }));
 
 vi.mock("@/components/ui/button", () => ({
@@ -134,20 +92,13 @@ vi.mock("@/components/ui/button", () => ({
 			{children}
 		</button>
 	),
-}));
-
-vi.mock("@/components/ui/dialog", () => ({
-	Dialog: ({ children, open }: { children: React.ReactNode; open: boolean }) =>
-		open ? <div>{children}</div> : null,
-	DialogContent: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	DialogHeader: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	DialogTitle: ({ children }: { children: React.ReactNode }) => (
-		<h2>{children}</h2>
-	),
+	buttonVariants: ({
+		className,
+	}: {
+		className?: string;
+		variant?: string;
+		size?: string;
+	}) => className ?? "",
 }));
 
 vi.mock("@/components/ui/icon", () => ({
@@ -156,41 +107,31 @@ vi.mock("@/components/ui/icon", () => ({
 
 vi.mock("@/components/ui/input", () => ({
 	Input: ({
-		disabled,
-		id,
+		ariaInvalid,
+		className,
 		onChange,
 		placeholder,
-		required,
+		type,
 		value,
 	}: {
-		disabled?: boolean;
-		id?: string;
+		ariaInvalid?: boolean;
+		className?: string;
 		onChange?: (event: { target: { value: string } }) => void;
 		placeholder?: string;
-		required?: boolean;
+		type?: string;
 		value?: string;
 	}) => (
 		<input
-			disabled={disabled}
-			id={id}
+			aria-invalid={ariaInvalid}
+			className={className}
 			onChange={(event) =>
 				onChange?.({ target: { value: event.target.value } })
 			}
 			placeholder={placeholder}
-			required={required}
+			type={type}
 			value={value}
 		/>
 	),
-}));
-
-vi.mock("@/components/ui/label", () => ({
-	Label: ({
-		children,
-		htmlFor,
-	}: {
-		children: React.ReactNode;
-		htmlFor?: string;
-	}) => <label htmlFor={htmlFor}>{children}</label>,
 }));
 
 vi.mock("@/components/ui/switch", () => ({
@@ -212,55 +153,84 @@ vi.mock("@/components/ui/switch", () => ({
 	),
 }));
 
-vi.mock("@/components/ui/table", () => ({
-	Table: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-	TableBody: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	TableCell: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	TableHead: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	TableHeader: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	TableRow: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-}));
+vi.mock("@/components/ui/tabs", async () => {
+	const React = await vi.importActual<typeof import("react")>("react");
+	const TabsContext = React.createContext<{
+		onValueChange?: (value: string) => void;
+		value?: string;
+	}>({});
 
-vi.mock("@/components/ui/tabs", () => ({
-	Tabs: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-	TabsContent: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	TabsList: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	TabsTrigger: ({ children }: { children: React.ReactNode }) => (
-		<button type="button">{children}</button>
-	),
-}));
+	return {
+		Tabs: ({
+			children,
+			onValueChange,
+			value,
+		}: {
+			children: React.ReactNode;
+			onValueChange?: (value: string) => void;
+			value?: string;
+		}) => (
+			<TabsContext.Provider value={{ onValueChange, value }}>
+				<div>{children}</div>
+			</TabsContext.Provider>
+		),
+		TabsList: ({ children }: { children: React.ReactNode }) => (
+			<div>{children}</div>
+		),
+		TabsTrigger: ({
+			children,
+			className,
+			value,
+		}: {
+			children: React.ReactNode;
+			className?: string;
+			value: string;
+		}) => {
+			const tabs = React.useContext(TabsContext);
 
-vi.mock("@/components/ui/tooltip", () => ({
-	Tooltip: ({ children }: { children: React.ReactNode }) => (
+			return (
+				<button
+					type="button"
+					className={className}
+					data-active={tabs.value === value ? "" : undefined}
+					data-value={value}
+					onClick={() => tabs.onValueChange?.(value)}
+				>
+					{children}
+				</button>
+			);
+		},
+		TabsContent: ({
+			children,
+			value,
+		}: {
+			children: React.ReactNode;
+			value?: string;
+		}) => {
+			const tabs = React.useContext(TabsContext);
+			return tabs.value === value ? <div>{children}</div> : null;
+		},
+	};
+});
+
+vi.mock("@/components/ui/dropdown-menu", () => ({
+	DropdownMenu: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
-	TooltipContent: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	TooltipProvider: ({ children }: { children: React.ReactNode }) => (
-		<div>{children}</div>
-	),
-	TooltipTrigger: ({
+	DropdownMenuTrigger: ({
 		children,
 		render,
 	}: {
 		children?: React.ReactNode;
 		render?: React.ReactNode;
-	}) => render ?? children,
+	}) => <>{render ?? children}</>,
+	DropdownMenuContent: () => null,
+	DropdownMenuRadioGroup: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	DropdownMenuRadioItem: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
 }));
 
 vi.mock("@/hooks/useApiError", () => ({
@@ -292,10 +262,21 @@ function createConfig(overrides: Record<string, unknown> = {}) {
 
 function createSchemaItem(overrides: Record<string, unknown> = {}) {
 	return {
-		default_value: "false",
+		category: "storage",
+		default_value: "true",
+		description: "desc",
+		is_sensitive: false,
 		key: "storage.enabled",
+		requires_restart: false,
+		value_type: "boolean",
 		...overrides,
 	};
+}
+
+function getMockConfigCategory(key: string) {
+	if (key.startsWith("auth")) return "auth";
+	if (key.startsWith("custom")) return "custom";
+	return "storage";
 }
 
 describe("AdminSettingsPage", () => {
@@ -303,15 +284,30 @@ describe("AdminSettingsPage", () => {
 		mockState.deleteConfig.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.listConfigs.mockReset();
+		mockState.navigate.mockReset();
 		mockState.schema.mockReset();
 		mockState.setConfig.mockReset();
 		mockState.toastSuccess.mockReset();
+
+		Object.defineProperty(window, "innerWidth", {
+			configurable: true,
+			value: 1024,
+			writable: true,
+		});
 
 		mockState.listConfigs.mockResolvedValue({
 			items: [
 				createConfig(),
 				createConfig({
+					category: "auth",
+					description: "ttl desc",
+					key: "auth_access_token_ttl_secs",
+					value: "1200",
+					value_type: "number",
+				}),
+				createConfig({
 					category: "custom",
+					description: "",
 					key: "custom.theme",
 					source: "custom",
 					value: "ocean",
@@ -322,19 +318,28 @@ describe("AdminSettingsPage", () => {
 		mockState.schema.mockResolvedValue([
 			createSchemaItem(),
 			createSchemaItem({
-				key: "custom.theme",
-				default_value: "",
+				category: "auth",
+				default_value: "900",
+				description: "ttl desc",
+				key: "auth_access_token_ttl_secs",
+				value_type: "number",
 			}),
 		]);
-		mockState.setConfig.mockImplementation(async (key: string, value: string) =>
-			createConfig({
-				category: key.startsWith("custom.") ? "custom" : "storage",
-				key,
-				source: key.startsWith("custom.") ? "custom" : "system",
-				value,
-				value_type:
-					value === "true" || value === "false" ? "boolean" : "string",
-			}),
+		mockState.setConfig.mockImplementation((key: string, value: string) =>
+			Promise.resolve(
+				createConfig({
+					category: getMockConfigCategory(key),
+					key,
+					source: key.startsWith("custom") ? "custom" : "system",
+					value,
+					value_type:
+						key === "storage.enabled"
+							? "boolean"
+							: key === "auth_access_token_ttl_secs"
+								? "number"
+								: "string",
+				}),
+			),
 		);
 		mockState.deleteConfig.mockResolvedValue(undefined);
 	});
@@ -349,12 +354,50 @@ describe("AdminSettingsPage", () => {
 		expect(await screen.findByText("no_config")).toBeInTheDocument();
 	});
 
-	it("renders config rows and updates boolean values", async () => {
+	it("hides duplicate category headings and descriptions on mobile", async () => {
+		Object.defineProperty(window, "innerWidth", {
+			configurable: true,
+			value: 375,
+			writable: true,
+		});
+
 		render(<AdminSettingsPage />);
 
-		await screen.findByText("storage.enabled");
+		await screen.findByDisplayValue("1200");
 
-		fireEvent.click(screen.getByLabelText("switch:config:true"));
+		expect(
+			screen.queryByRole("heading", { name: "settings_category_auth" }),
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByText("settings_category_auth_desc"),
+		).not.toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: /settings_category_auth/i }),
+		).toBeInTheDocument();
+	});
+
+	it("renders category tabs and only saves boolean changes from the bottom action", async () => {
+		render(<AdminSettingsPage section="storage" />);
+
+		await screen.findByRole("button", { name: /settings_category_auth/i });
+		expect(
+			screen.getByRole("button", { name: /settings_category_custom/i }),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: "save_changes" }),
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: "core:edit" }),
+		).not.toBeInTheDocument();
+
+		fireEvent.click(screen.getByLabelText("switch:storage.enabled:true"));
+
+		expect(mockState.setConfig).not.toHaveBeenCalled();
+		expect(
+			await screen.findByText("settings_save_notice:1"),
+		).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "save_changes" }));
 
 		await waitFor(() => {
 			expect(mockState.setConfig).toHaveBeenCalledWith(
@@ -362,38 +405,165 @@ describe("AdminSettingsPage", () => {
 				"false",
 			);
 		});
+		expect(
+			screen.getByLabelText("switch:storage.enabled:false"),
+		).toBeInTheDocument();
+		expect(mockState.listConfigs).toHaveBeenCalledTimes(1);
+		expect(mockState.schema).toHaveBeenCalledTimes(1);
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
 	});
 
-	it("creates and deletes custom configs", async () => {
+	it("uses background highlighting for compact category tabs instead of border accents", async () => {
 		render(<AdminSettingsPage />);
 
-		await screen.findByText("custom.theme");
+		const storageTab = await screen.findByRole("button", {
+			name: /settings_category_storage/i,
+		});
 
-		fireEvent.click(screen.getByRole("button", { name: /add_custom_config/i }));
-		fireEvent.change(screen.getByLabelText("config_key"), {
-			target: { value: "custom.accent" },
+		expect(storageTab).toHaveClass("group", "border-0", "after:hidden");
+		expect(storageTab.className).not.toContain("border-b-2");
+
+		const tabContent = storageTab.firstElementChild;
+		expect(tabContent).not.toBeNull();
+		expect(tabContent).toHaveClass("group-data-[active]:bg-muted/70");
+
+		const compactNav = storageTab.parentElement?.parentElement;
+		expect(compactNav).not.toBeNull();
+		expect(compactNav).toHaveClass("border-b", "border-border/40");
+	});
+
+	it("adds a vertical divider for the desktop category sidebar", async () => {
+		Object.defineProperty(window, "innerWidth", {
+			configurable: true,
+			value: 1440,
+			writable: true,
 		});
-		fireEvent.change(screen.getByLabelText("config_value"), {
-			target: { value: "sunset" },
+
+		render(<AdminSettingsPage />);
+
+		const storageTab = await screen.findByRole("button", {
+			name: /settings_category_storage/i,
 		});
-		fireEvent.click(screen.getByRole("button", { name: "core:create" }));
+
+		const desktopNav = storageTab.parentElement?.parentElement;
+		expect(desktopNav).not.toBeNull();
+		expect(desktopNav).toHaveClass("border-r", "border-border/40");
+	});
+
+	it("navigates to the matching settings route when a tab is selected", async () => {
+		Object.defineProperty(window, "innerWidth", {
+			configurable: true,
+			value: 1440,
+			writable: true,
+		});
+
+		render(<AdminSettingsPage section="auth" />);
+
+		const storageTab = await screen.findByRole("button", {
+			name: /settings_category_storage/i,
+		});
+
+		fireEvent.click(storageTab);
+
+		expect(mockState.navigate).toHaveBeenCalledWith("/admin/settings/storage", {
+			viewTransition: true,
+		});
+	});
+
+	it("redirects invalid sections to the first available settings tab", async () => {
+		render(<AdminSettingsPage section={"invalid" as never} />);
+
+		await screen.findByRole("button", { name: /settings_category_auth/i });
 
 		await waitFor(() => {
+			expect(mockState.navigate).toHaveBeenCalledWith("/admin/settings/auth", {
+				replace: true,
+			});
+		});
+	});
+
+	it("edits non-boolean values inline and saves them with the shared save button", async () => {
+		render(<AdminSettingsPage />);
+
+		await screen.findByDisplayValue("1200");
+
+		fireEvent.change(screen.getByDisplayValue("1200"), {
+			target: { value: "1800" },
+		});
+
+		expect(
+			await screen.findByText("settings_save_notice:1"),
+		).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "save_changes" }));
+
+		await waitFor(() => {
+			expect(mockState.setConfig).toHaveBeenCalledWith(
+				"auth_access_token_ttl_secs",
+				"1800",
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
+	});
+
+	it("discards draft changes without sending any requests", async () => {
+		render(<AdminSettingsPage />);
+
+		await screen.findByDisplayValue("1200");
+
+		fireEvent.change(screen.getByDisplayValue("1200"), {
+			target: { value: "1800" },
+		});
+
+		expect(
+			await screen.findByText("settings_save_notice:1"),
+		).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "undo_changes" }));
+
+		await waitFor(() => {
+			expect(
+				screen.queryByRole("button", { name: "save_changes" }),
+			).not.toBeInTheDocument();
+		});
+		expect(screen.getByDisplayValue("1200")).toBeInTheDocument();
+		expect(mockState.setConfig).not.toHaveBeenCalled();
+		expect(mockState.deleteConfig).not.toHaveBeenCalled();
+	});
+
+	it("stages custom config creation and deletion until the shared save button is clicked", async () => {
+		render(<AdminSettingsPage section="custom" />);
+
+		await screen.findByDisplayValue("ocean");
+
+		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
+		fireEvent.click(screen.getByRole("button", { name: /add_custom_config/i }));
+
+		fireEvent.change(
+			screen.getByPlaceholderText("custom_config_key_placeholder"),
+			{
+				target: { value: "custom.accent" },
+			},
+		);
+		fireEvent.change(
+			screen.getAllByPlaceholderText("config_value").slice(-1)[0],
+			{
+				target: { value: "sunset" },
+			},
+		);
+
+		expect(
+			await screen.findByText("settings_save_notice:2"),
+		).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "save_changes" }));
+
+		await waitFor(() => {
+			expect(mockState.deleteConfig).toHaveBeenCalledWith("custom.theme");
 			expect(mockState.setConfig).toHaveBeenCalledWith(
 				"custom.accent",
 				"sunset",
 			);
 		});
-		expect(mockState.toastSuccess).toHaveBeenCalledWith("config_created");
-
-		fireEvent.click(screen.getAllByRole("button", { name: "Trash" })[0]);
-
-		expect(screen.getByText('core:delete "custom.theme"?')).toBeInTheDocument();
-		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
-
-		await waitFor(() => {
-			expect(mockState.deleteConfig).toHaveBeenCalledWith("custom.theme");
-		});
-		expect(mockState.toastSuccess).toHaveBeenCalledWith("config_deleted");
+		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
 	});
 });

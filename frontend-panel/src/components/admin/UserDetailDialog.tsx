@@ -292,489 +292,474 @@ export function UserDetailDialog({
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="flex max-h-[min(860px,calc(100vh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1100px,calc(100vw-2rem))]">
-				<DialogHeader className="flex items-center justify-center px-6 pt-5 pb-0 text-center">
+				<DialogHeader className="shrink-0 px-6 pt-5 pb-0 text-center">
 					<DialogTitle className="text-lg">{t("user_details")}</DialogTitle>
 				</DialogHeader>
-				<div className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
-					<div className="flex min-h-full flex-col lg:h-full">
-						<div className="grid gap-0 lg:min-h-0 lg:flex-1 lg:grid-cols-[320px_minmax(0,1fr)]">
-							<aside className="border-b bg-muted/20 lg:border-r lg:border-b-0">
-								<div className="space-y-5 p-6 lg:sticky lg:top-0">
-									<div className="space-y-3">
-										<UserAvatarImage
-											avatar={user.profile.avatar}
-											name={displayName}
-											size="xl"
-											className="aspect-square w-full max-w-[220px]"
-										/>
-										<div className="space-y-1">
-											<h3 className="text-lg font-semibold text-foreground">
-												{displayName}
-											</h3>
-											{showUsernameSecondary ? (
-												<p className="text-sm text-muted-foreground">
-													@{user.username}
-												</p>
-											) : null}
+				<div className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden">
+					<div className="flex min-h-full flex-col lg:h-full lg:min-h-0 lg:flex-1 lg:flex-row">
+						<aside className="border-b bg-muted/20 lg:min-h-0 lg:w-80 lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0">
+							<div className="space-y-5 p-6">
+								<div className="space-y-3">
+									<UserAvatarImage
+										avatar={user.profile.avatar}
+										name={displayName}
+										size="xl"
+										className="aspect-square w-full max-w-[220px]"
+									/>
+									<div className="space-y-1">
+										<h3 className="text-lg font-semibold text-foreground">
+											{displayName}
+										</h3>
+										{showUsernameSecondary ? (
 											<p className="text-sm text-muted-foreground">
-												{user.email}
+												@{user.username}
 											</p>
-										</div>
-										<div className="flex flex-wrap gap-2">
-											<Badge
-												variant="outline"
-												className={getRoleBadgeClass(user.role)}
-											>
-												{user.role === "admin" ? "Admin" : "User"}
-											</Badge>
-											<Badge
-												variant="outline"
-												className={getStatusBadgeClass(user.status)}
-											>
-												{user.status === "active"
-													? t("core:active")
-													: t("core:disabled_status")}
-											</Badge>
-										</div>
-									</div>
-
-									<div className="space-y-3 rounded-xl border bg-background/60 p-4">
-										<div className="space-y-1">
-											<p className="text-xs uppercase tracking-wide text-muted-foreground">
-												ID
-											</p>
-											<p className="font-mono text-sm text-foreground">
-												{user.id}
-											</p>
-										</div>
-										<div className="space-y-1">
-											<p className="text-xs uppercase tracking-wide text-muted-foreground">
-												{t("core:created_at")}
-											</p>
-											<p className="text-sm text-foreground">
-												{formatDateAbsolute(user.created_at)}
-											</p>
-										</div>
-									</div>
-
-									<div className="space-y-3 rounded-xl border bg-background/60 p-4">
-										<div>
-											<p className="text-sm font-medium text-foreground">
-												{t("storage")}
-											</p>
-											<p className="text-xs text-muted-foreground">
-												{formatBytes(used)}
-												{quota > 0
-													? ` / ${formatBytes(quota)}`
-													: ` / ${t("core:unlimited")}`}
-											</p>
-										</div>
-										{quota > 0 ? (
-											<Progress value={pct} className="h-2" />
 										) : null}
+										<p className="text-sm text-muted-foreground">
+											{user.email}
+										</p>
+									</div>
+									<div className="flex flex-wrap gap-2">
+										<Badge
+											variant="outline"
+											className={getRoleBadgeClass(user.role)}
+										>
+											{user.role === "admin" ? "Admin" : "User"}
+										</Badge>
+										<Badge
+											variant="outline"
+											className={getStatusBadgeClass(user.status)}
+										>
+											{user.status === "active"
+												? t("core:active")
+												: t("core:disabled_status")}
+										</Badge>
 									</div>
 								</div>
-							</aside>
 
-							<div className="p-6 lg:min-h-0 lg:min-w-0 lg:overflow-y-auto">
-								<div className="space-y-4">
-									<section className="rounded-2xl border bg-background/60 p-6">
-										<div className="mb-5">
-											<h4 className="text-base font-semibold text-foreground">
-												{t("user_details")}
-											</h4>
-											<p className="mt-1 text-sm text-muted-foreground">
-												{t("storage_quota_settings_desc")}
-											</p>
-										</div>
-										<div className="grid gap-5 md:grid-cols-2">
-											<div className="space-y-2">
-												<Label>{t("email")}</Label>
-												<Input
-													value={user.email}
-													readOnly
-													className={ADMIN_CONTROL_HEIGHT_CLASS}
-												/>
-											</div>
-											<div className="space-y-2">
-												<Label>{t("username")}</Label>
-												<Input
-													value={user.username}
-													readOnly
-													className={ADMIN_CONTROL_HEIGHT_CLASS}
-												/>
-											</div>
-											<div className="space-y-2">
-												<div className="flex items-center justify-between gap-2">
-													<Label>{t("core:status")}</Label>
-													{isInitialAdmin ? (
-														<span className="text-xs text-muted-foreground">
-															{t("initial_admin_protected")}
-														</span>
-													) : null}
-												</div>
-												<TooltipProvider>
-													<Tooltip>
-														<TooltipTrigger>
-															<div>
-																<Select
-																	value={draftStatus}
-																	onValueChange={(value) =>
-																		setDraftStatus(value as UserStatus)
-																	}
-																	disabled={isInitialAdmin || savingProfile}
-																>
-																	<SelectTrigger
-																		className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
-																	>
-																		<SelectValue>
-																			{t(
-																				draftStatus === "active"
-																					? "core:active"
-																					: "core:disabled_status",
-																			)}
-																		</SelectValue>
-																	</SelectTrigger>
-																	<SelectContent>
-																		{statusOptions.map((option) => (
-																			<SelectItem
-																				key={option.value}
-																				value={option.value}
-																			>
-																				{option.label}
-																			</SelectItem>
-																		))}
-																	</SelectContent>
-																</Select>
-															</div>
-														</TooltipTrigger>
-														{isInitialAdmin ? (
-															<TooltipContent>
-																{t("initial_admin_status_blocked")}
-															</TooltipContent>
-														) : null}
-													</Tooltip>
-												</TooltipProvider>
-											</div>
-											<div className="space-y-2">
-												<div className="flex items-center justify-between gap-2">
-													<Label>{t("role")}</Label>
-													{isInitialAdmin ? (
-														<span className="text-xs text-muted-foreground">
-															{t("initial_admin_protected")}
-														</span>
-													) : null}
-												</div>
-												<TooltipProvider>
-													<Tooltip>
-														<TooltipTrigger>
-															<div>
-																<Select
-																	value={draftRole}
-																	onValueChange={(value) =>
-																		setDraftRole(value as UserRole)
-																	}
-																	disabled={isInitialAdmin || savingProfile}
-																>
-																	<SelectTrigger
-																		className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
-																	>
-																		<SelectValue>
-																			{draftRole === "admin"
-																				? t("role_admin")
-																				: t("role_user")}
-																		</SelectValue>
-																	</SelectTrigger>
-																	<SelectContent>
-																		{roleOptions.map((option) => (
-																			<SelectItem
-																				key={option.value}
-																				value={option.value}
-																			>
-																				{option.label}
-																			</SelectItem>
-																		))}
-																	</SelectContent>
-																</Select>
-															</div>
-														</TooltipTrigger>
-														{isInitialAdmin ? (
-															<TooltipContent>
-																{t("initial_admin_role_blocked")}
-															</TooltipContent>
-														) : null}
-													</Tooltip>
-												</TooltipProvider>
-											</div>
-											<div className="space-y-2 md:col-span-2">
-												<Label htmlFor="user-storage-quota">
-													{t("quota_mb")}
-												</Label>
-												<Input
-													id="user-storage-quota"
-													type="number"
-													value={quotaValue}
-													onChange={(event) =>
-														setQuotaValue(event.target.value)
-													}
-													placeholder={t("quota_unlimited_short")}
-													className={ADMIN_CONTROL_HEIGHT_CLASS}
-													disabled={savingProfile}
-												/>
-											</div>
-										</div>
-									</section>
+								<div className="space-y-3 rounded-xl border bg-background/60 p-4">
+									<div className="space-y-1">
+										<p className="text-xs uppercase tracking-wide text-muted-foreground">
+											ID
+										</p>
+										<p className="font-mono text-sm text-foreground">
+											{user.id}
+										</p>
+									</div>
+									<div className="space-y-1">
+										<p className="text-xs uppercase tracking-wide text-muted-foreground">
+											{t("core:created_at")}
+										</p>
+										<p className="text-sm text-foreground">
+											{formatDateAbsolute(user.created_at)}
+										</p>
+									</div>
+								</div>
 
-									<section className="rounded-2xl border bg-background/60 p-6">
-										<div className="mb-4 flex items-start justify-between gap-3">
-											<div>
-												<h4 className="text-base font-semibold text-foreground">
-													{t("storage_policy_assignments")}
-												</h4>
-												<p className="mt-1 text-sm text-muted-foreground">
-													{t("storage_policy_assignments_desc")}
-												</p>
-											</div>
-											<Button
-												variant="ghost"
-												size="sm"
+								<div className="space-y-3 rounded-xl border bg-background/60 p-4">
+									<div>
+										<p className="text-sm font-medium text-foreground">
+											{t("storage")}
+										</p>
+										<p className="text-xs text-muted-foreground">
+											{formatBytes(used)}
+											{quota > 0
+												? ` / ${formatBytes(quota)}`
+												: ` / ${t("core:unlimited")}`}
+										</p>
+									</div>
+									{quota > 0 ? <Progress value={pct} className="h-2" /> : null}
+								</div>
+							</div>
+						</aside>
+
+						<div className="min-h-0 min-w-0 lg:flex-1 lg:overflow-y-auto">
+							<div className="space-y-4 p-6">
+								<section className="rounded-2xl border bg-background/60 p-6">
+									<div className="mb-5">
+										<h4 className="text-base font-semibold text-foreground">
+											{t("user_details")}
+										</h4>
+										<p className="mt-1 text-sm text-muted-foreground">
+											{t("storage_quota_settings_desc")}
+										</p>
+									</div>
+									<div className="grid gap-5 md:grid-cols-2">
+										<div className="space-y-2">
+											<Label>{t("email")}</Label>
+											<Input
+												value={user.email}
+												readOnly
 												className={ADMIN_CONTROL_HEIGHT_CLASS}
-												onClick={() => void loadPolicyGroups()}
-												disabled={policyGroupsLoading}
-											>
-												<Icon
-													name={
-														policyGroupsLoading ? "Spinner" : "ArrowsClockwise"
-													}
-													className={`mr-1 h-3.5 w-3.5 ${policyGroupsLoading ? "animate-spin" : ""}`}
-												/>
-												{t("refresh")}
-											</Button>
+											/>
 										</div>
-
-										{policyGroupsLoading ? (
-											<SkeletonTable columns={2} rows={3} />
-										) : (
-											<div className="space-y-3">
-												<div className="space-y-3">
-													<div className="space-y-2">
-														<Label>{t("policy_groups")}</Label>
-														<Select
-															items={policyGroupOptions}
-															value={
-																draftPolicyGroupId != null
-																	? String(draftPolicyGroupId)
-																	: ""
-															}
-															onValueChange={(value) => {
-																if (!value) {
-																	// The API does not allow unassigning a policy group.
-																	return;
-																}
-																setDraftPolicyGroupId(Number(value));
-															}}
-															disabled={
-																savingProfile || policyGroupOptions.length === 0
-															}
-														>
-															<SelectTrigger
-																className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
-															>
-																<SelectValue
-																	placeholder={t("select_policy_group")}
-																/>
-															</SelectTrigger>
-															<SelectContent>
-																{policyGroupOptions.map((option) => (
-																	<SelectItem
-																		key={option.value}
-																		value={option.value}
-																		disabled={option.disabled}
-																	>
-																		{option.label}
-																	</SelectItem>
-																))}
-															</SelectContent>
-														</Select>
-													</div>
-
-													{assignedPolicyGroupIsInvalid ? (
-														<div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
-															{t("policy_group_invalid_assignment")}
-														</div>
-													) : null}
-
-													{policyGroupOptions.length === 0 ? (
-														<p className="text-sm text-muted-foreground">
-															{t("policy_group_no_assignable_groups")}
-														</p>
-													) : null}
-												</div>
+										<div className="space-y-2">
+											<Label>{t("username")}</Label>
+											<Input
+												value={user.username}
+												readOnly
+												className={ADMIN_CONTROL_HEIGHT_CLASS}
+											/>
+										</div>
+										<div className="space-y-2">
+											<div className="flex items-center justify-between gap-2">
+												<Label>{t("core:status")}</Label>
+												{isInitialAdmin ? (
+													<span className="text-xs text-muted-foreground">
+														{t("initial_admin_protected")}
+													</span>
+												) : null}
 											</div>
-										)}
-									</section>
+											<TooltipProvider>
+												<Tooltip>
+													<TooltipTrigger>
+														<div>
+															<Select
+																value={draftStatus}
+																onValueChange={(value) =>
+																	setDraftStatus(value as UserStatus)
+																}
+																disabled={isInitialAdmin || savingProfile}
+															>
+																<SelectTrigger>
+																	<SelectValue>
+																		{t(
+																			draftStatus === "active"
+																				? "core:active"
+																				: "core:disabled_status",
+																		)}
+																	</SelectValue>
+																</SelectTrigger>
+																<SelectContent>
+																	{statusOptions.map((option) => (
+																		<SelectItem
+																			key={option.value}
+																			value={option.value}
+																		>
+																			{option.label}
+																		</SelectItem>
+																	))}
+																</SelectContent>
+															</Select>
+														</div>
+													</TooltipTrigger>
+													{isInitialAdmin ? (
+														<TooltipContent>
+															{t("initial_admin_status_blocked")}
+														</TooltipContent>
+													) : null}
+												</Tooltip>
+											</TooltipProvider>
+										</div>
+										<div className="space-y-2">
+											<div className="flex items-center justify-between gap-2">
+												<Label>{t("role")}</Label>
+												{isInitialAdmin ? (
+													<span className="text-xs text-muted-foreground">
+														{t("initial_admin_protected")}
+													</span>
+												) : null}
+											</div>
+											<TooltipProvider>
+												<Tooltip>
+													<TooltipTrigger>
+														<div>
+															<Select
+																value={draftRole}
+																onValueChange={(value) =>
+																	setDraftRole(value as UserRole)
+																}
+																disabled={isInitialAdmin || savingProfile}
+															>
+																<SelectTrigger>
+																	<SelectValue>
+																		{draftRole === "admin"
+																			? t("role_admin")
+																			: t("role_user")}
+																	</SelectValue>
+																</SelectTrigger>
+																<SelectContent>
+																	{roleOptions.map((option) => (
+																		<SelectItem
+																			key={option.value}
+																			value={option.value}
+																		>
+																			{option.label}
+																		</SelectItem>
+																	))}
+																</SelectContent>
+															</Select>
+														</div>
+													</TooltipTrigger>
+													{isInitialAdmin ? (
+														<TooltipContent>
+															{t("initial_admin_role_blocked")}
+														</TooltipContent>
+													) : null}
+												</Tooltip>
+											</TooltipProvider>
+										</div>
+										<div className="space-y-2 md:col-span-2">
+											<Label htmlFor="user-storage-quota">
+												{t("quota_mb")}
+											</Label>
+											<Input
+												id="user-storage-quota"
+												type="number"
+												value={quotaValue}
+												onChange={(event) => setQuotaValue(event.target.value)}
+												placeholder={t("quota_unlimited_short")}
+												className={ADMIN_CONTROL_HEIGHT_CLASS}
+												disabled={savingProfile}
+											/>
+										</div>
+									</div>
+								</section>
 
-									<section className="rounded-2xl border bg-background/60 p-6">
-										<div className="mb-4">
+								<section className="rounded-2xl border bg-background/60 p-6">
+									<div className="mb-4 flex items-start justify-between gap-3">
+										<div>
 											<h4 className="text-base font-semibold text-foreground">
-												{t("security_actions")}
+												{t("storage_policy_assignments")}
 											</h4>
 											<p className="mt-1 text-sm text-muted-foreground">
-												{t("security_actions_desc")}
+												{t("storage_policy_assignments_desc")}
 											</p>
 										</div>
+										<Button
+											variant="ghost"
+											size="sm"
+											className={ADMIN_CONTROL_HEIGHT_CLASS}
+											onClick={() => void loadPolicyGroups()}
+											disabled={policyGroupsLoading}
+										>
+											<Icon
+												name={
+													policyGroupsLoading ? "Spinner" : "ArrowsClockwise"
+												}
+												className={`mr-1 h-3.5 w-3.5 ${policyGroupsLoading ? "animate-spin" : ""}`}
+											/>
+											{t("refresh")}
+										</Button>
+									</div>
 
+									{policyGroupsLoading ? (
+										<SkeletonTable columns={2} rows={3} />
+									) : (
 										<div className="space-y-3">
-											<div className="rounded-xl border bg-muted/10 p-5">
-												<div className="mb-3">
-													<h5 className="text-sm font-semibold text-foreground">
-														{t("reset_password")}
-													</h5>
-													<p className="mt-1 text-sm text-muted-foreground">
-														{t("reset_password_desc")}
-													</p>
-												</div>
-												<div className="grid gap-4 md:grid-cols-2">
-													<div className="space-y-2">
-														<Label htmlFor="user-reset-password">
-															{t("password")}
-														</Label>
-														<Input
-															id="user-reset-password"
-															name="admin-reset-user-password"
-															type="password"
-															value={passwordValue}
-															onChange={(event) => {
-																setPasswordValue(event.target.value);
-																setPasswordErrors((prev) => ({
-																	...prev,
-																	password: undefined,
-																}));
-															}}
-															autoComplete="new-password"
-															className={ADMIN_CONTROL_HEIGHT_CLASS}
-															disabled={savingPassword}
-															aria-invalid={
-																passwordErrors.password ? true : undefined
+											<div className="space-y-3">
+												<div className="space-y-2">
+													<Label>{t("policy_groups")}</Label>
+													<Select
+														items={policyGroupOptions}
+														value={
+															draftPolicyGroupId != null
+																? String(draftPolicyGroupId)
+																: ""
+														}
+														onValueChange={(value) => {
+															if (!value) {
+																// The API does not allow unassigning a policy group.
+																return;
 															}
-														/>
-														<p className="text-xs text-muted-foreground">
-															{t("reset_password_hint")}
-														</p>
-														{passwordErrors.password ? (
-															<p className="text-xs text-destructive">
-																{passwordErrors.password}
-															</p>
-														) : null}
-													</div>
-													<div className="space-y-2">
-														<Label htmlFor="user-reset-password-confirm">
-															{t("confirm_password")}
-														</Label>
-														<Input
-															id="user-reset-password-confirm"
-															name="admin-reset-user-password-confirm"
-															type="password"
-															value={confirmPasswordValue}
-															onChange={(event) => {
-																setConfirmPasswordValue(event.target.value);
-																setPasswordErrors((prev) => ({
-																	...prev,
-																	confirm: undefined,
-																}));
-															}}
-															autoComplete="new-password"
-															className={ADMIN_CONTROL_HEIGHT_CLASS}
-															disabled={savingPassword}
-															aria-invalid={
-																passwordErrors.confirm ? true : undefined
-															}
-														/>
-														{passwordErrors.confirm ? (
-															<p className="text-xs text-destructive">
-																{passwordErrors.confirm}
-															</p>
-														) : null}
-													</div>
-												</div>
-												<div className="mt-4 flex justify-end">
-													<Button
-														type="button"
-														onClick={() => void handlePasswordReset()}
+															setDraftPolicyGroupId(Number(value));
+														}}
 														disabled={
-															savingPassword ||
-															passwordValue.length === 0 ||
-															confirmPasswordValue.length === 0
+															savingProfile || policyGroupOptions.length === 0
 														}
 													>
-														{t("reset_password")}
-													</Button>
-												</div>
-											</div>
-
-											<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
-												<div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-													<div className="max-w-2xl space-y-2">
-														<h5 className="text-sm font-semibold text-foreground">
-															{t("revoke_sessions")}
-														</h5>
-														<p className="text-sm text-muted-foreground">
-															{t("revoke_sessions_desc")}
-														</p>
-														<p className="text-xs text-muted-foreground">
-															{t("revoke_sessions_hint")}
-														</p>
-													</div>
-													<Button
-														type="button"
-														variant="destructive"
-														onClick={() => void handleSessionRevoke()}
-														disabled={revokingSessions}
-														className="md:shrink-0"
-													>
-														{revokingSessions ? (
-															<Icon
-																name="Spinner"
-																className="mr-1 h-4 w-4 animate-spin"
+														<SelectTrigger>
+															<SelectValue
+																placeholder={t("select_policy_group")}
 															/>
-														) : (
-															<Icon name="SignOut" className="mr-1 h-4 w-4" />
-														)}
-														{t("revoke_sessions")}
-													</Button>
+														</SelectTrigger>
+														<SelectContent>
+															{policyGroupOptions.map((option) => (
+																<SelectItem
+																	key={option.value}
+																	value={option.value}
+																	disabled={option.disabled}
+																>
+																	{option.label}
+																</SelectItem>
+															))}
+														</SelectContent>
+													</Select>
 												</div>
+
+												{assignedPolicyGroupIsInvalid ? (
+													<div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+														{t("policy_group_invalid_assignment")}
+													</div>
+												) : null}
+
+												{policyGroupOptions.length === 0 ? (
+													<p className="text-sm text-muted-foreground">
+														{t("policy_group_no_assignable_groups")}
+													</p>
+												) : null}
 											</div>
 										</div>
-									</section>
-								</div>
+									)}
+								</section>
+
+								<section className="rounded-2xl border bg-background/60 p-6">
+									<div className="mb-4">
+										<h4 className="text-base font-semibold text-foreground">
+											{t("security_actions")}
+										</h4>
+										<p className="mt-1 text-sm text-muted-foreground">
+											{t("security_actions_desc")}
+										</p>
+									</div>
+
+									<div className="space-y-3">
+										<div className="rounded-xl border bg-muted/10 p-5">
+											<div className="mb-3">
+												<h5 className="text-sm font-semibold text-foreground">
+													{t("reset_password")}
+												</h5>
+												<p className="mt-1 text-sm text-muted-foreground">
+													{t("reset_password_desc")}
+												</p>
+											</div>
+											<div className="grid gap-4 md:grid-cols-2">
+												<div className="space-y-2">
+													<Label htmlFor="user-reset-password">
+														{t("password")}
+													</Label>
+													<Input
+														id="user-reset-password"
+														name="admin-reset-user-password"
+														type="password"
+														value={passwordValue}
+														onChange={(event) => {
+															setPasswordValue(event.target.value);
+															setPasswordErrors((prev) => ({
+																...prev,
+																password: undefined,
+															}));
+														}}
+														autoComplete="new-password"
+														className={ADMIN_CONTROL_HEIGHT_CLASS}
+														disabled={savingPassword}
+														aria-invalid={
+															passwordErrors.password ? true : undefined
+														}
+													/>
+													<p className="text-xs text-muted-foreground">
+														{t("reset_password_hint")}
+													</p>
+													{passwordErrors.password ? (
+														<p className="text-xs text-destructive">
+															{passwordErrors.password}
+														</p>
+													) : null}
+												</div>
+												<div className="space-y-2">
+													<Label htmlFor="user-reset-password-confirm">
+														{t("confirm_password")}
+													</Label>
+													<Input
+														id="user-reset-password-confirm"
+														name="admin-reset-user-password-confirm"
+														type="password"
+														value={confirmPasswordValue}
+														onChange={(event) => {
+															setConfirmPasswordValue(event.target.value);
+															setPasswordErrors((prev) => ({
+																...prev,
+																confirm: undefined,
+															}));
+														}}
+														autoComplete="new-password"
+														className={ADMIN_CONTROL_HEIGHT_CLASS}
+														disabled={savingPassword}
+														aria-invalid={
+															passwordErrors.confirm ? true : undefined
+														}
+													/>
+													{passwordErrors.confirm ? (
+														<p className="text-xs text-destructive">
+															{passwordErrors.confirm}
+														</p>
+													) : null}
+												</div>
+											</div>
+											<div className="mt-4 flex justify-end">
+												<Button
+													type="button"
+													onClick={() => void handlePasswordReset()}
+													disabled={
+														savingPassword ||
+														passwordValue.length === 0 ||
+														confirmPasswordValue.length === 0
+													}
+												>
+													{t("reset_password")}
+												</Button>
+											</div>
+										</div>
+
+										<div className="rounded-xl border border-destructive/30 bg-destructive/5 p-5">
+											<div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+												<div className="max-w-2xl space-y-2">
+													<h5 className="text-sm font-semibold text-foreground">
+														{t("revoke_sessions")}
+													</h5>
+													<p className="text-sm text-muted-foreground">
+														{t("revoke_sessions_desc")}
+													</p>
+													<p className="text-xs text-muted-foreground">
+														{t("revoke_sessions_hint")}
+													</p>
+												</div>
+												<Button
+													type="button"
+													variant="destructive"
+													onClick={() => void handleSessionRevoke()}
+													disabled={revokingSessions}
+													className="md:shrink-0"
+												>
+													{revokingSessions ? (
+														<Icon
+															name="Spinner"
+															className="mr-1 h-4 w-4 animate-spin"
+														/>
+													) : (
+														<Icon name="SignOut" className="mr-1 h-4 w-4" />
+													)}
+													{t("revoke_sessions")}
+												</Button>
+											</div>
+										</div>
+									</div>
+								</section>
 							</div>
 						</div>
-						<DialogFooter className="mx-0 mb-0 border-t bg-muted/10 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-							<p className="text-xs text-muted-foreground">
-								{t("user_details_footer_hint")}
-							</p>
-							<div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
-								<Button variant="outline" onClick={() => onOpenChange(false)}>
-									{t("core:close")}
-								</Button>
-								{hasProfileChanges ? (
-									<Button
-										onClick={() => void handleProfileSave()}
-										disabled={savingProfile}
-									>
-										{savingProfile ? (
-											<Icon
-												name="Spinner"
-												className="mr-1 h-4 w-4 animate-spin"
-											/>
-										) : null}
-										{t("save_changes")}
-									</Button>
-								) : null}
-							</div>
-						</DialogFooter>
 					</div>
 				</div>
+				<DialogFooter className="mx-0 mb-0 w-full shrink-0 border-t bg-muted/10 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+					<p className="text-xs text-muted-foreground">
+						{t("user_details_footer_hint")}
+					</p>
+					<div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+						<Button variant="outline" onClick={() => onOpenChange(false)}>
+							{t("core:close")}
+						</Button>
+						{hasProfileChanges ? (
+							<Button
+								onClick={() => void handleProfileSave()}
+								disabled={savingProfile}
+							>
+								{savingProfile ? (
+									<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
+								) : null}
+								{t("save_changes")}
+							</Button>
+						) : null}
+					</div>
+				</DialogFooter>
 			</DialogContent>
 		</Dialog>
 	);

@@ -870,9 +870,7 @@ export default function AdminPolicyGroupsPage() {
 								value={String(pageSize)}
 								onValueChange={handlePageSizeChange}
 							>
-								<SelectTrigger
-									className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-[120px]`}
-								>
+								<SelectTrigger width="page-size">
 									<SelectValue />
 								</SelectTrigger>
 								<SelectContent>
@@ -965,7 +963,9 @@ export default function AdminPolicyGroupsPage() {
 											migrationTargetOptions.length === 0
 										}
 									>
-										<SelectTrigger className={ADMIN_CONTROL_HEIGHT_CLASS}>
+										<SelectTrigger
+											className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
+										>
 											<SelectValue
 												placeholder={t(
 													"policy_group_migration_target_placeholder",
@@ -1280,7 +1280,7 @@ export default function AdminPolicyGroupsPage() {
 																	}
 																>
 																	<SelectTrigger
-																		className={ADMIN_CONTROL_HEIGHT_CLASS}
+																		className={`${ADMIN_CONTROL_HEIGHT_CLASS} w-full`}
 																	>
 																		<SelectValue
 																			placeholder={t("select_policy")}
