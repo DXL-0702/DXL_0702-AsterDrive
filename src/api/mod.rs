@@ -32,7 +32,8 @@ pub fn configure(cfg: &mut web::ServiceConfig, db: &sea_orm::DatabaseConnection)
             .service(routes::teams::routes(&rl))
             .default_service(web::to(api_not_found)),
     )
-    .service(routes::health::routes());
+    .service(routes::health::routes())
+    .service(routes::share_public::direct_routes(&rl));
 
     // OpenAPI + Swagger UI — 仅 debug 构建
     #[cfg(all(debug_assertions, feature = "openapi"))]

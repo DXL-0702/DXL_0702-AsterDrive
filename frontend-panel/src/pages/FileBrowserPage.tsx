@@ -175,6 +175,7 @@ export default function FileBrowserPage() {
 		fileId?: number;
 		folderId?: number;
 		name: string;
+		initialMode?: "page" | "direct";
 	} | null>(null);
 	const [copyTarget, setCopyTarget] = useState<{
 		type: "file" | "folder";
@@ -738,6 +739,7 @@ export default function FileBrowserPage() {
 						fileId={shareTarget.fileId}
 						folderId={shareTarget.folderId}
 						name={shareTarget.name}
+						initialMode={shareTarget.initialMode}
 					/>
 				</Suspense>
 			)}

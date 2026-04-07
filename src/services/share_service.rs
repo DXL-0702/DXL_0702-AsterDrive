@@ -375,7 +375,14 @@ pub async fn download_shared_file(
 ) -> Result<actix_web::HttpResponse> {
     let share = load_valid_share(state, token).await?;
     let file = load_share_file_resource(state, &share).await?;
-    download_shared_resource(state, &share, &file, if_none_match).await
+    download_share_resource_with_disposition(
+        state,
+        &share,
+        &file,
+        file_service::DownloadDisposition::Attachment,
+        if_none_match,
+    )
+    .await
 }
 
 pub async fn download_shared_folder_file(
@@ -385,7 +392,14 @@ pub async fn download_shared_folder_file(
     if_none_match: Option<&str>,
 ) -> Result<actix_web::HttpResponse> {
     let (share, file) = load_shared_folder_file_target(state, token, file_id).await?;
-    download_shared_resource(state, &share, &file, if_none_match).await
+    download_share_resource_with_disposition(
+        state,
+        &share,
+        &file,
+        file_service::DownloadDisposition::Attachment,
+        if_none_match,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -812,6 +826,12 @@ pub async fn list_shared_subfolder(
 // ── Helpers ──────────────────────────────────────────────────────────
 
 async fn load_valid_share(state: &AppState, token: &str) -> Result<share::Model> {
+    let share = load_share_record(state, token).await?;
+    validate_share(&share)?;
+    Ok(share)
+}
+
+async fn load_share_record(state: &AppState, token: &str) -> Result<share::Model> {
     let share = share_repo::find_by_token(&state.db, token)
         .await?
         .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
@@ -824,7 +844,6 @@ async fn load_valid_share(state: &AppState, token: &str) -> Result<share::Model>
             Err(error) => return Err(error),
         }
     }
-    validate_share(&share)?;
     Ok(share)
 }
 
@@ -938,10 +957,11 @@ async fn load_shared_subfolder_target(
     Ok((share, target))
 }
 
-async fn download_shared_resource(
+async fn download_share_resource_with_disposition(
     state: &AppState,
     share: &share::Model,
     file: &crate::entities::file::Model,
+    disposition: file_service::DownloadDisposition,
     if_none_match: Option<&str>,
 ) -> Result<actix_web::HttpResponse> {
     let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
@@ -949,7 +969,14 @@ async fn download_shared_resource(
     if let Some(if_none_match) = if_none_match
         && file_service::if_none_match_matches(if_none_match, &blob.hash)
     {
-        return file_service::build_stream_response(state, file, &blob, Some(if_none_match)).await;
+        return file_service::build_stream_response_with_disposition(
+            state,
+            file,
+            &blob,
+            disposition,
+            Some(if_none_match),
+        )
+        .await;
     }
 
     match share_repo::increment_download_count(&state.db, share.id).await {
@@ -966,7 +993,15 @@ async fn download_shared_resource(
         }
     }
 
-    match file_service::build_stream_response(state, file, &blob, None).await {
+    match file_service::build_stream_response_with_disposition(
+        state,
+        file,
+        &blob,
+        disposition,
+        None,
+    )
+    .await
+    {
         Ok(response) => Ok(response),
         Err(error) => {
             match share_repo::decrement_download_count(&state.db, share.id).await {
@@ -996,10 +1031,15 @@ fn validate_share(share: &share::Model) -> Result<()> {
     {
         return Err(AsterError::share_expired("share has expired"));
     }
-    // 检查下载次数限制
+    validate_share_download_limit(share)?;
+    Ok(())
+}
+
+fn validate_share_download_limit(share: &share::Model) -> Result<()> {
     if share.max_downloads > 0 && share.download_count >= share.max_downloads {
         return Err(AsterError::share_download_limit("download limit reached"));
     }
+
     Ok(())
 }
 

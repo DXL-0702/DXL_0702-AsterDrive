@@ -3,6 +3,7 @@ import { joinApiUrl } from "@/lib/apiUrl";
 import { buildWorkspacePath, type Workspace } from "@/lib/workspace";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type {
+	DirectLinkTokenInfo,
 	ErrorCode,
 	FileInfo,
 	FileVersion,
@@ -20,6 +21,15 @@ export interface FolderListParams {
 	file_after_id?: number;
 	sort_by?: "name" | "size" | "created_at" | "updated_at" | "type";
 	sort_order?: "asc" | "desc";
+}
+
+function absoluteAppUrl(path: string) {
+	if (typeof window === "undefined") return path;
+	return new URL(path, window.location.origin).toString();
+}
+
+function encodeFileName(fileName: string) {
+	return encodeURIComponent(fileName);
 }
 
 export function createFileService(workspace: Workspace) {
@@ -56,6 +66,11 @@ export function createFileService(workspace: Workspace) {
 		getFile: (id: number) =>
 			api.get<FileInfo>(buildWorkspacePath(workspace, `/files/${id}`)),
 
+		getDirectLinkToken: (id: number) =>
+			api.get<DirectLinkTokenInfo>(
+				buildWorkspacePath(workspace, `/files/${id}/direct-link`),
+			),
+
 		deleteFile: (id: number) =>
 			api.delete<void>(buildWorkspacePath(workspace, `/files/${id}`)),
 
@@ -72,6 +87,18 @@ export function createFileService(workspace: Workspace) {
 				config.apiBaseUrl,
 				buildWorkspacePath(workspace, `/files/${id}/download`),
 			),
+
+		directPath: (token: string, fileName: string) =>
+			`/d/${token}/${encodeFileName(fileName)}`,
+
+		directUrl: (token: string, fileName: string) =>
+			absoluteAppUrl(`/d/${token}/${encodeFileName(fileName)}`),
+
+		forceDownloadPath: (token: string, fileName: string) =>
+			`/d/${token}/${encodeFileName(fileName)}?download=1`,
+
+		forceDownloadUrl: (token: string, fileName: string) =>
+			absoluteAppUrl(`/d/${token}/${encodeFileName(fileName)}?download=1`),
 
 		thumbnailPath: (id: number) =>
 			buildWorkspacePath(workspace, `/files/${id}/thumbnail`),

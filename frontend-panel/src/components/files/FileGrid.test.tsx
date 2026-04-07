@@ -25,7 +25,8 @@ vi.mock("@/stores/fileStore", () => ({
 vi.mock("@/components/files/FileContextMenu", () => ({
 	FileContextMenu: ({
 		children,
-		onShare,
+		onPageShare,
+		onDirectShare,
 		onCopy,
 		onMove,
 		onRename,
@@ -36,7 +37,8 @@ vi.mock("@/components/files/FileContextMenu", () => ({
 		onDownload,
 	}: {
 		children: React.ReactNode;
-		onShare?: () => void;
+		onPageShare?: () => void;
+		onDirectShare?: () => void;
 		onCopy?: () => void;
 		onMove?: () => void;
 		onRename?: () => void;
@@ -48,9 +50,14 @@ vi.mock("@/components/files/FileContextMenu", () => ({
 	}) => (
 		<div>
 			{children}
-			{onShare && (
-				<button type="button" onClick={onShare}>
-					share
+			{onPageShare && (
+				<button type="button" onClick={onPageShare}>
+					share-page
+				</button>
+			)}
+			{onDirectShare && (
+				<button type="button" onClick={onDirectShare}>
+					share-direct
 				</button>
 			)}
 			{onCopy && (
@@ -257,7 +264,7 @@ describe("FileGrid", () => {
 		);
 
 		const buttons = screen.getAllByRole("button", {
-			name: /share|copy|move|rename|lock|delete|versions|info|download/i,
+			name: /share-page|share-direct|copy|move|rename|lock|delete|versions|info|download/i,
 		});
 		for (const button of buttons) {
 			fireEvent.click(button);
@@ -266,10 +273,17 @@ describe("FileGrid", () => {
 		expect(onShare).toHaveBeenNthCalledWith(1, {
 			folderId: 1,
 			name: "Docs",
+			initialMode: "page",
 		});
 		expect(onShare).toHaveBeenNthCalledWith(2, {
 			fileId: 2,
 			name: "report.pdf",
+			initialMode: "page",
+		});
+		expect(onShare).toHaveBeenNthCalledWith(3, {
+			fileId: 2,
+			name: "report.pdf",
+			initialMode: "direct",
 		});
 		expect(onDownload).toHaveBeenCalledWith(2, "report.pdf");
 		expect(onCopy).toHaveBeenNthCalledWith(1, "folder", 1);

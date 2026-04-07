@@ -91,6 +91,66 @@ async fn test_file_upload_download_delete() {
 }
 
 #[actix_web::test]
+async fn test_file_direct_link_supports_public_access_force_download_and_file_removal() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, token, "clip 1.m3u8");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/direct-link"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let direct_token = body["data"]["token"]
+        .as_str()
+        .expect("direct link token should exist")
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/d/{direct_token}/wrong.m3u8"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/d/{direct_token}/clip%201.m3u8"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers().get("Content-Disposition").unwrap(),
+        r#"inline; filename="clip 1.m3u8""#
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/d/{direct_token}/clip%201.m3u8?download=1"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers().get("Content-Disposition").unwrap(),
+        r#"attachment; filename="clip 1.m3u8""#
+    );
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/d/{direct_token}/clip%201.m3u8"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404);
+}
+
+#[actix_web::test]
 async fn test_file_lock_unlock() {
     let state = common::setup().await;
     let app = create_test_app!(state);

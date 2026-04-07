@@ -10,7 +10,11 @@ import { ShareDialog } from "@/components/files/ShareDialog";
 
 const mockState = vi.hoisted(() => ({
 	create: vi.fn(),
+	getDirectLinkToken: vi.fn(),
+	directUrl: vi.fn(),
+	forceDownloadUrl: vi.fn(),
 	handleApiError: vi.fn(),
+	pageUrl: vi.fn(),
 	toastSuccess: vi.fn(),
 	clipboardWriteText: vi.fn(),
 }));
@@ -39,6 +43,17 @@ vi.mock("@/hooks/useApiError", () => ({
 vi.mock("@/services/shareService", () => ({
 	shareService: {
 		create: (...args: unknown[]) => mockState.create(...args),
+		pageUrl: (...args: unknown[]) => mockState.pageUrl(...args),
+	},
+}));
+
+vi.mock("@/services/fileService", () => ({
+	fileService: {
+		getDirectLinkToken: (...args: unknown[]) =>
+			mockState.getDirectLinkToken(...args),
+		directUrl: (...args: unknown[]) => mockState.directUrl(...args),
+		forceDownloadUrl: (...args: unknown[]) =>
+			mockState.forceDownloadUrl(...args),
 	},
 }));
 
@@ -198,9 +213,24 @@ vi.mock("@/components/ui/select", async () => {
 describe("ShareDialog", () => {
 	beforeEach(() => {
 		mockState.create.mockReset();
+		mockState.getDirectLinkToken.mockReset();
+		mockState.directUrl.mockReset();
+		mockState.forceDownloadUrl.mockReset();
 		mockState.handleApiError.mockReset();
+		mockState.pageUrl.mockReset();
 		mockState.toastSuccess.mockReset();
 		mockState.clipboardWriteText.mockReset();
+		mockState.pageUrl.mockImplementation(
+			(token: string) => `${window.location.origin}/s/${token}`,
+		);
+		mockState.directUrl.mockImplementation(
+			(token: string, fileName: string) =>
+				`${window.location.origin}/d/${token}/${encodeURIComponent(fileName)}`,
+		);
+		mockState.forceDownloadUrl.mockImplementation(
+			(token: string, fileName: string) =>
+				`${window.location.origin}/d/${token}/${encodeURIComponent(fileName)}?download=1`,
+		);
 
 		Object.defineProperty(window.navigator, "clipboard", {
 			value: {
@@ -260,6 +290,58 @@ describe("ShareDialog", () => {
 			),
 		).toBeInTheDocument();
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("share:share_created");
+	});
+
+	it("creates direct links for files and exposes a force-download variant", async () => {
+		mockState.getDirectLinkToken.mockResolvedValue({ token: "direct-token" });
+
+		render(
+			<ShareDialog
+				open
+				onOpenChange={vi.fn()}
+				fileId={13}
+				name="stream.m3u8"
+				initialMode="direct"
+			/>,
+		);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "share:share_create_button" }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.getDirectLinkToken).toHaveBeenCalledWith(13);
+		});
+		expect(
+			await screen.findByDisplayValue(
+				`${window.location.origin}/d/direct-token/stream.m3u8`,
+			),
+		).toBeInTheDocument();
+		expect(
+			screen.getByDisplayValue(
+				`${window.location.origin}/d/direct-token/stream.m3u8?download=1`,
+			),
+		).toBeInTheDocument();
+	});
+
+	it("honors the initial direct mode from the entry point", async () => {
+		render(
+			<ShareDialog
+				open
+				onOpenChange={vi.fn()}
+				fileId={13}
+				name="stream.m3u8"
+				initialMode="direct"
+			/>,
+		);
+
+		expect(
+			screen.queryByLabelText("share:share_password_optional"),
+		).not.toBeInTheDocument();
+		expect(screen.queryByTestId("share-expiry")).not.toBeInTheDocument();
+		expect(
+			screen.queryByLabelText("share:share_download_limit"),
+		).not.toBeInTheDocument();
 	});
 
 	it("copies the created link and resets the dialog state when done", async () => {

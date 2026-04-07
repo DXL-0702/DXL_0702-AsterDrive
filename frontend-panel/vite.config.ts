@@ -129,7 +129,7 @@ export default defineConfig(({ command }) => {
 								"assets/pdf.worker.min-*.mjs",
 							],
 					navigateFallback: "index.html",
-					navigateFallbackDenylist: [/^\/api\//, /^\/health\//],
+					navigateFallbackDenylist: [/^\/api\//, /^\/health\//, /^\/d\//],
 					runtimeCaching: [
 						{
 							urlPattern: ({ request, url }) =>

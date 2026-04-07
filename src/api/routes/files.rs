@@ -7,7 +7,7 @@ use crate::runtime::AppState;
 use crate::services::{
     audit_service::{self, AuditContext},
     auth_service::Claims,
-    file_service, upload_service, version_service,
+    direct_link_service, file_service, upload_service, version_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 use crate::types::NullablePatch;
@@ -44,6 +44,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/upload/{upload_id}", web::delete().to(cancel_upload))
         // standard file routes
         .route("/{id}", web::get().to(get_file))
+        .route("/{id}/direct-link", web::get().to(get_direct_link))
         .route("/{id}/download", web::get().to(download))
         .route("/{id}/thumbnail", web::get().to(get_thumbnail))
         .route("/{id}/content", web::put().to(update_content))
@@ -160,6 +161,34 @@ pub async fn get_file(
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     get_file_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/files/{id}/direct-link",
+    tag = "files",
+    operation_id = "get_file_direct_link",
+    params(("id" = i64, Path, description = "File ID")),
+    responses(
+        (status = 200, description = "Direct link token", body = inline(ApiResponse<crate::services::direct_link_service::DirectLinkTokenInfo>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_direct_link(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    direct_link_response(
         &state,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
@@ -684,6 +713,15 @@ pub(crate) async fn get_file_response(
 ) -> Result<HttpResponse> {
     let file = file_service::get_info_in_scope(state, scope, file_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+}
+
+pub(crate) async fn direct_link_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+) -> Result<HttpResponse> {
+    let token = direct_link_service::create_token_in_scope(state, scope, file_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(token)))
 }
 
 pub(crate) async fn download_response(

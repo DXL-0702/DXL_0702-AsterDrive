@@ -6,7 +6,7 @@ use crate::config::RateLimitConfig;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{profile_service, share_service};
+use crate::services::{direct_link_service, profile_service, share_service};
 use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
@@ -43,6 +43,20 @@ fn share_cookie_value(req: &actix_web::HttpRequest, token: &str) -> Option<Strin
         .map(|cookie| cookie.value().to_string())
 }
 
+#[derive(Deserialize, Default)]
+pub struct DirectLinkQuery {
+    pub download: Option<String>,
+}
+
+impl DirectLinkQuery {
+    fn force_download(&self) -> bool {
+        self.download
+            .as_deref()
+            .map(|value| matches!(value, "1" | "true" | "yes" | "on"))
+            .unwrap_or(false)
+    }
+}
+
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.public);
     let verify_limiter = rate_limit::build_governor(&rl.auth);
@@ -71,6 +85,14 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
             web::get().to(shared_folder_file_thumbnail),
         )
         .route("/{token}/avatar/{size}", web::get().to(shared_avatar))
+}
+
+pub fn direct_routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
+    let limiter = rate_limit::build_governor(&rl.public);
+
+    web::scope("/d")
+        .wrap(Condition::new(rl.enabled, Governor::new(&limiter)))
+        .route("/{token}/{filename}", web::get().to(download_direct))
 }
 
 #[api_docs_macros::path(
@@ -152,6 +174,25 @@ pub async fn download_shared(
     share_service::download_shared_file(
         &state,
         &path,
+        req.headers()
+            .get("If-None-Match")
+            .and_then(|v| v.to_str().ok()),
+    )
+    .await
+}
+
+pub async fn download_direct(
+    state: web::Data<AppState>,
+    path: web::Path<(String, String)>,
+    query: web::Query<DirectLinkQuery>,
+    req: actix_web::HttpRequest,
+) -> Result<HttpResponse> {
+    let (token, filename) = path.into_inner();
+    direct_link_service::download_file(
+        &state,
+        &token,
+        &filename,
+        query.force_download(),
         req.headers()
             .get("If-None-Match")
             .and_then(|v| v.to_str().ok()),

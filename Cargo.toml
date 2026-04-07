@@ -1,6 +1,6 @@
 [package]
 name = "aster_drive"
-version = "0.0.1-alpha.14"
+version = "0.0.1-alpha.15"
 description = "A self-hosted cloud storage solution."
 authors = [
     "AptS-1547 <apts-1547@esaps.net>",
@@ -100,6 +100,7 @@ tracing-appender = "0.2.4"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "env-filter", "fmt", "json"] }
 utoipa = { version = "5.4.0", features = ["chrono", "actix_extras", "repr"], optional = true }
 utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"], optional = true }
+urlencoding = "2"
 uuid = { version = "1", features = ["v4"] }
 xmltree = "0.12"
 
@@ -109,7 +110,6 @@ aws-smithy-types = "1.4.7"
 testcontainers = "0.27"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 reqwest = "0.13"
-urlencoding = "2"
 
 [build-dependencies]
 chrono = "0.4"

@@ -3,6 +3,7 @@ pub mod audit_service;
 pub mod auth_service;
 pub mod batch_service;
 pub mod config_service;
+pub mod direct_link_service;
 pub mod file_service;
 pub mod folder_service;
 pub mod lock_service;

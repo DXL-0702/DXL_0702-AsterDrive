@@ -23,7 +23,10 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { handleApiError } from "@/hooks/useApiError";
+import { fileService } from "@/services/fileService";
 import { shareService } from "@/services/shareService";
+
+type ShareLinkMode = "page" | "direct";
 
 interface ShareDialogProps {
 	open: boolean;
@@ -31,6 +34,7 @@ interface ShareDialogProps {
 	fileId?: number;
 	folderId?: number;
 	name: string;
+	initialMode?: ShareLinkMode;
 }
 
 export function ShareDialog({
@@ -39,12 +43,19 @@ export function ShareDialog({
 	fileId,
 	folderId,
 	name,
+	initialMode,
 }: ShareDialogProps) {
 	const { t } = useTranslation(["core", "share"]);
+	const directEligible = fileId != null;
+	const mode: ShareLinkMode =
+		directEligible && initialMode === "direct" ? "direct" : "page";
 	const [password, setPassword] = useState("");
 	const [expiry, setExpiry] = useState("never");
 	const [maxDownloads, setMaxDownloads] = useState("");
-	const [shareUrl, setShareUrl] = useState<string | null>(null);
+	const [createdLinks, setCreatedLinks] = useState<{
+		primaryUrl: string;
+		forceDownloadUrl: string | null;
+	} | null>(null);
 	const [copied, setCopied] = useState(false);
 	const [loading, setLoading] = useState(false);
 	const expiryOptions = [
@@ -59,18 +70,29 @@ export function ShareDialog({
 		e.preventDefault();
 		setLoading(true);
 		try {
-			const expiresAt = computeShareExpiry(expiry);
+			let primaryUrl: string;
+			let forceDownloadUrl: string | null = null;
 
-			const share = await shareService.create({
-				file_id: fileId,
-				folder_id: folderId,
-				password: password || undefined,
-				expires_at: expiresAt ?? undefined,
-				max_downloads: normalizeMaxDownloads(maxDownloads),
-			});
+			if (mode === "direct") {
+				if (fileId == null) {
+					throw new Error("fileId is required for direct links");
+				}
+				const directLink = await fileService.getDirectLinkToken(fileId);
+				primaryUrl = fileService.directUrl(directLink.token, name);
+				forceDownloadUrl = fileService.forceDownloadUrl(directLink.token, name);
+			} else {
+				const expiresAt = computeShareExpiry(expiry);
+				const share = await shareService.create({
+					file_id: fileId,
+					folder_id: folderId,
+					password: password || undefined,
+					expires_at: expiresAt ?? undefined,
+					max_downloads: normalizeMaxDownloads(maxDownloads),
+				});
+				primaryUrl = shareService.pageUrl(share.token);
+			}
 
-			const url = `${window.location.origin}/s/${share.token}`;
-			setShareUrl(url);
+			setCreatedLinks({ primaryUrl, forceDownloadUrl });
 			toast.success(t("share:share_created"));
 		} catch (error) {
 			handleApiError(error);
@@ -79,9 +101,8 @@ export function ShareDialog({
 		}
 	};
 
-	const handleCopy = async () => {
-		if (!shareUrl) return;
-		await navigator.clipboard.writeText(shareUrl);
+	const handleCopy = async (value: string) => {
+		await navigator.clipboard.writeText(value);
 		toast.success(t("copied_to_clipboard"));
 		setCopied(true);
 		setTimeout(() => setCopied(false), 2000);
@@ -92,7 +113,7 @@ export function ShareDialog({
 			setPassword("");
 			setExpiry("never");
 			setMaxDownloads("");
-			setShareUrl(null);
+			setCreatedLinks(null);
 			setCopied(false);
 		}
 		onOpenChange(open);
@@ -108,11 +129,19 @@ export function ShareDialog({
 					</DialogTitle>
 				</DialogHeader>
 
-				{shareUrl ? (
+				{createdLinks ? (
 					<div className="space-y-4">
 						<div className="flex items-center gap-2">
-							<Input value={shareUrl} readOnly className="text-sm" />
-							<Button variant="outline" size="icon" onClick={handleCopy}>
+							<Input
+								value={createdLinks.primaryUrl}
+								readOnly
+								className="text-sm"
+							/>
+							<Button
+								variant="outline"
+								size="icon"
+								onClick={() => void handleCopy(createdLinks.primaryUrl)}
+							>
 								{copied ? (
 									<Icon name="Check" className="h-4 w-4 text-green-500" />
 								) : (
@@ -120,7 +149,32 @@ export function ShareDialog({
 								)}
 							</Button>
 						</div>
-						{password && (
+						{createdLinks.forceDownloadUrl && (
+							<div className="space-y-2">
+								<Label>{t("share:share_force_download_link")}</Label>
+								<div className="flex items-center gap-2">
+									<Input
+										value={createdLinks.forceDownloadUrl}
+										readOnly
+										className="text-sm"
+									/>
+									<Button
+										variant="outline"
+										size="icon"
+										onClick={() =>
+											void handleCopy(createdLinks.forceDownloadUrl ?? "")
+										}
+									>
+										{copied ? (
+											<Icon name="Check" className="h-4 w-4 text-green-500" />
+										) : (
+											<Icon name="Copy" className="h-4 w-4" />
+										)}
+									</Button>
+								</div>
+							</div>
+						)}
+						{mode === "page" && password && (
 							<p className="text-xs text-muted-foreground">
 								{t("share:share_password_hint")}
 							</p>
@@ -135,51 +189,61 @@ export function ShareDialog({
 					</div>
 				) : (
 					<form onSubmit={handleCreate} className="space-y-4">
-						<div className="space-y-2">
-							<Label htmlFor="share-password">
-								{t("share:share_password_optional")}
-							</Label>
-							<Input
-								id="share-password"
-								type="password"
-								placeholder={t("share:share_password_placeholder")}
-								value={password}
-								onChange={(e) => setPassword(e.target.value)}
-							/>
-						</div>
+						{mode === "page" ? (
+							<>
+								<div className="space-y-2">
+									<Label htmlFor="share-password">
+										{t("share:share_password_optional")}
+									</Label>
+									<Input
+										id="share-password"
+										type="password"
+										placeholder={t("share:share_password_placeholder")}
+										value={password}
+										onChange={(e) => setPassword(e.target.value)}
+									/>
+								</div>
 
-						<div className="space-y-2">
-							<Label>{t("share:share_expiration")}</Label>
-							<Select
-								items={expiryOptions}
-								value={expiry}
-								onValueChange={(v) => setExpiry(v ?? "never")}
-							>
-								<SelectTrigger>
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{expiryOptions.map((option) => (
-										<SelectItem key={option.value} value={option.value}>
-											{option.label}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-						</div>
+								<div className="space-y-2">
+									<Label>{t("share:share_expiration")}</Label>
+									<Select
+										items={expiryOptions}
+										value={expiry}
+										onValueChange={(v) => setExpiry(v ?? "never")}
+									>
+										<SelectTrigger>
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											{expiryOptions.map((option) => (
+												<SelectItem key={option.value} value={option.value}>
+													{option.label}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+							</>
+						) : (
+							<p className="text-xs text-muted-foreground">
+								{t("share:share_direct_mode_hint")}
+							</p>
+						)}
 
-						<div className="space-y-2">
-							<Label htmlFor="max-downloads">
-								{t("share:share_download_limit")}
-							</Label>
-							<Input
-								id="max-downloads"
-								type="number"
-								placeholder={t("share:share_download_limit_placeholder")}
-								value={maxDownloads}
-								onChange={(e) => setMaxDownloads(e.target.value)}
-							/>
-						</div>
+						{mode === "page" && (
+							<div className="space-y-2">
+								<Label htmlFor="max-downloads">
+									{t("share:share_download_limit")}
+								</Label>
+								<Input
+									id="max-downloads"
+									type="number"
+									placeholder={t("share:share_download_limit_placeholder")}
+									value={maxDownloads}
+									onChange={(e) => setMaxDownloads(e.target.value)}
+								/>
+							</div>
+						)}
 
 						<Button type="submit" className="w-full" disabled={loading}>
 							{loading

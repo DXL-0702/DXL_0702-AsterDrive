@@ -115,13 +115,16 @@ export default function MySharesPage() {
 	};
 
 	const copyShareLink = async (share: MyShareInfo) => {
-		const url = `${window.location.origin}/s/${share.token}`;
-		await navigator.clipboard.writeText(url);
+		await navigator.clipboard.writeText(shareService.pageUrl(share.token));
 		toast.success(t("copied_to_clipboard"));
 	};
 
 	const openShareLink = (share: MyShareInfo) => {
-		window.open(`/s/${share.token}`, "_blank", "noopener,noreferrer");
+		window.open(
+			shareService.pagePath(share.token),
+			"_blank",
+			"noopener,noreferrer",
+		);
 	};
 
 	const showBatchDeleteToast = (result: BatchResult) => {
@@ -293,7 +296,9 @@ export default function MySharesPage() {
 															</span>
 														</div>
 														<div className="shrink-0">
-															{statusBadge(share.status)}
+															<div className="flex items-center gap-2">
+																{statusBadge(share.status)}
+															</div>
 														</div>
 													</div>
 

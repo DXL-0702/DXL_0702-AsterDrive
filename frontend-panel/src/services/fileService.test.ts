@@ -54,6 +54,7 @@ describe("fileService", () => {
 		fileService.createFolder("Docs", null);
 		fileService.renameFolder(7, "Renamed");
 		fileService.getFile(8);
+		fileService.getDirectLinkToken(8);
 		fileService.deleteFile(8);
 		fileService.renameFile(8, "notes.md");
 		fileService.setFileLock(8, true);
@@ -80,6 +81,7 @@ describe("fileService", () => {
 			name: "Renamed",
 		});
 		expect(mockState.get).toHaveBeenNthCalledWith(4, "/files/8");
+		expect(mockState.get).toHaveBeenNthCalledWith(5, "/files/8/direct-link");
 		expect(mockState.delete).toHaveBeenNthCalledWith(1, "/files/8");
 		expect(mockState.patch).toHaveBeenNthCalledWith(2, "/files/8", {
 			name: "notes.md",
@@ -100,7 +102,7 @@ describe("fileService", () => {
 		expect(mockState.post).toHaveBeenNthCalledWith(6, "/folders/7/copy", {
 			parent_id: 3,
 		});
-		expect(mockState.get).toHaveBeenNthCalledWith(5, "/files/8/versions");
+		expect(mockState.get).toHaveBeenNthCalledWith(6, "/files/8/versions");
 		expect(mockState.post).toHaveBeenNthCalledWith(
 			7,
 			"/files/8/versions/2/restore",
@@ -108,21 +110,35 @@ describe("fileService", () => {
 		expect(mockState.delete).toHaveBeenNthCalledWith(2, "/files/8/versions/2");
 		expect(fileService.downloadPath(8)).toBe("/files/8/download");
 		expect(fileService.downloadUrl(8)).toBe("/api/v1/files/8/download");
+		expect(fileService.directPath("token-1", "clip 1.mp4")).toBe(
+			"/d/token-1/clip%201.mp4",
+		);
+		expect(fileService.directUrl("token-1", "clip 1.mp4")).toBe(
+			new URL("/d/token-1/clip%201.mp4", window.location.origin).toString(),
+		);
+		expect(fileService.forceDownloadPath("token-1", "clip 1.mp4")).toBe(
+			"/d/token-1/clip%201.mp4?download=1",
+		);
+		expect(fileService.forceDownloadUrl("token-1", "clip 1.mp4")).toBe(
+			new URL(
+				"/d/token-1/clip%201.mp4?download=1",
+				window.location.origin,
+			).toString(),
+		);
 		expect(fileService.thumbnailPath(8)).toBe("/files/8/thumbnail");
 
 		const teamFileService = createFileService({ kind: "team", teamId: 9 });
 		teamFileService.listRoot();
 		teamFileService.getFile(8);
+		teamFileService.getDirectLinkToken(8);
 		teamFileService.listVersions(8);
 
-		expect(
-			mockState.get.mock.calls.some(([url]) => url === "/teams/9/folders"),
-		).toBe(true);
-		expect(mockState.get).toHaveBeenNthCalledWith(7, "/teams/9/files/8");
-		expect(mockState.get).toHaveBeenNthCalledWith(
-			8,
-			"/teams/9/files/8/versions",
-		);
+		expect(mockState.get).toHaveBeenCalledWith("/teams/9/folders", {
+			params: undefined,
+		});
+		expect(mockState.get).toHaveBeenCalledWith("/teams/9/files/8");
+		expect(mockState.get).toHaveBeenCalledWith("/teams/9/files/8/direct-link");
+		expect(mockState.get).toHaveBeenCalledWith("/teams/9/files/8/versions");
 		expect(teamFileService.downloadPath(8)).toBe("/teams/9/files/8/download");
 		expect(teamFileService.downloadUrl(8)).toBe(
 			"/api/v1/teams/9/files/8/download",

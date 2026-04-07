@@ -471,6 +471,83 @@ async fn test_team_space_patch_file_and_folder() {
 }
 
 #[actix_web::test]
+async fn test_team_file_direct_link_supports_public_access_and_team_deactivation() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let _owner_id = register_user!(app, "directteam", "directteam@example.com", "password123");
+    let owner_token = login_user!(app, "directteam", "password123");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .set_json(serde_json::json!({ "name": "Direct Team" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = multipart_request!(
+        &format!("/api/v1/teams/{team_id}/files/upload"),
+        &owner_token,
+        "stream.m3u8",
+        "team direct body",
+    );
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/teams/{team_id}/files/{file_id}/direct-link"
+        ))
+        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let direct_token = body["data"]["token"]
+        .as_str()
+        .expect("direct link token should exist")
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/d/{direct_token}/stream.m3u8"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers().get("Content-Disposition").unwrap(),
+        r#"inline; filename="stream.m3u8""#
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/d/{direct_token}/stream.m3u8?download=1"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers().get("Content-Disposition").unwrap(),
+        r#"attachment; filename="stream.m3u8""#
+    );
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/teams/{team_id}"))
+        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/d/{direct_token}/stream.m3u8"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 404);
+}
+
+#[actix_web::test]
 async fn test_team_space_copy_file_and_folder() {
     let state = common::setup().await;
     let app = create_test_app!(state);

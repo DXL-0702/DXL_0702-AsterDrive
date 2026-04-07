@@ -12,6 +12,11 @@ import type {
 import type { FolderListParams } from "./fileService";
 import { api } from "./http";
 
+function absoluteAppUrl(path: string) {
+	if (typeof window === "undefined") return path;
+	return new URL(path, window.location.origin).toString();
+}
+
 function workspaceSharesPrefix(workspace: Workspace) {
 	return buildWorkspacePath(workspace, "/shares");
 }
@@ -58,6 +63,10 @@ export function createShareService(workspace: Workspace) {
 
 		verifyPassword: (token: string, password: string) =>
 			api.post<void>(`/s/${token}/verify`, { password }),
+
+		pagePath: (token: string) => `/s/${token}`,
+
+		pageUrl: (token: string) => absoluteAppUrl(`/s/${token}`),
 
 		downloadPath: (token: string) => `/s/${token}/download`,
 

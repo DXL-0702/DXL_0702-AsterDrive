@@ -53,10 +53,11 @@ function renderMenu(
 		onCopy: vi.fn(),
 		onDelete: vi.fn(),
 		onDownload: vi.fn(),
+		onDirectShare: vi.fn(),
 		onInfo: vi.fn(),
 		onMove: vi.fn(),
+		onPageShare: vi.fn(),
 		onRename: vi.fn(),
-		onShare: vi.fn(),
 		onToggleLock: vi.fn(),
 		onVersions: vi.fn(),
 	};
@@ -80,7 +81,8 @@ describe("FileContextMenu", () => {
 		const handlers = renderMenu();
 
 		fireEvent.click(screen.getByText("download"));
-		fireEvent.click(screen.getByText("share"));
+		fireEvent.click(screen.getByText("share:share_mode_page"));
+		fireEvent.click(screen.getByText("share:share_mode_direct"));
 		fireEvent.click(screen.getByText("copy"));
 		fireEvent.click(screen.getByText("move"));
 		fireEvent.click(screen.getByText("rename"));
@@ -90,7 +92,8 @@ describe("FileContextMenu", () => {
 		fireEvent.click(screen.getByText("delete"));
 
 		expect(handlers.onDownload).toHaveBeenCalledTimes(1);
-		expect(handlers.onShare).toHaveBeenCalledTimes(1);
+		expect(handlers.onPageShare).toHaveBeenCalledTimes(1);
+		expect(handlers.onDirectShare).toHaveBeenCalledTimes(1);
 		expect(handlers.onCopy).toHaveBeenCalledTimes(1);
 		expect(handlers.onMove).toHaveBeenCalledTimes(1);
 		expect(handlers.onRename).toHaveBeenCalledTimes(1);
@@ -107,6 +110,10 @@ describe("FileContextMenu", () => {
 		});
 
 		expect(screen.queryByText("download")).not.toBeInTheDocument();
+		expect(screen.getByText("share:share_mode_page")).toBeInTheDocument();
+		expect(
+			screen.queryByText("share:share_mode_direct"),
+		).not.toBeInTheDocument();
 		expect(screen.queryByText("versions")).not.toBeInTheDocument();
 		expect(screen.getByText("unlock")).toBeInTheDocument();
 		expect(screen.getByText("delete")).toBeDisabled();
@@ -117,7 +124,8 @@ describe("FileContextMenu", () => {
 			<FileContextMenu
 				isFolder={false}
 				isLocked={false}
-				onShare={vi.fn()}
+				onPageShare={vi.fn()}
+				onDirectShare={vi.fn()}
 				onCopy={vi.fn()}
 				onToggleLock={vi.fn()}
 				onDelete={vi.fn()}

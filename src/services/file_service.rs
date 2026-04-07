@@ -16,6 +16,22 @@ use sha2::{Digest, Sha256};
 
 const BLOB_CLEANUP_CONCURRENCY: usize = 8;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DownloadDisposition {
+    Attachment,
+    Inline,
+}
+
+impl DownloadDisposition {
+    fn header_value(self, filename: &str) -> String {
+        let disposition = match self {
+            Self::Attachment => "attachment",
+            Self::Inline => "inline",
+        };
+        format!(r#"{disposition}; filename="{filename}""#)
+    }
+}
+
 pub(crate) fn ensure_personal_file_scope(file: &file::Model) -> Result<()> {
     workspace_storage_service::ensure_personal_file_scope(file)
 }
@@ -230,6 +246,23 @@ pub(crate) async fn build_stream_response(
     blob: &file_blob::Model,
     if_none_match: Option<&str>,
 ) -> Result<HttpResponse> {
+    build_stream_response_with_disposition(
+        state,
+        f,
+        blob,
+        DownloadDisposition::Attachment,
+        if_none_match,
+    )
+    .await
+}
+
+pub(crate) async fn build_stream_response_with_disposition(
+    state: &AppState,
+    f: &file::Model,
+    blob: &file_blob::Model,
+    disposition: DownloadDisposition,
+    if_none_match: Option<&str>,
+) -> Result<HttpResponse> {
     let etag = format!("\"{}\"", blob.hash);
     if let Some(if_none_match) = if_none_match
         && if_none_match_matches(if_none_match, &blob.hash)
@@ -250,10 +283,7 @@ pub(crate) async fn build_stream_response(
     Ok(HttpResponse::Ok()
         .content_type(f.mime_type.clone())
         .insert_header(("Content-Length", blob.size.to_string()))
-        .insert_header((
-            "Content-Disposition",
-            format!("attachment; filename=\"{}\"", f.name),
-        ))
+        .insert_header(("Content-Disposition", disposition.header_value(&f.name)))
         .insert_header(("ETag", etag))
         .insert_header(("Cache-Control", "private, max-age=0, must-revalidate"))
         // 跳过全局 Compress 中间件，避免压缩编码器缓冲导致内存暴涨

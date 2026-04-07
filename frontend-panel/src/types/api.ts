@@ -41,6 +41,7 @@ export type TrashFolderItem = components["schemas"]["TrashFolderItem"];
 
 // Sharing and search
 export type AdminSharePage = components["schemas"]["OffsetPage_ShareInfo"];
+export type DirectLinkTokenInfo = components["schemas"]["DirectLinkTokenInfo"];
 export type FileSearchItem = components["schemas"]["FileSearchItem"];
 export type MyShareInfo = components["schemas"]["MyShareInfo"];
 export type SearchParams = components["schemas"]["SearchParams"];

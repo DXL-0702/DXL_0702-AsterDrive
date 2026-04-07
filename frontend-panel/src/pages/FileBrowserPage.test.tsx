@@ -219,6 +219,63 @@ vi.mock("@/components/files/FileGrid", () => ({
 					type="button"
 					onClick={() =>
 						(
+							props.onShare as (target: {
+								fileId?: number;
+								folderId?: number;
+								name: string;
+								initialMode?: "page" | "direct";
+							}) => void
+						)({
+							folderId: 5,
+							name: "Docs A",
+							initialMode: "page",
+						})
+					}
+				>
+					share-folder
+				</button>
+				<button
+					type="button"
+					onClick={() =>
+						(
+							props.onShare as (target: {
+								fileId?: number;
+								folderId?: number;
+								name: string;
+								initialMode?: "page" | "direct";
+							}) => void
+						)({
+							fileId: 3,
+							name: "report.pdf",
+							initialMode: "page",
+						})
+					}
+				>
+					share-file-page
+				</button>
+				<button
+					type="button"
+					onClick={() =>
+						(
+							props.onShare as (target: {
+								fileId?: number;
+								folderId?: number;
+								name: string;
+								initialMode?: "page" | "direct";
+							}) => void
+						)({
+							fileId: 3,
+							name: "report.pdf",
+							initialMode: "direct",
+						})
+					}
+				>
+					share-file-direct
+				</button>
+				<button
+					type="button"
+					onClick={() =>
+						(
 							props.onMoveToFolder as (
 								fileIds: number[],
 								folderIds: number[],
@@ -311,8 +368,15 @@ vi.mock("@/components/files/RenameDialog", () => ({
 }));
 
 vi.mock("@/components/files/ShareDialog", () => ({
-	ShareDialog: ({ name, open }: { name: string; open: boolean }) =>
-		open ? <div>{`share:${name}`}</div> : null,
+	ShareDialog: ({
+		name,
+		open,
+		initialMode,
+	}: {
+		name: string;
+		open: boolean;
+		initialMode?: "page" | "direct";
+	}) => (open ? <div>{`share:${name}:${initialMode ?? "page"}`}</div> : null),
 }));
 
 vi.mock("@/components/files/UploadArea", () => ({
@@ -694,6 +758,23 @@ describe("FileBrowserPage", () => {
 			expect(mockState.copyFolder).toHaveBeenCalledWith(10, 20);
 		});
 		expect(mockState.store.refresh).toHaveBeenCalledTimes(2);
+	});
+
+	it("opens the share dialog with the mode implied by the chosen menu entry", async () => {
+		render(<FileBrowserPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: "share-folder" }));
+		expect(await screen.findByText("share:Docs A:page")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "share-file-page" }));
+		expect(
+			await screen.findByText("share:report.pdf:page"),
+		).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: "share-file-direct" }));
+		expect(
+			await screen.findByText("share:report.pdf:direct"),
+		).toBeInTheDocument();
 	});
 
 	it("moves items, dispatches folder-tree updates, and shows the formatted move toast", async () => {

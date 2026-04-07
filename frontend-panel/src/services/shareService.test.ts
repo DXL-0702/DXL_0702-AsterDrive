@@ -109,6 +109,10 @@ describe("shareService", () => {
 		expect(apiGet).toHaveBeenNthCalledWith(3, "/s/token-1/folders/42/content", {
 			params,
 		});
+		expect(shareService.pagePath("token-1")).toBe("/s/token-1");
+		expect(shareService.pageUrl("token-1")).toBe(
+			new URL("/s/token-1", window.location.origin).toString(),
+		);
 		expect(shareService.downloadPath("token-1")).toBe("/s/token-1/download");
 		expect(shareService.thumbnailPath("token-1")).toBe("/s/token-1/thumbnail");
 		expect(shareService.downloadFolderPath("token-1", 42)).toBe(

@@ -179,6 +179,8 @@ vi.mock("@/services/shareService", () => ({
 		batchDelete: mockState.batchDelete,
 		delete: mockState.deleteShare,
 		listMine: mockState.listMine,
+		pagePath: (token: string) => `/s/${token}`,
+		pageUrl: (token: string) => `${window.location.origin}/s/${token}`,
 	},
 }));
 

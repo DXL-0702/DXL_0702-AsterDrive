@@ -17,6 +17,7 @@ interface FileGridProps {
 		fileId?: number;
 		folderId?: number;
 		name: string;
+		initialMode?: "page" | "direct";
 	}) => void;
 	onDownload: (fileId: number, fileName: string) => void;
 	onCopy: (type: "file" | "folder", id: number) => void;
@@ -137,7 +138,13 @@ export function FileGrid({
 			key={`folder-${folder.id}`}
 			isFolder
 			isLocked={folder.is_locked ?? false}
-			onShare={() => onShare({ folderId: folder.id, name: folder.name })}
+			onPageShare={() =>
+				onShare({
+					folderId: folder.id,
+					name: folder.name,
+					initialMode: "page",
+				})
+			}
 			onCopy={() => onCopy("folder", folder.id)}
 			onMove={onMove ? () => onMove("folder", folder.id) : undefined}
 			onRename={
@@ -169,7 +176,20 @@ export function FileGrid({
 			isFolder={false}
 			isLocked={file.is_locked ?? false}
 			onDownload={() => onDownload(file.id, file.name)}
-			onShare={() => onShare({ fileId: file.id, name: file.name })}
+			onPageShare={() =>
+				onShare({
+					fileId: file.id,
+					name: file.name,
+					initialMode: "page",
+				})
+			}
+			onDirectShare={() =>
+				onShare({
+					fileId: file.id,
+					name: file.name,
+					initialMode: "direct",
+				})
+			}
 			onCopy={() => onCopy("file", file.id)}
 			onMove={onMove ? () => onMove("file", file.id) : undefined}
 			onRename={
