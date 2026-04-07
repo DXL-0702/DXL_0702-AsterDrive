@@ -83,9 +83,12 @@ describe("AdminLayout", () => {
 			screen.getByRole("button", { name: /translated:shares/i }),
 		).toBeInTheDocument();
 		expect(
+			screen.getByRole("button", { name: /translated:audit_log/i }),
+		).toBeInTheDocument();
+		expect(
 			screen.getByRole("button", { name: /translated:about/i }),
 		).toBeInTheDocument();
-		expect(screen.getAllByTestId("icon")).toHaveLength(9);
+		expect(screen.getAllByTestId("icon")).toHaveLength(10);
 	});
 
 	it("opens the mobile sidebar overlay and closes it again", () => {
@@ -127,7 +130,9 @@ describe("AdminLayout", () => {
 		fireEvent.click(screen.getByRole("button", { name: /translated:locks/i }));
 
 		expect(
-			screen.queryByRole("button", { name: "Close admin sidebar" }),
+			screen.queryByRole("button", {
+				name: "translated:core:close_admin_sidebar",
+			}),
 		).not.toBeInTheDocument();
 	});
 });

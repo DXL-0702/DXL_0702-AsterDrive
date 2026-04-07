@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminAuditPage from "@/pages/admin/AdminAuditPage";
 
@@ -208,6 +209,14 @@ function createEntry(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function renderPage(initialEntry = "/admin/audit") {
+	render(
+		<MemoryRouter initialEntries={[initialEntry]}>
+			<AdminAuditPage />
+		</MemoryRouter>,
+	);
+}
+
 describe("AdminAuditPage", () => {
 	beforeEach(() => {
 		mockState.handleApiError.mockReset();
@@ -221,9 +230,9 @@ describe("AdminAuditPage", () => {
 	it("shows a loading skeleton while the audit request is pending", () => {
 		mockState.list.mockImplementationOnce(() => new Promise(() => undefined));
 
-		render(<AdminAuditPage />);
+		renderPage();
 
-		expect(screen.getByText("skeleton:6:8")).toBeInTheDocument();
+		expect(screen.getByText("skeleton:6:6")).toBeInTheDocument();
 	});
 
 	it("renders the empty state when there are no audit entries", async () => {
@@ -232,7 +241,7 @@ describe("AdminAuditPage", () => {
 			total: 0,
 		});
 
-		render(<AdminAuditPage />);
+		renderPage();
 
 		expect(await screen.findByText("no_audit_logs")).toBeInTheDocument();
 		expect(screen.getByText("Scroll")).toBeInTheDocument();
@@ -257,7 +266,7 @@ describe("AdminAuditPage", () => {
 				total: 1,
 			});
 
-		render(<AdminAuditPage />);
+		renderPage();
 
 		await waitFor(() => {
 			expect(mockState.list).toHaveBeenNthCalledWith(1, {
@@ -297,7 +306,9 @@ describe("AdminAuditPage", () => {
 		});
 		expect(screen.getByText("delete")).toBeInTheDocument();
 
-		fireEvent.click(screen.getByRole("button", { name: "select-folder" }));
+		fireEvent.click(
+			screen.getAllByRole("button", { name: "select-folder" })[0],
+		);
 
 		await waitFor(() => {
 			expect(mockState.list).toHaveBeenNthCalledWith(4, {
@@ -313,7 +324,7 @@ describe("AdminAuditPage", () => {
 		const error = new Error("audit failed");
 		mockState.list.mockRejectedValueOnce(error);
 
-		render(<AdminAuditPage />);
+		renderPage();
 
 		await waitFor(() => {
 			expect(mockState.handleApiError).toHaveBeenCalledWith(error);

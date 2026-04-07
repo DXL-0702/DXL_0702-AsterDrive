@@ -8,6 +8,8 @@ const mockState = vi.hoisted(() => ({
 	listPolicyGroups: vi.fn(),
 	navigate: vi.fn(),
 	reload: vi.fn(),
+	searchParams: "",
+	setSearchParams: vi.fn(),
 	toastSuccess: vi.fn(),
 }));
 
@@ -42,6 +44,10 @@ vi.mock("sonner", () => ({
 
 vi.mock("react-router-dom", () => ({
 	useNavigate: () => mockState.navigate,
+	useSearchParams: () => [
+		new URLSearchParams(mockState.searchParams),
+		mockState.setSearchParams,
+	],
 }));
 
 vi.mock("@/components/common/AdminTableList", () => ({
@@ -165,6 +171,12 @@ vi.mock("@/components/ui/select", () => ({
 }));
 
 vi.mock("@/components/ui/table", () => ({
+	Table: ({ children, ...props }: ComponentProps<"table">) => (
+		<table {...props}>{children}</table>
+	),
+	TableBody: ({ children, ...props }: ComponentProps<"tbody">) => (
+		<tbody {...props}>{children}</tbody>
+	),
 	TableCell: ({ children, ...props }: ComponentProps<"td">) => (
 		<td {...props}>{children}</td>
 	),
@@ -206,6 +218,8 @@ describe("AdminTeamsPage", () => {
 		mockState.listPolicyGroups.mockReset();
 		mockState.navigate.mockReset();
 		mockState.reload.mockReset();
+		mockState.searchParams = "";
+		mockState.setSearchParams.mockReset();
 		mockState.toastSuccess.mockReset();
 
 		mockState.listPolicyGroups.mockResolvedValue([]);
