@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.15] - 2026-04-07
+
+### Release Highlights
+
+- **文件直链分享** — 新增 Direct Link 分享模式，生成不经过分享页面的直接下载链接。支持强制下载参数，独立速率限制。前端分享弹窗可一键切换分享页/直链两种模式
+- **运行时认证策略** — 将 Cookie 安全策略、Token TTL 等认证配置从静态 config.toml 迁移至数据库运行时配置，管理员可在后台实时调整，无需重启服务
+- **管理设置页面重构** — 系统配置按分类标签页导航（认证/网络/存储/WebDAV/审计/通用/自定义），支持批量保存、敏感值掩码、默认值展示与一键恢复、i18n 标签
+- **头像裁剪** — 新增圆形裁剪器，支持缩放和位置调整，输出 1024×1024 WebP 格式
+- **移动端响应式优化** — 对话框与设置页面全面适配移动端布局，标签页增加切换动画方向检测
+
+
+### Added
+
+- **文件直链服务**
+  - 新增 `direct_link_service.rs`：生成带签名的直链下载 token
+  - API 端点：`GET /api/v1/files/{id}/direct-link`、`GET /api/v1/team-space/files/{id}/direct-link`
+  - 公开下载端点：`GET /d/{token}/{filename}`，支持 `?download=1` 强制下载
+  - 独立速率限制配置
+- **运行时认证配置**
+  - 新增 `auth_runtime.rs`：从数据库读取 `auth_cookie_secure`、`auth_access_token_ttl_secs`、`auth_refresh_token_ttl_secs`
+  - 静态配置新增 `bootstrap_insecure_cookies` 引导选项（仅首次初始化生效）
+  - Cookie 路径隔离：Access Token → `/`，Refresh Token → `/api/v1/auth/refresh`
+- **头像裁剪**
+  - 新增 `AvatarCropDialog` 组件 + `avatarCrop.ts` 工具
+  - 基于 `react-image-crop`，圆形裁剪框 + 实时预览
+- **前端分享增强**
+  - 分享弹窗新增双模式切换：分享页 (Share page) / 直链 (Direct link)
+  - 直链模式不支持密码和过期时间，支持生成强制下载链接
+  - 文件右键菜单支持直接选择分享模式
+- **系统配置 i18n**
+  - 配置定义新增 `label_i18n_key` / `description_i18n_key` 字段
+  - 配置项支持分类：auth / network / storage / webdav / audit / general
+  - 敏感值标记 (`is_sensitive`) 和需重启标记 (`requires_restart`)
+  - 中英文翻译覆盖所有系统配置项
+- **UI 组件增强**
+  - Select 新增 `width` 变体（compact / page-size / fit / full）
+  - Tabs `line` 变体支持全宽样式 + 动画方向检测
+  - 审计日志页面支持 URL 参数同步、每页条目数选择、筛选激活指示器
+
+
+### Changed
+
+- **认证服务重构**
+  - `issue_tokens_for_user` 改为从运行时配置获取 Token TTL 和 Cookie 策略
+  - 分享验证 Cookie 增加安全标志和路径隔离（`/api/v1/s/{token}`）
+- **管理设置页面**
+  - 重构为分类标签页导航（桌面端侧边栏，移动端下拉）
+  - 新增批量保存机制（草稿值管理）
+  - 敏感值显示掩码（`********`），支持默认值展示与一键恢复
+- **对话框响应式布局**
+  - `AdminTeamDetailDialog` / `TeamManageDialog` / `UserDetailDialog` 全面适配移动端
+  - 两栏布局重构为 flex + overflow-hidden，移动端自适应单列
+  - 新增滚动位置记忆和标签切换动画方向检测
+- **Select 组件**
+  - 移除硬编码高度，改用变体系统
+  - 管理页面统一使用 `width` prop
+
+
+### Fixed
+
+- **Cookie 安全策略**
+  - 修复纯 HTTP 环境首次部署无法登录的问题（`bootstrap_insecure_cookies` 引导配置）
+- **审计日志页面**
+  - 修复筛选和分页状态无法保存或通过 URL 分享的问题
+- **移动端布局**
+  - 修复管理对话框在移动端滚动行为混乱的问题
+  - 修复用户详情对话框底部按钮被遮挡的问题
+
+
+### Breaking Changes
+
+- **配置文件**: `[auth]` 段移除 `access_token_ttl_secs`、`refresh_token_ttl_secs`、`cookie_secure`，改为运行时配置。新增 `bootstrap_insecure_cookies`（仅首次初始化生效）
+- **Cookie 行为**: Refresh Token Cookie 路径从 `/` 限制为 `/api/v1/auth/refresh`，分享验证 Cookie 路径限制为 `/api/v1/s/{token}`
+- **前端路由**: 管理设置页面新增子路由 `/admin/settings/:section`
+
+
+---
+
+**统计数据**：
+- 99 files changed, 6,749 insertions(+), 1,629 deletions(-)
+- 7 commits
+
+
 ## [v0.0.1-alpha.14] - 2026-04-05
 
 ### Release Highlights
@@ -1154,7 +1237,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.14...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.15...HEAD
+[v0.0.1-alpha.15]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.14...v0.0.1-alpha.15
 [v0.0.1-alpha.14]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.13...v0.0.1-alpha.14
 [v0.0.1-alpha.13]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.12...v0.0.1-alpha.13
 [v0.0.1-alpha.12]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.11...v0.0.1-alpha.12
