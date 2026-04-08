@@ -67,11 +67,10 @@ async fn test_policy_delete_with_blobs_rejected() {
 #[actix_web::test]
 async fn test_force_delete_user() {
     let state = common::setup().await;
-    let avatar_base_path = aster_drive::db::repository::policy_repo::find_default(&state.db)
-        .await
-        .unwrap()
-        .expect("default policy should exist")
-        .base_path;
+    let avatar_base_path = state
+        .runtime_config
+        .get(aster_drive::config::avatar::AVATAR_DIR_KEY)
+        .expect("avatar_dir should exist");
     let app = create_test_app!(state);
 
     // 注册第一个用户（admin，id=1）
@@ -122,10 +121,10 @@ async fn test_force_delete_user() {
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    let avatar_512 = std::path::PathBuf::from(&avatar_base_path)
-        .join(format!("profile/avatar/{victim_id}/v1/512.webp"));
-    let avatar_1024 = std::path::PathBuf::from(&avatar_base_path)
-        .join(format!("profile/avatar/{victim_id}/v1/1024.webp"));
+    let avatar_512 =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{victim_id}/v1/512.webp"));
+    let avatar_1024 =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{victim_id}/v1/1024.webp"));
     assert!(
         avatar_512.exists(),
         "avatar 512 should exist before force delete"
@@ -228,11 +227,10 @@ async fn test_force_delete_user_with_gravatar_profile() {
 #[actix_web::test]
 async fn test_force_delete_user_tolerates_missing_avatar_object() {
     let state = common::setup().await;
-    let avatar_base_path = aster_drive::db::repository::policy_repo::find_default(&state.db)
-        .await
-        .unwrap()
-        .expect("default policy should exist")
-        .base_path;
+    let avatar_base_path = state
+        .runtime_config
+        .get(aster_drive::config::avatar::AVATAR_DIR_KEY)
+        .expect("avatar_dir should exist");
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
 
@@ -275,10 +273,10 @@ async fn test_force_delete_user_tolerates_missing_avatar_object() {
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    let avatar_512 = std::path::PathBuf::from(&avatar_base_path)
-        .join(format!("profile/avatar/{victim_id}/v1/512.webp"));
-    let avatar_1024 = std::path::PathBuf::from(&avatar_base_path)
-        .join(format!("profile/avatar/{victim_id}/v1/1024.webp"));
+    let avatar_512 =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{victim_id}/v1/512.webp"));
+    let avatar_1024 =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{victim_id}/v1/1024.webp"));
     assert!(avatar_512.exists());
     assert!(avatar_1024.exists());
 

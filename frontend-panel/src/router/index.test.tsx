@@ -37,4 +37,71 @@ describe("router", () => {
 		expect(fallbackRoute?.element?.props?.to).toBe("/");
 		expect(fallbackRoute?.element?.props?.replace).toBe(true);
 	});
+
+	it("registers the dedicated user settings route", async () => {
+		await import("./index");
+
+		const routes = createBrowserRouterMock.mock.calls[0]?.[0] as Array<{
+			children?: Array<{
+				children?: Array<unknown>;
+				element?: {
+					props?: {
+						to?: string;
+					};
+				};
+				path?: string;
+			}>;
+			element?: {
+				props?: {
+					to?: string;
+				};
+			};
+			path?: string;
+		}>;
+		const flattenRoutes = (
+			items: Array<{
+				children?: Array<unknown>;
+				element?: {
+					props?: {
+						to?: string;
+					};
+				};
+				path?: string;
+			}>,
+		): Array<{
+			element?: {
+				props?: {
+					to?: string;
+				};
+			};
+			path?: string;
+		}> =>
+			items.flatMap((route) => [
+				route,
+				...flattenRoutes(
+					(route.children as Array<{
+						children?: Array<unknown>;
+						element?: {
+							props?: {
+								to?: string;
+							};
+						};
+						path?: string;
+					}>) ?? [],
+				),
+			]);
+		const allRoutes = flattenRoutes(routes);
+
+		expect(
+			allRoutes.some((route) => route.path === "/admin/settings/user"),
+		).toBe(true);
+		expect(
+			allRoutes.find((route) => route.path === "/admin/settings")?.element
+				?.props?.to,
+		).toBe("/admin/settings/general");
+		expect(
+			allRoutes.find((route) => route.path === "/admin/settings/:section")
+				?.element?.props?.to,
+		).toBe("/admin/settings/general");
+	});
 });

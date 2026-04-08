@@ -23,9 +23,11 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
     let test_dir = format!("/tmp/asterdrive-test-{}", uuid::Uuid::new_v4());
     let temp_dir = format!("{test_dir}/temp");
     let upload_temp_dir = format!("{test_dir}/uploads");
+    let avatar_dir = format!("{test_dir}/avatar");
     std::fs::create_dir_all(&test_dir).unwrap();
     std::fs::create_dir_all(&temp_dir).unwrap();
     std::fs::create_dir_all(&upload_temp_dir).unwrap();
+    std::fs::create_dir_all(&avatar_dir).unwrap();
 
     let config = std::sync::Arc::new(aster_drive::config::Config {
         server: aster_drive::config::ServerConfig {
@@ -82,6 +84,14 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
     aster_drive::db::repository::config_repo::ensure_defaults(&db)
         .await
         .unwrap();
+    aster_drive::db::repository::config_repo::upsert(
+        &db,
+        aster_drive::config::avatar::AVATAR_DIR_KEY,
+        &avatar_dir,
+        0,
+    )
+    .await
+    .unwrap();
 
     // 测试用 NoopCache
     let cache_config = aster_drive::config::CacheConfig {

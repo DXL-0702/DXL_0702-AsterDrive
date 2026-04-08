@@ -36,6 +36,7 @@ import type { ConfigSchemaItem, SystemConfig } from "@/types/api";
 
 const CATEGORY_ORDER = [
 	"general",
+	"user",
 	"auth",
 	"network",
 	"storage",
@@ -95,6 +96,8 @@ function syncPublicSiteUrlRuntime(value: string | null | undefined) {
 
 function getCategoryIcon(category: string): IconName {
 	switch (category) {
+		case "user":
+			return "User";
 		case "auth":
 			return "Shield";
 		case "network":
@@ -559,6 +562,8 @@ export default function AdminSettingsPage({
 	const getCategoryLabel = useCallback(
 		(category: string) => {
 			switch (category) {
+				case "user":
+					return t("settings_category_user");
 				case "auth":
 					return t("settings_category_auth");
 				case "network":
@@ -585,6 +590,8 @@ export default function AdminSettingsPage({
 	const getCategoryDescription = useCallback(
 		(category: string) => {
 			switch (category) {
+				case "user":
+					return t("settings_category_user_desc");
 				case "auth":
 					return t("settings_category_auth_desc");
 				case "network":

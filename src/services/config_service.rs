@@ -1,5 +1,6 @@
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::config::auth_runtime;
+use crate::config::avatar;
 use crate::config::branding;
 use crate::config::cors;
 use crate::config::definitions::ALL_CONFIGS;
@@ -105,6 +106,7 @@ fn validate_value_type(value_type: &str, value: &str) -> Result<()> {
 
 fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<String> {
     match key {
+        avatar::AVATAR_DIR_KEY => avatar::normalize_avatar_dir_config_value(value),
         auth_runtime::AUTH_COOKIE_SECURE_KEY => {
             auth_runtime::normalize_cookie_secure_config_value(value)
         }

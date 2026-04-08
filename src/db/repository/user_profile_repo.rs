@@ -2,7 +2,9 @@ use std::collections::HashMap;
 
 use crate::entities::user_profile::{self, Entity as UserProfile};
 use crate::errors::{AsterError, Result};
-use sea_orm::{ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
+};
 
 pub async fn find_by_user_id<C: ConnectionTrait>(
     db: &C,
@@ -43,4 +45,12 @@ pub async fn update<C: ConnectionTrait>(
     model: user_profile::ActiveModel,
 ) -> Result<user_profile::Model> {
     model.update(db).await.map_err(AsterError::from)
+}
+
+pub async fn count_by_avatar_policy<C: ConnectionTrait>(db: &C, policy_id: i64) -> Result<u64> {
+    UserProfile::find()
+        .filter(user_profile::Column::AvatarPolicyId.eq(policy_id))
+        .count(db)
+        .await
+        .map_err(AsterError::from)
 }

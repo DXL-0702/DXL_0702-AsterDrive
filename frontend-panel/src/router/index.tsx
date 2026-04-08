@@ -209,11 +209,15 @@ export const router = createBrowserRouter([
 			{ path: "/admin/locks", element: <AdminLocksPage /> },
 			{
 				path: "/admin/settings",
-				element: <Navigate to="/admin/settings/auth" replace />,
+				element: <Navigate to="/admin/settings/general" replace />,
 			},
 			{
 				path: "/admin/settings/auth",
 				element: <AdminSettingsPage section="auth" />,
+			},
+			{
+				path: "/admin/settings/user",
+				element: <AdminSettingsPage section="user" />,
 			},
 			{
 				path: "/admin/settings/network",
@@ -245,7 +249,7 @@ export const router = createBrowserRouter([
 			},
 			{
 				path: "/admin/settings/:section",
-				element: <Navigate to="/admin/settings/auth" replace />,
+				element: <Navigate to="/admin/settings/general" replace />,
 			},
 			{ path: "/admin/audit", element: <AdminAuditPage /> },
 			{ path: "/admin/about", element: <AdminAboutPage /> },

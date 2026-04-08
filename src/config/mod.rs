@@ -1,4 +1,5 @@
 pub mod auth_runtime;
+pub mod avatar;
 pub mod branding;
 pub mod cors;
 pub mod definitions;

@@ -14,6 +14,10 @@ pub struct Model {
     pub user_id: i64,
     pub display_name: Option<String>,
     pub avatar_source: AvatarSource,
+    #[deprecated(
+        since = "0.1.0",
+        note = "legacy avatar storage policy compatibility; new avatar uploads always use system_config.avatar_dir local storage"
+    )]
     pub avatar_policy_id: Option<i64>,
     pub avatar_key: Option<String>,
     pub avatar_version: i32,
@@ -23,6 +27,7 @@ pub struct Model {
     pub updated_at: DateTimeUtc,
 }
 
+#[allow(deprecated)]
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
     #[sea_orm(
@@ -31,6 +36,10 @@ pub enum Relation {
         to = "super::user::Column::Id"
     )]
     User,
+    #[deprecated(
+        since = "0.1.0",
+        note = "legacy avatar storage policy compatibility; new avatar uploads always use system_config.avatar_dir local storage"
+    )]
     #[sea_orm(
         belongs_to = "super::storage_policy::Entity",
         from = "Column::AvatarPolicyId",
@@ -45,6 +54,7 @@ impl Related<super::user::Entity> for Entity {
     }
 }
 
+#[allow(deprecated)]
 impl Related<super::storage_policy::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::StoragePolicy.def()

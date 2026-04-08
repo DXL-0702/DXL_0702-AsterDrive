@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Cursor;
+use std::path::{Path, PathBuf};
 
 use actix_multipart::Multipart;
 use actix_web::HttpResponse;
@@ -15,11 +16,11 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::constants::YEAR_SECS;
+use crate::config::avatar;
 use crate::db::repository::{user_profile_repo, user_repo};
 use crate::entities::{user, user_profile};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
-use crate::services::file_service;
 use crate::types::AvatarSource;
 
 const MAX_AVATAR_UPLOAD_SIZE: usize = 10 * 1024 * 1024;
@@ -93,8 +94,28 @@ fn avatar_object_key(prefix: &str, size: u32) -> String {
     format!("{prefix}/{size}.webp")
 }
 
-fn upload_prefix(user_id: i64, version: i32) -> String {
-    format!("profile/avatar/{user_id}/v{version}")
+fn avatar_variant_file_path(prefix: &Path, size: u32) -> PathBuf {
+    prefix.join(format!("{size}.webp"))
+}
+
+fn user_avatar_prefix(user_id: i64, version: i32) -> String {
+    format!("user/{user_id}/v{version}")
+}
+
+fn stored_avatar_prefix(profile: Option<&user_profile::Model>) -> Option<&str> {
+    profile
+        .and_then(|profile| profile.avatar_key.as_deref())
+        .map(str::trim)
+        .filter(|prefix| !prefix.is_empty())
+}
+
+#[allow(deprecated)]
+fn legacy_avatar_policy_id(profile: &user_profile::Model) -> Option<i64> {
+    profile.avatar_policy_id
+}
+
+fn user_avatar_dir(root_dir: &Path, user_id: i64, version: i32) -> PathBuf {
+    root_dir.join(user_avatar_prefix(user_id, version))
 }
 
 fn normalize_display_name(value: &str) -> Result<Option<String>> {
@@ -189,29 +210,51 @@ async fn read_avatar_upload(payload: &mut Multipart) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+async fn write_local_avatar(path: &Path, data: &[u8]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_aster_err(AsterError::storage_driver_error)?;
+    }
+
+    tokio::fs::write(path, data)
+        .await
+        .map_aster_err(AsterError::storage_driver_error)?;
+    Ok(())
+}
+
 async fn delete_upload_objects(state: &AppState, profile: &user_profile::Model) {
     if profile.avatar_source != AvatarSource::Upload {
         return;
     }
 
-    let Some(policy_id) = profile.avatar_policy_id else {
-        return;
-    };
-    let Some(prefix) = profile.avatar_key.as_deref() else {
+    let Some(prefix) = stored_avatar_prefix(Some(profile)) else {
         return;
     };
 
-    let Some(policy) = state.policy_snapshot.get_policy(policy_id) else {
+    if let Some(policy_id) = legacy_avatar_policy_id(profile) {
+        let Some(policy) = state.policy_snapshot.get_policy(policy_id) else {
+            return;
+        };
+        let Ok(driver) = state.driver_registry.get_driver(&policy) else {
+            return;
+        };
+
+        for size in [AVATAR_SIZE_SM, AVATAR_SIZE_LG] {
+            let path = avatar_object_key(prefix, size);
+            if let Err(e) = driver.delete(&path).await {
+                tracing::warn!("failed to delete avatar object {path}: {e}");
+            }
+        }
         return;
-    };
-    let Ok(driver) = state.driver_registry.get_driver(&policy) else {
-        return;
-    };
+    }
 
     for size in [AVATAR_SIZE_SM, AVATAR_SIZE_LG] {
-        let path = avatar_object_key(prefix, size);
-        if let Err(e) = driver.delete(&path).await {
-            tracing::warn!("failed to delete avatar object {path}: {e}");
+        let path = avatar_variant_file_path(Path::new(prefix), size);
+        if let Err(e) = tokio::fs::remove_file(&path).await
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!("failed to delete avatar file {}: {e}", path.display());
         }
     }
 }
@@ -249,9 +292,7 @@ fn build_avatar_info(
             version,
         },
         AvatarSource::Upload => {
-            let has_upload = profile
-                .map(|p| p.avatar_policy_id.is_some() && p.avatar_key.is_some())
-                .unwrap_or(false);
+            let has_upload = stored_avatar_prefix(profile).is_some();
 
             AvatarInfo {
                 source,
@@ -302,9 +343,7 @@ pub fn build_share_public_avatar_info(
             version,
         },
         AvatarSource::Upload => {
-            let has_upload = profile
-                .map(|p| p.avatar_policy_id.is_some() && p.avatar_key.is_some())
-                .unwrap_or(false);
+            let has_upload = stored_avatar_prefix(profile).is_some();
 
             AvatarInfo {
                 source,
@@ -362,14 +401,6 @@ pub async fn upload_avatar(
     let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
     let upload_data = read_avatar_upload(payload).await?;
     let (small_bytes, large_bytes) = process_avatar_image(upload_data)?;
-    let policy = file_service::resolve_policy_for_size(
-        state,
-        user_id,
-        None,
-        i64::try_from(large_bytes.len().max(small_bytes.len())).unwrap_or(i64::MAX),
-    )
-    .await?;
-    let driver = state.driver_registry.get_driver(&policy)?;
     user_repo::check_quota(
         &state.db,
         user_id,
@@ -380,13 +411,18 @@ pub async fn upload_avatar(
         .as_ref()
         .map(|profile| profile.avatar_version.saturating_add(1))
         .unwrap_or(1);
-    let prefix = upload_prefix(user_id, version);
-    let small_path = avatar_object_key(&prefix, AVATAR_SIZE_SM);
-    let large_path = avatar_object_key(&prefix, AVATAR_SIZE_LG);
+    let prefix = user_avatar_dir(
+        &avatar::resolve_local_avatar_root_dir(&state.runtime_config)?,
+        user_id,
+        version,
+    );
+    let prefix_value = prefix.to_string_lossy().into_owned();
+    let small_path = avatar_variant_file_path(&prefix, AVATAR_SIZE_SM);
+    let large_path = avatar_variant_file_path(&prefix, AVATAR_SIZE_LG);
 
-    driver.put(&small_path, &small_bytes).await?;
-    if let Err(e) = driver.put(&large_path, &large_bytes).await {
-        let _ = driver.delete(&small_path).await;
+    write_local_avatar(&small_path, &small_bytes).await?;
+    if let Err(e) = write_local_avatar(&large_path, &large_bytes).await {
+        let _ = tokio::fs::remove_file(&small_path).await;
         return Err(e);
     }
 
@@ -395,8 +431,8 @@ pub async fn upload_avatar(
         Some(current) => {
             let mut active: user_profile::ActiveModel = current.into();
             active.avatar_source = Set(AvatarSource::Upload);
-            active.avatar_policy_id = Set(Some(policy.id));
-            active.avatar_key = Set(Some(prefix.clone()));
+            active.avatar_policy_id = Set(None);
+            active.avatar_key = Set(Some(prefix_value.clone()));
             active.avatar_version = Set(version);
             active.updated_at = Set(now);
             user_profile_repo::update(&state.db, active).await
@@ -408,8 +444,8 @@ pub async fn upload_avatar(
                     user_id: Set(user_id),
                     display_name: Set(None),
                     avatar_source: Set(AvatarSource::Upload),
-                    avatar_policy_id: Set(Some(policy.id)),
-                    avatar_key: Set(Some(prefix.clone())),
+                    avatar_policy_id: Set(None),
+                    avatar_key: Set(Some(prefix_value.clone())),
                     avatar_version: Set(version),
                     created_at: Set(now),
                     updated_at: Set(now),
@@ -422,8 +458,8 @@ pub async fn upload_avatar(
     let saved = match saved {
         Ok(model) => model,
         Err(err) => {
-            let _ = driver.delete(&small_path).await;
-            let _ = driver.delete(&large_path).await;
+            let _ = tokio::fs::remove_file(&small_path).await;
+            let _ = tokio::fs::remove_file(&large_path).await;
             return Err(err);
         }
     };
@@ -596,20 +632,22 @@ pub async fn get_avatar_bytes(state: &AppState, user_id: i64, size: u32) -> Resu
         )));
     }
 
-    let prefix = profile
-        .avatar_key
-        .as_deref()
+    let prefix = stored_avatar_prefix(Some(&profile))
         .ok_or_else(|| AsterError::record_not_found("avatar key missing"))?;
-    let policy_id = profile
-        .avatar_policy_id
-        .ok_or_else(|| AsterError::record_not_found("avatar policy missing"))?;
-    let policy = state.policy_snapshot.get_policy_or_err(policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
-    let path = avatar_object_key(prefix, size);
-    driver
-        .get(&path)
+    if let Some(policy_id) = legacy_avatar_policy_id(&profile) {
+        let policy = state.policy_snapshot.get_policy_or_err(policy_id)?;
+        let driver = state.driver_registry.get_driver(&policy)?;
+        let path = avatar_object_key(prefix, size);
+        return driver
+            .get(&path)
+            .await
+            .map_err(|_| AsterError::record_not_found(format!("avatar object {path}")));
+    }
+
+    let path = avatar_variant_file_path(Path::new(prefix), size);
+    tokio::fs::read(&path)
         .await
-        .map_err(|_| AsterError::record_not_found(format!("avatar object {path}")))
+        .map_err(|_| AsterError::record_not_found(format!("avatar object {}", path.display())))
 }
 
 pub fn avatar_image_response(bytes: Vec<u8>) -> HttpResponse {

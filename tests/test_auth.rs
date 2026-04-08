@@ -912,7 +912,11 @@ async fn test_display_name_survives_avatar_source_switches() {
 #[actix_web::test]
 async fn test_avatar_upload_and_source_switch() {
     let state = common::setup().await;
-    let avatar_base_path = aster_drive::db::repository::policy_repo::find_default(&state.db)
+    let avatar_base_path = state
+        .runtime_config
+        .get(aster_drive::config::avatar::AVATAR_DIR_KEY)
+        .expect("avatar_dir should exist");
+    let shared_policy_base_path = aster_drive::db::repository::policy_repo::find_default(&state.db)
         .await
         .unwrap()
         .expect("default policy should exist")
@@ -948,12 +952,22 @@ async fn test_avatar_upload_and_source_switch() {
         body["data"]["avatar"]["url_512"],
         "/auth/profile/avatar/512?v=1"
     );
-    let avatar_v1_512 = std::path::PathBuf::from(&avatar_base_path)
-        .join(format!("profile/avatar/{user_id}/v1/512.webp"));
-    let avatar_v1_1024 = std::path::PathBuf::from(&avatar_base_path)
-        .join(format!("profile/avatar/{user_id}/v1/1024.webp"));
+    let avatar_v1_512 =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v1/512.webp"));
+    let avatar_v1_1024 =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v1/1024.webp"));
     assert!(avatar_v1_512.exists());
     assert!(avatar_v1_1024.exists());
+    assert!(
+        !std::path::PathBuf::from(&shared_policy_base_path)
+            .join(format!("user/{user_id}/v1/512.webp"))
+            .exists()
+    );
+    assert!(
+        !std::path::PathBuf::from(&shared_policy_base_path)
+            .join(format!("user/{user_id}/v1/1024.webp"))
+            .exists()
+    );
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/profile/avatar/512")
@@ -995,11 +1009,10 @@ async fn test_avatar_upload_and_source_switch() {
 #[actix_web::test]
 async fn test_avatar_reupload_replaces_previous_objects() {
     let state = common::setup().await;
-    let avatar_base_path = aster_drive::db::repository::policy_repo::find_default(&state.db)
-        .await
-        .unwrap()
-        .expect("default policy should exist")
-        .base_path;
+    let avatar_base_path = state
+        .runtime_config
+        .get(aster_drive::config::avatar::AVATAR_DIR_KEY)
+        .expect("avatar_dir should exist");
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -1025,10 +1038,10 @@ async fn test_avatar_reupload_replaces_previous_objects() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    let avatar_v1_512 = std::path::PathBuf::from(&avatar_base_path)
-        .join(format!("profile/avatar/{user_id}/v1/512.webp"));
-    let avatar_v1_1024 = std::path::PathBuf::from(&avatar_base_path)
-        .join(format!("profile/avatar/{user_id}/v1/1024.webp"));
+    let avatar_v1_512 =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v1/512.webp"));
+    let avatar_v1_1024 =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v1/1024.webp"));
     assert!(avatar_v1_512.exists());
     assert!(avatar_v1_1024.exists());
 
@@ -1052,10 +1065,10 @@ async fn test_avatar_reupload_replaces_previous_objects() {
         "/auth/profile/avatar/512?v=2"
     );
 
-    let avatar_v2_512 = std::path::PathBuf::from(&avatar_base_path)
-        .join(format!("profile/avatar/{user_id}/v2/512.webp"));
-    let avatar_v2_1024 = std::path::PathBuf::from(&avatar_base_path)
-        .join(format!("profile/avatar/{user_id}/v2/1024.webp"));
+    let avatar_v2_512 =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v2/512.webp"));
+    let avatar_v2_1024 =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v2/1024.webp"));
     assert!(!avatar_v1_512.exists());
     assert!(!avatar_v1_1024.exists());
     assert!(avatar_v2_512.exists());
@@ -1065,11 +1078,10 @@ async fn test_avatar_reupload_replaces_previous_objects() {
 #[actix_web::test]
 async fn test_avatar_switch_to_none_deletes_uploaded_objects() {
     let state = common::setup().await;
-    let avatar_base_path = aster_drive::db::repository::policy_repo::find_default(&state.db)
-        .await
-        .unwrap()
-        .expect("default policy should exist")
-        .base_path;
+    let avatar_base_path = state
+        .runtime_config
+        .get(aster_drive::config::avatar::AVATAR_DIR_KEY)
+        .expect("avatar_dir should exist");
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -1095,10 +1107,10 @@ async fn test_avatar_switch_to_none_deletes_uploaded_objects() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
 
-    let avatar_v1_512 = std::path::PathBuf::from(&avatar_base_path)
-        .join(format!("profile/avatar/{user_id}/v1/512.webp"));
-    let avatar_v1_1024 = std::path::PathBuf::from(&avatar_base_path)
-        .join(format!("profile/avatar/{user_id}/v1/1024.webp"));
+    let avatar_v1_512 =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v1/512.webp"));
+    let avatar_v1_1024 =
+        std::path::PathBuf::from(&avatar_base_path).join(format!("user/{user_id}/v1/1024.webp"));
     assert!(avatar_v1_512.exists());
     assert!(avatar_v1_1024.exists());
 
@@ -1125,6 +1137,69 @@ async fn test_avatar_switch_to_none_deletes_uploaded_objects() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
+}
+
+#[actix_web::test]
+async fn test_legacy_policy_avatar_remains_readable_and_cleanupable() {
+    let state = common::setup().await;
+    let default_policy = aster_drive::db::repository::policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist");
+    let db = state.db.clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let user_id = body["data"]["id"].as_i64().unwrap();
+
+    let legacy_prefix = format!("profile/avatar/{user_id}/v1");
+    let legacy_dir = std::path::PathBuf::from(&default_policy.base_path).join(&legacy_prefix);
+    std::fs::create_dir_all(&legacy_dir).unwrap();
+    std::fs::write(legacy_dir.join("512.webp"), b"legacy-avatar-512").unwrap();
+    std::fs::write(legacy_dir.join("1024.webp"), b"legacy-avatar-1024").unwrap();
+
+    let now = chrono::Utc::now();
+    aster_drive::db::repository::user_profile_repo::create(
+        &db,
+        aster_drive::entities::user_profile::ActiveModel {
+            user_id: sea_orm::Set(user_id),
+            display_name: sea_orm::Set(None),
+            avatar_source: sea_orm::Set(aster_drive::types::AvatarSource::Upload),
+            avatar_policy_id: sea_orm::Set(Some(default_policy.id)),
+            avatar_key: sea_orm::Set(Some(legacy_prefix.clone())),
+            avatar_version: sea_orm::Set(1),
+            created_at: sea_orm::Set(now),
+            updated_at: sea_orm::Set(now),
+        },
+    )
+    .await
+    .unwrap();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/profile/avatar/512")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(test::read_body(resp).await.as_ref(), b"legacy-avatar-512");
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/auth/profile/avatar/source")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "source": "none" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    assert!(!legacy_dir.join("512.webp").exists());
+    assert!(!legacy_dir.join("1024.webp").exists());
 }
 
 /// Unauthenticated requests to PATCH /preferences should be rejected.

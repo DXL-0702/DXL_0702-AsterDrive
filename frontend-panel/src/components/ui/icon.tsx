@@ -65,6 +65,7 @@ import {
 	PiTable,
 	PiTrash,
 	PiUploadSimple,
+	PiUser,
 	PiWarning,
 	PiWarningCircle,
 	PiWifiHigh,
@@ -139,6 +140,7 @@ export type IconName =
 	| "Trash"
 	| "Undo"
 	| "Upload"
+	| "User"
 	| "Warning"
 	| "WifiHigh"
 	| "WifiX"
@@ -211,6 +213,7 @@ const iconMap: Record<IconName, ComponentType<{ className?: string }>> = {
 	Trash: PiTrash,
 	Undo: PiArrowUUpLeft,
 	Upload: PiUploadSimple,
+	User: PiUser,
 	Warning: PiWarning,
 	WifiHigh: PiWifiHigh,
 	WifiX: PiWifiX,

@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
-use crate::db::repository::{policy_group_repo, policy_repo, team_repo, user_repo};
+use crate::db::repository::{
+    policy_group_repo, policy_repo, team_repo, user_profile_repo, user_repo,
+};
 use crate::entities::{
     storage_policy, storage_policy_group, storage_policy_group_item, user, user_storage_policy,
 };
@@ -255,6 +257,13 @@ pub async fn delete(state: &AppState, id: i64) -> Result<()> {
     if group_ref_count > 0 {
         return Err(AsterError::validation_error(format!(
             "cannot delete policy: {group_ref_count} policy group item(s) still reference it"
+        )));
+    }
+
+    let avatar_ref_count = user_profile_repo::count_by_avatar_policy(&state.db, id).await?;
+    if avatar_ref_count > 0 {
+        return Err(AsterError::validation_error(format!(
+            "cannot delete policy: {avatar_ref_count} uploaded avatar(s) still reference it"
         )));
     }
 

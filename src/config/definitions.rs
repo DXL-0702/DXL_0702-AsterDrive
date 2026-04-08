@@ -163,6 +163,17 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         category: "storage",
         description: "Default storage quota for new users in bytes (0 = unlimited)",
     },
+    ConfigDef {
+        key: "avatar_dir",
+        label_i18n_key: "settings_item_avatar_dir_label",
+        description_i18n_key: "settings_item_avatar_dir_desc",
+        value_type: "string",
+        default_fn: || crate::config::avatar::DEFAULT_AVATAR_DIR.to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "user",
+        description: "Local directory used for uploaded avatar files (relative paths resolve under ./data)",
+    },
     // ── Audit ─────────────────────────────────────────────
     ConfigDef {
         key: "audit_log_enabled",
