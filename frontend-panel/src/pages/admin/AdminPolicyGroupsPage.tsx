@@ -55,6 +55,7 @@ import {
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
 	ADMIN_ICON_BUTTON_CLASS,
@@ -161,6 +162,7 @@ function findPolicyName(policies: PolicyLookup[], policyId: string) {
 
 export default function AdminPolicyGroupsPage() {
 	const { t } = useTranslation("admin");
+	usePageTitle(t("policy_groups"));
 	const [searchParams, setSearchParams] = useSearchParams();
 	const [offset, setOffset] = useState(
 		parseOffsetSearchParam(searchParams.get("offset")),

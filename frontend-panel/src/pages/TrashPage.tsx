@@ -16,6 +16,7 @@ import { ItemCheckbox } from "@/components/ui/item-checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { STORAGE_KEYS } from "@/config/app";
 import { handleApiError } from "@/hooks/useApiError";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { useSelectionShortcuts } from "@/hooks/useSelectionShortcuts";
 import { FOLDER_LIMIT } from "@/lib/constants";
 import { formatBatchToast } from "@/lib/formatBatchToast";
@@ -61,6 +62,7 @@ function toTrashItems(contents: TrashContents): TrashItem[] {
 
 export default function TrashPage() {
 	const { t } = useTranslation(["core", "files", "admin"]);
+	usePageTitle(t("core:trash"));
 	const refreshUser = useAuthStore((s) => s.refreshUser);
 	const [contents, setContents] = useState<TrashContents>({
 		files: [],

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import {
 	AdminTeamDetailDialog,
@@ -7,6 +8,7 @@ import {
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { handleApiError } from "@/hooks/useApiError";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { adminPolicyGroupService } from "@/services/adminService";
 import type { StoragePolicyGroup } from "@/types/api";
 
@@ -23,7 +25,24 @@ function isAdminTeamDetailTab(
 	);
 }
 
+function getAdminTeamDetailSectionTitle(
+	section: AdminTeamDetailTab,
+	t: ReturnType<typeof useTranslation>["t"],
+) {
+	switch (section) {
+		case "members":
+			return t("settings:settings_team_members");
+		case "audit":
+			return t("settings:settings_team_audit_title");
+		case "danger":
+			return t("settings:settings_team_danger_zone");
+		default:
+			return t("settings:settings_team_overview");
+	}
+}
+
 export default function AdminTeamDetailPage() {
+	const { t } = useTranslation(["admin", "settings"]);
 	const navigate = useNavigate();
 	const { teamId, section } = useParams<{
 		teamId?: string;
@@ -32,6 +51,10 @@ export default function AdminTeamDetailPage() {
 	const parsedTeamId = Number(teamId);
 	const [policyGroups, setPolicyGroups] = useState<StoragePolicyGroup[]>([]);
 	const [policyGroupsLoading, setPolicyGroupsLoading] = useState(true);
+	const validatedSection = isAdminTeamDetailTab(section) ? section : "overview";
+	usePageTitle(
+		`${t("teams")} · ${getAdminTeamDetailSectionTitle(validatedSection, t)}`,
+	);
 
 	const loadPolicyGroups = useCallback(async () => {
 		setPolicyGroupsLoading(true);

@@ -36,6 +36,7 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { handleApiError } from "@/hooks/useApiError";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { FOLDER_LIMIT, PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { formatDateShort } from "@/lib/format";
 import { ApiError } from "@/services/http";
@@ -97,6 +98,7 @@ export default function ShareViewPage() {
 	const [navigating, setNavigating] = useState(false);
 	const [loadingMore, setLoadingMore] = useState(false);
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
+	usePageTitle(info?.name ?? t("share:share_mode_page"));
 
 	const hasMoreFiles = folderContents?.next_file_cursor != null;
 

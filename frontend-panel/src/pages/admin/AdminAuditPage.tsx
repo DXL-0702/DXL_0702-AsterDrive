@@ -33,6 +33,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useApiList } from "@/hooks/useApiList";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { formatDateAbsolute } from "@/lib/format";
 import {
@@ -121,6 +122,7 @@ function mergeManagedAuditSearchParams(
 
 export default function AdminAuditPage() {
 	const { t } = useTranslation("admin");
+	usePageTitle(t("audit_log"));
 	const [searchParams, setSearchParams] = useSearchParams();
 	const initialAction = searchParams.get("action") ?? "";
 	const [offset, setOffsetState] = useState(

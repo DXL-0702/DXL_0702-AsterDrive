@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { runtimeFlags } from "@/config/runtime";
+import { usePageTitle } from "@/hooks/usePageTitle";
 
 type ErrorTone = {
 	label: string;
@@ -154,6 +155,7 @@ export default function ErrorPage() {
 		defaultTone,
 		statusTones,
 	);
+	usePageTitle(tone.title);
 	const developerDetails = getDeveloperDetails(error);
 	const isDeveloperMode = runtimeFlags.showDeveloperErrorDetails;
 

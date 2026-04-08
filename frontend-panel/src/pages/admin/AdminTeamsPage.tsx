@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/tooltip";
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
 	ADMIN_ICON_BUTTON_CLASS,
@@ -231,6 +232,7 @@ function TeamStorageCell({
 
 export default function AdminTeamsPage() {
 	const { t } = useTranslation(["admin", "core"]);
+	usePageTitle(t("teams"));
 	const navigate = useNavigate();
 	const [searchParams, setSearchParams] = useSearchParams();
 	const initialKeyword = searchParams.get("keyword") ?? "";

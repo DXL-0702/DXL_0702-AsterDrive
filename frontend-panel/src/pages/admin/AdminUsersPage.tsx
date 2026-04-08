@@ -54,6 +54,7 @@ import {
 } from "@/components/ui/tooltip";
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
 	ADMIN_ICON_BUTTON_CLASS,
@@ -178,6 +179,7 @@ function QuotaCell({ user }: { user: UserInfo }) {
 
 export default function AdminUsersPage() {
 	const { t } = useTranslation("admin");
+	usePageTitle(t("users"));
 	const [searchParams, setSearchParams] = useSearchParams();
 	const initialKeyword = searchParams.get("keyword") ?? "";
 	const initialRole = searchParams.get("role");

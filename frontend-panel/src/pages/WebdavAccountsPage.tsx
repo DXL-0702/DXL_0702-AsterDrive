@@ -33,6 +33,7 @@ import {
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { FOLDER_LIMIT, PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { formatDateShort } from "@/lib/format";
 import { absoluteAppUrl } from "@/lib/publicSiteUrl";
@@ -77,6 +78,7 @@ function normalizeWebdavPrefix(prefix: string): string {
 
 export default function WebdavAccountsPage() {
 	const { t } = useTranslation(["core", "admin", "auth", "webdav", "errors"]);
+	usePageTitle(t("core:webdav"));
 	const {
 		items: accounts,
 		loading,

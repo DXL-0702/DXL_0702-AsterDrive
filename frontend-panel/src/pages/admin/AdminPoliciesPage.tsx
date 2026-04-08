@@ -45,6 +45,7 @@ import {
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
 	ADMIN_ICON_BUTTON_CLASS,
@@ -80,6 +81,7 @@ const POLICY_BADGE_CELL_CONTENT_CLASS =
 
 export default function AdminPoliciesPage() {
 	const { t } = useTranslation("admin");
+	usePageTitle(t("policies"));
 	const [searchParams, setSearchParams] = useSearchParams();
 	const [offset, setOffset] = useState(
 		parseOffsetSearchParam(searchParams.get("offset")),

@@ -39,6 +39,7 @@ import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { handleApiError } from "@/hooks/useApiError";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import {
 	DRAG_SOURCE_MIME,
 	FILE_BROWSER_FEEDBACK_DURATION_MS,
@@ -137,6 +138,14 @@ export default function FileBrowserPage() {
 	const isSearching = searchQuery !== null;
 	const displayFolders = isSearching ? searchFolders : folders;
 	const displayFiles = isSearching ? searchFiles : files;
+	const currentFolderName = breadcrumb[breadcrumb.length - 1]?.name;
+	const pageTitle = isSearching
+		? `${t("core:search")}: ${searchQuery}`
+		: folderId == null
+			? t("core:all_files")
+			: (currentFolderName ?? t("core:all_files"));
+
+	usePageTitle(pageTitle);
 
 	useKeyboardShortcuts();
 

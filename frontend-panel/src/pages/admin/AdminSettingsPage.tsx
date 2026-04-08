@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { handleApiError } from "@/hooks/useApiError";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { setPublicSiteUrl } from "@/lib/publicSiteUrl";
 import { cn } from "@/lib/utils";
 import { adminConfigService } from "@/services/adminService";
@@ -114,6 +115,32 @@ function getCategoryIcon(category: string): IconName {
 			return "BracketsCurly";
 		default:
 			return "Grid";
+	}
+}
+
+function getAdminSettingsSectionTitle(
+	section: AdminSettingsTab,
+	t: ReturnType<typeof useTranslation>["t"],
+) {
+	switch (section) {
+		case "user":
+			return t("settings_category_user");
+		case "auth":
+			return t("settings_category_auth");
+		case "network":
+			return t("settings_category_network");
+		case "storage":
+			return t("settings_category_storage");
+		case "webdav":
+			return t("settings_category_webdav");
+		case "audit":
+			return t("settings_category_audit");
+		case "custom":
+			return t("settings_category_custom");
+		case "other":
+			return t("settings_category_other");
+		default:
+			return t("settings_category_general");
 	}
 }
 
@@ -280,6 +307,7 @@ export default function AdminSettingsPage({
 	section?: AdminSettingsTab;
 }) {
 	const { t } = useTranslation("admin");
+	usePageTitle(getAdminSettingsSectionTitle(section, t));
 	const navigate = useNavigate();
 	const customDraftIdRef = useRef(0);
 	const compactNavContainerRef = useRef<HTMLDivElement | null>(null);

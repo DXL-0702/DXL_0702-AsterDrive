@@ -9,6 +9,7 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { handleApiError } from "@/hooks/useApiError";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { cn } from "@/lib/utils";
 import { emailSchema, passwordSchema, usernameSchema } from "@/lib/validation";
 import { authService } from "@/services/authService";
@@ -138,6 +139,7 @@ export default function LoginPage() {
 				: mode === "setup"
 					? t("create_admin")
 					: "";
+	usePageTitle(modeActionText || t("sign_in"));
 	const isSubmitDisabled =
 		submitting ||
 		checking ||

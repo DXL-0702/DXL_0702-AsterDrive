@@ -17,6 +17,7 @@ import {
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import {
 	ADMIN_ICON_BUTTON_CLASS,
 	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
@@ -27,6 +28,7 @@ import type { ShareInfo } from "@/types/api";
 
 export default function AdminSharesPage() {
 	const { t } = useTranslation("admin");
+	usePageTitle(t("shares"));
 	const {
 		items: shares,
 		setItems: setShares,

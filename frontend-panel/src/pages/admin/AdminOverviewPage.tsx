@@ -30,6 +30,7 @@ import {
 	TableRow,
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
 	PAGE_SECTION_PADDING_CLASS,
@@ -316,6 +317,7 @@ function OverviewTrendChart({
 
 export default function AdminOverviewPage() {
 	const { t } = useTranslation("admin");
+	usePageTitle(t("overview"));
 	const timezone = resolveBrowserTimeZone();
 	const [overview, setOverview] = useState<AdminOverview | null>(null);
 	const [loading, setLoading] = useState(true);

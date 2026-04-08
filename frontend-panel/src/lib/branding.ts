@@ -28,7 +28,6 @@ export function resolveBranding(
 export function applyBranding(branding: AppliedBranding): void {
 	if (typeof document === "undefined") return;
 
-	document.title = branding.title;
 	upsertMetaTag("description", branding.description);
 	upsertLinkTag('link[rel="icon"]', {
 		rel: "icon",
@@ -69,6 +68,20 @@ function normalizeFaviconUrl(value: string | null | undefined): string {
 	}
 
 	return DEFAULT_BRANDING.faviconUrl;
+}
+
+export function formatDocumentTitle(
+	appTitle: string | null | undefined,
+	pageTitle?: string | null,
+): string {
+	const normalizedAppTitle = normalizeText(appTitle, DEFAULT_BRANDING.title);
+	const normalizedPageTitle = pageTitle?.trim();
+
+	if (!normalizedPageTitle || normalizedPageTitle === normalizedAppTitle) {
+		return normalizedAppTitle;
+	}
+
+	return `${normalizedPageTitle} · ${normalizedAppTitle}`;
 }
 
 function upsertMetaTag(name: string, content: string): void {

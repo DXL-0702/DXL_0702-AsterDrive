@@ -8,8 +8,25 @@ import { SecuritySettingsView } from "@/components/settings/SecuritySettingsView
 import { TeamsSettingsView } from "@/components/settings/TeamsSettingsView";
 import { Icon } from "@/components/ui/icon";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { usePageTitle } from "@/hooks/usePageTitle";
 
 type SettingsTabKey = "profile" | "interface" | "security" | "teams";
+
+function getSettingsSectionTitle(
+	section: SettingsTabKey,
+	t: ReturnType<typeof useTranslation>["t"],
+) {
+	switch (section) {
+		case "interface":
+			return t("settings:settings_interface");
+		case "security":
+			return t("settings:settings_security");
+		case "teams":
+			return t("settings:settings_teams");
+		default:
+			return t("settings:settings_profile");
+	}
+}
 
 export default function SettingsPage({
 	section = "profile",
@@ -18,6 +35,7 @@ export default function SettingsPage({
 }) {
 	const { t } = useTranslation(["core", "settings"]);
 	const navigate = useNavigate();
+	usePageTitle(getSettingsSectionTitle(section, t));
 
 	const handleSectionChange = (value: string) => {
 		if (

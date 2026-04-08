@@ -19,6 +19,7 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { ItemCheckbox } from "@/components/ui/item-checkbox";
 import { handleApiError } from "@/hooks/useApiError";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { useSelectionShortcuts } from "@/hooks/useSelectionShortcuts";
 import { formatDateAbsolute } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ const PAGE_SIZE = 50;
 
 export default function MySharesPage() {
 	const { t } = useTranslation(["core", "share"]);
+	usePageTitle(t("share:my_shares_title"));
 	const [page, setPage] = useState(0);
 	const [loading, setLoading] = useState(true);
 	const [shares, setShares] = useState<MyShareInfo[]>([]);

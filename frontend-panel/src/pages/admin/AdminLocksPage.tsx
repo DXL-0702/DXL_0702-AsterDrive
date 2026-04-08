@@ -18,6 +18,7 @@ import {
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import {
 	ADMIN_ICON_BUTTON_CLASS,
 	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
@@ -28,6 +29,7 @@ import { adminLockService } from "@/services/adminService";
 
 export default function AdminLocksPage() {
 	const { t } = useTranslation("admin");
+	usePageTitle(t("webdav_locks"));
 	const {
 		items: locks,
 		setItems: setLocks,

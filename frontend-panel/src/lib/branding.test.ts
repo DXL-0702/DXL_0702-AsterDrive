@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
 	applyBranding,
 	DEFAULT_BRANDING,
+	formatDocumentTitle,
 	resolveBranding,
 } from "@/lib/branding";
 
@@ -55,14 +56,13 @@ describe("branding helpers", () => {
 		});
 	});
 
-	it("updates title, description, and both icon links", () => {
+	it("updates description and both icon links", () => {
 		applyBranding({
 			title: "Nebula Drive",
 			description: "Private cloud for the squad",
 			faviconUrl: "https://cdn.example.com/brand/favicon.png",
 		});
 
-		expect(document.title).toBe("Nebula Drive");
 		expect(
 			document.head.querySelector('meta[name="description"]'),
 		).toHaveAttribute("content", "Private cloud for the squad");
@@ -78,16 +78,16 @@ describe("branding helpers", () => {
 		);
 	});
 
-	it("preserves non-ascii branding text in the document head", () => {
-		applyBranding({
-			title: "猫猫云盘",
-			description: "团队私有云存储",
-			faviconUrl: "https://cdn.example.com/brand/favicon.png",
-		});
-
-		expect(document.title).toBe("猫猫云盘");
-		expect(
-			document.head.querySelector('meta[name="description"]'),
-		).toHaveAttribute("content", "团队私有云存储");
+	it("formats page titles against the current branding title", () => {
+		expect(formatDocumentTitle("Nebula Drive", "Trash")).toBe(
+			"Trash · Nebula Drive",
+		);
+		expect(formatDocumentTitle("Nebula Drive", "  Nebula Drive  ")).toBe(
+			"Nebula Drive",
+		);
+		expect(formatDocumentTitle("  ", "Trash")).toBe("Trash · AsterDrive");
+		expect(formatDocumentTitle("猫猫云盘", "团队设置")).toBe(
+			"团队设置 · 猫猫云盘",
+		);
 	});
 });

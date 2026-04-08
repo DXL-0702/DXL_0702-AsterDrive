@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { config } from "@/config/app";
+import { usePageTitle } from "@/hooks/usePageTitle";
 import { cn } from "@/lib/utils";
 
 const REPOSITORY_URL = "https://github.com/AptS-1547/AsterDrive";
@@ -64,6 +65,7 @@ function getChannelBadgeClass(channel: ReleaseChannel) {
 
 export default function AdminAboutPage() {
 	const { t } = useTranslation("admin");
+	usePageTitle(t("about"));
 	const appVersion = config.appVersion;
 	const displayVersion = formatDisplayVersion(appVersion);
 	const releaseChannel = resolveReleaseChannel(appVersion);
