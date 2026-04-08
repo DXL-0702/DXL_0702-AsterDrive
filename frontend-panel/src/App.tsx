@@ -3,6 +3,7 @@ import { RouterProvider } from "react-router-dom";
 import { Toaster } from "sonner";
 import { OfflineBootFallback } from "@/components/layout/OfflineBootFallback";
 import { usePwaUpdate } from "@/hooks/usePwaUpdate";
+import { useStorageChangeEvents } from "@/hooks/useStorageChangeEvents";
 import { router } from "@/router";
 import { useAuthStore } from "@/stores/authStore";
 import { useBrandingStore } from "@/stores/brandingStore";
@@ -19,6 +20,7 @@ function App() {
 	const bootOffline = useAuthStore((s) => s.bootOffline);
 	const userRole = useAuthStore((s) => s.user?.role);
 	usePwaUpdate();
+	useStorageChangeEvents();
 
 	useEffect(() => {
 		void useBrandingStore.getState().load();

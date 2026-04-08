@@ -11,6 +11,44 @@ interface TextCacheEntry extends Partial<TextCacheValue> {
 }
 
 const textContentCache = new Map<string, TextCacheEntry>();
+const textContentListeners = new Map<string, Set<() => void>>();
+
+function subscribeTextContentInvalidation(path: string, listener: () => void) {
+	let listeners = textContentListeners.get(path);
+	if (!listeners) {
+		listeners = new Set();
+		textContentListeners.set(path, listeners);
+	}
+	listeners.add(listener);
+
+	return () => {
+		const current = textContentListeners.get(path);
+		if (!current) return;
+		current.delete(listener);
+		if (current.size === 0) {
+			textContentListeners.delete(path);
+		}
+	};
+}
+
+function notifyTextContentInvalidation(path?: string) {
+	if (path) {
+		for (const listener of textContentListeners.get(path) ?? []) {
+			listener();
+		}
+		return;
+	}
+
+	const listeners = new Set<() => void>();
+	for (const pathListeners of textContentListeners.values()) {
+		for (const listener of pathListeners) {
+			listeners.add(listener);
+		}
+	}
+	for (const listener of listeners) {
+		listener();
+	}
+}
 
 async function fetchTextContent(
 	path: string,
@@ -71,9 +109,11 @@ async function fetchTextContent(
 export function invalidateTextContent(path?: string) {
 	if (path) {
 		textContentCache.delete(path);
+		notifyTextContentInvalidation(path);
 		return;
 	}
 	textContentCache.clear();
+	notifyTextContentInvalidation();
 }
 
 export function clearTextContentCache() {
@@ -165,13 +205,25 @@ export function useTextContent(path: string | null) {
 	);
 
 	const reload = useCallback(async () => {
-		if (path) invalidateTextContent(path);
 		await load(true);
-	}, [load, path]);
+	}, [load]);
 
 	useEffect(() => {
+		if (!path) {
+			void load();
+			return;
+		}
+
+		const unsubscribe = subscribeTextContentInvalidation(path, () => {
+			void load(true);
+		});
+
 		load();
-	}, [load]);
+
+		return () => {
+			unsubscribe();
+		};
+	}, [load, path]);
 
 	return {
 		content,

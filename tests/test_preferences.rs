@@ -54,10 +54,14 @@ async fn test_preferences_patch_and_get() {
     let req = test::TestRequest::patch()
         .uri("/api/v1/auth/preferences")
         .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({ "theme_mode": "dark" }))
+        .set_json(serde_json::json!({
+            "theme_mode": "dark",
+            "storage_event_stream_enabled": false
+        }))
         .to_request();
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
     assert_eq!(body["data"]["theme_mode"], "dark");
+    assert_eq!(body["data"]["storage_event_stream_enabled"], false);
 
     // 再 PATCH 设置 language（合并，不覆盖之前的）
     let req = test::TestRequest::patch()
@@ -71,6 +75,7 @@ async fn test_preferences_patch_and_get() {
         "existing pref preserved"
     );
     assert_eq!(body["data"]["language"], "zh");
+    assert_eq!(body["data"]["storage_event_stream_enabled"], false);
 
     // /me 也返回完整偏好
     let req = test::TestRequest::get()
@@ -80,6 +85,10 @@ async fn test_preferences_patch_and_get() {
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
     assert_eq!(body["data"]["preferences"]["theme_mode"], "dark");
     assert_eq!(body["data"]["preferences"]["language"], "zh");
+    assert_eq!(
+        body["data"]["preferences"]["storage_event_stream_enabled"],
+        false
+    );
 }
 
 // ── 偏好设置：空 PATCH 不改现有值 ──────────────────────────
@@ -98,6 +107,7 @@ async fn test_preferences_empty_patch_noop() {
         .to_request();
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
     assert_eq!(body["data"]["color_preset"], "green");
+    assert!(body["data"]["storage_event_stream_enabled"].is_null());
 
     // 空 PATCH（全 None）
     let req = test::TestRequest::patch()
@@ -110,6 +120,7 @@ async fn test_preferences_empty_patch_noop() {
         body["data"]["color_preset"], "green",
         "empty patch preserves existing"
     );
+    assert!(body["data"]["storage_event_stream_enabled"].is_null());
 }
 
 // ── 偏好设置：非法值被拒绝 ────────────────────────────────

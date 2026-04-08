@@ -6,7 +6,9 @@ import {
 	SettingsSection,
 } from "@/components/common/SettingsScaffold";
 import type { IconName } from "@/components/ui/icon";
+import { Switch } from "@/components/ui/switch";
 import { queuePreferenceSync } from "@/lib/preferenceSync";
+import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useThemeStore } from "@/stores/themeStore";
 
@@ -18,6 +20,12 @@ export function InterfaceSettingsView() {
 	const { mode, setMode } = useThemeStore();
 	const viewMode = useFileStore((s) => s.viewMode);
 	const setViewMode = useFileStore((s) => s.setViewMode);
+	const storageEventStreamEnabled = useAuthStore(
+		(s) => s.user?.preferences?.storage_event_stream_enabled !== false,
+	);
+	const setStorageEventStreamEnabled = useAuthStore(
+		(s) => s.setStorageEventStreamEnabled,
+	);
 
 	const themeOptions: Array<{
 		value: ThemeMode;
@@ -59,6 +67,9 @@ export function InterfaceSettingsView() {
 		list: t("settings:settings_browser_list_desc"),
 		grid: t("settings:settings_browser_grid_desc"),
 	};
+	const storageEventStreamDescription = storageEventStreamEnabled
+		? t("settings:settings_storage_event_stream_enabled_desc")
+		: t("settings:settings_storage_event_stream_disabled_desc");
 
 	return (
 		<SettingsSection
@@ -106,6 +117,25 @@ export function InterfaceSettingsView() {
 					value={viewMode}
 					onChange={setViewMode}
 				/>
+			</SettingsRow>
+
+			<SettingsRow
+				label={t("settings:settings_storage_event_stream")}
+				description={storageEventStreamDescription}
+				controlClassName="flex md:justify-end"
+			>
+				<div className="flex items-center justify-start md:justify-end">
+					<Switch
+						aria-label={t("settings:settings_storage_event_stream")}
+						checked={storageEventStreamEnabled}
+						onCheckedChange={(enabled) => {
+							setStorageEventStreamEnabled(enabled);
+							queuePreferenceSync({
+								storage_event_stream_enabled: enabled,
+							});
+						}}
+					/>
+				</div>
 			</SettingsRow>
 		</SettingsSection>
 	);

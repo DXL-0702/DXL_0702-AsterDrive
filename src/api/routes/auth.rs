@@ -1,13 +1,15 @@
 use crate::api::response::ApiResponse;
 use crate::config::RateLimitConfig;
+use crate::db::repository::team_member_repo;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{audit_service, auth_service, profile_service};
+use crate::services::{audit_service, auth_service, profile_service, storage_change_service};
 use actix_governor::Governor;
 use actix_web::cookie::time::Duration as CookieDuration;
 use actix_web::cookie::{Cookie, SameSite};
 use actix_web::middleware::Condition;
 use actix_web::{HttpResponse, web};
+use bytes::Bytes;
 use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
@@ -53,6 +55,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                 .route("/profile", web::patch().to(patch_profile))
                 .route("/profile/avatar/upload", web::post().to(upload_avatar))
                 .route("/profile/avatar/source", web::put().to(put_avatar_source))
+                .route("/events/storage", web::get().to(get_storage_events))
                 .route("/profile/avatar/{size}", web::get().to(get_self_avatar)),
         )
 }
@@ -181,6 +184,13 @@ fn bearer_token(req: &actix_web::HttpRequest) -> Option<String> {
         .map(str::to_string)
 }
 
+fn storage_event_frame(event: &storage_change_service::StorageChangeEvent) -> Option<Bytes> {
+    serde_json::to_string(event)
+        .map(|json| Bytes::from(format!("data: {json}\n\n")))
+        .map_err(|e| tracing::warn!("failed to serialize storage change event: {e}"))
+        .ok()
+}
+
 #[api_docs_macros::path(
     post,
     path = "/api/v1/auth/check",
@@ -239,6 +249,62 @@ pub async fn setup(
     )
     .await;
     Ok(HttpResponse::Created().json(ApiResponse::ok(user_info)))
+}
+
+pub async fn get_storage_events(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+) -> Result<HttpResponse> {
+    let user_id = claims.user_id;
+    let visible_team_ids: std::collections::HashSet<i64> =
+        team_member_repo::list_by_user_with_team(&state.db, user_id)
+            .await?
+            .into_iter()
+            .map(|(membership, _)| membership.team_id)
+            .collect();
+    let mut rx = state.storage_change_tx.subscribe();
+
+    let stream = async_stream::stream! {
+        let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(15));
+        heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        loop {
+            tokio::select! {
+                _ = heartbeat.tick() => {
+                    yield Ok::<Bytes, actix_web::Error>(Bytes::from_static(b": keep-alive\n\n"));
+                }
+                recv = rx.recv() => {
+                    match recv {
+                        Ok(event) => {
+                            if !event.is_visible_to(user_id, &visible_team_ids) {
+                                continue;
+                            }
+                            if let Some(frame) = storage_event_frame(&event) {
+                                yield Ok(frame);
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                            tracing::warn!(user_id, skipped, "storage change event stream lagged");
+                            if let Some(frame) = storage_event_frame(
+                                &storage_change_service::StorageChangeEvent::sync_required(),
+                            ) {
+                                yield Ok(frame);
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            }
+        }
+    };
+
+    Ok(HttpResponse::Ok()
+        .content_type("text/event-stream")
+        .insert_header(("Cache-Control", "no-cache"))
+        .insert_header(("Connection", "keep-alive"))
+        .insert_header(("Content-Encoding", "identity"))
+        .insert_header(("X-Accel-Buffering", "no"))
+        .streaming(stream))
 }
 
 #[api_docs_macros::path(

@@ -467,6 +467,27 @@ async fn find_by_name_in_folder_in_scope<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+async fn find_by_names_in_folder_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FileScope,
+    folder_id: Option<i64>,
+    names: &[String],
+) -> Result<Vec<file::Model>> {
+    if names.is_empty() {
+        return Ok(vec![]);
+    }
+
+    File::find()
+        .filter(apply_folder_condition(
+            active_scope_condition(scope),
+            folder_id,
+        ))
+        .filter(file::Column::Name.is_in(names.iter().cloned()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
 pub async fn find_by_name_in_folder<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
@@ -483,6 +504,24 @@ pub async fn find_by_name_in_team_folder<C: ConnectionTrait>(
     name: &str,
 ) -> Result<Option<file::Model>> {
     find_by_name_in_folder_in_scope(db, FileScope::Team { team_id }, folder_id, name).await
+}
+
+pub async fn find_by_names_in_folder<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    folder_id: Option<i64>,
+    names: &[String],
+) -> Result<Vec<file::Model>> {
+    find_by_names_in_folder_in_scope(db, FileScope::Personal { user_id }, folder_id, names).await
+}
+
+pub async fn find_by_names_in_team_folder<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    folder_id: Option<i64>,
+    names: &[String],
+) -> Result<Vec<file::Model>> {
+    find_by_names_in_folder_in_scope(db, FileScope::Team { team_id }, folder_id, names).await
 }
 
 /// 查找不冲突的文件名：如果 name 已存在则递增 " (1)", " (2)" ...

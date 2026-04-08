@@ -34,6 +34,7 @@ export function createMeResponse(
 			sort_by: "updated_at",
 			sort_order: "desc",
 			language: "zh",
+			storage_event_stream_enabled: true,
 		},
 		...overrides,
 	} as MeResponse;

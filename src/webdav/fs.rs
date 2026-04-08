@@ -32,6 +32,8 @@ pub struct AsterDavFs {
     config: Arc<Config>,
     cache: Arc<dyn CacheBackend>,
     thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
+    storage_change_tx:
+        tokio::sync::broadcast::Sender<crate::services::storage_change_service::StorageChangeEvent>,
     user_id: i64,
     /// 限制访问范围：None = 用户全部文件，Some(id) = 只能访问该文件夹及子目录
     root_folder_id: Option<i64>,
@@ -56,6 +58,9 @@ impl AsterDavFs {
         config: Arc<Config>,
         cache: Arc<dyn CacheBackend>,
         thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
+        storage_change_tx: tokio::sync::broadcast::Sender<
+            crate::services::storage_change_service::StorageChangeEvent,
+        >,
         user_id: i64,
         root_folder_id: Option<i64>,
     ) -> Self {
@@ -67,6 +72,7 @@ impl AsterDavFs {
             config,
             cache,
             thumbnail_tx,
+            storage_change_tx,
             user_id,
             root_folder_id,
         }
@@ -81,6 +87,7 @@ impl AsterDavFs {
             config: self.config.clone(),
             cache: self.cache.clone(),
             thumbnail_tx: self.thumbnail_tx.clone(),
+            storage_change_tx: self.storage_change_tx.clone(),
         }
     }
 }
@@ -125,6 +132,7 @@ impl DavFileSystem for AsterDavFs {
                     self.config.clone(),
                     self.cache.clone(),
                     self.thumbnail_tx.clone(),
+                    self.storage_change_tx.clone(),
                     self.user_id,
                     parent_id,
                     filename,

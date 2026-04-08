@@ -10,6 +10,7 @@ use crate::db::repository::{
 use crate::entities::{file, file_blob, folder, team, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
+use crate::services::storage_change_service;
 use crate::types::{
     DriverType, S3UploadStrategy, UploadSessionStatus, effective_s3_multipart_chunk_size,
     parse_storage_policy_options,
@@ -605,6 +606,16 @@ pub(crate) async fn finalize_upload_session_file(
     let created = finalize_upload_session_blob(&txn, session, &blob.model, now).await?;
 
     txn.commit().await.map_err(AsterError::from)?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FileCreated,
+            scope,
+            vec![created.id],
+            vec![],
+            vec![created.folder_id],
+        ),
+    );
     Ok(created)
 }
 
@@ -773,6 +784,22 @@ pub(crate) async fn store_from_temp_with_hints(
     };
 
     txn.commit().await.map_err(AsterError::from)?;
+
+    let event_kind = if existing_file_id.is_some() {
+        storage_change_service::StorageChangeKind::FileUpdated
+    } else {
+        storage_change_service::StorageChangeKind::FileCreated
+    };
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            event_kind,
+            scope,
+            vec![result.id],
+            vec![],
+            vec![result.folder_id],
+        ),
+    );
 
     if let Some(existing_id) = existing_file_id {
         crate::services::version_service::cleanup_excess(state, existing_id).await?;
@@ -988,7 +1015,19 @@ async fn upload_s3_relay_direct(
             .await;
 
             return match create_result {
-                Ok(file) => Ok(file),
+                Ok(file) => {
+                    storage_change_service::publish(
+                        state,
+                        storage_change_service::StorageChangeEvent::new(
+                            storage_change_service::StorageChangeKind::FileCreated,
+                            scope,
+                            vec![file.id],
+                            vec![],
+                            vec![file.folder_id],
+                        ),
+                    );
+                    Ok(file)
+                }
                 Err(err) => {
                     if let Err(cleanup_err) = driver.delete(&storage_path).await {
                         tracing::warn!(
@@ -1181,5 +1220,15 @@ pub(crate) async fn create_empty(
 
     let created = create_new_file_from_blob(&txn, scope, folder_id, filename, &blob, now).await?;
     txn.commit().await.map_err(AsterError::from)?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FileCreated,
+            scope,
+            vec![created.id],
+            vec![],
+            vec![created.folder_id],
+        ),
+    );
     Ok(created)
 }

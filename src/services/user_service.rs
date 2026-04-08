@@ -69,6 +69,7 @@ pub struct UserPreferences {
     pub sort_by: Option<SortBy>,
     pub sort_order: Option<SortOrder>,
     pub language: Option<Language>,
+    pub storage_event_stream_enabled: Option<bool>,
 }
 
 impl UserPreferences {
@@ -88,6 +89,7 @@ pub struct UpdatePreferencesReq {
     pub sort_by: Option<SortBy>,
     pub sort_order: Option<SortOrder>,
     pub language: Option<Language>,
+    pub storage_event_stream_enabled: Option<bool>,
 }
 
 // ── MeResponse (从 auth route 迁移) ──────────────────────────────────
@@ -545,6 +547,9 @@ pub async fn update_preferences(
     prefs.sort_by = patch.sort_by.or(prefs.sort_by);
     prefs.sort_order = patch.sort_order.or(prefs.sort_order);
     prefs.language = patch.language.or(prefs.language);
+    prefs.storage_event_stream_enabled = patch
+        .storage_event_stream_enabled
+        .or(prefs.storage_event_stream_enabled);
 
     save_preferences(state, user, &prefs).await?;
     Ok(prefs)

@@ -241,6 +241,7 @@ async fn test_batch_move_files() {
 #[actix_web::test]
 async fn test_batch_copy_files() {
     let state = common::setup().await;
+    let storage_change_tx = state.storage_change_tx.clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
 
@@ -277,6 +278,7 @@ async fn test_batch_copy_files() {
     }
 
     // Batch copy both files to root (null = root)
+    let mut rx = storage_change_tx.subscribe();
     let req = test::TestRequest::post()
         .uri("/api/v1/batch/copy")
         .insert_header(("Cookie", format!("aster_access={}", token)))
@@ -291,6 +293,17 @@ async fn test_batch_copy_files() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["code"], 0);
     assert_eq!(body["data"]["succeeded"], 2);
+    let event = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+        .await
+        .expect("should receive storage change event")
+        .expect("storage change event channel should stay open");
+    assert_eq!(
+        event.kind,
+        aster_drive::services::storage_change_service::StorageChangeKind::FileCreated
+    );
+    assert_eq!(event.file_ids.len(), 2);
+    assert!(event.folder_ids.is_empty());
+    assert!(event.root_affected);
 
     // Verify copies exist in root
     let req = test::TestRequest::get()

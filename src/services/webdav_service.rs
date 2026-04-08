@@ -9,7 +9,8 @@ use crate::entities::folder;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{
-    file_service, folder_service, workspace_storage_service::WorkspaceStorageScope,
+    file_service, folder_service, storage_change_service,
+    workspace_storage_service::WorkspaceStorageScope,
 };
 
 /// 递归收集文件夹树内的所有文件和子文件夹 ID
@@ -35,6 +36,8 @@ pub async fn collect_folder_tree(
 ///
 /// 先收集所有未删除的文件和文件夹 ID，再一次事务内批量 soft_delete。
 pub async fn recursive_soft_delete(state: &AppState, user_id: i64, folder_id: i64) -> Result<()> {
+    let scope = WorkspaceStorageScope::Personal { user_id };
+    let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
     let (files, folder_ids) = collect_folder_tree(&state.db, user_id, folder_id, false).await?;
 
     let file_ids: Vec<i64> = files.into_iter().map(|f| f.id).collect();
@@ -44,6 +47,16 @@ pub async fn recursive_soft_delete(state: &AppState, user_id: i64, folder_id: i6
     file_repo::soft_delete_many(&txn, &file_ids, now).await?;
     folder_repo::soft_delete_many(&txn, &folder_ids, now).await?;
     txn.commit().await.map_err(AsterError::from)?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FolderDeleted,
+            scope,
+            vec![],
+            vec![folder.id],
+            vec![folder.parent_id],
+        ),
+    );
 
     Ok(())
 }
@@ -85,11 +98,27 @@ pub fn recursive_copy_folder<'a>(
     dest_parent_id: Option<i64>,
     dest_name: &'a str,
 ) -> Pin<Box<dyn Future<Output = Result<folder::Model>> + Send + 'a>> {
-    crate::services::folder_service::recursive_copy_folder_in_scope(
-        state,
-        crate::services::workspace_storage_service::WorkspaceStorageScope::Personal { user_id },
-        src_folder_id,
-        dest_parent_id,
-        dest_name,
-    )
+    Box::pin(async move {
+        let scope =
+            crate::services::workspace_storage_service::WorkspaceStorageScope::Personal { user_id };
+        let copied = crate::services::folder_service::recursive_copy_folder_in_scope(
+            state,
+            scope,
+            src_folder_id,
+            dest_parent_id,
+            dest_name,
+        )
+        .await?;
+        storage_change_service::publish(
+            state,
+            storage_change_service::StorageChangeEvent::new(
+                storage_change_service::StorageChangeKind::FolderCreated,
+                scope,
+                vec![],
+                vec![copied.id],
+                vec![copied.parent_id],
+            ),
+        );
+        Ok(copied)
+    })
 }

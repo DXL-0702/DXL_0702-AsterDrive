@@ -50,6 +50,9 @@ pub async fn prepare() -> Result<AppState> {
 
     // 9. 缩略图后台队列（channel 容量 1024，溢出时 drop）
     let (thumbnail_tx, thumbnail_rx) = tokio::sync::mpsc::channel::<i64>(1024);
+    let (storage_change_tx, _) = tokio::sync::broadcast::channel(
+        crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
+    );
 
     tracing::info!(
         "startup complete — listening on {}:{}",
@@ -65,6 +68,7 @@ pub async fn prepare() -> Result<AppState> {
         config: cfg,
         cache,
         thumbnail_tx,
+        storage_change_tx,
     };
 
     // 启动缩略图后台 worker（需要在返回 AppState 之前拿到 rx）

@@ -9,7 +9,10 @@ use crate::db::repository::{file_repo, folder_repo, share_repo};
 use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
+use crate::services::{
+    storage_change_service,
+    workspace_storage_service::{self, WorkspaceStorageScope},
+};
 use crate::types::NullablePatch;
 
 #[derive(Serialize)]
@@ -204,7 +207,7 @@ pub(crate) async fn create_in_scope(
     }
 
     let now = Utc::now();
-    folder_repo::create(
+    let created = folder_repo::create(
         &state.db,
         folder::ActiveModel {
             name: Set(name.to_string()),
@@ -217,7 +220,18 @@ pub(crate) async fn create_in_scope(
             ..Default::default()
         },
     )
-    .await
+    .await?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FolderCreated,
+            scope,
+            vec![],
+            vec![created.id],
+            vec![created.parent_id],
+        ),
+    );
+    Ok(created)
 }
 
 pub async fn create(
@@ -495,6 +509,16 @@ pub(crate) async fn delete_in_scope(
     file_repo::soft_delete_many(&txn, &file_ids, now).await?;
     folder_repo::soft_delete_many(&txn, &folder_ids, now).await?;
     txn.commit().await.map_err(AsterError::from)?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FolderDeleted,
+            scope,
+            vec![],
+            vec![folder.id],
+            vec![folder.parent_id],
+        ),
+    );
     Ok(())
 }
 
@@ -559,6 +583,7 @@ pub(crate) async fn update_in_scope(
         )));
     }
 
+    let previous_parent_id = f.parent_id;
     let mut active: folder::ActiveModel = f.into();
     if let Some(n) = name {
         active.name = Set(n);
@@ -574,7 +599,18 @@ pub(crate) async fn update_in_scope(
         NullablePatch::Value(pid) => active.policy_id = Set(Some(pid)),
     }
     active.updated_at = Set(Utc::now());
-    active.update(db).await.map_err(AsterError::from)
+    let updated = active.update(db).await.map_err(AsterError::from)?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FolderUpdated,
+            scope,
+            vec![],
+            vec![updated.id],
+            vec![previous_parent_id, updated.parent_id],
+        ),
+    );
+    Ok(updated)
 }
 
 pub(crate) async fn get_ancestors_in_scope(
@@ -993,7 +1029,19 @@ pub(crate) async fn copy_folder_in_scope(
         dest_name = crate::utils::next_copy_name(&dest_name);
     }
 
-    recursive_copy_folder_in_scope(state, scope, src_id, dest_parent_id, &dest_name).await
+    let copied =
+        recursive_copy_folder_in_scope(state, scope, src_id, dest_parent_id, &dest_name).await?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FolderCreated,
+            scope,
+            vec![],
+            vec![copied.id],
+            vec![copied.parent_id],
+        ),
+    );
+    Ok(copied)
 }
 
 /// 复制文件夹（递归复制所有文件和子文件夹）

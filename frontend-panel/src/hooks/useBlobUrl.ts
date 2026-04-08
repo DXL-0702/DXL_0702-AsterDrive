@@ -13,6 +13,7 @@ interface BlobCacheEntry {
 const BLOB_URL_REVOKE_DELAY = 30_000;
 const MAX_CONCURRENT_BLOB_FETCHES = 6;
 const blobUrlCache = new Map<string, BlobCacheEntry>();
+const blobUrlListeners = new Map<string, Set<() => void>>();
 const pendingBlobFetches: Array<() => void> = [];
 let activeBlobFetches = 0;
 
@@ -47,6 +48,43 @@ function revokeEntry(path: string, entry: BlobCacheEntry) {
 		URL.revokeObjectURL(entry.objectUrl);
 	}
 	blobUrlCache.delete(path);
+}
+
+function subscribeBlobUrlInvalidation(path: string, listener: () => void) {
+	let listeners = blobUrlListeners.get(path);
+	if (!listeners) {
+		listeners = new Set();
+		blobUrlListeners.set(path, listeners);
+	}
+	listeners.add(listener);
+
+	return () => {
+		const current = blobUrlListeners.get(path);
+		if (!current) return;
+		current.delete(listener);
+		if (current.size === 0) {
+			blobUrlListeners.delete(path);
+		}
+	};
+}
+
+function notifyBlobUrlInvalidation(path?: string) {
+	if (path) {
+		for (const listener of blobUrlListeners.get(path) ?? []) {
+			listener();
+		}
+		return;
+	}
+
+	const listeners = new Set<() => void>();
+	for (const pathListeners of blobUrlListeners.values()) {
+		for (const listener of pathListeners) {
+			listeners.add(listener);
+		}
+	}
+	for (const listener of listeners) {
+		listener();
+	}
 }
 
 async function acquireBlobUrl(path: string): Promise<string> {
@@ -153,15 +191,19 @@ export function invalidateBlobUrl(path?: string) {
 	if (path) {
 		const cached = blobUrlCache.get(path);
 		if (cached) revokeEntry(path, cached);
+		notifyBlobUrlInvalidation(path);
 		return;
 	}
 	for (const [cachePath, entry] of blobUrlCache.entries()) {
 		revokeEntry(cachePath, entry);
 	}
+	notifyBlobUrlInvalidation();
 }
 
 export function clearBlobUrlCache() {
-	invalidateBlobUrl();
+	for (const [cachePath, entry] of blobUrlCache.entries()) {
+		revokeEntry(cachePath, entry);
+	}
 }
 
 export function useBlobUrl(path: string | null) {
@@ -171,9 +213,10 @@ export function useBlobUrl(path: string | null) {
 	const [retryCount, setRetryCount] = useState(0);
 
 	const retry = () => {
-		if (path) invalidateBlobUrl(path);
 		setError(false);
-		setRetryCount((n) => n + 1);
+		if (path) {
+			invalidateBlobUrl(path);
+		}
 	};
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: retryCount is an intentional re-fetch trigger
@@ -184,6 +227,12 @@ export function useBlobUrl(path: string | null) {
 			setLoading(false);
 			return;
 		}
+
+		const unsubscribe = subscribeBlobUrlInvalidation(path, () => {
+			setBlobUrl(null);
+			setError(false);
+			setRetryCount((n) => n + 1);
+		});
 
 		const cached = blobUrlCache.get(path);
 		if (cached?.objectUrl) {
@@ -209,6 +258,7 @@ export function useBlobUrl(path: string | null) {
 
 		return () => {
 			cancelled = true;
+			unsubscribe();
 			releaseBlobUrl(path);
 		};
 	}, [path, retryCount]);

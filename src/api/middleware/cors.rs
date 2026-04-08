@@ -434,6 +434,9 @@ mod tests {
         })
         .await;
         let (thumbnail_tx, _thumbnail_rx) = tokio::sync::mpsc::channel::<i64>(1);
+        let (storage_change_tx, _) = tokio::sync::broadcast::channel(
+            crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
+        );
 
         AppState {
             db,
@@ -443,6 +446,7 @@ mod tests {
             config: Arc::new(Config::default()),
             cache,
             thumbnail_tx,
+            storage_change_tx,
         }
     }
 

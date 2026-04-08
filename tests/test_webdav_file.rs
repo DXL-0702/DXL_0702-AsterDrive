@@ -69,6 +69,7 @@ async fn test_aster_dav_file_write_mode_skips_empty_flush_and_persists_written_c
         state.config.clone(),
         state.cache.clone(),
         state.thumbnail_tx.clone(),
+        state.storage_change_tx.clone(),
         user.id,
         None,
         "empty-dav-file.txt".to_string(),
@@ -100,6 +101,7 @@ async fn test_aster_dav_file_write_mode_skips_empty_flush_and_persists_written_c
         state.config.clone(),
         state.cache.clone(),
         state.thumbnail_tx.clone(),
+        state.storage_change_tx.clone(),
         user.id,
         None,
         "buffered-dav-file.txt".to_string(),
@@ -164,6 +166,7 @@ async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
         state.config.clone(),
         state.cache.clone(),
         state.thumbnail_tx.clone(),
+        state.storage_change_tx.clone(),
         user.id,
         None,
     );

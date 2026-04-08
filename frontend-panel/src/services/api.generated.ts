@@ -3477,6 +3477,7 @@ export interface components {
             language?: null | components["schemas"]["Language"];
             sort_by?: null | components["schemas"]["SortBy"];
             sort_order?: null | components["schemas"]["SortOrder"];
+            storage_event_stream_enabled?: boolean | null;
             theme_mode?: null | components["schemas"]["ThemeMode"];
             view_mode?: null | components["schemas"]["PrefViewMode"];
         };
@@ -3587,6 +3588,7 @@ export interface components {
             language?: null | components["schemas"]["Language"];
             sort_by?: null | components["schemas"]["SortBy"];
             sort_order?: null | components["schemas"]["SortOrder"];
+            storage_event_stream_enabled?: boolean | null;
             theme_mode?: null | components["schemas"]["ThemeMode"];
             view_mode?: null | components["schemas"]["PrefViewMode"];
         };
@@ -6414,6 +6416,7 @@ export interface operations {
                             language?: null | components["schemas"]["Language"];
                             sort_by?: null | components["schemas"]["SortBy"];
                             sort_order?: null | components["schemas"]["SortOrder"];
+                            storage_event_stream_enabled?: boolean | null;
                             theme_mode?: null | components["schemas"]["ThemeMode"];
                             view_mode?: null | components["schemas"]["PrefViewMode"];
                         };

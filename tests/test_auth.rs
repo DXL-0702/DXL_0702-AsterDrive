@@ -1,10 +1,71 @@
 #[macro_use]
 mod common;
 
+use actix_web::body::MessageBody;
 use actix_web::cookie::SameSite;
 use actix_web::test;
 use serde_json::Value;
 use std::io::Cursor;
+use std::time::Duration;
+
+macro_rules! register_user_with_credentials {
+    ($app:expr, $username:expr, $email:expr, $password:expr) => {{
+        let req = test::TestRequest::post()
+            .uri("/api/v1/auth/register")
+            .peer_addr("127.0.0.1:12345".parse().unwrap())
+            .set_json(serde_json::json!({
+                "username": $username,
+                "email": $email,
+                "password": $password
+            }))
+            .to_request();
+        let resp = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 201);
+        let body: Value = test::read_body_json(resp).await;
+        body["data"]["id"].as_i64().unwrap()
+    }};
+}
+
+macro_rules! login_user_with_credentials {
+    ($app:expr, $identifier:expr, $password:expr) => {{
+        let req = test::TestRequest::post()
+            .uri("/api/v1/auth/login")
+            .peer_addr("127.0.0.1:12345".parse().unwrap())
+            .set_json(serde_json::json!({
+                "identifier": $identifier,
+                "password": $password
+            }))
+            .to_request();
+        let resp = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 200);
+        common::extract_cookie(&resp, "aster_access").unwrap()
+    }};
+}
+
+macro_rules! team_upload_request {
+    ($team_id:expr, $token:expr, $filename:expr, $content:expr $(,)?) => {{
+        let boundary = "----TeamStorageEventBoundary";
+        let payload = format!(
+            "------TeamStorageEventBoundary\r\n\
+             Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n\
+             Content-Type: text/plain\r\n\r\n\
+             {content}\r\n\
+             ------TeamStorageEventBoundary--\r\n",
+            filename = $filename,
+            content = $content,
+        );
+
+        test::TestRequest::post()
+            .uri(&format!("/api/v1/teams/{}/files/upload", $team_id))
+            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header((
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            ))
+            .set_payload(payload)
+            .to_request()
+    }};
+}
 
 fn avatar_upload_payload() -> (String, Vec<u8>) {
     let boundary = "----AsterAvatarBoundary".to_string();
@@ -28,6 +89,66 @@ fn avatar_upload_payload() -> (String, Vec<u8>) {
     body.extend_from_slice(&png.into_inner());
     body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
     (boundary, body)
+}
+
+async fn read_next_sse_json<B>(body: &mut B) -> Value
+where
+    B: MessageBody + Unpin,
+    B::Error: std::fmt::Debug,
+{
+    for _ in 0..4 {
+        let frame = tokio::time::timeout(
+            Duration::from_secs(2),
+            std::future::poll_fn(|cx| std::pin::Pin::new(&mut *body).poll_next(cx)),
+        )
+        .await
+        .expect("timed out waiting for SSE frame")
+        .expect("SSE stream ended unexpectedly")
+        .expect("SSE body chunk should not fail");
+
+        let text = std::str::from_utf8(&frame).expect("SSE frame should be utf-8");
+        for chunk in text.split("\n\n") {
+            if let Some(json) = chunk.strip_prefix("data: ") {
+                return serde_json::from_str(json).expect("SSE data should be valid JSON");
+            }
+        }
+    }
+
+    panic!("did not receive SSE data frame");
+}
+
+async fn read_next_sse_json_with_timeout<B>(body: &mut B, timeout: Duration) -> Option<Value>
+where
+    B: MessageBody + Unpin,
+    B::Error: std::fmt::Debug,
+{
+    let deadline = tokio::time::Instant::now() + timeout;
+
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            return None;
+        }
+
+        let frame = match tokio::time::timeout(
+            remaining,
+            std::future::poll_fn(|cx| std::pin::Pin::new(&mut *body).poll_next(cx)),
+        )
+        .await
+        {
+            Ok(frame) => frame
+                .expect("SSE stream ended unexpectedly")
+                .expect("SSE body chunk should not fail"),
+            Err(_) => return None,
+        };
+
+        let text = std::str::from_utf8(&frame).expect("SSE frame should be utf-8");
+        for chunk in text.split("\n\n") {
+            if let Some(json) = chunk.strip_prefix("data: ") {
+                return Some(serde_json::from_str(json).expect("SSE data should be valid JSON"));
+            }
+        }
+    }
 }
 
 #[actix_web::test]
@@ -240,6 +361,155 @@ async fn test_refresh_token_cannot_access_protected_routes() {
 }
 
 #[actix_web::test]
+async fn test_storage_events_stream_receives_file_change_frames() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/events/storage")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let content_type = resp
+        .headers()
+        .get("Content-Type")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("");
+    assert_eq!(content_type, "text/event-stream");
+
+    let (_req, resp) = resp.into_parts();
+    let mut body = resp.into_body();
+
+    let _file_id = upload_test_file!(app, token);
+
+    let event = read_next_sse_json(&mut body).await;
+    assert_eq!(event["kind"], "file.created");
+    assert_eq!(event["workspace"]["kind"], "personal");
+    assert!(
+        event["file_ids"]
+            .as_array()
+            .is_some_and(|ids| ids.len() == 1)
+    );
+    assert!(
+        event["folder_ids"]
+            .as_array()
+            .is_some_and(|ids| ids.is_empty())
+    );
+    assert_eq!(event["root_affected"], true);
+}
+
+#[actix_web::test]
+async fn test_storage_events_stream_receives_team_file_change_frames_for_member() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let _owner_id =
+        register_user_with_credentials!(app, "teamowner", "teamowner@example.com", "password123");
+    let member_id =
+        register_user_with_credentials!(app, "teammember", "teammember@example.com", "password123");
+    let owner_token = login_user_with_credentials!(app, "teamowner", "password123");
+    let member_token = login_user_with_credentials!(app, "teammember", "password123");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .set_json(serde_json::json!({ "name": "Storage Events Team" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/teams/{team_id}/members"))
+        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .set_json(serde_json::json!({ "user_id": member_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/events/storage")
+        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let (_req, resp) = resp.into_parts();
+    let mut body = resp.into_body();
+
+    let req = team_upload_request!(team_id, &owner_token, "team-event.txt", "team event");
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let event = read_next_sse_json(&mut body).await;
+    assert_eq!(event["kind"], "file.created");
+    assert_eq!(event["workspace"]["kind"], "team");
+    assert_eq!(event["workspace"]["team_id"].as_i64(), Some(team_id));
+    assert!(
+        event["file_ids"]
+            .as_array()
+            .is_some_and(|ids| ids.len() == 1)
+    );
+    assert_eq!(event["root_affected"], true);
+}
+
+#[actix_web::test]
+async fn test_storage_events_stream_hides_team_frames_from_non_members() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let _owner_id =
+        register_user_with_credentials!(app, "teamowner2", "teamowner2@example.com", "password123");
+    let _outsider_id = register_user_with_credentials!(
+        app,
+        "teamoutsider",
+        "teamoutsider@example.com",
+        "password123"
+    );
+    let owner_token = login_user_with_credentials!(app, "teamowner2", "password123");
+    let outsider_token = login_user_with_credentials!(app, "teamoutsider", "password123");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .set_json(serde_json::json!({ "name": "Hidden Team Events" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/events/storage")
+        .insert_header(("Cookie", format!("aster_access={outsider_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let (_req, resp) = resp.into_parts();
+    let mut body = resp.into_body();
+
+    let req = team_upload_request!(team_id, &owner_token, "hidden.txt", "hidden event");
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let hidden_event = read_next_sse_json_with_timeout(&mut body, Duration::from_millis(500)).await;
+    assert!(
+        hidden_event.is_none(),
+        "non-member should not receive team storage event: {hidden_event:?}"
+    );
+
+    let _file_id = upload_test_file_named!(app, outsider_token, "outsider-visible.txt");
+    let event = read_next_sse_json(&mut body).await;
+    assert_eq!(event["kind"], "file.created");
+    assert_eq!(event["workspace"]["kind"], "personal");
+    assert_eq!(event["root_affected"], true);
+}
+
+#[actix_web::test]
 async fn test_logout_clears_cookies_without_revoking_existing_tokens() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -391,6 +661,7 @@ async fn test_user_status_cached_in_auth_middleware() {
         config: base.config,
         cache,
         thumbnail_tx: base.thumbnail_tx,
+        storage_change_tx: base.storage_change_tx,
     };
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -432,6 +703,7 @@ async fn test_disable_user_invalidates_status_cache() {
         config: base.config,
         cache,
         thumbnail_tx: base.thumbnail_tx,
+        storage_change_tx: base.storage_change_tx,
     };
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);
@@ -535,7 +807,8 @@ async fn test_patch_preferences_set_and_get() {
             "view_mode": "grid",
             "sort_by": "size",
             "sort_order": "desc",
-            "language": "zh"
+            "language": "zh",
+            "storage_event_stream_enabled": false
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -548,6 +821,7 @@ async fn test_patch_preferences_set_and_get() {
     assert_eq!(body["data"]["sort_by"], "size");
     assert_eq!(body["data"]["sort_order"], "desc");
     assert_eq!(body["data"]["language"], "zh");
+    assert_eq!(body["data"]["storage_event_stream_enabled"], false);
 
     // Verify via GET /me
     let req = test::TestRequest::get()
@@ -560,6 +834,10 @@ async fn test_patch_preferences_set_and_get() {
     assert_eq!(body["data"]["preferences"]["theme_mode"], "dark");
     assert_eq!(body["data"]["preferences"]["view_mode"], "grid");
     assert_eq!(body["data"]["preferences"]["language"], "zh");
+    assert_eq!(
+        body["data"]["preferences"]["storage_event_stream_enabled"],
+        false
+    );
 }
 
 /// Partial PATCH only updates specified fields; others remain unchanged.
@@ -648,6 +926,7 @@ async fn test_patch_preferences_empty_body() {
     assert!(body["data"]["theme_mode"].is_null());
     assert!(body["data"]["color_preset"].is_null());
     assert!(body["data"]["language"].is_null());
+    assert!(body["data"]["storage_event_stream_enabled"].is_null());
 
     // Verify via GET /me — fresh user has no stored config so preferences is null
     let req = test::TestRequest::get()

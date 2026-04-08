@@ -94,6 +94,7 @@ interface AuthState {
 	checkAuth: () => Promise<void>;
 	refreshToken: () => Promise<void>;
 	refreshUser: () => Promise<void>;
+	setStorageEventStreamEnabled: (enabled: boolean) => void;
 	syncSession: (expiresIn: number) => void;
 	startAutoRefresh: (delayMs?: number) => void;
 	stopAutoRefresh: () => void;
@@ -143,6 +144,19 @@ function applyLoggedOutState(
 	setStoredExpiresAt(null);
 	setCachedUser(null);
 	setAuthState(LOGGED_OUT_STATE);
+}
+
+function mergeUserPreferences(
+	user: MeResponse,
+	patch: Partial<UserPreferences>,
+): MeResponse {
+	return {
+		...user,
+		preferences: {
+			...(user.preferences ?? {}),
+			...patch,
+		},
+	};
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -283,6 +297,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 		} catch (e) {
 			logger.warn("refreshUser failed", e);
 		}
+	},
+
+	setStorageEventStreamEnabled: (enabled) => {
+		const user = get().user;
+		if (!user) return;
+
+		const nextUser = mergeUserPreferences(user, {
+			storage_event_stream_enabled: enabled,
+		});
+		setCachedUser(nextUser);
+		set({ user: nextUser });
 	},
 
 	syncSession: (expiresIn) => {

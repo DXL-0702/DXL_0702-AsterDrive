@@ -163,4 +163,39 @@ describe("useTextContent", () => {
 		});
 		clearTextContentCache();
 	});
+
+	it("re-fetches active consumers after invalidation", async () => {
+		mockState.get
+			.mockResolvedValueOnce({
+				status: 200,
+				data: "version-1",
+				headers: { etag: '"etag-1"' },
+			})
+			.mockResolvedValueOnce({
+				status: 200,
+				data: "version-2",
+				headers: { etag: '"etag-2"' },
+			});
+		const { clearTextContentCache, invalidateTextContent, useTextContent } =
+			await loadHookModule();
+
+		const { result } = renderHook(() => useTextContent("/files/1/content"));
+
+		await waitFor(() => {
+			expect(result.current.content).toBe("version-1");
+		});
+
+		act(() => {
+			invalidateTextContent("/files/1/content");
+		});
+
+		await waitFor(() => {
+			expect(mockState.get).toHaveBeenCalledTimes(2);
+		});
+		await waitFor(() => {
+			expect(result.current.content).toBe("version-2");
+		});
+		expect(result.current.etag).toBe('"etag-2"');
+		clearTextContentCache();
+	});
 });

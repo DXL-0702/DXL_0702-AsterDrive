@@ -146,4 +146,21 @@ describe("useAuthStore", () => {
 		expect(refreshCount).toBe(1);
 		useAuthStore.getState().stopAutoRefresh();
 	});
+
+	it("updates the cached user when toggling storage event stream locally", async () => {
+		const cachedUser = createMeResponse();
+		localStorage.setItem("aster-cached-user", JSON.stringify(cachedUser));
+
+		const { useAuthStore } = await loadStores();
+
+		useAuthStore.getState().setStorageEventStreamEnabled(false);
+
+		expect(
+			useAuthStore.getState().user?.preferences?.storage_event_stream_enabled,
+		).toBe(false);
+		expect(
+			JSON.parse(localStorage.getItem("aster-cached-user") ?? "{}").preferences
+				?.storage_event_stream_enabled,
+		).toBe(false);
+	});
 });

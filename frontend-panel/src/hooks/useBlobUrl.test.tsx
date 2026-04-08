@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockState = vi.hoisted(() => ({
@@ -168,6 +168,41 @@ describe("useBlobUrl", () => {
 		expect(result.current.error).toBe(false);
 		expect(result.current.loading).toBe(false);
 		expect(mockState.get).not.toHaveBeenCalled();
+		clearBlobUrlCache();
+	});
+
+	it("re-fetches active consumers after explicit invalidation", async () => {
+		mockState.get
+			.mockResolvedValueOnce({
+				status: 200,
+				data: new Blob(["image-v1"]),
+				headers: { etag: '"etag-1"' },
+			})
+			.mockResolvedValueOnce({
+				status: 200,
+				data: new Blob(["image-v2"]),
+				headers: { etag: '"etag-2"' },
+			});
+		const { clearBlobUrlCache, invalidateBlobUrl, useBlobUrl } =
+			await loadHookModule();
+
+		const { result } = renderHook(() => useBlobUrl("/thumb"));
+
+		await waitFor(() => {
+			expect(result.current.blobUrl).toBe("blob:1");
+		});
+
+		act(() => {
+			invalidateBlobUrl("/thumb");
+		});
+
+		await waitFor(() => {
+			expect(mockState.get).toHaveBeenCalledTimes(2);
+		});
+		await waitFor(() => {
+			expect(result.current.blobUrl).toBe("blob:2");
+		});
+		expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:1");
 		clearBlobUrlCache();
 	});
 });

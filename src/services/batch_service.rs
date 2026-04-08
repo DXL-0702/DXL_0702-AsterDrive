@@ -10,7 +10,7 @@ use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{
-    file_service, folder_service,
+    file_service, folder_service, storage_change_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 
@@ -279,6 +279,20 @@ pub(crate) async fn batch_delete_in_scope(
     }
 
     let mut folder_ids_to_delete = Vec::new();
+    let direct_file_ids_deleted: Vec<i64> = file_ids_to_delete.iter().copied().collect();
+    let file_parent_ids: Vec<Option<i64>> = direct_file_ids_deleted
+        .iter()
+        .map(|id| file_map.get(id).map(|file| file.folder_id).unwrap_or(None))
+        .collect();
+    let folder_parent_ids: Vec<Option<i64>> = root_folder_ids_to_delete
+        .iter()
+        .map(|id| {
+            folder_map
+                .get(id)
+                .map(|folder| folder.parent_id)
+                .unwrap_or(None)
+        })
+        .collect();
     if !root_folder_ids_to_delete.is_empty() {
         let (tree_files, tree_folder_ids) = folder_service::collect_folder_forest_in_scope(
             &state.db,
@@ -299,6 +313,31 @@ pub(crate) async fn batch_delete_in_scope(
         file_repo::soft_delete_many(&txn, &file_ids_to_delete, now).await?;
         folder_repo::soft_delete_many(&txn, &folder_ids_to_delete, now).await?;
         txn.commit().await.map_err(AsterError::from)?;
+
+        if !direct_file_ids_deleted.is_empty() {
+            storage_change_service::publish(
+                state,
+                storage_change_service::StorageChangeEvent::new(
+                    storage_change_service::StorageChangeKind::FileDeleted,
+                    scope,
+                    direct_file_ids_deleted,
+                    vec![],
+                    file_parent_ids,
+                ),
+            );
+        }
+        if !root_folder_ids_to_delete.is_empty() {
+            storage_change_service::publish(
+                state,
+                storage_change_service::StorageChangeEvent::new(
+                    storage_change_service::StorageChangeKind::FolderDeleted,
+                    scope,
+                    vec![],
+                    root_folder_ids_to_delete,
+                    folder_parent_ids,
+                ),
+            );
+        }
     }
 
     Ok(result)
@@ -462,11 +501,46 @@ pub(crate) async fn batch_move_in_scope(
         let now = Utc::now();
         let file_ids_to_move: Vec<i64> = file_ids_to_move.into_iter().collect();
         let folder_ids_to_move: Vec<i64> = folder_ids_to_move.into_iter().collect();
+        let file_parent_ids: Vec<Option<i64>> = file_ids_to_move
+            .iter()
+            .flat_map(|id| file_map.get(id).into_iter())
+            .flat_map(|file| [file.folder_id, target_folder_id])
+            .collect();
+        let folder_parent_ids: Vec<Option<i64>> = folder_ids_to_move
+            .iter()
+            .flat_map(|id| folder_map.get(id).into_iter())
+            .flat_map(|folder| [folder.parent_id, target_folder_id])
+            .collect();
 
         let txn = state.db.begin().await.map_err(AsterError::from)?;
         file_repo::move_many_to_folder(&txn, &file_ids_to_move, target_folder_id, now).await?;
         folder_repo::move_many_to_parent(&txn, &folder_ids_to_move, target_folder_id, now).await?;
         txn.commit().await.map_err(AsterError::from)?;
+
+        if !file_ids_to_move.is_empty() {
+            storage_change_service::publish(
+                state,
+                storage_change_service::StorageChangeEvent::new(
+                    storage_change_service::StorageChangeKind::FileUpdated,
+                    scope,
+                    file_ids_to_move,
+                    vec![],
+                    file_parent_ids,
+                ),
+            );
+        }
+        if !folder_ids_to_move.is_empty() {
+            storage_change_service::publish(
+                state,
+                storage_change_service::StorageChangeEvent::new(
+                    storage_change_service::StorageChangeKind::FolderUpdated,
+                    scope,
+                    vec![],
+                    folder_ids_to_move,
+                    folder_parent_ids,
+                ),
+            );
+        }
     }
 
     Ok(result)
@@ -550,13 +624,23 @@ pub(crate) async fn batch_copy_in_scope(
     }
 
     if !file_copy_specs.is_empty() {
-        file_service::batch_duplicate_file_records_with_names_in_scope(
+        let created_files = file_service::batch_duplicate_file_records_with_names_in_scope(
             state,
             scope,
             &file_copy_specs,
             target_folder_id,
         )
         .await?;
+        storage_change_service::publish(
+            state,
+            storage_change_service::StorageChangeEvent::new(
+                storage_change_service::StorageChangeKind::FileCreated,
+                scope,
+                created_files.into_iter().map(|file| file.id).collect(),
+                vec![],
+                vec![target_folder_id],
+            ),
+        );
     }
 
     for &id in &normalized_folder_ids {

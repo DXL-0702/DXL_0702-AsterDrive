@@ -98,6 +98,7 @@ async fn test_thumbnail_returns_200_after_generation() {
         config: state.config,
         cache: state.cache,
         thumbnail_tx: tx,
+        storage_change_tx: state.storage_change_tx,
     };
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -190,6 +191,7 @@ async fn test_thumbnail_dedup_same_blob() {
         config: state.config,
         cache: state.cache,
         thumbnail_tx: tx,
+        storage_change_tx: state.storage_change_tx,
     };
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);

@@ -5,7 +5,10 @@ use crate::db::repository::{file_repo, version_repo};
 use crate::entities::file_version;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
+use crate::services::{
+    storage_change_service,
+    workspace_storage_service::{self, WorkspaceStorageScope},
+};
 
 async fn load_version_for_file(
     db: &sea_orm::DatabaseConnection,
@@ -57,6 +60,25 @@ async fn restore_version_inner(
         version_repo::delete_by_file_id_from_version(&txn, updated.id, version.version).await?;
 
     txn.commit().await.map_err(AsterError::from)?;
+    let scope = match updated.team_id {
+        Some(team_id) => WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: updated.user_id,
+        },
+        None => WorkspaceStorageScope::Personal {
+            user_id: updated.user_id,
+        },
+    };
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FileRestored,
+            scope,
+            vec![updated.id],
+            vec![],
+            vec![updated.folder_id],
+        ),
+    );
 
     let mut cleanup_counts = std::collections::HashMap::<i64, usize>::new();
     for blob_id in truncated_blob_ids {

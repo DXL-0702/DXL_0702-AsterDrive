@@ -12,10 +12,14 @@ const mockState = vi.hoisted(() => ({
 	},
 	authStore: {
 		refreshUser: vi.fn(),
+		setStorageEventStreamEnabled: vi.fn(),
 		syncSession: vi.fn(),
 		user: {
 			email: "alice@example.com",
 			id: 1,
+			preferences: {
+				storage_event_stream_enabled: true,
+			},
 			profile: {
 				display_name: null,
 				avatar: {
@@ -278,7 +282,9 @@ describe("SettingsPage", () => {
 		mockState.authService.uploadAvatar.mockReset();
 		mockState.authService.updateProfile.mockReset();
 		mockState.authStore.refreshUser.mockReset();
+		mockState.authStore.setStorageEventStreamEnabled.mockReset();
 		mockState.authStore.syncSession.mockReset();
+		mockState.authStore.user.preferences.storage_event_stream_enabled = true;
 		mockState.changeLanguage.mockReset();
 		mockState.fileStore.setViewMode.mockReset();
 		mockState.fileStore.viewMode = "list";
@@ -317,19 +323,38 @@ describe("SettingsPage", () => {
 			"data-value",
 			"list",
 		);
+		expect(
+			screen.getByRole("switch", {
+				name: "settings:settings_storage_event_stream",
+			}),
+		).toHaveAttribute("data-checked");
+		expect(
+			screen.getByText("settings:settings_storage_event_stream_enabled_desc"),
+		).toBeInTheDocument();
 	});
 
-	it("dispatches theme, language, and browser preference changes", () => {
+	it("dispatches theme, language, browser, and realtime sync preference changes", () => {
 		render(<SettingsPage section="interface" />);
 
 		fireEvent.click(screen.getByRole("button", { name: "theme_light" }));
 		fireEvent.click(screen.getByRole("button", { name: "language_en" }));
 		fireEvent.click(screen.getByRole("button", { name: "files:grid_view" }));
+		fireEvent.click(
+			screen.getByRole("switch", {
+				name: "settings:settings_storage_event_stream",
+			}),
+		);
 
 		expect(mockState.themeStore.setMode).toHaveBeenCalledWith("light");
 		expect(mockState.changeLanguage).toHaveBeenCalledWith("en");
 		expect(mockState.preferenceSync).toHaveBeenCalledWith({ language: "en" });
 		expect(mockState.fileStore.setViewMode).toHaveBeenCalledWith("grid");
+		expect(
+			mockState.authStore.setStorageEventStreamEnabled,
+		).toHaveBeenCalledWith(false);
+		expect(mockState.preferenceSync).toHaveBeenCalledWith({
+			storage_event_stream_enabled: false,
+		});
 	});
 
 	it("navigates between split settings sections from the top tabs", () => {

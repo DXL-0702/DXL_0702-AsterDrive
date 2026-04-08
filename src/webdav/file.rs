@@ -52,6 +52,9 @@ enum FileMode {
         config: Arc<Config>,
         cache: Arc<dyn CacheBackend>,
         thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
+        storage_change_tx: tokio::sync::broadcast::Sender<
+            crate::services::storage_change_service::StorageChangeEvent,
+        >,
         user_id: i64,
         folder_id: Option<i64>,
         filename: String,
@@ -91,6 +94,9 @@ impl AsterDavFile {
         config: Arc<Config>,
         cache: Arc<dyn CacheBackend>,
         thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
+        storage_change_tx: tokio::sync::broadcast::Sender<
+            crate::services::storage_change_service::StorageChangeEvent,
+        >,
         user_id: i64,
         folder_id: Option<i64>,
         filename: String,
@@ -115,6 +121,7 @@ impl AsterDavFile {
                 config,
                 cache,
                 thumbnail_tx,
+                storage_change_tx,
                 user_id,
                 folder_id,
                 filename,
@@ -233,6 +240,7 @@ impl DavFile for AsterDavFile {
                 config,
                 cache,
                 thumbnail_tx,
+                storage_change_tx,
                 user_id,
                 folder_id,
                 filename,
@@ -260,6 +268,7 @@ impl DavFile for AsterDavFile {
                 config: config.clone(),
                 cache: cache.clone(),
                 thumbnail_tx: thumbnail_tx.clone(),
+                storage_change_tx: storage_change_tx.clone(),
             };
 
             // 调用公共函数，不重复 hash/dedup/quota 逻辑

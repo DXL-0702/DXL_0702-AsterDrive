@@ -58,11 +58,12 @@ actix-multipart = "0.7"
 actix-web = { version = "4.13.0", features = ["compress-brotli", "compress-gzip"] }
 api-docs-macros = { path = "api-docs-macros" }
 argon2 = "0.5.3"
+async-stream = "0.3"
 async-trait = "0.1"
 base64 = "0.22"
 bytes = "1"
 aws-credential-types = { version = "1.2.14", features = ["hardcoded-credentials"] }
-aws-sdk-s3 = { version = "1.127.0", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
+aws-sdk-s3 = { version = "1.129.0", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
 chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
 chrono-tz = "0.10"
 clap = { version = "4", features = ["derive"], optional = true }
@@ -85,7 +86,7 @@ paste = "1.0.15"
 prometheus = { version = "0.14", optional = true, default-features = false }
 sysinfo = { version = "0.38", optional = true, default-features = false, features = ["system"] }
 rand = { version = "0.10.0", default-features = false, features = ["std", "std_rng", "thread_rng"] }
-redis = { version = "1.1.0", features = ["connection-manager", "tokio-comp", "tokio-rustls-comp"] }
+redis = { version = "1.2.0", features = ["connection-manager", "tokio-comp", "tokio-rustls-comp"] }
 rust-embed = "8"
 sea-orm = { version = "~2.0.0-rc.37", features = ["sqlx-mysql", "sqlx-postgres", "sqlx-sqlite", "macros", "runtime-tokio-rustls"] }
 serde = { version = "1.0.228", features = ["derive"] }

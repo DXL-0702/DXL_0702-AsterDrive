@@ -91,6 +91,7 @@ pub async fn webdav_handler(
         state.config.clone(),
         state.cache.clone(),
         state.thumbnail_tx.clone(),
+        state.storage_change_tx.clone(),
         auth_result.user_id,
         auth_result.root_folder_id,
     );

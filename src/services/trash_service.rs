@@ -10,7 +10,7 @@ use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{
-    file_service, folder_service,
+    file_service, folder_service, storage_change_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 
@@ -349,6 +349,7 @@ async fn restore_file_in_scope(
     id: i64,
 ) -> Result<()> {
     let file = verify_file_in_trash_in_scope(state, scope, id).await?;
+    let mut restored_parent_id = file.folder_id;
 
     if let Some(folder_id) = file.folder_id {
         let parent = folder_repo::find_by_id(&state.db, folder_id).await;
@@ -358,11 +359,33 @@ async fn restore_file_in_scope(
             active.deleted_at = sea_orm::Set(None);
             use sea_orm::ActiveModelTrait;
             active.update(&state.db).await.map_err(AsterError::from)?;
+            restored_parent_id = None;
+            storage_change_service::publish(
+                state,
+                storage_change_service::StorageChangeEvent::new(
+                    storage_change_service::StorageChangeKind::FileRestored,
+                    scope,
+                    vec![id],
+                    vec![],
+                    vec![restored_parent_id],
+                ),
+            );
             return Ok(());
         }
     }
 
-    file_repo::restore(&state.db, id).await
+    file_repo::restore(&state.db, id).await?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FileRestored,
+            scope,
+            vec![id],
+            vec![],
+            vec![restored_parent_id],
+        ),
+    );
+    Ok(())
 }
 
 async fn restore_folder_in_scope(
@@ -371,6 +394,7 @@ async fn restore_folder_in_scope(
     id: i64,
 ) -> Result<()> {
     let folder = verify_folder_in_trash_in_scope(state, scope, id).await?;
+    let mut restored_parent_id = folder.parent_id;
 
     if let Some(parent_id) = folder.parent_id {
         let parent = folder_repo::find_by_id(&state.db, parent_id).await;
@@ -381,12 +405,34 @@ async fn restore_folder_in_scope(
             use sea_orm::ActiveModelTrait;
             active.update(&state.db).await.map_err(AsterError::from)?;
             recursive_restore_deleted_tree_in_scope(&state.db, scope, id).await?;
+            restored_parent_id = None;
+            storage_change_service::publish(
+                state,
+                storage_change_service::StorageChangeEvent::new(
+                    storage_change_service::StorageChangeKind::FolderRestored,
+                    scope,
+                    vec![],
+                    vec![id],
+                    vec![restored_parent_id],
+                ),
+            );
             return Ok(());
         }
     }
 
     folder_repo::restore(&state.db, id).await?;
-    recursive_restore_deleted_tree_in_scope(&state.db, scope, id).await
+    recursive_restore_deleted_tree_in_scope(&state.db, scope, id).await?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FolderRestored,
+            scope,
+            vec![],
+            vec![id],
+            vec![restored_parent_id],
+        ),
+    );
+    Ok(())
 }
 
 /// 恢复文件

@@ -14,6 +14,7 @@ pub mod profile_service;
 pub mod property_service;
 pub mod search_service;
 pub mod share_service;
+pub mod storage_change_service;
 pub mod team_service;
 pub mod thumbnail_service;
 pub mod trash_service;

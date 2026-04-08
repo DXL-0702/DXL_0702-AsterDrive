@@ -1,6 +1,8 @@
 #[macro_use]
 mod common;
 
+use std::time::Duration;
+
 use bytes::Bytes;
 use dav_server::davpath::DavPath;
 use dav_server::fs::{DavFileSystem, FsError, OpenOptions, ReadDirMeta};
@@ -26,6 +28,17 @@ fn write_open_options(create_new: bool) -> OpenOptions {
         size: None,
         checksum: None,
     }
+}
+
+async fn recv_storage_event(
+    rx: &mut tokio::sync::broadcast::Receiver<
+        aster_drive::services::storage_change_service::StorageChangeEvent,
+    >,
+) -> aster_drive::services::storage_change_service::StorageChangeEvent {
+    tokio::time::timeout(Duration::from_secs(1), rx.recv())
+        .await
+        .expect("should receive storage change event")
+        .expect("storage change channel should stay open")
 }
 
 async fn seed_nested_file(
@@ -380,6 +393,7 @@ async fn test_aster_dav_fs_handles_deep_paths_inside_scoped_root() {
         state.config.clone(),
         state.cache.clone(),
         state.thumbnail_tx.clone(),
+        state.storage_change_tx.clone(),
         user.id,
         Some(scoped_root.id),
     );
@@ -460,6 +474,7 @@ async fn test_aster_dav_fs_deep_write_create_new_and_overwrite_boundaries() {
         state.config.clone(),
         state.cache.clone(),
         state.thumbnail_tx.clone(),
+        state.storage_change_tx.clone(),
         user.id,
         Some(scoped_root.id),
     );
@@ -515,4 +530,181 @@ async fn test_aster_dav_fs_deep_write_create_new_and_overwrite_boundaries() {
 
     let parent_names = [projects.name, docs.name, reports.name];
     assert_eq!(parent_names, ["projects", "docs", "reports"]);
+}
+
+#[actix_web::test]
+async fn test_aster_dav_fs_copy_file_publishes_storage_event() {
+    use aster_drive::services::auth_service;
+    use aster_drive::services::storage_change_service::{
+        StorageChangeKind, StorageChangeWorkspace,
+    };
+    use aster_drive::webdav::fs::AsterDavFs;
+    use aster_drive::webdav::path_resolver::{ResolvedNode, resolve_path};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "davfscopyfile",
+        "davfscopyfile@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
+    let (_projects, _docs, reports, file, _contents) =
+        seed_nested_file(&state, user.id, None).await;
+
+    let mut rx = state.storage_change_tx.subscribe();
+    let dav_fs = AsterDavFs::new(
+        state.db.clone(),
+        state.driver_registry.clone(),
+        state.runtime_config.clone(),
+        state.policy_snapshot.clone(),
+        state.config.clone(),
+        state.cache.clone(),
+        state.thumbnail_tx.clone(),
+        state.storage_change_tx.clone(),
+        user.id,
+        None,
+    );
+
+    let source = DavPath::new("/projects/docs/reports/q1.txt").unwrap();
+    let destination = DavPath::new("/projects/docs/reports/q1-copy.txt").unwrap();
+    dav_fs.copy(&source, &destination).await.unwrap();
+
+    let event = recv_storage_event(&mut rx).await;
+    assert_eq!(event.kind, StorageChangeKind::FileCreated);
+    assert!(matches!(
+        event.workspace,
+        Some(StorageChangeWorkspace::Personal)
+    ));
+    assert_eq!(event.file_ids.len(), 1);
+    assert!(event.folder_ids.is_empty());
+    assert_eq!(event.affected_parent_ids, vec![reports.id]);
+    assert!(!event.root_affected);
+
+    match resolve_path(&state.db, user.id, &destination, None)
+        .await
+        .unwrap()
+    {
+        ResolvedNode::File(found) => assert_ne!(found.id, file.id),
+        other => panic!("expected copied file, got {other:?}"),
+    }
+}
+
+#[actix_web::test]
+async fn test_aster_dav_fs_remove_dir_publishes_storage_event() {
+    use aster_drive::services::auth_service;
+    use aster_drive::services::storage_change_service::{
+        StorageChangeKind, StorageChangeWorkspace,
+    };
+    use aster_drive::webdav::fs::AsterDavFs;
+    use aster_drive::webdav::path_resolver::resolve_path;
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "davfsremovedir",
+        "davfsremovedir@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
+    let (projects, docs, _reports, _file, _contents) =
+        seed_nested_file(&state, user.id, None).await;
+
+    let mut rx = state.storage_change_tx.subscribe();
+    let dav_fs = AsterDavFs::new(
+        state.db.clone(),
+        state.driver_registry.clone(),
+        state.runtime_config.clone(),
+        state.policy_snapshot.clone(),
+        state.config.clone(),
+        state.cache.clone(),
+        state.thumbnail_tx.clone(),
+        state.storage_change_tx.clone(),
+        user.id,
+        None,
+    );
+
+    let target = DavPath::new("/projects/docs/").unwrap();
+    dav_fs.remove_dir(&target).await.unwrap();
+
+    let event = recv_storage_event(&mut rx).await;
+    assert_eq!(event.kind, StorageChangeKind::FolderDeleted);
+    assert!(matches!(
+        event.workspace,
+        Some(StorageChangeWorkspace::Personal)
+    ));
+    assert!(event.file_ids.is_empty());
+    assert_eq!(event.folder_ids, vec![docs.id]);
+    assert_eq!(event.affected_parent_ids, vec![projects.id]);
+    assert!(!event.root_affected);
+    assert!(matches!(
+        resolve_path(&state.db, user.id, &target, None).await,
+        Err(FsError::NotFound)
+    ));
+}
+
+#[actix_web::test]
+async fn test_aster_dav_fs_copy_folder_publishes_storage_event() {
+    use aster_drive::services::auth_service;
+    use aster_drive::services::storage_change_service::{
+        StorageChangeKind, StorageChangeWorkspace,
+    };
+    use aster_drive::webdav::fs::AsterDavFs;
+    use aster_drive::webdav::path_resolver::{ResolvedNode, resolve_path};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "davfscopyfolder",
+        "davfscopyfolder@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
+    let (projects, _docs, _reports, _file, _contents) =
+        seed_nested_file(&state, user.id, None).await;
+
+    let mut rx = state.storage_change_tx.subscribe();
+    let dav_fs = AsterDavFs::new(
+        state.db.clone(),
+        state.driver_registry.clone(),
+        state.runtime_config.clone(),
+        state.policy_snapshot.clone(),
+        state.config.clone(),
+        state.cache.clone(),
+        state.thumbnail_tx.clone(),
+        state.storage_change_tx.clone(),
+        user.id,
+        None,
+    );
+
+    let source = DavPath::new("/projects/docs/").unwrap();
+    let destination = DavPath::new("/projects/docs-copy/").unwrap();
+    dav_fs.copy(&source, &destination).await.unwrap();
+
+    let event = recv_storage_event(&mut rx).await;
+    assert_eq!(event.kind, StorageChangeKind::FolderCreated);
+    assert!(matches!(
+        event.workspace,
+        Some(StorageChangeWorkspace::Personal)
+    ));
+    assert!(event.file_ids.is_empty());
+    assert_eq!(event.folder_ids.len(), 1);
+    assert_eq!(event.affected_parent_ids, vec![projects.id]);
+    assert!(!event.root_affected);
+
+    match resolve_path(
+        &state.db,
+        user.id,
+        &DavPath::new("/projects/docs-copy/reports/q1.txt").unwrap(),
+        None,
+    )
+    .await
+    .unwrap()
+    {
+        ResolvedNode::File(_) => {}
+        other => panic!("expected copied nested file, got {other:?}"),
+    }
 }

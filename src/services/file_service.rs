@@ -8,7 +8,7 @@ use crate::entities::{file, file_blob};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{
-    thumbnail_service,
+    storage_change_service, thumbnail_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 use crate::types::NullablePatch;
@@ -64,7 +64,18 @@ pub(crate) async fn delete_in_scope(
     if file.is_locked {
         return Err(AsterError::resource_locked("file is locked"));
     }
-    file_repo::soft_delete(&state.db, id).await
+    file_repo::soft_delete(&state.db, id).await?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FileDeleted,
+            scope,
+            vec![file.id],
+            vec![],
+            vec![file.folder_id],
+        ),
+    );
+    Ok(())
 }
 
 pub(crate) async fn update_in_scope(
@@ -111,6 +122,7 @@ pub(crate) async fn update_in_scope(
         )));
     }
 
+    let previous_folder_id = f.folder_id;
     let mut active: file::ActiveModel = f.into();
     if let Some(n) = name {
         active.name = Set(n);
@@ -121,7 +133,18 @@ pub(crate) async fn update_in_scope(
         NullablePatch::Value(fid) => active.folder_id = Set(Some(fid)),
     }
     active.updated_at = Set(Utc::now());
-    active.update(db).await.map_err(AsterError::from)
+    let updated = active.update(db).await.map_err(AsterError::from)?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FileUpdated,
+            scope,
+            vec![updated.id],
+            vec![],
+            vec![previous_folder_id, updated.folder_id],
+        ),
+    );
+    Ok(updated)
 }
 
 /// 从临时文件存储 blob 并创建文件记录
@@ -631,7 +654,19 @@ pub(crate) async fn copy_file_in_scope(
         }
     };
 
-    duplicate_file_record_in_scope(state, scope, &src, dest_folder_id, &copy_name).await
+    let copied =
+        duplicate_file_record_in_scope(state, scope, &src, dest_folder_id, &copy_name).await?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FileCreated,
+            scope,
+            vec![copied.id],
+            vec![],
+            vec![copied.folder_id],
+        ),
+    );
+    Ok(copied)
 }
 
 /// 复制文件（REST API 入口，带权限检查 + 副本命名）
@@ -663,9 +698,9 @@ async fn batch_duplicate_file_records_with_specs_in_scope(
     scope: WorkspaceStorageScope,
     copy_specs: &[BatchDuplicateFileRecordSpec],
     dest_folder_id: Option<i64>,
-) -> Result<()> {
+) -> Result<Vec<file::Model>> {
     if copy_specs.is_empty() {
-        return Ok(());
+        return Ok(vec![]);
     }
 
     let total_size = copy_specs.iter().try_fold(0i64, |acc, spec| {
@@ -711,10 +746,29 @@ async fn batch_duplicate_file_records_with_specs_in_scope(
         .collect();
     file_repo::create_many(&txn, models).await?;
 
+    let dest_names: Vec<String> = copy_specs
+        .iter()
+        .map(|spec| spec.dest_name.clone())
+        .collect();
+    let created_files = match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            file_repo::find_by_names_in_folder(&txn, user_id, dest_folder_id, &dest_names).await?
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            file_repo::find_by_names_in_team_folder(&txn, team_id, dest_folder_id, &dest_names)
+                .await?
+        }
+    };
+    if created_files.len() != copy_specs.len() {
+        return Err(AsterError::internal_error(
+            "failed to load all copied files after batch insert",
+        ));
+    }
+
     workspace_storage_service::update_storage_used(&txn, scope, total_size).await?;
 
     txn.commit().await.map_err(AsterError::from)?;
-    Ok(())
+    Ok(created_files)
 }
 
 pub(crate) async fn duplicate_file_record_in_scope(
@@ -759,14 +813,14 @@ pub(crate) async fn duplicate_file_record_in_scope(
 
 /// 复制文件记录的核心逻辑（blob ref_count++ + 新文件记录 + 配额更新）
 ///
-/// 无权限检查，供 REST copy、WebDAV COPY、recursive_copy_folder 共用。
+/// 无权限检查，供底层复制流程复用。
 pub async fn duplicate_file_record(
     state: &AppState,
     src: &file::Model,
     dest_folder_id: Option<i64>,
     dest_name: &str,
 ) -> Result<file::Model> {
-    duplicate_file_record_in_scope(
+    let copied = duplicate_file_record_in_scope(
         state,
         WorkspaceStorageScope::Personal {
             user_id: src.user_id,
@@ -775,7 +829,20 @@ pub async fn duplicate_file_record(
         dest_folder_id,
         dest_name,
     )
-    .await
+    .await?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FileCreated,
+            WorkspaceStorageScope::Personal {
+                user_id: src.user_id,
+            },
+            vec![copied.id],
+            vec![],
+            vec![copied.folder_id],
+        ),
+    );
+    Ok(copied)
 }
 
 pub(crate) async fn batch_duplicate_file_records_in_scope(
@@ -783,7 +850,7 @@ pub(crate) async fn batch_duplicate_file_records_in_scope(
     scope: WorkspaceStorageScope,
     src_files: &[file::Model],
     dest_folder_id: Option<i64>,
-) -> Result<()> {
+) -> Result<Vec<file::Model>> {
     let copy_specs: Vec<BatchDuplicateFileRecordSpec> = src_files
         .iter()
         .cloned()
@@ -802,7 +869,7 @@ pub(crate) async fn batch_duplicate_file_records_with_names_in_scope(
     scope: WorkspaceStorageScope,
     copy_specs: &[BatchDuplicateFileRecordSpec],
     dest_folder_id: Option<i64>,
-) -> Result<()> {
+) -> Result<Vec<file::Model>> {
     batch_duplicate_file_records_with_specs_in_scope(state, scope, copy_specs, dest_folder_id).await
 }
 
@@ -815,9 +882,9 @@ pub async fn batch_duplicate_file_records(
     state: &AppState,
     src_files: &[file::Model],
     dest_folder_id: Option<i64>,
-) -> Result<()> {
+) -> Result<Vec<file::Model>> {
     if src_files.is_empty() {
-        return Ok(());
+        return Ok(vec![]);
     }
 
     batch_duplicate_file_records_in_scope(
