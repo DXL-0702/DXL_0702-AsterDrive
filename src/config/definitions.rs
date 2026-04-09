@@ -84,6 +84,17 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Contact change confirmation link lifetime in seconds",
     },
     ConfigDef {
+        key: "auth_password_reset_ttl_secs",
+        label_i18n_key: "settings_item_auth_password_reset_ttl_secs_label",
+        description_i18n_key: "settings_item_auth_password_reset_ttl_secs_desc",
+        value_type: "number",
+        default_fn: || "3600".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "auth",
+        description: "Password reset link lifetime in seconds",
+    },
+    ConfigDef {
         key: "auth_contact_verification_resend_cooldown_secs",
         label_i18n_key: "settings_item_auth_contact_verification_resend_cooldown_secs_label",
         description_i18n_key: "settings_item_auth_contact_verification_resend_cooldown_secs_desc",
@@ -93,6 +104,17 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: "auth",
         description: "Minimum cooldown between verification email resends in seconds",
+    },
+    ConfigDef {
+        key: "auth_password_reset_request_cooldown_secs",
+        label_i18n_key: "settings_item_auth_password_reset_request_cooldown_secs_label",
+        description_i18n_key: "settings_item_auth_password_reset_request_cooldown_secs_desc",
+        value_type: "number",
+        default_fn: || "60".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "auth",
+        description: "Minimum cooldown between password reset email requests for the same user in seconds",
     },
     // ── WebDAV ──────────────────────────────────────────────
     ConfigDef {

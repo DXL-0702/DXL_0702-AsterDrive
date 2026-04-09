@@ -42,6 +42,11 @@ pub struct ContactVerificationConfirmResult {
     pub target: String,
 }
 
+#[derive(Debug)]
+pub struct PasswordResetRequestResult {
+    pub user: Option<user::Model>,
+}
+
 impl AuthSnapshot {
     fn from_user(user: &user::Model) -> Self {
         Self {
@@ -385,6 +390,65 @@ async fn ensure_resend_allowed<C: ConnectionTrait>(
     Ok(())
 }
 
+async fn password_reset_request_allowed<C: ConnectionTrait>(
+    state: &AppState,
+    db: &C,
+    user_id: i64,
+) -> Result<bool> {
+    let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
+    let Some(latest) = contact_verification_token_repo::find_latest_active_for_user(
+        db,
+        user_id,
+        VerificationChannel::Email,
+        VerificationPurpose::PasswordReset,
+    )
+    .await?
+    else {
+        return Ok(true);
+    };
+
+    let allowed_at =
+        latest.created_at + Duration::seconds(policy.password_reset_request_cooldown_secs as i64);
+    Ok(allowed_at <= Utc::now())
+}
+
+async fn clear_active_contact_verification_tokens(
+    state: &AppState,
+    user_id: i64,
+    purpose: VerificationPurpose,
+) {
+    if let Err(error) = contact_verification_token_repo::delete_active_for_user(
+        &state.db,
+        user_id,
+        VerificationChannel::Email,
+        purpose,
+    )
+    .await
+    {
+        tracing::warn!(
+            user_id,
+            purpose = ?purpose,
+            error = %error,
+            "failed to cleanup active verification tokens"
+        );
+    }
+}
+
+async fn update_password_in_connection<C: ConnectionTrait>(
+    db: &C,
+    user: user::Model,
+    new_password: &str,
+) -> Result<user::Model> {
+    validate_password(new_password)?;
+
+    let next_session_version = user.session_version.saturating_add(1);
+    let mut active = user.into_active_model();
+    active.password_hash = Set(hash::hash_password(new_password)?);
+    active.session_version = Set(next_session_version);
+    active.updated_at = Set(Utc::now());
+    active.update(db).await.map_err(AsterError::from)
+}
+
 async fn cleanup_failed_registration(state: &AppState, user_id: i64) {
     if let Err(e) = user::Entity::delete_by_id(user_id).exec(&state.db).await {
         tracing::warn!(user_id, error = %e, "failed to cleanup user after registration mail error");
@@ -641,6 +705,123 @@ pub async fn resend_email_change(state: &AppState, user_id: i64) -> Result<user:
     Ok(user)
 }
 
+pub async fn request_password_reset(
+    state: &AppState,
+    email: &str,
+) -> Result<PasswordResetRequestResult> {
+    let normalized_email = normalize_email(email)?;
+    let Some(user) = user_repo::find_by_email(&state.db, &normalized_email).await? else {
+        return Ok(PasswordResetRequestResult { user: None });
+    };
+
+    if !user.status.is_active() || !is_email_verified(&user) {
+        return Ok(PasswordResetRequestResult { user: None });
+    }
+
+    if !password_reset_request_allowed(state, &state.db, user.id).await? {
+        tracing::info!(
+            user_id = user.id,
+            "password reset request skipped due to cooldown"
+        );
+        return Ok(PasswordResetRequestResult { user: Some(user) });
+    }
+
+    let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let token = issue_contact_verification_token(
+        &txn,
+        user.id,
+        VerificationPurpose::PasswordReset,
+        &user.email,
+        policy.password_reset_ttl_secs,
+    )
+    .await?;
+    txn.commit().await.map_err(AsterError::from)?;
+
+    if let Err(error) =
+        mail_service::send_password_reset(state, &user.username, &user.email, &token).await
+    {
+        tracing::warn!(
+            user_id = user.id,
+            error = %error,
+            "failed to send password reset email"
+        );
+        clear_active_contact_verification_tokens(
+            state,
+            user.id,
+            VerificationPurpose::PasswordReset,
+        )
+        .await;
+    }
+
+    Ok(PasswordResetRequestResult { user: Some(user) })
+}
+
+pub async fn confirm_password_reset(
+    state: &AppState,
+    token: &str,
+    new_password: &str,
+) -> Result<user::Model> {
+    validate_password(new_password)?;
+
+    let token_hash = hash::sha256_hex(token.as_bytes());
+    let record = contact_verification_token_repo::find_by_token_hash(&state.db, &token_hash)
+        .await?
+        .ok_or_else(|| {
+            AsterError::contact_verification_invalid("password reset link is invalid")
+        })?;
+
+    if record.purpose != VerificationPurpose::PasswordReset {
+        return Err(AsterError::contact_verification_invalid(
+            "password reset link is invalid",
+        ));
+    }
+    if record.consumed_at.is_some() {
+        return Err(AsterError::contact_verification_invalid(
+            "password reset link has already been used",
+        ));
+    }
+    if record.expires_at <= Utc::now() {
+        return Err(AsterError::contact_verification_expired(
+            "password reset link has expired",
+        ));
+    }
+
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let existing_user = user_repo::find_by_id(&txn, record.user_id).await?;
+    if !existing_user.status.is_active() {
+        return Err(AsterError::auth_forbidden("account is disabled"));
+    }
+    if !is_email_verified(&existing_user) || existing_user.email != record.target {
+        return Err(AsterError::contact_verification_invalid(
+            "password reset request no longer exists",
+        ));
+    }
+
+    let consumed =
+        contact_verification_token_repo::mark_consumed_if_unused(&txn, record.id).await?;
+    if !consumed {
+        return Err(AsterError::contact_verification_invalid(
+            "password reset link has already been used",
+        ));
+    }
+
+    let updated = update_password_in_connection(&txn, existing_user, new_password).await?;
+    txn.commit().await.map_err(AsterError::from)?;
+    invalidate_auth_snapshot_cache(state, updated.id).await;
+    if let Err(error) =
+        mail_service::send_password_reset_notice(state, &updated.username, &updated.email).await
+    {
+        tracing::warn!(
+            user_id = updated.id,
+            email = %updated.email,
+            error = %error,
+            "failed to send password reset notice"
+        );
+    }
+    Ok(updated)
+}
+
 pub async fn confirm_contact_verification(
     state: &AppState,
     token: &str,
@@ -676,6 +857,19 @@ pub async fn confirm_contact_verification(
     let previous_email = (purpose == VerificationPurpose::ContactChange
         && existing_user.email != target)
         .then(|| existing_user.email.clone());
+    if purpose == VerificationPurpose::PasswordReset {
+        return Err(AsterError::contact_verification_invalid(
+            "password reset token cannot be confirmed from this endpoint",
+        ));
+    }
+
+    let consumed =
+        contact_verification_token_repo::mark_consumed_if_unused(&txn, record.id).await?;
+    if !consumed {
+        return Err(AsterError::contact_verification_invalid(
+            "contact verification link has already been used",
+        ));
+    }
 
     let now = Utc::now();
     match purpose {
@@ -713,9 +907,8 @@ pub async fn confirm_contact_verification(
                 active.update(&txn).await.map_err(AsterError::from)?;
             }
         }
+        VerificationPurpose::PasswordReset => unreachable!("handled above"),
     }
-
-    contact_verification_token_repo::mark_consumed(&txn, record).await?;
     txn.commit().await.map_err(AsterError::from)?;
 
     if let Some(previous_email) = previous_email.as_deref()
@@ -875,15 +1068,8 @@ pub async fn set_password(
     user_id: i64,
     new_password: &str,
 ) -> Result<user::Model> {
-    validate_password(new_password)?;
-
     let user = user_repo::find_by_id(&state.db, user_id).await?;
-    let next_session_version = user.session_version.saturating_add(1);
-    let mut active = user.into_active_model();
-    active.password_hash = Set(hash::hash_password(new_password)?);
-    active.session_version = Set(next_session_version);
-    active.updated_at = Set(Utc::now());
-    let updated = active.update(&state.db).await.map_err(AsterError::from)?;
+    let updated = update_password_in_connection(&state.db, user, new_password).await?;
     invalidate_auth_snapshot_cache(state, updated.id).await;
     Ok(updated)
 }

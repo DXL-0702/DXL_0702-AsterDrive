@@ -17,6 +17,10 @@ export type CheckResp = components["schemas"]["CheckResp"];
 export type ChangePasswordRequest = components["schemas"]["ChangePasswordReq"];
 export type CreateUserReq = components["schemas"]["CreateUserReq"];
 export type MeResponse = components["schemas"]["MeResponse"];
+export type PasswordResetConfirmRequest =
+	components["schemas"]["PasswordResetConfirmReq"];
+export type PasswordResetRequestRequest =
+	components["schemas"]["PasswordResetRequestReq"];
 export type RequestEmailChangeRequest =
 	components["schemas"]["RequestEmailChangeReq"];
 export type ResendRegisterActivationRequest =

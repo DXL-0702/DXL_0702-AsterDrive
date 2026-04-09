@@ -194,6 +194,8 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
         | auth_runtime::AUTH_REFRESH_TOKEN_TTL_SECS_KEY
         | auth_runtime::AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY
         | auth_runtime::AUTH_CONTACT_CHANGE_TTL_SECS_KEY
+        | auth_runtime::AUTH_PASSWORD_RESET_TTL_SECS_KEY
+        | auth_runtime::AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS_KEY
         | auth_runtime::AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY => {
             auth_runtime::normalize_token_ttl_config_value(key, value)
         }

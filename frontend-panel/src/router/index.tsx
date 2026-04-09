@@ -17,6 +17,7 @@ import { useFileStore } from "@/stores/fileStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 const LoginPage = lazy(() => import("@/pages/LoginPage"));
+const ResetPasswordPage = lazy(() => import("@/pages/ResetPasswordPage"));
 const FileBrowserPage = lazy(() => import("@/pages/FileBrowserPage"));
 const AdminOverviewPage = lazy(() => import("@/pages/admin/AdminOverviewPage"));
 const AdminUsersPage = lazy(() => import("@/pages/admin/AdminUsersPage"));
@@ -127,6 +128,15 @@ export const router = createBrowserRouter([
 		element: <LoginGuard />,
 		errorElement: <ErrorPage />,
 		children: [{ path: "/login", element: <LoginPage /> }],
+	},
+	{
+		path: "/reset-password",
+		errorElement: <ErrorPage />,
+		element: (
+			<Suspense fallback={<Loading />}>
+				<ResetPasswordPage />
+			</Suspense>
+		),
 	},
 	{
 		element: <ProtectedRoute />,

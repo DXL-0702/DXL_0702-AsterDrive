@@ -7,8 +7,11 @@ pub const AUTH_ACCESS_TOKEN_TTL_SECS_KEY: &str = "auth_access_token_ttl_secs";
 pub const AUTH_REFRESH_TOKEN_TTL_SECS_KEY: &str = "auth_refresh_token_ttl_secs";
 pub const AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY: &str = "auth_register_activation_ttl_secs";
 pub const AUTH_CONTACT_CHANGE_TTL_SECS_KEY: &str = "auth_contact_change_ttl_secs";
+pub const AUTH_PASSWORD_RESET_TTL_SECS_KEY: &str = "auth_password_reset_ttl_secs";
 pub const AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY: &str =
     "auth_contact_verification_resend_cooldown_secs";
+pub const AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS_KEY: &str =
+    "auth_password_reset_request_cooldown_secs";
 
 pub const DEFAULT_AUTH_COOKIE_SECURE: bool = true;
 pub const DEFAULT_AUTH_ALLOW_USER_REGISTRATION: bool = true;
@@ -16,7 +19,9 @@ pub const DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECS: u64 = 900;
 pub const DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECS: u64 = 604800;
 pub const DEFAULT_AUTH_REGISTER_ACTIVATION_TTL_SECS: u64 = 86_400;
 pub const DEFAULT_AUTH_CONTACT_CHANGE_TTL_SECS: u64 = 86_400;
+pub const DEFAULT_AUTH_PASSWORD_RESET_TTL_SECS: u64 = 3_600;
 pub const DEFAULT_AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS: u64 = 60;
+pub const DEFAULT_AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS: u64 = 60;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RuntimeAuthPolicy {
@@ -31,6 +36,8 @@ pub struct RuntimeContactVerificationPolicy {
     pub register_activation_ttl_secs: u64,
     pub contact_change_ttl_secs: u64,
     pub resend_cooldown_secs: u64,
+    pub password_reset_ttl_secs: u64,
+    pub password_reset_request_cooldown_secs: u64,
 }
 
 impl RuntimeAuthPolicy {
@@ -116,16 +123,28 @@ impl RuntimeContactVerificationPolicy {
             AUTH_CONTACT_CHANGE_TTL_SECS_KEY,
             DEFAULT_AUTH_CONTACT_CHANGE_TTL_SECS,
         );
+        let password_reset_ttl_secs = read_positive_u64(
+            runtime_config,
+            AUTH_PASSWORD_RESET_TTL_SECS_KEY,
+            DEFAULT_AUTH_PASSWORD_RESET_TTL_SECS,
+        );
         let resend_cooldown_secs = read_positive_u64(
             runtime_config,
             AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY,
             DEFAULT_AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS,
+        );
+        let password_reset_request_cooldown_secs = read_positive_u64(
+            runtime_config,
+            AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS_KEY,
+            DEFAULT_AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS,
         );
 
         Self {
             register_activation_ttl_secs,
             contact_change_ttl_secs,
             resend_cooldown_secs,
+            password_reset_ttl_secs,
+            password_reset_request_cooldown_secs,
         }
     }
 }

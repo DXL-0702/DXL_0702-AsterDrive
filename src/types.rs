@@ -103,6 +103,8 @@ pub enum VerificationPurpose {
     RegisterActivation,
     #[sea_orm(string_value = "contact_change")]
     ContactChange,
+    #[sea_orm(string_value = "password_reset")]
+    PasswordReset,
 }
 
 /// 团队成员角色

@@ -53,6 +53,14 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
             "/contact-verification/confirm",
             web::get().to(confirm_contact_verification),
         )
+        .route(
+            "/password/reset/request",
+            web::post().to(request_password_reset),
+        )
+        .route(
+            "/password/reset/confirm",
+            web::post().to(confirm_password_reset),
+        )
         .route("/login", web::post().to(login))
         .route("/refresh", web::post().to(refresh))
         .route("/logout", web::post().to(logout))
@@ -150,6 +158,19 @@ pub struct UpdateProfileReq {
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ChangePasswordReq {
     pub current_password: String,
+    pub new_password: String,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct PasswordResetRequestReq {
+    pub email: String,
+}
+
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct PasswordResetConfirmReq {
+    pub token: String,
     pub new_password: String,
 }
 
@@ -569,6 +590,7 @@ pub async fn confirm_contact_verification(
             audit_service::AuditAction::UserConfirmRegistration
         }
         VerificationPurpose::ContactChange => audit_service::AuditAction::UserConfirmEmailChange,
+        VerificationPurpose::PasswordReset => unreachable!("handled in password reset flow"),
     };
     let ctx = audit_service::AuditContext {
         user_id: result.user_id,
@@ -614,6 +636,7 @@ pub async fn confirm_contact_verification(
             ContactVerificationRedirectStatus::EmailChanged,
             Some(result.target.as_str()),
         ),
+        VerificationPurpose::PasswordReset => unreachable!("handled in password reset flow"),
     };
 
     Ok(contact_verification_redirect_response(
@@ -622,6 +645,101 @@ pub async fn confirm_contact_verification(
         redirect_status,
         email,
     ))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/auth/password/reset/request",
+    tag = "auth",
+    operation_id = "request_password_reset",
+    request_body = PasswordResetRequestReq,
+    responses(
+        (status = 200, description = "Password reset request accepted", body = inline(ApiResponse<ActionMessageResp>)),
+        (status = 400, description = "Invalid email input"),
+    ),
+)]
+pub async fn request_password_reset(
+    state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
+    body: web::Json<PasswordResetRequestReq>,
+) -> Result<HttpResponse> {
+    let result = auth_service::request_password_reset(&state, &body.email).await?;
+    if let Some(user) = result.user.as_ref() {
+        let ctx = audit_service::AuditContext {
+            user_id: user.id,
+            ip_address: req
+                .connection_info()
+                .realip_remote_addr()
+                .map(|s| s.to_string()),
+            user_agent: req
+                .headers()
+                .get("user-agent")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string()),
+        };
+        audit_service::log(
+            &state,
+            &ctx,
+            audit_service::AuditAction::UserRequestPasswordReset,
+            Some("user"),
+            Some(user.id),
+            Some(&user.username),
+            None,
+        )
+        .await;
+    }
+
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(ActionMessageResp {
+        message: "If the account is eligible, a password reset email will be sent".to_string(),
+    })))
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/auth/password/reset/confirm",
+    tag = "auth",
+    operation_id = "confirm_password_reset",
+    request_body = PasswordResetConfirmReq,
+    responses(
+        (status = 200, description = "Password reset successful", body = inline(ApiResponse<ActionMessageResp>)),
+        (status = 400, description = "Invalid token or password"),
+        (status = 410, description = "Reset token expired"),
+    ),
+)]
+pub async fn confirm_password_reset(
+    state: web::Data<AppState>,
+    req: actix_web::HttpRequest,
+    body: web::Json<PasswordResetConfirmReq>,
+) -> Result<HttpResponse> {
+    let user =
+        auth_service::confirm_password_reset(&state, &body.token, &body.new_password).await?;
+
+    let ctx = audit_service::AuditContext {
+        user_id: user.id,
+        ip_address: req
+            .connection_info()
+            .realip_remote_addr()
+            .map(|s| s.to_string()),
+        user_agent: req
+            .headers()
+            .get("user-agent")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.to_string()),
+    };
+    audit_service::log(
+        &state,
+        &ctx,
+        audit_service::AuditAction::UserConfirmPasswordReset,
+        Some("user"),
+        Some(user.id),
+        Some(&user.username),
+        None,
+    )
+    .await;
+
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(ActionMessageResp {
+        message: "Password reset successful".to_string(),
+    })))
 }
 
 #[api_docs_macros::path(

@@ -14,6 +14,10 @@ import {
 	clearContactVerificationRedirectSearch,
 	getContactVerificationRedirectState,
 } from "@/lib/contactVerificationRedirect";
+import {
+	clearPasswordResetRedirectSearch,
+	getPasswordResetRedirectState,
+} from "@/lib/passwordResetRedirect";
 import { cn } from "@/lib/utils";
 import { emailSchema, passwordSchema, usernameSchema } from "@/lib/validation";
 import { authService } from "@/services/authService";
@@ -152,6 +156,58 @@ function AnimateSwap({
 	);
 }
 
+function AnimateInlineSwap({
+	activeKey,
+	children,
+}: {
+	activeKey: string;
+	children: React.ReactNode;
+}) {
+	const [renderedKey, setRenderedKey] = useState(activeKey);
+	const [renderedChildren, setRenderedChildren] = useState(children);
+	const [visible, setVisible] = useState(true);
+
+	useEffect(() => {
+		if (activeKey === renderedKey) {
+			setRenderedChildren(children);
+			return;
+		}
+
+		setVisible(false);
+		const timer = setTimeout(() => {
+			setRenderedKey(activeKey);
+			setRenderedChildren(children);
+			requestAnimationFrame(() => {
+				requestAnimationFrame(() => setVisible(true));
+			});
+		}, 180);
+
+		return () => clearTimeout(timer);
+	}, [activeKey, children, renderedKey]);
+
+	useEffect(() => {
+		if (activeKey === renderedKey) {
+			setRenderedChildren(children);
+		}
+	}, [activeKey, children, renderedKey]);
+
+	return (
+		<span className="inline-flex overflow-hidden">
+			<span
+				className={cn(
+					"inline-flex items-center transition-all duration-200 ease-out will-change-transform",
+					visible
+						? "translate-y-0 opacity-100"
+						: "pointer-events-none -translate-y-1 opacity-0",
+				)}
+				aria-hidden={!visible}
+			>
+				{renderedChildren}
+			</span>
+		</span>
+	);
+}
+
 // ── Types ───────────────────────────────────────────────────
 
 type AuthMode = "idle" | "login" | "register" | "setup";
@@ -184,11 +240,16 @@ export default function LoginPage() {
 	const [checking, setChecking] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
 	const [resendingActivation, setResendingActivation] = useState(false);
+	const [requestingPasswordReset, setRequestingPasswordReset] = useState(false);
 	const [registrationClosed, setRegistrationClosed] = useState(false);
 	const [exiting, setExiting] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
 	const [pendingActivation, setPendingActivation] =
 		useState<PendingActivationState | null>(null);
+	const [showPasswordResetRequest, setShowPasswordResetRequest] =
+		useState(false);
+	const [passwordResetEmail, setPasswordResetEmail] = useState("");
+	const [passwordResetError, setPasswordResetError] = useState("");
 
 	const checkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const lastChecked = useRef("");
@@ -204,15 +265,22 @@ export default function LoginPage() {
 	const extraLabel = isEmail ? t("username") : t("email");
 	const extraPlaceholder = isEmail ? t("choose_username") : "you@example.com";
 	const requiresExtraField = mode === "register" || mode === "setup";
+	const passwordResetPrefill = isEmail
+		? identifier.trim()
+		: extraField.includes("@")
+			? extraField.trim()
+			: "";
 	const modeActionText = pendingActivation
 		? t("activation_pending_title")
-		: mode === "login"
-			? t("sign_in")
-			: mode === "register"
-				? t("sign_up")
-				: mode === "setup"
-					? t("create_admin")
-					: "";
+		: showPasswordResetRequest
+			? t("forgot_password_title")
+			: mode === "login"
+				? t("sign_in")
+				: mode === "register"
+					? t("sign_up")
+					: mode === "setup"
+						? t("create_admin")
+						: "";
 	usePageTitle(modeActionText || t("sign_in"));
 	const isSubmitDisabled =
 		submitting ||
@@ -223,54 +291,65 @@ export default function LoginPage() {
 
 	useEffect(() => {
 		const verification = getContactVerificationRedirectState(location.search);
-		if (!verification) {
+		const passwordReset = getPasswordResetRedirectState(location.search);
+		if (!verification && !passwordReset) {
 			return;
 		}
 
-		switch (verification.status) {
-			case "email-changed":
-				if (!verification.email) {
-					return;
-				}
-				toast.success(
-					t("settings:settings_email_change_confirmed_login_hint", {
-						email: verification.email,
-					}),
-					{
-						id: `contact-verification-email-changed-login:${verification.email}`,
-					},
-				);
-				break;
-			case "expired":
-				toast.error(t("verify_contact_expired_title"), {
-					description: t("verify_contact_expired_desc"),
-					id: "contact-verification-expired-login",
-				});
-				break;
-			case "invalid":
-				toast.error(t("verify_contact_invalid_title"), {
-					description: t("verify_contact_invalid_desc"),
-					id: "contact-verification-invalid-login",
-				});
-				break;
-			case "missing":
-				toast.error(t("verify_contact_missing_token_title"), {
-					description: t("verify_contact_missing_token_desc"),
-					id: "contact-verification-missing-login",
-				});
-				break;
-			case "register-activated":
-				toast.success(t("activation_confirmed"), {
-					id: "contact-verification-register-activated-login",
-				});
-				break;
+		if (verification) {
+			switch (verification.status) {
+				case "email-changed":
+					if (!verification.email) {
+						return;
+					}
+					toast.success(
+						t("settings:settings_email_change_confirmed_login_hint", {
+							email: verification.email,
+						}),
+						{
+							id: `contact-verification-email-changed-login:${verification.email}`,
+						},
+					);
+					break;
+				case "expired":
+					toast.error(t("verify_contact_expired_title"), {
+						description: t("verify_contact_expired_desc"),
+						id: "contact-verification-expired-login",
+					});
+					break;
+				case "invalid":
+					toast.error(t("verify_contact_invalid_title"), {
+						description: t("verify_contact_invalid_desc"),
+						id: "contact-verification-invalid-login",
+					});
+					break;
+				case "missing":
+					toast.error(t("verify_contact_missing_token_title"), {
+						description: t("verify_contact_missing_token_desc"),
+						id: "contact-verification-missing-login",
+					});
+					break;
+				case "register-activated":
+					toast.success(t("activation_confirmed"), {
+						id: "contact-verification-register-activated-login",
+					});
+					break;
+			}
+		}
+
+		if (passwordReset?.status === "success") {
+			toast.success(t("password_reset_success_login"), {
+				id: "password-reset-success-login",
+			});
 		}
 
 		navigate(
 			{
 				hash: location.hash,
 				pathname: location.pathname,
-				search: clearContactVerificationRedirectSearch(location.search),
+				search: clearPasswordResetRedirectSearch(
+					clearContactVerificationRedirectSearch(location.search),
+				),
 			},
 			{ replace: true },
 		);
@@ -390,6 +469,11 @@ export default function LoginPage() {
 		setShowPassword(false);
 	};
 
+	const closePasswordResetRequest = () => {
+		setShowPasswordResetRequest(false);
+		setPasswordResetError("");
+	};
+
 	const handleResendActivation = async () => {
 		if (!pendingActivation) return;
 
@@ -404,10 +488,36 @@ export default function LoginPage() {
 		}
 	};
 
+	const handlePasswordResetRequest = async () => {
+		const email = passwordResetEmail.trim();
+		const result = emailSchema.safeParse(email);
+		if (!result.success) {
+			setPasswordResetError(result.error.issues[0]?.message ?? "");
+			return;
+		}
+
+		try {
+			setRequestingPasswordReset(true);
+			await authService.requestPasswordReset({ email });
+			toast.success(t("password_reset_request_sent"));
+			setIdentifier(email);
+			setPasswordResetError("");
+			setShowPasswordResetRequest(false);
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setRequestingPasswordReset(false);
+		}
+	};
+
 	// ── Submit ──
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
+		if (showPasswordResetRequest) {
+			await handlePasswordResetRequest();
+			return;
+		}
 		if (!validate()) return;
 		if (mode === "idle") {
 			await runCheck(identifier);
@@ -489,6 +599,7 @@ export default function LoginPage() {
 						identifier: pendingActivation.identifier,
 					});
 		}
+		if (showPasswordResetRequest) return t("password_reset_request_desc");
 		if (mode === "setup") return t("setup_desc");
 		if (registrationClosed) return t("registration_closed_desc");
 		if (mode === "register") return t("create_new_account");
@@ -539,9 +650,11 @@ export default function LoginPage() {
 								text={
 									pendingActivation
 										? t("activation_pending_title")
-										: mode === "setup"
-											? t("welcome_setup")
-											: t("sign_in_to_account")
+										: showPasswordResetRequest
+											? t("forgot_password_title")
+											: mode === "setup"
+												? t("welcome_setup")
+												: t("sign_in_to_account")
 								}
 							/>
 						</h2>
@@ -552,7 +665,13 @@ export default function LoginPage() {
 
 					<form onSubmit={handleSubmit}>
 						<AnimateSwap
-							activeKey={pendingActivation ? "pending-activation" : "auth-form"}
+							activeKey={
+								pendingActivation
+									? "pending-activation"
+									: showPasswordResetRequest
+										? "password-reset-request"
+										: "auth-form"
+							}
 						>
 							{pendingActivation ? (
 								<div className="space-y-4 rounded-2xl border bg-muted/20 p-4">
@@ -610,6 +729,88 @@ export default function LoginPage() {
 										</Button>
 									</div>
 								</div>
+							) : showPasswordResetRequest ? (
+								<div className="space-y-4 rounded-2xl border bg-muted/20 p-4">
+									<div className="flex items-start gap-3">
+										<div className="rounded-xl bg-primary/10 p-2 text-primary">
+											<Icon name="EnvelopeSimple" className="h-5 w-5" />
+										</div>
+										<div className="space-y-1">
+											<p className="text-sm font-medium">
+												{t("forgot_password_title")}
+											</p>
+											<p className="text-sm text-muted-foreground">
+												{t("password_reset_request_hint")}
+											</p>
+										</div>
+									</div>
+
+									<div className="space-y-1.5">
+										<Label htmlFor="password-reset-email" className="text-sm">
+											{t("email")}
+										</Label>
+										<Input
+											id="password-reset-email"
+											placeholder="you@example.com"
+											value={passwordResetEmail}
+											onChange={(event) => {
+												const nextValue = event.target.value;
+												setPasswordResetEmail(nextValue);
+												const result = emailSchema.safeParse(nextValue);
+												setPasswordResetError(
+													result.success
+														? ""
+														: (result.error.issues[0]?.message ?? ""),
+												);
+											}}
+											autoFocus
+											autoComplete="email"
+											className={cn(
+												"h-10",
+												passwordResetError &&
+													"border-destructive focus-visible:ring-destructive",
+											)}
+										/>
+										{passwordResetError ? (
+											<p className="text-xs text-destructive">
+												{passwordResetError}
+											</p>
+										) : null}
+									</div>
+
+									<div className="grid gap-2 sm:grid-cols-2">
+										<Button
+											type="button"
+											className="h-10"
+											disabled={
+												requestingPasswordReset ||
+												passwordResetEmail.trim().length === 0
+											}
+											onClick={() => void handlePasswordResetRequest()}
+										>
+											{requestingPasswordReset ? (
+												<Icon
+													name="Spinner"
+													className="mr-2 h-4 w-4 animate-spin"
+												/>
+											) : (
+												<Icon name="EnvelopeSimple" className="mr-2 h-4 w-4" />
+											)}
+											{requestingPasswordReset
+												? t("sending_password_reset")
+												: t("send_password_reset")}
+										</Button>
+										<Button
+											type="button"
+											variant="outline"
+											className="h-10"
+											onClick={closePasswordResetRequest}
+										>
+											<Icon name="ArrowLeft" className="mr-2 h-4 w-4" />
+											{t("back_to_sign_in")}
+										</Button>
+									</div>
+								</div>
 							) : (
 								<>
 									{/* Field 1: identifier (email or username) — always visible */}
@@ -624,22 +825,33 @@ export default function LoginPage() {
 													}
 												/>
 											</Label>
-											<div className="flex items-center gap-2">
-												{mode !== "idle" && (
-													<AnimateText
-														text={modeActionText}
-														className={cn(
-															"text-xs text-muted-foreground/70",
-															checking && "opacity-0",
-														)}
-													/>
-												)}
-												{checking && (
-													<Icon
-														name="Spinner"
-														className="h-3 w-3 animate-spin text-muted-foreground"
-													/>
-												)}
+											<div className="flex min-h-4 items-center justify-end gap-2">
+												<AnimateInlineSwap activeKey={`auth-mode:${mode}`}>
+													{mode !== "idle" ? (
+														<span
+															className={cn(
+																"text-xs text-muted-foreground/70 transition-opacity duration-150",
+																checking && "opacity-0",
+															)}
+														>
+															{modeActionText}
+														</span>
+													) : (
+														<span className="w-0" />
+													)}
+												</AnimateInlineSwap>
+												<AnimateInlineSwap
+													activeKey={checking ? "auth-checking" : "auth-ready"}
+												>
+													{checking ? (
+														<Icon
+															name="Spinner"
+															className="h-3 w-3 animate-spin text-muted-foreground"
+														/>
+													) : (
+														<span className="w-0" />
+													)}
+												</AnimateInlineSwap>
 											</div>
 										</div>
 										<Input
@@ -764,6 +976,20 @@ export default function LoginPage() {
 												{errors.password}
 											</p>
 										)}
+									</div>
+
+									<div className="mt-3 flex justify-end">
+										<button
+											type="button"
+											className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+											onClick={() => {
+												setShowPasswordResetRequest(true);
+												setPasswordResetEmail(passwordResetPrefill);
+												setPasswordResetError("");
+											}}
+										>
+											{t("forgot_password")}
+										</button>
 									</div>
 
 									<Button

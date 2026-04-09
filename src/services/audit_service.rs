@@ -70,11 +70,13 @@ pub enum AuditAction {
     TeamRestore,
     TeamUpdate,
     UserChangePassword,
+    UserConfirmPasswordReset,
     UserConfirmEmailChange,
     UserConfirmRegistration,
     UserLogin,
     UserLogout,
     UserRequestEmailChange,
+    UserRequestPasswordReset,
     UserRegister,
     UserResendEmailChange,
     UserResendRegistration,
@@ -127,11 +129,13 @@ impl AuditAction {
             Self::TeamRestore => "team_restore",
             Self::TeamUpdate => "team_update",
             Self::UserChangePassword => "user_change_password",
+            Self::UserConfirmPasswordReset => "user_confirm_password_reset",
             Self::UserConfirmEmailChange => "user_confirm_email_change",
             Self::UserConfirmRegistration => "user_confirm_registration",
             Self::UserLogin => "user_login",
             Self::UserLogout => "user_logout",
             Self::UserRequestEmailChange => "user_request_email_change",
+            Self::UserRequestPasswordReset => "user_request_password_reset",
             Self::UserRegister => "user_register",
             Self::UserResendEmailChange => "user_resend_email_change",
             Self::UserResendRegistration => "user_resend_registration",
@@ -605,9 +609,37 @@ mod tests {
             (AuditAction::TeamRestore, "team_restore"),
             (AuditAction::TeamUpdate, "team_update"),
             (AuditAction::UserChangePassword, "user_change_password"),
+            (
+                AuditAction::UserConfirmPasswordReset,
+                "user_confirm_password_reset",
+            ),
+            (
+                AuditAction::UserConfirmEmailChange,
+                "user_confirm_email_change",
+            ),
+            (
+                AuditAction::UserConfirmRegistration,
+                "user_confirm_registration",
+            ),
             (AuditAction::UserLogin, "user_login"),
             (AuditAction::UserLogout, "user_logout"),
+            (
+                AuditAction::UserRequestEmailChange,
+                "user_request_email_change",
+            ),
+            (
+                AuditAction::UserRequestPasswordReset,
+                "user_request_password_reset",
+            ),
             (AuditAction::UserRegister, "user_register"),
+            (
+                AuditAction::UserResendEmailChange,
+                "user_resend_email_change",
+            ),
+            (
+                AuditAction::UserResendRegistration,
+                "user_resend_registration",
+            ),
         ];
 
         for (action, expected) in cases {

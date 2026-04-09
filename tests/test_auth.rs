@@ -109,6 +109,23 @@ fn extract_verification_token(
         .into_owned()
 }
 
+fn extract_password_reset_token(
+    message: &aster_drive::services::mail_service::MailMessage,
+) -> String {
+    let link = message
+        .text_body
+        .lines()
+        .find(|line| line.contains("/reset-password?token="))
+        .expect("password reset link missing from mail body");
+    let encoded = link
+        .split("token=")
+        .nth(1)
+        .expect("password reset token missing from link");
+    urlencoding::decode(encoded)
+        .expect("password reset token should be url-encoded")
+        .into_owned()
+}
+
 async fn read_next_sse_json<B>(body: &mut B) -> Value
 where
     B: MessageBody + Unpin,
@@ -477,6 +494,261 @@ async fn test_email_change_confirmation_redirects_and_notifies_previous_email() 
             .text_body
             .contains("updated@example.com")
     );
+}
+
+#[actix_web::test]
+async fn test_password_reset_request_is_generic_for_unknown_email() {
+    let state = common::setup().await;
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/password/reset/request")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "email": "missing@example.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 0);
+
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
+        .expect("memory mail sender should be available in tests");
+    assert!(memory_sender.messages().is_empty());
+}
+
+#[actix_web::test]
+async fn test_password_reset_rotates_session_and_sends_notice_and_records_audit_logs() {
+    use aster_drive::entities::audit_log;
+    use sea_orm::EntityTrait;
+
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+    let (access, refresh) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/password/reset/request")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "email": "test@example.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
+        .expect("memory mail sender should be available in tests");
+    let token = extract_password_reset_token(
+        &memory_sender
+            .last_message()
+            .expect("password reset email should be sent"),
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/password/reset/confirm")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "token": token,
+            "new_password": "newsecret456"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let messages = memory_sender.messages();
+    let password_reset_notice = messages
+        .last()
+        .expect("password reset notice should be sent after confirmation");
+    assert_eq!(password_reset_notice.to.address, "test@example.com");
+    assert_eq!(
+        password_reset_notice.subject,
+        "Your AsterDrive password was reset"
+    );
+    assert!(
+        password_reset_notice
+            .text_body
+            .contains("password was just reset")
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", format!("aster_access={access}")))
+        .to_request();
+    assert_service_status!(app, req, 401);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", format!("aster_refresh={refresh}")))
+        .to_request();
+    assert_service_status!(app, req, 401);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "testuser",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 401);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "identifier": "testuser",
+            "password": "newsecret456"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let actions: Vec<String> = audit_log::Entity::find()
+        .all(&db)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|entry| entry.action)
+        .collect();
+    assert!(actions.contains(&"user_request_password_reset".to_string()));
+    assert!(actions.contains(&"user_confirm_password_reset".to_string()));
+}
+
+#[actix_web::test]
+async fn test_password_reset_confirm_rejects_reused_token() {
+    let state = common::setup().await;
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+    let _ = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/password/reset/request")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "email": "test@example.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
+        .expect("memory mail sender should be available in tests");
+    let token = extract_password_reset_token(
+        &memory_sender
+            .last_message()
+            .expect("password reset email should be sent"),
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/password/reset/confirm")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "token": token,
+            "new_password": "newsecret456"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/password/reset/confirm")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "token": token,
+            "new_password": "anothersecret789"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 2005);
+}
+
+#[actix_web::test]
+async fn test_password_reset_confirm_rejects_expired_token() {
+    use aster_drive::entities::contact_verification_token;
+    use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
+
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+    let _ = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/password/reset/request")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "email": "test@example.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
+        .expect("memory mail sender should be available in tests");
+    let token = extract_password_reset_token(
+        &memory_sender
+            .last_message()
+            .expect("password reset email should be sent"),
+    );
+
+    let token_hash = aster_drive::utils::hash::sha256_hex(token.as_bytes());
+    let record = contact_verification_token::Entity::find()
+        .filter(contact_verification_token::Column::TokenHash.eq(token_hash))
+        .one(&db)
+        .await
+        .unwrap()
+        .expect("password reset token record should exist");
+    let mut active = record.into_active_model();
+    active.expires_at = Set(chrono::Utc::now() - chrono::Duration::seconds(1));
+    active.update(&db).await.unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/password/reset/confirm")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "token": token,
+            "new_password": "newsecret456"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 410);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["code"], 2006);
+}
+
+#[actix_web::test]
+async fn test_password_reset_request_cooldown_returns_generic_success() {
+    let state = common::setup().await;
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+    let _ = register_and_login!(app);
+
+    let request = || {
+        test::TestRequest::post()
+            .uri("/api/v1/auth/password/reset/request")
+            .peer_addr("127.0.0.1:12345".parse().unwrap())
+            .set_json(serde_json::json!({
+                "email": "test@example.com"
+            }))
+            .to_request()
+    };
+
+    let resp = test::call_service(&app, request()).await;
+    assert_eq!(resp.status(), 200);
+
+    let resp = test::call_service(&app, request()).await;
+    assert_eq!(resp.status(), 200);
+
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
+        .expect("memory mail sender should be available in tests");
+    assert_eq!(memory_sender.messages().len(), 1);
 }
 
 #[actix_web::test]

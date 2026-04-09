@@ -26,6 +26,7 @@ const mockState = vi.hoisted(() => ({
 	},
 	navigate: vi.fn(),
 	register: vi.fn(),
+	requestPasswordReset: vi.fn(),
 	resendRegisterActivation: vi.fn(),
 	setup: vi.fn(),
 	toastError: vi.fn(),
@@ -148,6 +149,8 @@ vi.mock("@/lib/validation", () => ({
 vi.mock("@/services/authService", () => ({
 	authService: {
 		check: (...args: unknown[]) => mockState.check(...args),
+		requestPasswordReset: (...args: unknown[]) =>
+			mockState.requestPasswordReset(...args),
 		register: (...args: unknown[]) => mockState.register(...args),
 		resendRegisterActivation: (...args: unknown[]) =>
 			mockState.resendRegisterActivation(...args),
@@ -188,12 +191,14 @@ describe("LoginPage", () => {
 		};
 		mockState.navigate.mockReset();
 		mockState.register.mockReset();
+		mockState.requestPasswordReset.mockReset();
 		mockState.resendRegisterActivation.mockReset();
 		mockState.setup.mockReset();
 		mockState.toastError.mockReset();
 		mockState.toastSuccess.mockReset();
 		mockState.login.mockResolvedValue(undefined);
 		mockState.register.mockResolvedValue(undefined);
+		mockState.requestPasswordReset.mockResolvedValue(undefined);
 		mockState.resendRegisterActivation.mockResolvedValue(undefined);
 		mockState.setup.mockResolvedValue(undefined);
 		mockState.check.mockResolvedValue({ exists: true, has_users: true });
@@ -276,6 +281,33 @@ describe("LoginPage", () => {
 				{
 					description: "verify_contact_expired_desc",
 					id: "contact-verification-expired-login",
+				},
+			),
+		);
+		expect(mockState.navigate).toHaveBeenCalledWith(
+			{
+				hash: "",
+				pathname: "/login",
+				search: "",
+			},
+			{ replace: true },
+		);
+	});
+
+	it("shows a success toast for password reset redirects", async () => {
+		mockState.location = {
+			hash: "",
+			pathname: "/login",
+			search: "?password_reset=success",
+		};
+
+		render(<LoginPage />);
+
+		await waitFor(() =>
+			expect(mockState.toastSuccess).toHaveBeenCalledWith(
+				"password_reset_success_login",
+				{
+					id: "password-reset-success-login",
 				},
 			),
 		);
@@ -415,6 +447,51 @@ describe("LoginPage", () => {
 				"user@example.com",
 			);
 		});
+	});
+
+	it("requests a password reset from the login view", async () => {
+		render(<LoginPage />);
+
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "user@example.com" },
+		});
+
+		await screen.findByRole("button", { name: "sign_in" });
+		fireEvent.click(screen.getByRole("button", { name: "forgot_password" }));
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: /send_password_reset/ }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.requestPasswordReset).toHaveBeenCalledWith({
+				email: "user@example.com",
+			});
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"password_reset_request_sent",
+		);
+	});
+
+	it("keeps forgot password visible in register mode and prefills the email field", async () => {
+		mockState.check.mockResolvedValueOnce({ exists: false, has_users: true });
+
+		render(<LoginPage />);
+
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "newuser" },
+		});
+
+		const emailField = await screen.findByLabelText("email");
+		fireEvent.change(emailField, {
+			target: { value: "new@example.com" },
+		});
+
+		fireEvent.click(screen.getByRole("button", { name: "forgot_password" }));
+
+		expect(await screen.findByLabelText("email")).toHaveValue(
+			"new@example.com",
+		);
 	});
 
 	it("shows validation errors and reports submit failures without navigating", async () => {

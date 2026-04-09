@@ -4,7 +4,7 @@ use crate::types::{VerificationChannel, VerificationPurpose};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel,
-    QueryFilter, QueryOrder,
+    QueryFilter, QueryOrder, sea_query::Expr,
 };
 
 pub async fn create<C: ConnectionTrait>(
@@ -67,6 +67,21 @@ pub async fn mark_consumed<C: ConnectionTrait>(
     let mut active = token.into_active_model();
     active.consumed_at = Set(Some(Utc::now()));
     active.update(db).await.map_err(AsterError::from)
+}
+
+pub async fn mark_consumed_if_unused<C: ConnectionTrait>(db: &C, token_id: i64) -> Result<bool> {
+    let result = ContactVerificationToken::update_many()
+        .col_expr(
+            contact_verification_token::Column::ConsumedAt,
+            Expr::value(Some(Utc::now())),
+        )
+        .filter(contact_verification_token::Column::Id.eq(token_id))
+        .filter(contact_verification_token::Column::ConsumedAt.is_null())
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    Ok(result.rows_affected == 1)
 }
 
 pub async fn delete_expired<C: ConnectionTrait>(db: &C) -> Result<u64> {

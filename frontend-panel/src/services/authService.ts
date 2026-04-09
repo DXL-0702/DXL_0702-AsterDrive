@@ -5,6 +5,8 @@ import type {
 	ChangePasswordRequest,
 	CheckResp,
 	MeResponse,
+	PasswordResetConfirmRequest,
+	PasswordResetRequestRequest,
 	UpdatePreferencesRequest,
 	UpdateProfileRequest,
 	UserInfo,
@@ -40,6 +42,12 @@ export const authService = {
 
 	resendRegisterActivation: (identifier: string) =>
 		api.post<ActionMessageResp>("/auth/register/resend", { identifier }),
+
+	requestPasswordReset: (payload: PasswordResetRequestRequest) =>
+		api.post<ActionMessageResp>("/auth/password/reset/request", payload),
+
+	confirmPasswordReset: (payload: PasswordResetConfirmRequest) =>
+		api.post<ActionMessageResp>("/auth/password/reset/confirm", payload),
 
 	setup: (username: string, email: string, password: string) =>
 		api.post<UserInfo>("/auth/setup", { username, email, password }),

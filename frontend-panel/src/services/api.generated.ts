@@ -596,6 +596,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/password/reset/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["confirm_password_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/password/reset/request": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["request_password_reset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/preferences": {
         parameters: {
             query?: never;
@@ -3094,6 +3126,13 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        PasswordResetConfirmReq: {
+            new_password: string;
+            token: string;
+        };
+        PasswordResetRequestReq: {
+            email: string;
+        };
         PatchFileReq: {
             /** Format: int64 */
             folder_id?: number | null;
@@ -3716,7 +3755,7 @@ export interface components {
          * @description 联系方式验证用途
          * @enum {string}
          */
-        VerificationPurpose: "register_activation" | "contact_change";
+        VerificationPurpose: "register_activation" | "contact_change" | "password_reset";
         VerifyPasswordReq: {
             password: string;
         };
@@ -6690,6 +6729,87 @@ export interface operations {
             };
             /** @description Current password is invalid */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    confirm_password_reset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetConfirmReq"];
+            };
+        };
+        responses: {
+            /** @description Password reset successful */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            message: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid token or password */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Reset token expired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    request_password_reset: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordResetRequestReq"];
+            };
+        };
+        responses: {
+            /** @description Password reset request accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            message: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid email input */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };

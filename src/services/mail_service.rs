@@ -225,6 +225,58 @@ pub async fn send_contact_change_confirmation(
     .await
 }
 
+pub async fn send_password_reset(
+    state: &AppState,
+    username: &str,
+    email: &str,
+    token: &str,
+) -> Result<()> {
+    let reset_link = password_reset_link(&state.runtime_config, token);
+    let subject = "Reset your AsterDrive password".to_string();
+    let text_body = format!(
+        "Hi {username},\n\nReset your AsterDrive password by opening this link:\n{reset_link}\n\nIf you did not request a password reset, you can ignore this email."
+    );
+    let html_body = format!(
+        "<p>Hi {username},</p><p>Reset your AsterDrive password by opening this link:</p><p><a href=\"{reset_link}\">{reset_link}</a></p><p>If you did not request a password reset, you can ignore this email.</p>"
+    );
+    send_message(
+        state,
+        MailRecipient {
+            address: email.to_string(),
+            display_name: Some(username.to_string()),
+        },
+        subject,
+        text_body,
+        html_body,
+    )
+    .await
+}
+
+pub async fn send_password_reset_notice(
+    state: &AppState,
+    username: &str,
+    email: &str,
+) -> Result<()> {
+    let subject = "Your AsterDrive password was reset".to_string();
+    let text_body = format!(
+        "Hi {username},\n\nThis is a confirmation that your AsterDrive password was just reset.\n\nIf you did not make this change, contact your administrator immediately."
+    );
+    let html_body = format!(
+        "<p>Hi {username},</p><p>This is a confirmation that your AsterDrive password was just reset.</p><p>If you did not make this change, contact your administrator immediately.</p>"
+    );
+    send_message(
+        state,
+        MailRecipient {
+            address: email.to_string(),
+            display_name: Some(username.to_string()),
+        },
+        subject,
+        text_body,
+        html_body,
+    )
+    .await
+}
+
 pub async fn send_contact_change_notice(
     state: &AppState,
     username: &str,
@@ -297,6 +349,13 @@ pub fn verification_link(runtime_config: &RuntimeConfig, token: &str) -> String 
             "/api/v1/auth/contact-verification/confirm?token={}",
             urlencoding::encode(token)
         ),
+    )
+}
+
+pub fn password_reset_link(runtime_config: &RuntimeConfig, token: &str) -> String {
+    site_url::public_app_url_or_path(
+        runtime_config,
+        &format!("/reset-password?token={}", urlencoding::encode(token)),
     )
 }
 
