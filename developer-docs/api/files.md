@@ -16,6 +16,7 @@
 | `DELETE` | `/files/upload/{upload_id}` | 取消上传 |
 | `GET` | `/files/{id}` | 获取文件元信息 |
 | `GET` | `/files/{id}/direct-link` | 生成直接下载链接 token |
+| `POST` | `/files/{id}/preview-link` | 生成短期预览链接 |
 | `GET` | `/files/{id}/download` | 下载文件内容 |
 | `GET` | `/files/{id}/thumbnail` | 获取缩略图 |
 | `PUT` | `/files/{id}/content` | 覆盖文件内容并写入版本历史 |
@@ -81,6 +82,7 @@
 
 - `GET /files/{id}`：读取文件元信息；已进回收站的文件会按“找不到”处理
 - `GET /files/{id}/direct-link`：返回一个短 token；真正下载走根路径 `/d/{token}/{filename}`
+- `POST /files/{id}/preview-link`：返回一个短期预览链接；真正读取内容走根路径 `/pv/{token}/{filename}`
 - `GET /files/{id}/download`：流式下载文件；支持 `If-None-Match`，命中时返回 `304`
 - `GET /files/{id}/thumbnail`：读取缩略图（仅支持的图片类型）；若后台仍在生成，会先返回 `202` 和 `Retry-After`
 - `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
@@ -144,6 +146,29 @@
 - `filename` 必须和当前文件名匹配；URL 编码后的同名也可以
 - 这个下载入口不走 `/api/v1`，返回原始文件流，不是 JSON
 - 追加 `?download=1` 可以强制走附件下载；不传时按 inline 处理
+
+### `POST /files/{id}/preview-link`
+
+这个接口会返回：
+
+```json
+{
+  "code": 0,
+  "msg": "",
+  "data": {
+    "path": "/pv/...",
+    "expires_at": "2026-04-09T12:00:00Z",
+    "max_uses": 5
+  }
+}
+```
+
+要点：
+
+- `path` 是实际预览入口；如果配置了 `public_site_url`，这里可能已经是完整绝对 URL
+- 真实预览内容不走 `/api/v1`，而是走根路径 `/pv/{token}/{filename}`
+- 当前预览链接默认 5 分钟过期，且最多使用 5 次
+- 这个能力主要给内联预览器、Office 在线预览桥接和只读浏览场景使用，不等价于长期分享链接
 
 ## 锁与复制
 

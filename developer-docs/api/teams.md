@@ -65,6 +65,7 @@
 | `DELETE` | `/teams/{team_id}/files/upload/{upload_id}` | 取消团队上传 |
 | `GET` | `/teams/{team_id}/files/{id}` | 获取团队文件元信息 |
 | `GET` | `/teams/{team_id}/files/{id}/direct-link` | 生成团队文件直接下载链接 token |
+| `POST` | `/teams/{team_id}/files/{id}/preview-link` | 生成团队文件短期预览链接 |
 | `GET` | `/teams/{team_id}/files/{id}/download` | 下载团队文件 |
 | `GET` | `/teams/{team_id}/files/{id}/thumbnail` | 获取团队文件缩略图 |
 | `PUT` | `/teams/{team_id}/files/{id}/content` | 覆盖团队文件内容 |
@@ -112,3 +113,5 @@
 - 文件写入时会优先使用目录级 `policy_id`；没有目录覆盖时，再按 `teams.policy_group_id` 的规则解析实际存储策略
 
 团队文件的 `GET /teams/{team_id}/files/{id}/direct-link` 语义和个人空间一致：接口只返回 token，真正下载仍然走根路径 `/d/{token}/{filename}`。
+
+团队文件的 `POST /teams/{team_id}/files/{id}/preview-link` 也和个人空间一致：接口返回 `PreviewLinkInfo`，真正预览内容走根路径 `/pv/{token}/{filename}`。

@@ -373,7 +373,7 @@ async fn test_search_only_own_files() {
     assert_eq!(resp.status(), 201);
     common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
 
-    let _ = confirm_latest_contact_verification!(app, mail_sender);
+    let _ = confirm_latest_contact_verification!(app, db, mail_sender);
 
     // Login as user2
     let req = test::TestRequest::post()

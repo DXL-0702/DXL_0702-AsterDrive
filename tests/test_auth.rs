@@ -95,35 +95,18 @@ fn avatar_upload_payload() -> (String, Vec<u8>) {
 fn extract_verification_token(
     message: &aster_drive::services::mail_service::MailMessage,
 ) -> String {
-    let link = message
-        .text_body
-        .lines()
-        .find(|line| line.contains("/api/v1/auth/contact-verification/confirm?token="))
-        .expect("verification link missing from mail body");
-    let encoded = link
-        .split("token=")
-        .nth(1)
-        .expect("verification token missing from link");
-    urlencoding::decode(encoded)
-        .expect("verification token should be url-encoded")
-        .into_owned()
+    common::extract_token_from_mail_message(
+        message,
+        "/api/v1/auth/contact-verification/confirm?token=",
+    )
+    .expect("verification link missing from mail body")
 }
 
 fn extract_password_reset_token(
     message: &aster_drive::services::mail_service::MailMessage,
 ) -> String {
-    let link = message
-        .text_body
-        .lines()
-        .find(|line| line.contains("/reset-password?token="))
-        .expect("password reset link missing from mail body");
-    let encoded = link
-        .split("token=")
-        .nth(1)
-        .expect("password reset token missing from link");
-    urlencoding::decode(encoded)
-        .expect("password reset token should be url-encoded")
-        .into_owned()
+    common::extract_token_from_mail_message(message, "/reset-password?token=")
+        .expect("password reset link missing from mail body")
 }
 
 async fn read_next_sse_json<B>(body: &mut B) -> Value
@@ -542,7 +525,9 @@ async fn test_email_change_confirmation_redirects_and_notifies_previous_email() 
     assert_eq!(previous_email_notice.to.address, "test@example.com");
     assert_eq!(
         previous_email_notice.subject,
-        "Your AsterDrive email was changed"
+        aster_drive::config::mail::default_template_subject(
+            aster_drive::types::MailTemplateCode::ContactChangeNotice,
+        )
     );
     assert!(
         previous_email_notice
@@ -663,12 +648,19 @@ async fn test_password_reset_rotates_session_and_sends_notice_and_records_audit_
     assert_eq!(password_reset_notice.to.address, "test@example.com");
     assert_eq!(
         password_reset_notice.subject,
-        "Your AsterDrive password was reset"
+        aster_drive::config::mail::default_template_subject(
+            aster_drive::types::MailTemplateCode::PasswordResetNotice,
+        )
     );
     assert!(
         password_reset_notice
             .text_body
-            .contains("password was just reset")
+            .contains("Your password was reset")
+    );
+    assert!(
+        password_reset_notice
+            .text_body
+            .contains("If you did not reset your password")
     );
 
     let req = test::TestRequest::get()

@@ -5,6 +5,105 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.16] - 2026-04-09
+
+### Release Highlights
+
+- **邮件系统** — 引入 lettre/SMTP 邮件服务，新增 outbox 异步投递队列与 5 种可自定义 HTML 邮件模板（注册激活、邮箱变更、密码重置等），管理后台支持在线编辑模板
+- **完整认证流程** — 新增邮箱验证激活、邮箱变更确认、密码重置三大流程，所有敏感操作均有邮件通知。新增注册开关配置，支持关闭公开注册
+- **Office 在线预览** — 支持 Microsoft Office Online 和 Google Docs 两种 provider，可在线预览 Word/Excel/PowerPoint/ODF 文档。新增预览链接服务，生成限时限次的预览令牌
+- **文件变更实时推送 (SSE)** — 后端通过 Server-Sent Events 广播文件/文件夹变更事件，前端自动刷新当前目录，用户可在设置中开关实时同步
+- **站点品牌配置** — 支持自定义站点标题、描述、Favicon、亮/暗色 Logo (Wordmark)，登录前页面即可展示自定义品牌
+
+
+### Added
+
+- **邮件基础设施**
+  - 新增 `mail_service.rs`：基于 lettre 的 SMTP 邮件发送，支持 TLS/STARTTLS
+  - 新增 `mail_outbox` 数据表：异步邮件投递队列，支持失败重试
+  - 后台任务定期处理邮件重试（`spawn_background_tasks` 新增邮件处理任务）
+  - 新增 `MemoryMailSender` 用于测试环境
+- **邮件模板系统**
+  - 5 种内置 HTML 模板：注册激活、邮箱变更确认/通知、密码重置/通知
+  - 模板变量替换：`{{username}}`、`{{verification_url}}`、`{{reset_url}}` 等
+  - 管理后台新增邮件模板编辑页面，支持展开/折叠分组编辑
+- **邮箱验证流程**
+  - 注册后发送激活邮件，未激活账号登录返回 `PendingActivation` 错误码
+  - 前端登录页新增待激活提示面板 + 重发激活邮件功能
+  - 邮箱变更需确认：发送变更确认邮件到新邮箱，通知邮件到旧邮箱
+- **密码重置**
+  - `POST /auth/request_password_reset` + `POST /auth/confirm_password_reset`
+  - 复用 `contact_verification_token` 基础设施，新增 `PasswordReset` 验证用途
+  - 重置成功后自动轮换 `session_version`，所有现有会话强制失效
+  - 发送重置链接邮件及重置成功通知邮件，记录审计日志
+- **注册开关**
+  - 新增 `auth_allow_user_registration` 运行时配置项（默认 `true`）
+  - 关闭后 `/auth/register` 返回 403，`/auth/setup` 初始化流程不受影响
+  - 前端登录页根据配置隐藏注册入口
+- **Office 在线预览**
+  - 新增 `OfficeOnlinePreview` 组件，支持 Microsoft Office Online / Google Docs
+  - 超时检测、localhost/HTTP 链接错误提示及重试
+  - 文件类型识别增强：doc/docx/xls/xlsx/ppt/pptx/odt/ods/odp 文件归入 document/spreadsheet/presentation 分类
+- **预览链接服务** (`preview_link_service`)
+  - 为个人/团队文件及分享文件生成带使用次数限制的预览令牌
+  - `GET /pv/{token}/{filename}` 路由提供 inline 下载
+  - 令牌有效期 5 分钟，最大使用次数 5 次
+- **文件变更实时推送 (SSE)**
+  - `storage_change_service`：通过 broadcast channel 广播文件/文件夹变更事件
+  - `GET /auth/events/storage` SSE 端点，含心跳保活（30s）与消息积压降级
+  - 前端 `useStorageChangeEvents` hook：订阅实时变更并自动刷新当前目录
+  - 用户偏好 `storage_event_stream_enabled` 字段，可在设置中开关
+- **站点品牌配置**
+  - 新增 `branding_title`、`branding_description`、`branding_favicon_url` 配置项
+  - 新增 `branding_wordmark_dark_url`、`branding_wordmark_light_url` Logo 配置
+  - 前端启动时通过 `/api/v1/public/branding` 拉取品牌配置
+  - 后端渲染 `index.html` 时注入品牌占位符，登录前即展示自定义品牌
+- **前端增强**
+  - `usePageTitle` hook：所有页面动态标题，格式 `页面名 · 应用名`
+  - `AdminSiteUrlMismatchPrompt` 独立组件：站点 URL 不匹配检测与更新
+  - CORS 新增 `cors_enabled` 独立开关配置
+
+
+### Changed
+
+- **认证流程重构**
+  - `/auth/check` 不再接受 `identifier` 参数，改为返回公开认证状态（注册开关、初始化状态等）
+  - 前端登录页改为页面初始化时一次性拉取认证状态，移除输入框防抖检查逻辑
+  - 统一响应时间下限防止用户枚举攻击
+- **头像存储迁移**
+  - 从对象存储策略迁移到本地文件系统，新增 `avatar_dir` 配置项
+  - 删除时递归清理空目录
+  - 兼容旧 `avatar_policy_id` 记录，平滑迁移
+- **管理后台设置页**
+  - 默认路由从 `/admin/settings/auth` 改为 `/admin/settings/general`
+  - 新增邮件模板编辑分区
+- **CI 改进**
+  - 替换 `actions/cache` 为 `Swatinem/rust-cache@v2`，简化配置
+
+
+### Fixed
+
+- **代码编辑器**
+  - 默认关闭自动换行 (`wordWrap: off`)
+
+
+### Breaking Changes
+
+- **认证 API**: `/auth/check` 移除 `identifier` 参数，改为返回全局认证状态。前端需适配新的登录初始化逻辑
+- **注册激活**: 邮件验证成为注册必需步骤（需配置 SMTP），未激活账号无法登录
+- **密码重置**: 重置成功后自动轮换 `session_version`，所有现有会话强制失效
+- **头像存储**: 新上传头像存到本地文件系统 (`avatar_dir`)，不再使用对象存储策略
+- **管理后台**: 设置页默认路由从 `/admin/settings/auth` 改为 `/admin/settings/general`
+- **CORS**: 新增 `cors_enabled` 独立开关，需显式启用
+
+
+---
+
+**统计数据**：
+- 243 files changed, 19,542 insertions(+), 1,920 deletions(-)
+- 15 commits
+
+
 ## [v0.0.1-alpha.15] - 2026-04-07
 
 ### Release Highlights
@@ -1237,7 +1336,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.15...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.16...HEAD
+[v0.0.1-alpha.16]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.15...v0.0.1-alpha.16
 [v0.0.1-alpha.15]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.14...v0.0.1-alpha.15
 [v0.0.1-alpha.14]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.13...v0.0.1-alpha.14
 [v0.0.1-alpha.13]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.12...v0.0.1-alpha.13

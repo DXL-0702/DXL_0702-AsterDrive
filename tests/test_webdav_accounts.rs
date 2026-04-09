@@ -187,6 +187,7 @@ async fn test_webdav_account_list_resolves_nested_paths() {
 #[actix_web::test]
 async fn test_webdav_account_rejects_duplicate_username_and_foreign_root_folder() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -225,7 +226,7 @@ async fn test_webdav_account_rejects_duplicate_username_and_foreign_root_folder(
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
 
-    let _ = confirm_latest_contact_verification!(app, mail_sender);
+    let _ = confirm_latest_contact_verification!(app, db, mail_sender);
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/login")

@@ -156,26 +156,68 @@ pub fn extract_cookie<B>(resp: &actix_web::dev::ServiceResponse<B>, name: &str) 
 }
 
 #[allow(dead_code)]
+fn extract_token_from_content(content: &str, marker: &str) -> Option<String> {
+    let (_, suffix) = content.split_once(marker)?;
+    let encoded: String = suffix
+        .chars()
+        .take_while(|ch| !matches!(ch, '"' | '\'' | '<' | '>' | '&' | ' ' | '\r' | '\n'))
+        .collect();
+    if encoded.is_empty() {
+        return None;
+    }
+
+    urlencoding::decode(&encoded)
+        .ok()
+        .map(|value| value.into_owned())
+}
+
+#[allow(dead_code)]
+pub fn extract_token_from_mail_message(
+    message: &aster_drive::services::mail_service::MailMessage,
+    marker: &str,
+) -> Option<String> {
+    extract_token_from_content(&message.text_body, marker)
+        .or_else(|| extract_token_from_content(&message.html_body, marker))
+}
+
+#[allow(dead_code)]
 pub fn extract_verification_token_from_mail_sender(
     sender: &Arc<dyn aster_drive::services::mail_service::MailSender>,
 ) -> Option<String> {
     let memory_sender = aster_drive::services::mail_service::memory_sender_ref(sender)
         .expect("memory mail sender should be available in tests");
     let message = memory_sender.last_message()?;
-    let link = message
-        .text_body
-        .lines()
-        .find(|line| line.contains("/api/v1/auth/contact-verification/confirm?token="))
-        .expect("verification link missing from mail body");
-    let encoded = link
-        .split("token=")
-        .nth(1)
-        .expect("verification token missing from link");
-    Some(
-        urlencoding::decode(encoded)
-            .expect("verification token should be url-encoded")
-            .into_owned(),
-    )
+    extract_token_from_mail_message(&message, "/api/v1/auth/contact-verification/confirm?token=")
+}
+
+#[allow(dead_code)]
+pub async fn extract_verification_token_from_mail_sender_or_outbox(
+    db: &sea_orm::DatabaseConnection,
+    sender: &Arc<dyn aster_drive::services::mail_service::MailSender>,
+) -> Option<String> {
+    if let Some(token) = extract_verification_token_from_mail_sender(sender) {
+        return Some(token);
+    }
+
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+
+    let row = aster_drive::entities::mail_outbox::Entity::find()
+        .filter(
+            aster_drive::entities::mail_outbox::Column::TemplateCode.is_in([
+                aster_drive::types::MailTemplateCode::RegisterActivation,
+                aster_drive::types::MailTemplateCode::ContactChangeConfirmation,
+            ]),
+        )
+        .order_by_desc(aster_drive::entities::mail_outbox::Column::Id)
+        .one(db)
+        .await
+        .expect("mail outbox lookup should succeed")?;
+
+    serde_json::from_str::<serde_json::Value>(&row.payload_json)
+        .expect("mail outbox payload should be valid json")
+        .get("token")
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
 }
 
 #[allow(dead_code)]
@@ -332,10 +374,12 @@ macro_rules! login_user {
 
 #[macro_export]
 macro_rules! confirm_latest_contact_verification {
-    ($app:expr, $mail_sender:expr) => {{
+    ($app:expr, $db:expr, $mail_sender:expr) => {{
         use actix_web::test;
 
-        if let Some(token) = common::extract_verification_token_from_mail_sender(&$mail_sender) {
+        if let Some(token) =
+            common::extract_verification_token_from_mail_sender_or_outbox(&$db, &$mail_sender).await
+        {
             let req = test::TestRequest::get()
                 .uri(&format!(
                     "/api/v1/auth/contact-verification/confirm?token={}",
@@ -482,6 +526,7 @@ macro_rules! setup_with_webdav_and_mail {
         use actix_web::{App, test, web};
 
         let state = common::setup().await;
+        let db = state.db.clone();
         let mail_sender = state.mail_sender.clone();
         let db1 = state.db.clone();
         let db2 = state.db.clone();
@@ -497,6 +542,6 @@ macro_rules! setup_with_webdav_and_mail {
                 }),
         )
         .await;
-        (app, mail_sender)
+        (app, db, mail_sender)
     }};
 }

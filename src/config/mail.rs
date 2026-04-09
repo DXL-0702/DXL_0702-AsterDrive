@@ -268,7 +268,7 @@ fn normalize_multiline(value: &str) -> String {
 mod tests {
     use super::{
         DEFAULT_MAIL_SECURITY, DEFAULT_MAIL_SMTP_PORT, MAIL_SECURITY_KEY, MAIL_SMTP_PORT_KEY,
-        RuntimeMailSettings, normalize_mail_security_config_value,
+        RuntimeMailSettings, default_template_subject, normalize_mail_security_config_value,
         normalize_mail_template_body_config_value, normalize_mail_template_subject_config_value,
         template_html, template_subject,
     };
@@ -333,7 +333,7 @@ mod tests {
 
         assert_eq!(
             template_subject(&runtime_config, MailTemplateCode::RegisterActivation),
-            "Activate your AsterDrive account"
+            default_template_subject(MailTemplateCode::RegisterActivation)
         );
         assert!(
             template_html(&runtime_config, MailTemplateCode::RegisterActivation)

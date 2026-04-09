@@ -13,7 +13,7 @@ use serde_json::Value;
 
 /// 注册第二个用户并登录，返回 access_token
 macro_rules! register_user2 {
-    ($app:expr, $mail_sender:expr) => {{
+    ($app:expr, $db:expr, $mail_sender:expr) => {{
         use actix_web::test;
 
         let req = test::TestRequest::post()
@@ -28,7 +28,7 @@ macro_rules! register_user2 {
         let resp: actix_web::dev::ServiceResponse = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 201);
 
-        let _ = confirm_latest_contact_verification!($app, $mail_sender);
+        let _ = confirm_latest_contact_verification!($app, $db, $mail_sender);
 
         let req = test::TestRequest::post()
             .uri("/api/v1/auth/login")
@@ -47,10 +47,11 @@ macro_rules! register_user2 {
 #[actix_web::test]
 async fn test_upload_to_other_users_folder_returns_403() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
     let (token1, _) = register_and_login!(app);
-    let token2 = register_user2!(app, mail_sender);
+    let token2 = register_user2!(app, db, mail_sender);
 
     // user1 创建文件夹
     let req = test::TestRequest::post()
@@ -91,10 +92,11 @@ async fn test_upload_to_other_users_folder_returns_403() {
 #[actix_web::test]
 async fn test_init_upload_to_other_users_folder_returns_403() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
     let (token1, _) = register_and_login!(app);
-    let token2 = register_user2!(app, mail_sender);
+    let token2 = register_user2!(app, db, mail_sender);
 
     // user1 创建文件夹
     let req = test::TestRequest::post()
@@ -128,10 +130,11 @@ async fn test_init_upload_to_other_users_folder_returns_403() {
 #[actix_web::test]
 async fn test_directory_upload_to_other_users_base_folder_returns_403() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
     let (token1, _) = register_and_login!(app);
-    let token2 = register_user2!(app, mail_sender);
+    let token2 = register_user2!(app, db, mail_sender);
 
     // user1 创建文件夹
     let req = test::TestRequest::post()
@@ -176,10 +179,11 @@ async fn test_directory_upload_to_other_users_base_folder_returns_403() {
 #[actix_web::test]
 async fn test_create_folder_in_other_users_folder_returns_403() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
     let (token1, _) = register_and_login!(app);
-    let token2 = register_user2!(app, mail_sender);
+    let token2 = register_user2!(app, db, mail_sender);
 
     // user1 创建文件夹
     let req = test::TestRequest::post()

@@ -99,6 +99,7 @@ export default defineConfig({
             { text: '服务器', link: '/config/server' },
             { text: '数据库', link: '/config/database' },
             { text: '登录与会话', link: '/config/auth' },
+            { text: '邮件', link: '/config/mail' },
             { text: '存储策略', link: '/config/storage' },
             { text: 'WebDAV', link: '/config/webdav' },
             { text: '系统设置', link: '/config/runtime' },

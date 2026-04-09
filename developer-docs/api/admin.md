@@ -228,9 +228,11 @@
 | --- | --- | --- |
 | `GET` | `/admin/config` | 列出全部运行时配置 |
 | `GET` | `/admin/config/schema` | 读取系统配置 schema |
+| `GET` | `/admin/config/template-variables` | 读取模板变量清单 |
 | `GET` | `/admin/config/{key}` | 获取单个配置项 |
 | `PUT` | `/admin/config/{key}` | 设置配置项 |
 | `DELETE` | `/admin/config/{key}` | 删除配置项 |
+| `POST` | `/admin/config/{key}/action` | 对特定配置目标执行动作 |
 
 ### 当前常用 key
 
@@ -265,6 +267,10 @@
 
 前端管理后台就是靠它动态渲染设置页，而不是写死每个配置项。
 
+### 读取模板变量
+
+`GET /admin/config/template-variables` 会返回按类别分组的模板变量清单，当前主要给管理后台在邮件、品牌文案等支持模板占位符的配置项旁边做提示，不必把变量表硬编码在前端里。
+
 ### 设置配置项示例
 
 ```json
@@ -272,6 +278,24 @@
   "value": "14"
 }
 ```
+
+### 执行配置动作
+
+当前只有 `POST /admin/config/mail/action` 这一类动作目标已经落地，请求体例如：
+
+```json
+{
+  "action": "send_test_email",
+  "target_email": "ops@example.com"
+}
+```
+
+当前语义：
+
+- `target_email` 不传时，默认发给当前管理员自己的邮箱
+- `action = send_test_email` 会立即走运行时邮件发送链路
+- 成功响应里会返回一段可直接展示给前端的 `message`
+- 这条调用也会写管理员审计日志
 
 ## 分享审计
 

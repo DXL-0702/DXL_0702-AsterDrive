@@ -7,7 +7,7 @@ use actix_web::test;
 use serde_json::Value;
 
 macro_rules! register_user {
-    ($app:expr, $mail_sender:expr, $username:expr, $email:expr, $password:expr) => {{
+    ($app:expr, $db:expr, $mail_sender:expr, $username:expr, $email:expr, $password:expr) => {{
         let req = test::TestRequest::post()
             .uri("/api/v1/auth/register")
             .peer_addr("127.0.0.1:12345".parse().unwrap())
@@ -21,7 +21,7 @@ macro_rules! register_user {
         assert_eq!(resp.status(), 201);
         let body: Value = test::read_body_json(resp).await;
         let user_id = body["data"]["id"].as_i64().unwrap();
-        let _ = confirm_latest_contact_verification!($app, $mail_sender);
+        let _ = confirm_latest_contact_verification!($app, $db, $mail_sender);
         user_id
     }};
 }
@@ -83,11 +83,13 @@ async fn set_default_policy_chunk_size(state: &aster_drive::runtime::AppState, c
 #[actix_web::test]
 async fn test_team_space_upload_browse_download_and_personal_separation() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "spaceown",
         "spaceown@example.com",
@@ -95,6 +97,7 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
     );
     let member_id = register_user!(
         app,
+        db,
         mail_sender,
         "spacemem",
         "spacemem@example.com",
@@ -231,11 +234,13 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
 #[actix_web::test]
 async fn test_team_space_delete_folder_and_non_member_forbidden() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "spaceown2",
         "spaceown2@example.com",
@@ -243,6 +248,7 @@ async fn test_team_space_delete_folder_and_non_member_forbidden() {
     );
     let outsider_id = register_user!(
         app,
+        db,
         mail_sender,
         "outsider2",
         "outsider2@example.com",
@@ -338,11 +344,13 @@ async fn test_team_space_delete_folder_and_non_member_forbidden() {
 #[actix_web::test]
 async fn test_team_space_patch_file_and_folder() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "spaceown3",
         "spaceown3@example.com",
@@ -350,6 +358,7 @@ async fn test_team_space_patch_file_and_folder() {
     );
     let member_id = register_user!(
         app,
+        db,
         mail_sender,
         "spacemem3",
         "spacemem3@example.com",
@@ -514,11 +523,13 @@ async fn test_team_space_patch_file_and_folder() {
 #[actix_web::test]
 async fn test_team_file_direct_link_supports_public_access_and_team_deactivation() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "directteam",
         "directteam@example.com",
@@ -598,11 +609,13 @@ async fn test_team_file_direct_link_supports_public_access_and_team_deactivation
 #[actix_web::test]
 async fn test_team_space_copy_file_and_folder() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "spaceown5",
         "spaceown5@example.com",
@@ -610,6 +623,7 @@ async fn test_team_space_copy_file_and_folder() {
     );
     let member_id = register_user!(
         app,
+        db,
         mail_sender,
         "spacemem5",
         "spacemem5@example.com",
@@ -771,11 +785,13 @@ async fn test_team_space_copy_file_and_folder() {
 #[actix_web::test]
 async fn test_team_space_content_versions_and_locks() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "spaceown6",
         "spaceown6@example.com",
@@ -783,6 +799,7 @@ async fn test_team_space_content_versions_and_locks() {
     );
     let member_id = register_user!(
         app,
+        db,
         mail_sender,
         "spacemem6",
         "spacemem6@example.com",
@@ -1035,11 +1052,13 @@ async fn test_team_space_content_versions_and_locks() {
 #[actix_web::test]
 async fn test_team_versions_enforce_scope_and_membership() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "teamversionown2",
         "teamversionown2@example.com",
@@ -1047,6 +1066,7 @@ async fn test_team_versions_enforce_scope_and_membership() {
     );
     let _outsider_id = register_user!(
         app,
+        db,
         mail_sender,
         "teamversionout2",
         "teamversionout2@example.com",
@@ -1151,11 +1171,13 @@ async fn test_team_versions_enforce_scope_and_membership() {
 #[actix_web::test]
 async fn test_team_shares_support_public_folder_access_and_team_management() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "spaceown7",
         "spaceown7@example.com",
@@ -1163,6 +1185,7 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
     );
     let member_id = register_user!(
         app,
+        db,
         mail_sender,
         "spacemem7",
         "spacemem7@example.com",
@@ -1361,11 +1384,13 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
 #[actix_web::test]
 async fn test_team_trash_restore_file_to_root_and_purge_deleted_folder_tree() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "spaceown8",
         "spaceown8@example.com",
@@ -1500,11 +1525,13 @@ async fn test_team_trash_restore_file_to_root_and_purge_deleted_folder_tree() {
 #[actix_web::test]
 async fn test_team_trash_rejects_active_and_out_of_scope_items() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "spaceowntrash2",
         "spaceowntrash2@example.com",
@@ -1603,11 +1630,13 @@ async fn test_team_trash_rejects_active_and_out_of_scope_items() {
 #[actix_web::test]
 async fn test_team_trash_pagination_preserves_totals_and_membership() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "teamtrashpageown",
         "teamtrashpageown@example.com",
@@ -1615,6 +1644,7 @@ async fn test_team_trash_pagination_preserves_totals_and_membership() {
     );
     let _outsider_id = register_user!(
         app,
+        db,
         mail_sender,
         "teamtrashpageout",
         "teamtrashpageout@example.com",
@@ -1743,12 +1773,14 @@ async fn test_team_trash_pagination_preserves_totals_and_membership() {
 #[actix_web::test]
 async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
     let state = common::setup().await;
+    let db = state.db.clone();
     set_default_policy_chunk_size(&state, 4).await;
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "spaceown4",
         "spaceown4@example.com",
@@ -1854,12 +1886,14 @@ async fn test_team_space_chunked_upload_flow_and_personal_route_rejection() {
 #[actix_web::test]
 async fn test_team_upload_session_enforces_owner_even_for_members() {
     let state = common::setup().await;
+    let db = state.db.clone();
     set_default_policy_chunk_size(&state, 4).await;
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "spaceownupload2",
         "spaceownupload2@example.com",
@@ -1867,6 +1901,7 @@ async fn test_team_upload_session_enforces_owner_even_for_members() {
     );
     let member_id = register_user!(
         app,
+        db,
         mail_sender,
         "spacememupload2",
         "spacememupload2@example.com",
@@ -1874,6 +1909,7 @@ async fn test_team_upload_session_enforces_owner_even_for_members() {
     );
     let outsider_id = register_user!(
         app,
+        db,
         mail_sender,
         "spaceoutupload2",
         "spaceoutupload2@example.com",
@@ -1951,11 +1987,13 @@ async fn test_team_upload_session_enforces_owner_even_for_members() {
 #[actix_web::test]
 async fn test_team_search_scopes_results_to_workspace_and_enforces_membership() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "teamsearch",
         "teamsearch@example.com",
@@ -1963,6 +2001,7 @@ async fn test_team_search_scopes_results_to_workspace_and_enforces_membership() 
     );
     let _outsider_id = register_user!(
         app,
+        db,
         mail_sender,
         "teamsearchout",
         "teamsearchout@example.com",
@@ -2065,11 +2104,13 @@ async fn test_team_search_scopes_results_to_workspace_and_enforces_membership() 
 #[actix_web::test]
 async fn test_team_search_rejects_invalid_params_via_shared_validation() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "teamsearchvalid",
         "teamsearchvalid@example.com",
@@ -2104,11 +2145,13 @@ async fn test_team_search_rejects_invalid_params_via_shared_validation() {
 #[actix_web::test]
 async fn test_team_batch_routes_support_copy_move_and_delete() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "teambatch",
         "teambatch@example.com",
@@ -2254,11 +2297,13 @@ async fn test_team_batch_routes_support_copy_move_and_delete() {
 #[actix_web::test]
 async fn test_team_batch_delete_preserves_scope_and_locked_failures() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "teambatchpartial",
         "teambatchpartial@example.com",
@@ -2366,11 +2411,13 @@ async fn test_team_batch_delete_preserves_scope_and_locked_failures() {
 #[actix_web::test]
 async fn test_team_share_batch_delete_preserves_partial_failures() {
     let state = common::setup().await;
+    let db = state.db.clone();
     let mail_sender = state.mail_sender.clone();
     let app = create_test_app!(state);
 
     let _owner_id = register_user!(
         app,
+        db,
         mail_sender,
         "teamsharebatch",
         "teamsharebatch@example.com",

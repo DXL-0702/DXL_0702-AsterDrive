@@ -12,6 +12,7 @@
 
 - 健康检查：`/health*`
 - 直接下载链接：`/d/{token}/{filename}`
+- 预览下载链接：`/pv/{token}/{filename}`
 
 ## 统一响应格式
 
@@ -37,12 +38,14 @@
 
 - 文件下载
 - 直接下载链接
+- 预览下载链接
 - 文件缩略图
 - 分享文件下载
 - 分享缩略图
 - 当前用户已上传头像
 - 管理员读取用户已上传头像
 - 分享拥有者已上传头像
+- 当前用户存储变更事件流
 - WebDAV 协议响应
 - Prometheus 指标
 
@@ -102,6 +105,7 @@
 - [搜索](/api/search)
 - [WebDAV](/api/webdav)
 - [属性](/api/properties)
+- [公共接口](/api/public)
 - [管理](/api/admin)
 - [健康检查](/api/health)
 
@@ -114,6 +118,7 @@
 - 团队管理与团队工作空间：见 [团队与团队空间](/api/teams)
 - 公开分享：见 [分享](/api/shares)
 - WebDAV 协议、账号与 DeltaV：见 [WebDAV](/api/webdav)
+- 登录页与公开页启动配置：见 [公共接口](/api/public)
 - 后台策略、锁、运行时配置与审计：见 [管理](/api/admin)
 
 ## OpenAPI 与 Swagger
@@ -130,4 +135,5 @@
 - [团队与团队空间](/api/teams)
 - [搜索](/api/search)
 - [分享](/api/shares)
+- [公共接口](/api/public)
 - [管理](/api/admin)
