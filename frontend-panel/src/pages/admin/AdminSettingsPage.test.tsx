@@ -666,7 +666,13 @@ describe("AdminSettingsPage", () => {
 
 		const desktopNav = storageTab.parentElement?.parentElement;
 		expect(desktopNav).not.toBeNull();
-		expect(desktopNav).toHaveClass("border-r", "border-border/40");
+		expect(desktopNav).toHaveClass(
+			"sticky",
+			"top-0",
+			"self-start",
+			"border-r",
+			"border-border/40",
+		);
 	});
 
 	it("navigates to the matching settings route when a tab is selected", async () => {
@@ -1035,9 +1041,13 @@ describe("AdminSettingsPage", () => {
 			"/branding/favicon.svg",
 		);
 		expect(screen.getByLabelText("/branding/favicon.svg")).toBeInTheDocument();
+		expect(screen.getByLabelText("/branding/favicon.svg")).toHaveClass(
+			"bg-white",
+			"w-12",
+		);
 	});
 
-	it("shows a site logo asset preview next to the branding wordmark field", async () => {
+	it("uses a light wider preview frame for the light-surface wordmark field", async () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
 				createConfig({
@@ -1072,6 +1082,7 @@ describe("AdminSettingsPage", () => {
 			screen.getByLabelText("/branding/wordmark-dark.svg"),
 		).toBeInTheDocument();
 		expect(screen.getByLabelText("/branding/wordmark-dark.svg")).toHaveClass(
+			"bg-white",
 			"w-36",
 		);
 	});

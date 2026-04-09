@@ -111,15 +111,15 @@ const BRANDING_ASSET_PREVIEW_APPEARANCES: Record<
 		fallbackLabel: "/favicon.svg",
 		frameClassName: "w-12",
 		imageClassName: "max-h-8 max-w-8 object-contain",
-		validClassName: "border-border/70 bg-muted/20",
-		validHoverClassName: "hover:border-primary/40 hover:bg-muted/30",
+		validClassName: "border-neutral-200 bg-white",
+		validHoverClassName: "hover:border-primary/40 hover:bg-neutral-50",
 	},
 	branding_wordmark_dark_url: {
 		fallbackLabel: "/static/asterdrive/asterdrive-dark.svg",
 		frameClassName: "w-36 px-4",
 		imageClassName: "max-h-7 w-full object-contain",
-		validClassName: "border-border/70 bg-background",
-		validHoverClassName: "hover:border-primary/40 hover:bg-muted/20",
+		validClassName: "border-neutral-200 bg-white",
+		validHoverClassName: "hover:border-primary/40 hover:bg-neutral-50",
 	},
 	branding_wordmark_light_url: {
 		fallbackLabel: "/static/asterdrive/asterdrive-light.svg",
@@ -2201,7 +2201,7 @@ export default function AdminSettingsPage({
 	);
 
 	const renderDesktopNavigation = () => (
-		<div className="min-h-0 w-[17.5rem] flex-none overflow-y-auto border-r border-border/40 pr-4">
+		<div className="sticky top-0 self-start min-h-0 w-[17.5rem] flex-none border-r border-border/40 pr-4">
 			<TabsList
 				variant="line"
 				className="h-auto w-full flex-col items-stretch gap-1 bg-transparent p-0"
