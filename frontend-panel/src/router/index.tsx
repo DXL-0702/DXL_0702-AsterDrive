@@ -5,6 +5,7 @@ import {
 	Outlet,
 	useParams,
 } from "react-router-dom";
+import { AdminSiteUrlMismatchPrompt } from "@/components/layout/AdminSiteUrlMismatchPrompt";
 import {
 	PERSONAL_WORKSPACE,
 	type Workspace,
@@ -75,6 +76,7 @@ function AdminRoute() {
 	return (
 		<div aria-busy={isChecking || undefined}>
 			<Suspense fallback={<Loading />}>
+				<AdminSiteUrlMismatchPrompt />
 				<Outlet />
 			</Suspense>
 		</div>
