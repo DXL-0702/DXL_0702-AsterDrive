@@ -773,13 +773,20 @@ async fn build_my_share_infos(
 }
 
 /// 获取公开分享文件的缩略图（公开访问，无需认证）
-pub async fn get_shared_thumbnail(state: &AppState, token: &str) -> Result<Vec<u8>> {
+pub async fn get_shared_thumbnail(
+    state: &AppState,
+    token: &str,
+) -> Result<file_service::ThumbnailResult> {
     let share = load_valid_share(state, token).await?;
     let f = load_share_file_resource(state, &share).await?;
     crate::services::thumbnail_service::ensure_supported_mime(&f.mime_type)?;
 
     let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
-    crate::services::thumbnail_service::get_or_generate(state, &blob).await
+    let data = crate::services::thumbnail_service::get_or_generate(state, &blob).await?;
+    Ok(file_service::ThumbnailResult {
+        data,
+        blob_hash: blob.hash,
+    })
 }
 
 /// 获取分享文件夹内子文件的缩略图（公开访问）
@@ -787,13 +794,17 @@ pub async fn get_shared_folder_file_thumbnail(
     state: &AppState,
     token: &str,
     file_id: i64,
-) -> Result<Vec<u8>> {
+) -> Result<file_service::ThumbnailResult> {
     let (_, f) = load_shared_folder_file_target(state, token, file_id).await?;
 
     crate::services::thumbnail_service::ensure_supported_mime(&f.mime_type)?;
 
     let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
-    crate::services::thumbnail_service::get_or_generate(state, &blob).await
+    let data = crate::services::thumbnail_service::get_or_generate(state, &blob).await?;
+    Ok(file_service::ThumbnailResult {
+        data,
+        blob_hash: blob.hash,
+    })
 }
 
 pub(crate) async fn load_preview_shared_file(

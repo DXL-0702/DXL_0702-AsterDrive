@@ -46,11 +46,15 @@ pub fn upload_assembled_path(upload_temp_root: &str, upload_id: &str) -> String 
     join_path(&upload_temp_dir(upload_temp_root, upload_id), "_assembled")
 }
 
+pub fn task_temp_dir(temp_dir: &str, task_id: i64) -> String {
+    join_path(temp_dir, &format!("tasks/{task_id}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        DEFAULT_TEMP_DIR, DEFAULT_UPLOAD_TEMP_DIR, temp_file_path, upload_assembled_path,
-        upload_chunk_path, upload_temp_dir,
+        DEFAULT_TEMP_DIR, DEFAULT_UPLOAD_TEMP_DIR, task_temp_dir, temp_file_path,
+        upload_assembled_path, upload_chunk_path, upload_temp_dir,
     };
 
     fn assert_no_double_slash(path: &str) {
@@ -121,5 +125,12 @@ mod tests {
         let path = upload_temp_dir("data/.uploads///", "");
         assert_eq!(path, "data/.uploads");
         assert_no_double_slash(&path);
+    }
+
+    #[test]
+    fn task_paths_do_not_emit_double_slashes() {
+        let dir = task_temp_dir("data/.tmp///", 42);
+        assert_eq!(dir, "data/.tmp/tasks/42");
+        assert_no_double_slash(&dir);
     }
 }

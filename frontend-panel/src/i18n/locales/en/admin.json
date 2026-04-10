@@ -175,6 +175,8 @@
 	"settings_item_trash_retention_days_desc": "How many days deleted files and folders stay in trash before they are permanently removed.",
 	"settings_item_team_archive_retention_days_label": "Team archive retention days",
 	"settings_item_team_archive_retention_days_desc": "How many days archived teams are kept before they are permanently deleted.",
+	"settings_item_task_retention_hours_label": "Task retention hours",
+	"settings_item_task_retention_hours_desc": "How many hours completed background tasks and their downloadable artifacts are kept before they are permanently deleted.",
 	"settings_item_default_storage_quota_label": "Default quota for new users",
 	"settings_item_default_storage_quota_desc": "The default storage quota for newly created users, in bytes. Use 0 for unlimited.",
 	"settings_item_avatar_dir_label": "Avatar directory",

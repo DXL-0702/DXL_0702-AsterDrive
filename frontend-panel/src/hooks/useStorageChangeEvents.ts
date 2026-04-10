@@ -4,6 +4,10 @@ import { invalidateBlobUrl } from "@/hooks/useBlobUrl";
 import { invalidateTextContent } from "@/hooks/useTextContent";
 import { joinApiUrl } from "@/lib/apiUrl";
 import { logger } from "@/lib/logger";
+import {
+	deferStorageRefresh,
+	isStorageRefreshGateActive,
+} from "@/lib/storageRefreshGate";
 import type { Workspace } from "@/lib/workspace";
 import { fileService } from "@/services/fileService";
 import { useAuthStore } from "@/stores/authStore";
@@ -128,6 +132,10 @@ export function useStorageChangeEvents() {
 				invalidateBlobUrl();
 				invalidateTextContent();
 				if (!useFileStore.getState().searchQuery) {
+					if (isStorageRefreshGateActive()) {
+						deferStorageRefresh();
+						return;
+					}
 					void refreshCurrentFolder();
 				}
 				return;
@@ -135,6 +143,10 @@ export function useStorageChangeEvents() {
 
 			invalidatePreviewCaches(event.file_ids);
 			if (shouldRefreshCurrentFolder(event)) {
+				if (isStorageRefreshGateActive()) {
+					deferStorageRefresh();
+					return;
+				}
 				void refreshCurrentFolder();
 			}
 		};

@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BatchActionBar } from "@/components/common/BatchActionBar";
 
 const mockState = vi.hoisted(() => ({
+	archiveDownload: vi.fn(),
 	batchCopy: vi.fn(),
 	batchDelete: vi.fn(),
 	clearSelection: vi.fn(),
@@ -150,6 +151,8 @@ vi.mock("@/stores/fileStore", () => ({
 
 describe("BatchActionBar", () => {
 	beforeEach(() => {
+		mockState.archiveDownload.mockReset();
+		mockState.archiveDownload.mockResolvedValue(undefined);
 		mockState.batchCopy.mockReset();
 		mockState.batchDelete.mockReset();
 		mockState.clearSelection.mockReset();
@@ -272,5 +275,17 @@ describe("BatchActionBar", () => {
 		await waitFor(() => {
 			expect(mockState.handleApiError).toHaveBeenCalledWith(error);
 		});
+	});
+
+	it("creates an archive download task and clears the selection after success", async () => {
+		render(<BatchActionBar onArchiveDownload={mockState.archiveDownload} />);
+
+		fireEvent.click(screen.getByText("tasks:archive_download_action"));
+
+		await waitFor(() => {
+			expect(mockState.archiveDownload).toHaveBeenCalledWith([1, 2], [5]);
+		});
+		expect(mockState.clearSelection).toHaveBeenCalledTimes(1);
+		expect(mockState.handleApiError).not.toHaveBeenCalled();
 	});
 });

@@ -1,0 +1,355 @@
+use chrono::{DateTime, Utc};
+use sea_orm::{
+    ActiveEnum, ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait,
+    QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
+};
+
+use crate::db::repository::pagination_repo::fetch_offset_page;
+use crate::entities::background_task::{self, Entity as BackgroundTask};
+use crate::errors::{AsterError, Result};
+use crate::types::BackgroundTaskStatus;
+
+pub async fn create<C: ConnectionTrait>(
+    db: &C,
+    model: background_task::ActiveModel,
+) -> Result<background_task::Model> {
+    model.insert(db).await.map_err(AsterError::from)
+}
+
+pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<background_task::Model> {
+    BackgroundTask::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(AsterError::from)?
+        .ok_or_else(|| AsterError::record_not_found(format!("task #{id}")))
+}
+
+pub async fn find_paginated_personal<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<background_task::Model>, u64)> {
+    fetch_offset_page(
+        db,
+        BackgroundTask::find()
+            .filter(background_task::Column::CreatorUserId.eq(user_id))
+            .filter(background_task::Column::TeamId.is_null())
+            .order_by_desc(background_task::Column::CreatedAt),
+        limit,
+        offset,
+    )
+    .await
+}
+
+pub async fn find_paginated_team<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<background_task::Model>, u64)> {
+    fetch_offset_page(
+        db,
+        BackgroundTask::find()
+            .filter(background_task::Column::TeamId.eq(team_id))
+            .order_by_desc(background_task::Column::CreatedAt),
+        limit,
+        offset,
+    )
+    .await
+}
+
+pub async fn list_claimable<C: ConnectionTrait>(
+    db: &C,
+    now: DateTime<Utc>,
+    stale_before: DateTime<Utc>,
+    limit: u64,
+) -> Result<Vec<background_task::Model>> {
+    BackgroundTask::find()
+        .filter(claimable_condition(now, stale_before))
+        .order_by_asc(background_task::Column::CreatedAt)
+        .limit(limit)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn try_claim<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    now: DateTime<Utc>,
+    stale_before: DateTime<Utc>,
+) -> Result<bool> {
+    let result = BackgroundTask::update_many()
+        .col_expr(
+            background_task::Column::Status,
+            Expr::value(BackgroundTaskStatus::Processing.to_value()),
+        )
+        .col_expr(
+            background_task::Column::ProcessingStartedAt,
+            Expr::value(Some(now)),
+        )
+        .col_expr(
+            background_task::Column::StartedAt,
+            Expr::cust_with_values(
+                "CASE WHEN started_at IS NULL THEN ? ELSE started_at END",
+                [now],
+            ),
+        )
+        .col_expr(background_task::Column::UpdatedAt, Expr::value(now))
+        .filter(background_task::Column::Id.eq(id))
+        .filter(claimable_condition(now, stale_before))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
+pub async fn mark_progress<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    current: i64,
+    total: i64,
+    status_text: Option<&str>,
+) -> Result<bool> {
+    let now = Utc::now();
+    let result = BackgroundTask::update_many()
+        .col_expr(
+            background_task::Column::ProgressCurrent,
+            Expr::value(current),
+        )
+        .col_expr(background_task::Column::ProgressTotal, Expr::value(total))
+        .col_expr(
+            background_task::Column::StatusText,
+            Expr::value(status_text.map(str::to_string)),
+        )
+        .col_expr(background_task::Column::UpdatedAt, Expr::value(now))
+        .filter(background_task::Column::Id.eq(id))
+        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn mark_succeeded<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    result_json: Option<&str>,
+    current: i64,
+    total: i64,
+    status_text: Option<&str>,
+    finished_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+) -> Result<bool> {
+    let result = BackgroundTask::update_many()
+        .col_expr(
+            background_task::Column::Status,
+            Expr::value(BackgroundTaskStatus::Succeeded.to_value()),
+        )
+        .col_expr(
+            background_task::Column::ResultJson,
+            Expr::value(result_json.map(str::to_string)),
+        )
+        .col_expr(
+            background_task::Column::ProgressCurrent,
+            Expr::value(current),
+        )
+        .col_expr(background_task::Column::ProgressTotal, Expr::value(total))
+        .col_expr(
+            background_task::Column::StatusText,
+            Expr::value(status_text.map(str::to_string)),
+        )
+        .col_expr(
+            background_task::Column::ProcessingStartedAt,
+            Expr::value(Option::<DateTime<Utc>>::None),
+        )
+        .col_expr(
+            background_task::Column::FinishedAt,
+            Expr::value(Some(finished_at)),
+        )
+        .col_expr(background_task::Column::ExpiresAt, Expr::value(expires_at))
+        .col_expr(background_task::Column::UpdatedAt, Expr::value(finished_at))
+        .filter(background_task::Column::Id.eq(id))
+        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
+pub async fn mark_retry<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    attempt_count: i32,
+    next_run_at: DateTime<Utc>,
+    last_error: &str,
+) -> Result<bool> {
+    let result = BackgroundTask::update_many()
+        .col_expr(
+            background_task::Column::Status,
+            Expr::value(BackgroundTaskStatus::Retry.to_value()),
+        )
+        .col_expr(
+            background_task::Column::AttemptCount,
+            Expr::value(attempt_count),
+        )
+        .col_expr(background_task::Column::NextRunAt, Expr::value(next_run_at))
+        .col_expr(
+            background_task::Column::ProcessingStartedAt,
+            Expr::value(Option::<DateTime<Utc>>::None),
+        )
+        .col_expr(
+            background_task::Column::StatusText,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            background_task::Column::LastError,
+            Expr::value(Some(last_error.to_string())),
+        )
+        .col_expr(background_task::Column::UpdatedAt, Expr::value(Utc::now()))
+        .filter(background_task::Column::Id.eq(id))
+        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
+pub async fn mark_failed<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    attempt_count: i32,
+    last_error: &str,
+    finished_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+) -> Result<bool> {
+    let result = BackgroundTask::update_many()
+        .col_expr(
+            background_task::Column::Status,
+            Expr::value(BackgroundTaskStatus::Failed.to_value()),
+        )
+        .col_expr(
+            background_task::Column::AttemptCount,
+            Expr::value(attempt_count),
+        )
+        .col_expr(
+            background_task::Column::ProcessingStartedAt,
+            Expr::value(Option::<DateTime<Utc>>::None),
+        )
+        .col_expr(
+            background_task::Column::StatusText,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            background_task::Column::LastError,
+            Expr::value(Some(last_error.to_string())),
+        )
+        .col_expr(
+            background_task::Column::FinishedAt,
+            Expr::value(Some(finished_at)),
+        )
+        .col_expr(background_task::Column::ExpiresAt, Expr::value(expires_at))
+        .col_expr(background_task::Column::UpdatedAt, Expr::value(finished_at))
+        .filter(background_task::Column::Id.eq(id))
+        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
+pub async fn reset_for_manual_retry<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    now: DateTime<Utc>,
+) -> Result<bool> {
+    let result = BackgroundTask::update_many()
+        .col_expr(
+            background_task::Column::Status,
+            Expr::value(BackgroundTaskStatus::Pending.to_value()),
+        )
+        .col_expr(background_task::Column::AttemptCount, Expr::value(0))
+        .col_expr(background_task::Column::ProgressCurrent, Expr::value(0))
+        .col_expr(background_task::Column::NextRunAt, Expr::value(now))
+        .col_expr(
+            background_task::Column::ProcessingStartedAt,
+            Expr::value(Option::<DateTime<Utc>>::None),
+        )
+        .col_expr(
+            background_task::Column::StartedAt,
+            Expr::value(Option::<DateTime<Utc>>::None),
+        )
+        .col_expr(
+            background_task::Column::FinishedAt,
+            Expr::value(Option::<DateTime<Utc>>::None),
+        )
+        .col_expr(
+            background_task::Column::StatusText,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            background_task::Column::LastError,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(
+            background_task::Column::ResultJson,
+            Expr::value(Option::<String>::None),
+        )
+        .col_expr(background_task::Column::UpdatedAt, Expr::value(now))
+        .filter(background_task::Column::Id.eq(id))
+        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Failed))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected == 1)
+}
+
+pub async fn list_expired_terminal<C: ConnectionTrait>(
+    db: &C,
+    now: DateTime<Utc>,
+    limit: u64,
+) -> Result<Vec<background_task::Model>> {
+    BackgroundTask::find()
+        .filter(background_task::Column::ExpiresAt.lte(now))
+        .filter(background_task::Column::Status.is_in([
+            BackgroundTaskStatus::Succeeded,
+            BackgroundTaskStatus::Failed,
+            BackgroundTaskStatus::Canceled,
+        ]))
+        .order_by_asc(background_task::Column::ExpiresAt)
+        .limit(limit)
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn delete_many<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<u64> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+    Ok(BackgroundTask::delete_many()
+        .filter(background_task::Column::Id.is_in(ids.iter().copied()))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?
+        .rows_affected)
+}
+
+fn claimable_condition(now: DateTime<Utc>, stale_before: DateTime<Utc>) -> Condition {
+    Condition::any()
+        .add(
+            Condition::all()
+                .add(
+                    background_task::Column::Status
+                        .is_in([BackgroundTaskStatus::Pending, BackgroundTaskStatus::Retry]),
+                )
+                .add(background_task::Column::NextRunAt.lte(now)),
+        )
+        .add(
+            Condition::all()
+                .add(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
+                .add(background_task::Column::ProcessingStartedAt.lte(stale_before)),
+        )
+}

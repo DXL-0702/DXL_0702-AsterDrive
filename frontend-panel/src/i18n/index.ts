@@ -23,6 +23,7 @@ const ALL_NAMESPACES = [
 	"errors",
 	"offline",
 	"search",
+	"tasks",
 ] as const;
 const INITIAL_NAMESPACES = [
 	"core",
@@ -32,6 +33,7 @@ const INITIAL_NAMESPACES = [
 	"errors",
 	"offline",
 	"share",
+	"tasks",
 ] as const;
 const DEFERRED_NAMESPACES = ["admin", "webdav", "settings", "search"] as const;
 

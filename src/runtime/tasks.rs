@@ -60,6 +60,29 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
         },
     );
 
+    let task_dispatch_interval =
+        Duration::from_secs(crate::services::task_service::TASK_DISPATCH_INTERVAL_SECS);
+    spawn_periodic(
+        "background-task-dispatch",
+        task_dispatch_interval,
+        state.clone(),
+        |s| async move {
+            match crate::services::task_service::dispatch_due(&s).await {
+                Ok(stats) if stats.claimed > 0 || stats.failed > 0 => {
+                    tracing::info!(
+                        claimed = stats.claimed,
+                        succeeded = stats.succeeded,
+                        retried = stats.retried,
+                        failed = stats.failed,
+                        "processed background task batch"
+                    );
+                }
+                Err(error) => tracing::warn!("background task dispatch failed: {error}"),
+                _ => {}
+            }
+        },
+    );
+
     spawn_periodic("upload-cleanup", hourly, state.clone(), |s| async move {
         if let Err(e) = crate::services::upload_service::cleanup_expired(&s).await {
             tracing::warn!("upload cleanup failed: {e}");
@@ -136,9 +159,17 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
         }
     });
 
-    spawn_periodic("audit-cleanup", hourly, state, |s| async move {
+    spawn_periodic("audit-cleanup", hourly, state.clone(), |s| async move {
         if let Err(e) = crate::services::audit_service::cleanup_expired(&s).await {
             tracing::warn!("audit log cleanup failed: {e}");
+        }
+    });
+
+    spawn_periodic("task-cleanup", hourly, state, |s| async move {
+        match crate::services::task_service::cleanup_expired(&s).await {
+            Ok(count) if count > 0 => tracing::info!("cleaned up {count} expired task artifacts"),
+            Err(e) => tracing::warn!("background task cleanup failed: {e}"),
+            _ => {}
         }
     });
 }

@@ -13,6 +13,7 @@ import { Icon } from "@/components/ui/icon";
 interface FileContextMenuProps {
 	children: ReactNode;
 	onDownload?: () => void;
+	onArchiveDownload?: () => void;
 	onPageShare: () => void;
 	onDirectShare?: () => void;
 	onCopy: () => void;
@@ -30,6 +31,7 @@ interface FileContextMenuProps {
 export function FileContextMenu({
 	children,
 	onDownload,
+	onArchiveDownload,
 	onPageShare,
 	onDirectShare,
 	onCopy,
@@ -43,7 +45,7 @@ export function FileContextMenu({
 	isFolder,
 	renderTrigger = false,
 }: FileContextMenuProps) {
-	const { t } = useTranslation(["files", "share"]);
+	const { t } = useTranslation(["files", "share", "tasks"]);
 
 	const trigger =
 		renderTrigger && isValidElement(children) ? (
@@ -60,6 +62,12 @@ export function FileContextMenu({
 					<ContextMenuItem onClick={onDownload}>
 						<Icon name="Download" className="h-4 w-4 mr-2" />
 						{t("download")}
+					</ContextMenuItem>
+				)}
+				{isFolder && onArchiveDownload && (
+					<ContextMenuItem onClick={onArchiveDownload}>
+						<Icon name="Download" className="h-4 w-4 mr-2" />
+						{t("tasks:archive_download_action")}
 					</ContextMenuItem>
 				)}
 				<ContextMenuItem onClick={onPageShare}>

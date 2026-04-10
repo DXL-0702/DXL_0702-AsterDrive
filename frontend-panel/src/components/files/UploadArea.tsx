@@ -22,6 +22,12 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { formatBytes } from "@/lib/format";
 import {
+	clearDeferredStorageRefresh,
+	consumeDeferredStorageRefresh,
+	enterStorageRefreshGate,
+	leaveStorageRefreshGate,
+} from "@/lib/storageRefreshGate";
+import {
 	appendCompletedPart,
 	loadSessions,
 	type ResumableSession,
@@ -67,6 +73,13 @@ type UploadStatus =
 	| "completed"
 	| "failed"
 	| "cancelled";
+
+const ACTIVE_QUEUE_STATUSES: UploadStatus[] = [
+	"queued",
+	"initializing",
+	"uploading",
+	"processing",
+];
 
 interface UploadTask {
 	id: string;
@@ -160,7 +173,8 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 		const abortFlagsRef = useRef(new Map<string, boolean>());
 		const directAbortRef = useRef(new Map<string, AbortController>());
 		const presignedXhrRef = useRef(new Map<string, XMLHttpRequest>());
-		const refreshTimeoutRef = useRef<number | null>(null);
+		const pendingRefreshFolderIdsRef = useRef(new Set<number | null>());
+		const queueWasActiveRef = useRef(false);
 		const fileInputRef = useRef<HTMLInputElement | null>(null);
 		const folderInputRef = useRef<HTMLInputElement | null>(null);
 		const resumeFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -192,33 +206,16 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				for (const xhr of presignedXhrRef.current.values()) {
 					xhr.abort();
 				}
-				if (refreshTimeoutRef.current !== null) {
-					window.clearTimeout(refreshTimeoutRef.current);
-				}
 				if (progressFlushTimerRef.current !== null) {
 					window.clearTimeout(progressFlushTimerRef.current);
 				}
+				if (queueWasActiveRef.current) {
+					leaveStorageRefreshGate();
+					queueWasActiveRef.current = false;
+					clearDeferredStorageRefresh();
+				}
 			};
 		}, []);
-
-		const getRefreshBucketKey = useCallback((task: UploadTask) => {
-			const topLevelSegment = task.relativePath?.split("/")[0] ?? "__file__";
-			return `${task.baseFolderId ?? "root"}:${topLevelSegment}`;
-		}, []);
-
-		const scheduleRefresh = useCallback(
-			(baseFolderId: number | null) => {
-				if (refreshTimeoutRef.current !== null) return;
-				refreshTimeoutRef.current = window.setTimeout(() => {
-					refreshTimeoutRef.current = null;
-					void refreshUser();
-					if (currentFolderIdRef.current === baseFolderId) {
-						void refresh();
-					}
-				}, 300);
-			},
-			[refresh, refreshUser],
-		);
 
 		const patchTask = useCallback(
 			(taskId: string, patch: Partial<UploadTask>) => {
@@ -272,24 +269,48 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			[flushProgress],
 		);
 
-		const finalizeTaskRefresh = useCallback(
-			(task: UploadTask) => {
-				const bucketKey = getRefreshBucketKey(task);
-				const hasPendingInBucket = tasksRef.current.some((candidate) => {
-					if (candidate.id === task.id) return false;
-					return (
-						getRefreshBucketKey(candidate) === bucketKey &&
-						["queued", "initializing", "uploading", "processing"].includes(
-							candidate.status,
-						)
-					);
-				});
-				if (!hasPendingInBucket) {
-					scheduleRefresh(task.baseFolderId);
+		const markFolderForRefresh = useCallback((task: UploadTask) => {
+			pendingRefreshFolderIdsRef.current.add(task.baseFolderId);
+		}, []);
+
+		useEffect(() => {
+			const hasActiveQueue = tasks.some((task) =>
+				ACTIVE_QUEUE_STATUSES.includes(task.status),
+			);
+
+			if (hasActiveQueue) {
+				if (!queueWasActiveRef.current) {
+					enterStorageRefreshGate();
 				}
-			},
-			[getRefreshBucketKey, scheduleRefresh],
-		);
+				queueWasActiveRef.current = true;
+				return;
+			}
+
+			if (!queueWasActiveRef.current) {
+				return;
+			}
+
+			leaveStorageRefreshGate();
+			queueWasActiveRef.current = false;
+
+			const pendingRefreshFolderIds = pendingRefreshFolderIdsRef.current;
+			const hasDeferredRefresh = consumeDeferredStorageRefresh();
+			if (pendingRefreshFolderIds.size === 0 && !hasDeferredRefresh) {
+				return;
+			}
+
+			const shouldRefreshCurrentFolder =
+				hasDeferredRefresh ||
+				pendingRefreshFolderIds.has(currentFolderIdRef.current);
+			pendingRefreshFolderIdsRef.current = new Set();
+
+			if (pendingRefreshFolderIds.size > 0) {
+				void refreshUser();
+			}
+			if (shouldRefreshCurrentFolder) {
+				void refresh();
+			}
+		}, [refresh, refreshUser, tasks]);
 
 		const clearCompletedTasks = useCallback(() => {
 			setTasks((prev) => prev.filter((task) => task.status !== "completed"));
@@ -501,7 +522,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						progress: 100,
 						error: null,
 					});
-					finalizeTaskRefresh(task);
+					markFolderForRefresh(task);
 				} catch (error) {
 					if (abortFlagsRef.current.get(task.id)) {
 						patchTask(task.id, { status: "cancelled", error: null });
@@ -533,7 +554,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 					abortFlagsRef.current.delete(task.id);
 				}
 			},
-			[finalizeTaskRefresh, markTaskFailed, patchTask, t],
+			[markFolderForRefresh, markTaskFailed, patchTask, t],
 		);
 
 		const buildDirectUploadPath = useCallback(
@@ -586,7 +607,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						progress: 100,
 						error: null,
 					});
-					finalizeTaskRefresh(task);
+					markFolderForRefresh(task);
 				} catch (error) {
 					if (controller.signal.aborted) {
 						patchTask(task.id, { status: "cancelled", error: null });
@@ -603,7 +624,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			},
 			[
 				buildDirectUploadPath,
-				finalizeTaskRefresh,
+				markFolderForRefresh,
 				markTaskFailed,
 				patchTask,
 				patchTaskThrottled,
@@ -700,7 +721,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						progress: 100,
 						error: null,
 					});
-					finalizeTaskRefresh(task);
+					markFolderForRefresh(task);
 				} catch (error) {
 					if (abortFlagsRef.current.get(task.id)) {
 						patchTask(task.id, { status: "cancelled", error: null });
@@ -716,8 +737,8 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				}
 			},
 			[
-				finalizeTaskRefresh,
 				flushProgress,
+				markFolderForRefresh,
 				markTaskFailed,
 				patchTask,
 				patchTaskThrottled,
@@ -762,7 +783,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						progress: 100,
 						error: null,
 					});
-					finalizeTaskRefresh(task);
+					markFolderForRefresh(task);
 				} catch (error) {
 					const message =
 						error instanceof Error
@@ -778,8 +799,8 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				}
 			},
 			[
-				finalizeTaskRefresh,
 				flushProgress,
+				markFolderForRefresh,
 				markTaskFailed,
 				patchTask,
 				patchTaskThrottled,
@@ -912,7 +933,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 						progress: 100,
 						error: null,
 					});
-					finalizeTaskRefresh(task);
+					markFolderForRefresh(task);
 				} catch (error) {
 					if (abortFlagsRef.current.get(task.id)) {
 						patchTask(task.id, { status: "cancelled", error: null });
@@ -928,8 +949,8 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 				}
 			},
 			[
-				finalizeTaskRefresh,
 				flushProgress,
+				markFolderForRefresh,
 				markTaskFailed,
 				patchTask,
 				patchTaskThrottled,
@@ -1076,11 +1097,9 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							? error.message
 							: t("errors:unexpected_error");
 					markTaskFailed(taskId, message);
-					finalizeTaskRefresh(task);
 				}
 			},
 			[
-				finalizeTaskRefresh,
 				markTaskFailed,
 				patchTask,
 				runChunkedUpload,

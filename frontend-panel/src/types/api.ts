@@ -80,6 +80,9 @@ export type TeamAuditEntryInfo = components["schemas"]["TeamAuditEntryInfo"];
 export type TeamAuditPage =
 	components["schemas"]["OffsetPage_TeamAuditEntryInfo"];
 export type TeamMemberPage = components["schemas"]["TeamMemberPage"];
+export type BackgroundTaskKind = components["schemas"]["BackgroundTaskKind"];
+export type BackgroundTaskStatus =
+	components["schemas"]["BackgroundTaskStatus"];
 export type CreatePolicyGroupRequest =
 	components["schemas"]["CreatePolicyGroupReq"];
 export type CreatePolicyRequest = components["schemas"]["CreatePolicyReq"];
@@ -136,6 +139,8 @@ export type TeamMemberRole = components["schemas"]["TeamMemberRole"];
 export type UpdateTeamMemberRequest =
 	components["schemas"]["PatchTeamMemberReq"];
 export type UpdateTeamRequest = components["schemas"]["PatchTeamReq"];
+export type TaskInfo = components["schemas"]["TaskInfo"];
+export type TaskPage = components["schemas"]["OffsetPage_TaskInfo"];
 
 // Upload and batch
 export type BatchItemError = components["schemas"]["BatchItemError"];

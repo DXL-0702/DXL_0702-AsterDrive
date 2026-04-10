@@ -156,6 +156,74 @@ async fn test_thumbnail_returns_200_after_generation() {
 }
 
 #[actix_web::test]
+async fn test_thumbnail_returns_304_for_matching_if_none_match() {
+    let state = common::setup().await;
+    let (tx, rx) = tokio::sync::mpsc::channel::<i64>(16);
+    aster_drive::services::thumbnail_service::spawn_worker(
+        actix_web::web::Data::new(state.db.clone()),
+        state.driver_registry.clone(),
+        state.policy_snapshot.clone(),
+        rx,
+    );
+    let state = aster_drive::runtime::AppState {
+        db: state.db,
+        driver_registry: state.driver_registry,
+        runtime_config: state.runtime_config,
+        policy_snapshot: state.policy_snapshot,
+        config: state.config,
+        cache: state.cache,
+        mail_sender: state.mail_sender,
+        thumbnail_tx: tx,
+        storage_change_tx: state.storage_change_tx,
+    };
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let file_id = upload_png!(app, token);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let _ = test::call_service(&app, req).await;
+
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let etag = resp
+        .headers()
+        .get("ETag")
+        .and_then(|value| value.to_str().ok())
+        .expect("thumbnail response should include ETag")
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/thumbnail"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header(("If-None-Match", etag.as_str()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 304);
+    assert_eq!(
+        resp.headers()
+            .get("ETag")
+            .and_then(|value| value.to_str().ok()),
+        Some(etag.as_str())
+    );
+    assert_eq!(
+        resp.headers()
+            .get("Cache-Control")
+            .and_then(|value| value.to_str().ok()),
+        Some("private, max-age=0, must-revalidate")
+    );
+}
+
+#[actix_web::test]
 async fn test_thumbnail_non_image_returns_error() {
     let state = common::setup().await;
     let app = create_test_app!(state);

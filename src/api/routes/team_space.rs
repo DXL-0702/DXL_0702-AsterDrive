@@ -687,6 +687,7 @@ pub async fn get_preview_link(
     ),
     responses(
         (status = 200, description = "Thumbnail image (WebP)"),
+        (status = 304, description = "Thumbnail not modified"),
         (status = 202, description = "Thumbnail generation in progress"),
         (status = 400, description = "Thumbnail not supported for this file type"),
         (status = 401, description = "Unauthorized"),
@@ -699,10 +700,11 @@ pub async fn get_preview_link(
 pub async fn get_thumbnail(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<(i64, i64)>,
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
-    files::get_thumbnail_response(&state, team_scope(team_id, claims.user_id), file_id).await
+    files::get_thumbnail_response(&state, &req, team_scope(team_id, claims.user_id), file_id).await
 }
 
 #[api_docs_macros::path(

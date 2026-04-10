@@ -47,6 +47,7 @@ interface FileTableProps {
 		initialMode?: "page" | "direct";
 	}) => void;
 	onDownload: (fileId: number, fileName: string) => void;
+	onArchiveDownload?: (folderId: number) => void;
 	onCopy: (type: "file" | "folder", id: number) => void;
 	onMove?: (type: "file" | "folder", id: number) => void;
 	onToggleLock: (type: "file" | "folder", id: number, locked: boolean) => void;
@@ -96,6 +97,7 @@ export function FileTable({
 	onFileClick,
 	onShare,
 	onDownload,
+	onArchiveDownload,
 	onCopy,
 	onMove,
 	onToggleLock,
@@ -213,6 +215,9 @@ export function FileTable({
 					name: folder.name,
 					initialMode: "page",
 				})
+			}
+			onArchiveDownload={
+				onArchiveDownload ? () => onArchiveDownload(folder.id) : undefined
 			}
 			onCopy={() => onCopy("folder", folder.id)}
 			onMove={onMove ? () => onMove("folder", folder.id) : undefined}

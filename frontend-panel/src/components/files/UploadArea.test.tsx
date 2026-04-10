@@ -171,6 +171,32 @@ async function uploadOneFile() {
 	return file;
 }
 
+async function uploadFiles(files: File[]) {
+	const { UploadArea } = await import("@/components/files/UploadArea");
+
+	const view = render(
+		<UploadArea>
+			<div>content</div>
+		</UploadArea>,
+	);
+
+	const fileInput = view.container.querySelectorAll('input[type="file"]')[0] as
+		| HTMLInputElement
+		| undefined;
+
+	if (!fileInput) {
+		throw new Error("file input not found");
+	}
+
+	fireEvent.change(fileInput, {
+		target: { files },
+	});
+
+	await waitFor(() => {
+		expect(initUpload).toHaveBeenCalledTimes(files.length);
+	});
+}
+
 describe("UploadArea", () => {
 	beforeEach(() => {
 		appendCompletedPart.mockReset();
@@ -209,6 +235,66 @@ describe("UploadArea", () => {
 		expect(apiClientPost.mock.calls[0]?.[1]).toBeInstanceOf(FormData);
 		expect(completeUpload).not.toHaveBeenCalled();
 		expect(saveSession).not.toHaveBeenCalled();
+	});
+
+	it("refreshes once after the whole upload queue settles", async () => {
+		const firstUpload = createDeferred<unknown>();
+		const secondUpload = createDeferred<unknown>();
+		const firstFile = new File(["hello"], "first.txt", { type: "text/plain" });
+		const secondFile = new File(["world"], "second.txt", {
+			type: "text/plain",
+		});
+
+		initUpload.mockResolvedValue({ mode: "direct" });
+		apiClientPost
+			.mockReturnValueOnce(firstUpload.promise)
+			.mockReturnValueOnce(secondUpload.promise);
+
+		await uploadFiles([firstFile, secondFile]);
+		await waitFor(() => {
+			expect(apiClientPost).toHaveBeenCalledTimes(2);
+		});
+
+		firstUpload.resolve({});
+		await screen.findByText("first.txt:Direct:files:upload_success");
+		expect(refresh).not.toHaveBeenCalled();
+		expect(refreshUser).not.toHaveBeenCalled();
+
+		secondUpload.reject(new Error("upload failed"));
+		await screen.findByText("second.txt:Direct:files:upload_failed");
+
+		await waitFor(() => {
+			expect(refresh).toHaveBeenCalledTimes(1);
+			expect(refreshUser).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	it("does not refresh after an all-failed upload queue", async () => {
+		const firstUpload = createDeferred<unknown>();
+		const secondUpload = createDeferred<unknown>();
+		const firstFile = new File(["hello"], "first.txt", { type: "text/plain" });
+		const secondFile = new File(["world"], "second.txt", {
+			type: "text/plain",
+		});
+
+		initUpload.mockResolvedValue({ mode: "direct" });
+		apiClientPost
+			.mockReturnValueOnce(firstUpload.promise)
+			.mockReturnValueOnce(secondUpload.promise);
+
+		await uploadFiles([firstFile, secondFile]);
+		await waitFor(() => {
+			expect(apiClientPost).toHaveBeenCalledTimes(2);
+		});
+
+		firstUpload.reject(new Error("first upload failed"));
+		secondUpload.reject(new Error("second upload failed"));
+
+		await screen.findByText("first.txt:Direct:files:upload_failed");
+		await screen.findByText("second.txt:Direct:files:upload_failed");
+
+		expect(refresh).not.toHaveBeenCalled();
+		expect(refreshUser).not.toHaveBeenCalled();
 	});
 
 	it("handles chunked uploads and persists resumable sessions", async () => {

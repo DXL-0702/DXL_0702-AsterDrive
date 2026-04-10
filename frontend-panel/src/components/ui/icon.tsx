@@ -1,4 +1,4 @@
-import type { ComponentType } from "react";
+import type { ComponentProps, ComponentType } from "react";
 import {
 	PiArrowClockwise,
 	PiArrowCounterClockwise,
@@ -228,8 +228,12 @@ export interface IconProps {
 	className?: string;
 }
 
-export function Icon({ name, className }: IconProps) {
+export function Icon({
+	name,
+	className,
+	...props
+}: IconProps & ComponentProps<"svg">) {
 	const IconComponent = iconMap[name];
 	if (!IconComponent) return null;
-	return <IconComponent className={className} />;
+	return <IconComponent className={className} {...props} />;
 }

@@ -208,6 +208,17 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Days before archived teams are permanently deleted",
     },
     ConfigDef {
+        key: "task_retention_hours",
+        label_i18n_key: "settings_item_task_retention_hours_label",
+        description_i18n_key: "settings_item_task_retention_hours_desc",
+        value_type: "number",
+        default_fn: || "24".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "storage",
+        description: "Hours before completed background tasks and task artifacts are permanently deleted",
+    },
+    ConfigDef {
         key: "default_storage_quota",
         label_i18n_key: "settings_item_default_storage_quota_label",
         description_i18n_key: "settings_item_default_storage_quota_desc",

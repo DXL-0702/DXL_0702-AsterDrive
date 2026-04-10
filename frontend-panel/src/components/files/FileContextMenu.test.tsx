@@ -50,6 +50,7 @@ function renderMenu(
 	overrides: Partial<React.ComponentProps<typeof FileContextMenu>> = {},
 ) {
 	const handlers = {
+		onArchiveDownload: vi.fn(),
 		onCopy: vi.fn(),
 		onDelete: vi.fn(),
 		onDownload: vi.fn(),
@@ -110,6 +111,9 @@ describe("FileContextMenu", () => {
 		});
 
 		expect(screen.queryByText("download")).not.toBeInTheDocument();
+		expect(
+			screen.getByText("tasks:archive_download_action"),
+		).toBeInTheDocument();
 		expect(screen.getByText("share:share_mode_page")).toBeInTheDocument();
 		expect(
 			screen.queryByText("share:share_mode_direct"),
@@ -117,6 +121,16 @@ describe("FileContextMenu", () => {
 		expect(screen.queryByText("versions")).not.toBeInTheDocument();
 		expect(screen.getByText("unlock")).toBeInTheDocument();
 		expect(screen.getByText("delete")).toBeDisabled();
+	});
+
+	it("invokes the archive download handler for folders", () => {
+		const handlers = renderMenu({
+			isFolder: true,
+		});
+
+		fireEvent.click(screen.getByText("tasks:archive_download_action"));
+
+		expect(handlers.onArchiveDownload).toHaveBeenCalledTimes(1);
 	});
 
 	it("uses renderTrigger when requested", () => {

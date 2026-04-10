@@ -82,6 +82,13 @@ fn build_folder_map(folders: Vec<folder::Model>) -> HashMap<i64, folder::Model> 
         .collect()
 }
 
+pub(crate) struct NormalizedSelection {
+    pub file_ids: Vec<i64>,
+    pub folder_ids: Vec<i64>,
+    pub file_map: HashMap<i64, file::Model>,
+    pub folder_map: HashMap<i64, folder::Model>,
+}
+
 async fn load_folder_hierarchy_map(
     db: &sea_orm::DatabaseConnection,
     file_map: &HashMap<i64, file::Model>,
@@ -164,7 +171,33 @@ fn normalize_selection(
     (normalized_file_ids, normalized_folder_ids)
 }
 
-fn reserve_unique_name(reserved_names: &mut HashSet<String>, original_name: &str) -> String {
+pub(crate) async fn load_normalized_selection_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_ids: &[i64],
+    folder_ids: &[i64],
+) -> Result<NormalizedSelection> {
+    workspace_storage_service::require_scope_access(state, scope).await?;
+    validate_batch_ids(file_ids, folder_ids)?;
+
+    let file_map = build_file_map(file_repo::find_by_ids(&state.db, file_ids).await?);
+    let folder_map = build_folder_map(folder_repo::find_by_ids(&state.db, folder_ids).await?);
+    let hierarchy = load_folder_hierarchy_map(&state.db, &file_map, &folder_map).await?;
+    let (normalized_file_ids, normalized_folder_ids) =
+        normalize_selection(file_ids, folder_ids, &file_map, &folder_map, &hierarchy);
+
+    Ok(NormalizedSelection {
+        file_ids: normalized_file_ids,
+        folder_ids: normalized_folder_ids,
+        file_map,
+        folder_map,
+    })
+}
+
+pub(crate) fn reserve_unique_name(
+    reserved_names: &mut HashSet<String>,
+    original_name: &str,
+) -> String {
     let mut candidate = original_name.to_string();
     while !reserved_names.insert(candidate.clone()) {
         candidate = crate::utils::next_copy_name(&candidate);

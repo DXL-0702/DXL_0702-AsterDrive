@@ -8,6 +8,7 @@ const mockState = vi.hoisted(() => ({
 	batchDelete: vi.fn(),
 	copyFile: vi.fn(),
 	copyFolder: vi.fn(),
+	streamArchiveDownload: vi.fn(),
 	dispatchEvent: vi.fn(),
 	fileGridProps: null as Record<string, unknown> | null,
 	fileTableProps: null as Record<string, unknown> | null,
@@ -54,6 +55,59 @@ const mockState = vi.hoisted(() => ({
 	toastSuccess: vi.fn(),
 	useKeyboardShortcuts: vi.fn(),
 }));
+
+class MockIntersectionObserver {
+	static instances: MockIntersectionObserver[] = [];
+
+	disconnect = vi.fn();
+	observe = vi.fn();
+	root = null;
+	rootMargin = "";
+	thresholds: number[] = [];
+	unobserve = vi.fn();
+
+	private readonly callback: IntersectionObserverCallback;
+
+	constructor(
+		callback: IntersectionObserverCallback,
+		options: IntersectionObserverInit = {},
+	) {
+		this.callback = callback;
+		this.root = (options.root as Element | Document | null | undefined) ?? null;
+		this.rootMargin = options.rootMargin ?? "";
+		this.thresholds = Array.isArray(options.threshold)
+			? options.threshold
+			: options.threshold !== undefined
+				? [options.threshold]
+				: [];
+		MockIntersectionObserver.instances.push(this);
+	}
+
+	takeRecords() {
+		return [];
+	}
+
+	trigger(target: Element, isIntersecting = true) {
+		this.callback(
+			[
+				{
+					boundingClientRect: DOMRect.fromRect(),
+					intersectionRatio: isIntersecting ? 1 : 0,
+					intersectionRect: DOMRect.fromRect(),
+					isIntersecting,
+					rootBounds: null,
+					target,
+					time: 0,
+				} as IntersectionObserverEntry,
+			],
+			this as unknown as IntersectionObserver,
+		);
+	}
+
+	static reset() {
+		MockIntersectionObserver.instances = [];
+	}
+}
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
@@ -285,6 +339,14 @@ vi.mock("@/components/files/FileGrid", () => ({
 					}
 				>
 					move-selection
+				</button>
+				<button
+					type="button"
+					onClick={() =>
+						(props.onArchiveDownload as (folderId: number) => void)(5)
+					}
+				>
+					archive-folder
 				</button>
 			</div>
 		);
@@ -555,6 +617,8 @@ vi.mock("@/lib/utils", () => ({
 vi.mock("@/services/batchService", () => ({
 	batchService: {
 		batchDelete: (...args: unknown[]) => mockState.batchDelete(...args),
+		streamArchiveDownload: (...args: unknown[]) =>
+			mockState.streamArchiveDownload(...args),
 	},
 }));
 
@@ -618,9 +682,11 @@ function createFile(overrides: Record<string, unknown> = {}) {
 
 describe("FileBrowserPage", () => {
 	beforeEach(() => {
+		MockIntersectionObserver.reset();
 		mockState.batchDelete.mockReset();
 		mockState.copyFile.mockReset();
 		mockState.copyFolder.mockReset();
+		mockState.streamArchiveDownload.mockReset();
 		mockState.dispatchEvent.mockReset();
 		mockState.fileGridProps = null;
 		mockState.fileTableProps = null;
@@ -775,6 +841,57 @@ describe("FileBrowserPage", () => {
 		expect(
 			await screen.findByText("share:report.pdf:direct"),
 		).toBeInTheDocument();
+	});
+
+	it("starts a streamed archive download from a folder action", async () => {
+		render(<FileBrowserPage />);
+
+		fireEvent.click(screen.getByRole("button", { name: "archive-folder" }));
+
+		expect(mockState.streamArchiveDownload).toHaveBeenCalledWith([], [5]);
+		expect(mockState.toastSuccess).not.toHaveBeenCalled();
+	});
+
+	it("re-observes infinite scroll when pagination becomes available after the first render", async () => {
+		const originalIntersectionObserver = window.IntersectionObserver;
+		Object.defineProperty(window, "IntersectionObserver", {
+			writable: true,
+			value: MockIntersectionObserver,
+		});
+
+		try {
+			mockState.store.hasMoreFiles.mockReturnValue(false);
+
+			const { container, rerender } = render(<FileBrowserPage />);
+			expect(MockIntersectionObserver.instances).toHaveLength(0);
+
+			mockState.store.hasMoreFiles.mockReturnValue(true);
+			rerender(<FileBrowserPage />);
+
+			await waitFor(() => {
+				expect(MockIntersectionObserver.instances).toHaveLength(1);
+			});
+
+			const observer = MockIntersectionObserver.instances[0];
+			const target = observer?.observe.mock.calls[0]?.[0] as
+				| Element
+				| undefined;
+			expect(target).toBeInstanceOf(HTMLElement);
+
+			if (observer && target) {
+				observer.trigger(target);
+			}
+
+			await waitFor(() => {
+				expect(mockState.store.loadMoreFiles).toHaveBeenCalledTimes(1);
+			});
+			expect(container.querySelector(".flex.justify-center.py-4")).toBeTruthy();
+		} finally {
+			Object.defineProperty(window, "IntersectionObserver", {
+				writable: true,
+				value: originalIntersectionObserver,
+			});
+		}
 	});
 
 	it("moves items, dispatches folder-tree updates, and shows the formatted move toast", async () => {

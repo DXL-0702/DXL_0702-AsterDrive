@@ -21,11 +21,16 @@ pub fn install_panic_hook() {
             "<no message>".to_string()
         };
 
+        let platform = std::env::consts::OS;
+        let version = env!("CARGO_PKG_VERSION");
+        let repository = env!("CARGO_PKG_REPOSITORY");
         let backtrace = std::backtrace::Backtrace::force_capture();
         let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
 
         let crash_report = format!(
             "=== PANIC ===\n\
+             AsterDrive {version} - {platform} \n\
+             Please report this crash to the developers with the above information: {repository}/issues/new?template=bug_report.yml\n\
              Timestamp: {timestamp}\n\
              Thread:    {thread_name}\n\
              Location:  {location}\n\

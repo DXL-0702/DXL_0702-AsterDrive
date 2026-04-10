@@ -24,6 +24,10 @@ const mockState = vi.hoisted(() => ({
 	},
 	invalidateBlobUrl: vi.fn(),
 	invalidateTextContent: vi.fn(),
+	storageRefreshGate: {
+		deferStorageRefresh: vi.fn(),
+		isStorageRefreshGateActive: vi.fn(() => false),
+	},
 }));
 
 class MockEventSource {
@@ -64,6 +68,13 @@ vi.mock("@/hooks/useBlobUrl", () => ({
 vi.mock("@/hooks/useTextContent", () => ({
 	invalidateTextContent: (...args: unknown[]) =>
 		mockState.invalidateTextContent(...args),
+}));
+
+vi.mock("@/lib/storageRefreshGate", () => ({
+	deferStorageRefresh: (...args: unknown[]) =>
+		mockState.storageRefreshGate.deferStorageRefresh(...args),
+	isStorageRefreshGateActive: (...args: unknown[]) =>
+		mockState.storageRefreshGate.isStorageRefreshGateActive(...args),
 }));
 
 vi.mock("@/services/fileService", () => ({
@@ -124,6 +135,11 @@ describe("useStorageChangeEvents", () => {
 		mockState.fileStore.navigateTo.mockResolvedValue(undefined);
 		mockState.invalidateBlobUrl.mockReset();
 		mockState.invalidateTextContent.mockReset();
+		mockState.storageRefreshGate.deferStorageRefresh.mockReset();
+		mockState.storageRefreshGate.isStorageRefreshGateActive.mockReset();
+		mockState.storageRefreshGate.isStorageRefreshGateActive.mockReturnValue(
+			false,
+		);
 		vi.stubGlobal("EventSource", MockEventSource);
 	});
 
@@ -224,6 +240,39 @@ describe("useStorageChangeEvents", () => {
 			expect(mockState.invalidateBlobUrl).not.toHaveBeenCalled();
 		});
 		expect(mockState.invalidateTextContent).not.toHaveBeenCalled();
+		expect(mockState.fileStore.navigateTo).not.toHaveBeenCalled();
+	});
+
+	it("defers folder refresh while the upload queue gate is active", async () => {
+		mockState.storageRefreshGate.isStorageRefreshGateActive.mockReturnValue(
+			true,
+		);
+		const { useStorageChangeEvents } = await import(
+			"@/hooks/useStorageChangeEvents"
+		);
+
+		renderHook(() => useStorageChangeEvents());
+
+		await waitFor(() => {
+			expect(MockEventSource.instances).toHaveLength(1);
+		});
+
+		MockEventSource.instances[0]?.emit({
+			kind: "file.updated",
+			workspace: { kind: "personal" },
+			file_ids: [12],
+			folder_ids: [],
+			affected_parent_ids: [7],
+			root_affected: false,
+			at: "2026-04-08T00:00:00Z",
+		});
+
+		await waitFor(() => {
+			expect(mockState.invalidateTextContent).toHaveBeenCalledWith(
+				"/files/12/download",
+			);
+		});
+		expect(mockState.storageRefreshGate.deferStorageRefresh).toHaveBeenCalled();
 		expect(mockState.fileStore.navigateTo).not.toHaveBeenCalled();
 	});
 

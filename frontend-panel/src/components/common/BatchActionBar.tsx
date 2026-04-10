@@ -12,8 +12,15 @@ import { useAuthStore } from "@/stores/authStore";
 import type { BreadcrumbItem } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
 
-export function BatchActionBar() {
-	const { t } = useTranslation("files");
+interface BatchActionBarProps {
+	onArchiveDownload?: (
+		fileIds: number[],
+		folderIds: number[],
+	) => Promise<void> | void;
+}
+
+export function BatchActionBar({ onArchiveDownload }: BatchActionBarProps) {
+	const { t } = useTranslation(["files", "tasks"]);
 	const selectedFileIds = useFileStore((s) => s.selectedFileIds);
 	const selectedFolderIds = useFileStore((s) => s.selectedFolderIds);
 	const clearSelection = useFileStore((s) => s.clearSelection);
@@ -57,6 +64,16 @@ export function BatchActionBar() {
 
 	const handleCopy = () => {
 		setTargetDialogMode("copy");
+	};
+
+	const handleArchiveDownload = async () => {
+		if (!onArchiveDownload) return;
+		try {
+			await onArchiveDownload(fileIds, folderIds);
+			clearSelection();
+		} catch (err) {
+			handleApiError(err);
+		}
 	};
 
 	const handleTargetConfirm = async (targetFolderId: number | null) => {
@@ -108,6 +125,12 @@ export function BatchActionBar() {
 						<Icon name="Copy" className="h-3.5 w-3.5 mr-1" />
 						{t("copy")}
 					</Button>
+					{onArchiveDownload ? (
+						<Button size="sm" variant="outline" onClick={handleArchiveDownload}>
+							<Icon name="Download" className="h-3.5 w-3.5 mr-1" />
+							{t("tasks:archive_download_action")}
+						</Button>
+					) : null}
 				</div>
 				<Button size="sm" variant="ghost" onClick={clearSelection}>
 					<Icon name="X" className="h-3.5 w-3.5" />

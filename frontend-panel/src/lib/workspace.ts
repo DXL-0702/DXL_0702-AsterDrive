@@ -62,6 +62,12 @@ export function workspaceSharesPath(workspace: Workspace) {
 		: "/shares";
 }
 
+export function workspaceTasksPath(workspace: Workspace) {
+	return isTeamWorkspace(workspace)
+		? `/teams/${workspace.teamId}/tasks`
+		: "/tasks";
+}
+
 export function workspaceTrashPath(workspace: Workspace) {
 	return isTeamWorkspace(workspace)
 		? `/teams/${workspace.teamId}/trash`

@@ -175,6 +175,8 @@
 	"settings_item_trash_retention_days_desc": "文件或文件夹进入回收站后，在被永久清理前保留的天数。",
 	"settings_item_team_archive_retention_days_label": "团队归档保留天数",
 	"settings_item_team_archive_retention_days_desc": "团队归档后，在被永久删除前保留的天数。",
+	"settings_item_task_retention_hours_label": "任务保留小时数",
+	"settings_item_task_retention_hours_desc": "已完成后台任务及其可下载产物在被永久清理前保留的小时数。",
 	"settings_item_default_storage_quota_label": "新用户默认配额",
 	"settings_item_default_storage_quota_desc": "新创建用户的默认存储配额，单位字节。填写 0 表示不限制。",
 	"settings_item_avatar_dir_label": "头像目录",

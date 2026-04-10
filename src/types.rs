@@ -161,6 +161,46 @@ impl MailOutboxStatus {
     }
 }
 
+/// 后台任务类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(32))")]
+#[serde(rename_all = "snake_case")]
+pub enum BackgroundTaskKind {
+    #[sea_orm(string_value = "archive_download")]
+    ArchiveDownload,
+    #[sea_orm(string_value = "archive_extract")]
+    ArchiveExtract,
+    #[sea_orm(string_value = "archive_compress")]
+    ArchiveCompress,
+}
+
+/// 后台任务状态
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(16))")]
+#[serde(rename_all = "snake_case")]
+pub enum BackgroundTaskStatus {
+    #[sea_orm(string_value = "pending")]
+    Pending,
+    #[sea_orm(string_value = "processing")]
+    Processing,
+    #[sea_orm(string_value = "retry")]
+    Retry,
+    #[sea_orm(string_value = "succeeded")]
+    Succeeded,
+    #[sea_orm(string_value = "failed")]
+    Failed,
+    #[sea_orm(string_value = "canceled")]
+    Canceled,
+}
+
+impl BackgroundTaskStatus {
+    pub fn is_terminal(self) -> bool {
+        matches!(self, Self::Succeeded | Self::Failed | Self::Canceled)
+    }
+}
+
 /// 团队成员角色
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]

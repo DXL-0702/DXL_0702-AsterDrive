@@ -133,6 +133,9 @@ describe("Sidebar", () => {
 			screen.getByRole("button", { name: /translated:share:my_shares_title/i }),
 		).toBeInTheDocument();
 		expect(
+			screen.getByRole("button", { name: /translated:tasks:title/i }),
+		).toBeInTheDocument();
+		expect(
 			screen.getByRole("button", { name: /translated:trash/i }),
 		).toBeInTheDocument();
 		expect(

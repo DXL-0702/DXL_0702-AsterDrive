@@ -793,6 +793,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/batch/archive-download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["batch_archive_download"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/batch/archive-download/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["batch_archive_download_stream"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/batch/copy": {
         parameters: {
             query?: never;
@@ -1497,6 +1529,54 @@ export interface paths {
         patch: operations["update_share"];
         trace?: never;
     };
+    "/api/v1/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_tasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_task"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tasks/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retry_task"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/teams": {
         parameters: {
             query?: never;
@@ -1587,6 +1667,38 @@ export interface paths {
         get?: never;
         put?: never;
         post: operations["restore_team"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/batch/archive-download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["batch_archive_download_team"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/batch/archive-download/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["batch_archive_download_stream_team"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2073,6 +2185,54 @@ export interface paths {
         patch: operations["update_team_share"];
         trace?: never;
     };
+    "/api/v1/teams/{team_id}/tasks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_team_tasks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/tasks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_team_task"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/tasks/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retry_team_task"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/teams/{team_id}/trash": {
         parameters: {
             query?: never;
@@ -2441,6 +2601,11 @@ export interface components {
             }[];
             msg: string;
         };
+        ArchiveDownloadReq: {
+            archive_name?: string | null;
+            file_ids?: number[];
+            folder_ids?: number[];
+        };
         AuditLogEntry: {
             action: string;
             created_at: string;
@@ -2472,6 +2637,16 @@ export interface components {
          * @enum {string}
          */
         AvatarSource: "none" | "gravatar" | "upload";
+        /**
+         * @description 后台任务类型
+         * @enum {string}
+         */
+        BackgroundTaskKind: "archive_download" | "archive_extract" | "archive_compress";
+        /**
+         * @description 后台任务状态
+         * @enum {string}
+         */
+        BackgroundTaskStatus: "pending" | "processing" | "retry" | "succeeded" | "failed" | "canceled";
         BatchCopyReq: {
             file_ids?: number[];
             folder_ids?: number[];
@@ -3089,6 +3264,47 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        OffsetPage_TaskInfo: {
+            items: {
+                /** Format: int32 */
+                attempt_count: number;
+                can_retry: boolean;
+                created_at: string;
+                /** Format: int64 */
+                creator_user_id?: number | null;
+                display_name: string;
+                expires_at: string;
+                finished_at?: string | null;
+                /** Format: int64 */
+                id: number;
+                kind: components["schemas"]["BackgroundTaskKind"];
+                last_error?: string | null;
+                /** Format: int32 */
+                max_attempts: number;
+                payload_json: string;
+                /** Format: int64 */
+                progress_current: number;
+                /** Format: int32 */
+                progress_percent: number;
+                /** Format: int64 */
+                progress_total: number;
+                result_json?: string | null;
+                /** Format: int64 */
+                share_id?: number | null;
+                started_at?: string | null;
+                status: components["schemas"]["BackgroundTaskStatus"];
+                status_text?: string | null;
+                /** Format: int64 */
+                team_id?: number | null;
+                updated_at: string;
+            }[];
+            /** Format: int64 */
+            limit: number;
+            /** Format: int64 */
+            offset: number;
+            /** Format: int64 */
+            total: number;
+        };
         OffsetPage_TeamAuditEntryInfo: {
             items: {
                 action: string;
@@ -3493,6 +3709,11 @@ export interface components {
             id: number;
             name: string;
         };
+        StreamTicketInfo: {
+            download_path: string;
+            expires_at: string;
+            token: string;
+        };
         SystemConfig: {
             /** @description 分类（前端分组用） */
             category?: string;
@@ -3515,6 +3736,39 @@ export interface components {
             value: string;
             /** @description 值类型：string / multiline / number / boolean */
             value_type?: string;
+        };
+        TaskInfo: {
+            /** Format: int32 */
+            attempt_count: number;
+            can_retry: boolean;
+            created_at: string;
+            /** Format: int64 */
+            creator_user_id?: number | null;
+            display_name: string;
+            expires_at: string;
+            finished_at?: string | null;
+            /** Format: int64 */
+            id: number;
+            kind: components["schemas"]["BackgroundTaskKind"];
+            last_error?: string | null;
+            /** Format: int32 */
+            max_attempts: number;
+            payload_json: string;
+            /** Format: int64 */
+            progress_current: number;
+            /** Format: int32 */
+            progress_percent: number;
+            /** Format: int64 */
+            progress_total: number;
+            result_json?: string | null;
+            /** Format: int64 */
+            share_id?: number | null;
+            started_at?: string | null;
+            status: components["schemas"]["BackgroundTaskStatus"];
+            status_text?: string | null;
+            /** Format: int64 */
+            team_id?: number | null;
+            updated_at: string;
         };
         TeamAuditEntryInfo: {
             action: string;
@@ -7275,6 +7529,87 @@ export interface operations {
             };
         };
     };
+    batch_archive_download: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArchiveDownloadReq"];
+            };
+        };
+        responses: {
+            /** @description Archive download ticket */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            download_path: string;
+                            expires_at: string;
+                            token: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    batch_archive_download_stream: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Archive download ticket */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Archive stream download */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid ticket */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     batch_copy: {
         parameters: {
             query?: never;
@@ -8329,6 +8664,13 @@ export interface operations {
             };
             /** @description Thumbnail generation in progress */
             202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Thumbnail not modified */
+            304: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9430,6 +9772,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Thumbnail not modified */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Thumbnail not supported for this file type */
             400: {
                 headers: {
@@ -9586,6 +9935,13 @@ export interface operations {
         responses: {
             /** @description Thumbnail image (WebP) */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Thumbnail not modified */
+            304: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -9987,6 +10343,233 @@ export interface operations {
                 content?: never;
             };
             /** @description Share not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_tasks: {
+        parameters: {
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Background tasks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            items: {
+                                /** Format: int32 */
+                                attempt_count: number;
+                                can_retry: boolean;
+                                created_at: string;
+                                /** Format: int64 */
+                                creator_user_id?: number | null;
+                                display_name: string;
+                                expires_at: string;
+                                finished_at?: string | null;
+                                /** Format: int64 */
+                                id: number;
+                                kind: components["schemas"]["BackgroundTaskKind"];
+                                last_error?: string | null;
+                                /** Format: int32 */
+                                max_attempts: number;
+                                payload_json: string;
+                                /** Format: int64 */
+                                progress_current: number;
+                                /** Format: int32 */
+                                progress_percent: number;
+                                /** Format: int64 */
+                                progress_total: number;
+                                result_json?: string | null;
+                                /** Format: int64 */
+                                share_id?: number | null;
+                                started_at?: string | null;
+                                status: components["schemas"]["BackgroundTaskStatus"];
+                                status_text?: string | null;
+                                /** Format: int64 */
+                                team_id?: number | null;
+                                updated_at: string;
+                            }[];
+                            /** Format: int64 */
+                            limit: number;
+                            /** Format: int64 */
+                            offset: number;
+                            /** Format: int64 */
+                            total: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Task ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Task details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int32 */
+                            attempt_count: number;
+                            can_retry: boolean;
+                            created_at: string;
+                            /** Format: int64 */
+                            creator_user_id?: number | null;
+                            display_name: string;
+                            expires_at: string;
+                            finished_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            kind: components["schemas"]["BackgroundTaskKind"];
+                            last_error?: string | null;
+                            /** Format: int32 */
+                            max_attempts: number;
+                            payload_json: string;
+                            /** Format: int64 */
+                            progress_current: number;
+                            /** Format: int32 */
+                            progress_percent: number;
+                            /** Format: int64 */
+                            progress_total: number;
+                            result_json?: string | null;
+                            /** Format: int64 */
+                            share_id?: number | null;
+                            started_at?: string | null;
+                            status: components["schemas"]["BackgroundTaskStatus"];
+                            status_text?: string | null;
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Task not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    retry_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Task ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Task reset for retry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int32 */
+                            attempt_count: number;
+                            can_retry: boolean;
+                            created_at: string;
+                            /** Format: int64 */
+                            creator_user_id?: number | null;
+                            display_name: string;
+                            expires_at: string;
+                            finished_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            kind: components["schemas"]["BackgroundTaskKind"];
+                            last_error?: string | null;
+                            /** Format: int32 */
+                            max_attempts: number;
+                            payload_json: string;
+                            /** Format: int64 */
+                            progress_current: number;
+                            /** Format: int32 */
+                            progress_percent: number;
+                            /** Format: int64 */
+                            progress_total: number;
+                            result_json?: string | null;
+                            /** Format: int64 */
+                            share_id?: number | null;
+                            started_at?: string | null;
+                            status: components["schemas"]["BackgroundTaskStatus"];
+                            status_text?: string | null;
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Task is not retryable */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Task not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -10677,6 +11260,106 @@ export interface operations {
             };
             /** @description Not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    batch_archive_download_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArchiveDownloadReq"];
+            };
+        };
+        responses: {
+            /** @description Team archive download ticket */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            download_path: string;
+                            expires_at: string;
+                            token: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    batch_archive_download_stream_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+                /** @description Archive download ticket */
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team archive stream download */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid ticket */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -11939,6 +12622,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Thumbnail not modified */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Thumbnail not supported for this file type */
             400: {
                 headers: {
@@ -13039,6 +13729,261 @@ export interface operations {
                 content?: never;
             };
             /** @description Share not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    list_team_tasks: {
+        parameters: {
+            query?: {
+                limit?: number | null;
+                offset?: number | null;
+            };
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team tasks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            items: {
+                                /** Format: int32 */
+                                attempt_count: number;
+                                can_retry: boolean;
+                                created_at: string;
+                                /** Format: int64 */
+                                creator_user_id?: number | null;
+                                display_name: string;
+                                expires_at: string;
+                                finished_at?: string | null;
+                                /** Format: int64 */
+                                id: number;
+                                kind: components["schemas"]["BackgroundTaskKind"];
+                                last_error?: string | null;
+                                /** Format: int32 */
+                                max_attempts: number;
+                                payload_json: string;
+                                /** Format: int64 */
+                                progress_current: number;
+                                /** Format: int32 */
+                                progress_percent: number;
+                                /** Format: int64 */
+                                progress_total: number;
+                                result_json?: string | null;
+                                /** Format: int64 */
+                                share_id?: number | null;
+                                started_at?: string | null;
+                                status: components["schemas"]["BackgroundTaskStatus"];
+                                status_text?: string | null;
+                                /** Format: int64 */
+                                team_id?: number | null;
+                                updated_at: string;
+                            }[];
+                            /** Format: int64 */
+                            limit: number;
+                            /** Format: int64 */
+                            offset: number;
+                            /** Format: int64 */
+                            total: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_team_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+                /** @description Task ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team task details */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int32 */
+                            attempt_count: number;
+                            can_retry: boolean;
+                            created_at: string;
+                            /** Format: int64 */
+                            creator_user_id?: number | null;
+                            display_name: string;
+                            expires_at: string;
+                            finished_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            kind: components["schemas"]["BackgroundTaskKind"];
+                            last_error?: string | null;
+                            /** Format: int32 */
+                            max_attempts: number;
+                            payload_json: string;
+                            /** Format: int64 */
+                            progress_current: number;
+                            /** Format: int32 */
+                            progress_percent: number;
+                            /** Format: int64 */
+                            progress_total: number;
+                            result_json?: string | null;
+                            /** Format: int64 */
+                            share_id?: number | null;
+                            started_at?: string | null;
+                            status: components["schemas"]["BackgroundTaskStatus"];
+                            status_text?: string | null;
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Task not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    retry_team_task: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+                /** @description Task ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team task reset for retry */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int32 */
+                            attempt_count: number;
+                            can_retry: boolean;
+                            created_at: string;
+                            /** Format: int64 */
+                            creator_user_id?: number | null;
+                            display_name: string;
+                            expires_at: string;
+                            finished_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            kind: components["schemas"]["BackgroundTaskKind"];
+                            last_error?: string | null;
+                            /** Format: int32 */
+                            max_attempts: number;
+                            payload_json: string;
+                            /** Format: int64 */
+                            progress_current: number;
+                            /** Format: int32 */
+                            progress_percent: number;
+                            /** Format: int64 */
+                            progress_total: number;
+                            result_json?: string | null;
+                            /** Format: int64 */
+                            share_id?: number | null;
+                            started_at?: string | null;
+                            status: components["schemas"]["BackgroundTaskStatus"];
+                            status_text?: string | null;
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Task is not retryable */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Task not found */
             404: {
                 headers: {
                     [name: string]: unknown;

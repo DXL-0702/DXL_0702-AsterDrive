@@ -1,3 +1,5 @@
+import { config } from "@/config/app";
+import { joinApiUrl } from "@/lib/apiUrl";
 import {
 	buildWorkspacePath,
 	PERSONAL_WORKSPACE,
@@ -6,6 +8,49 @@ import {
 import { api } from "@/services/http";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type { BatchResult } from "@/types/api";
+
+interface StreamTicketInfo {
+	token: string;
+	download_path: string;
+	expires_at: string;
+}
+
+function triggerStreamingDownload(url: string) {
+	const iframe = document.createElement("iframe");
+	iframe.style.display = "none";
+	document.body.appendChild(iframe);
+	iframe.src = url;
+
+	window.setTimeout(() => {
+		iframe.remove();
+	}, 60_000);
+}
+
+function buildArchiveDownloadPayload(
+	fileIds: number[],
+	folderIds: number[],
+	archiveName?: string,
+) {
+	return {
+		file_ids: fileIds,
+		folder_ids: folderIds,
+		...(archiveName === undefined ? {} : { archive_name: archiveName }),
+	};
+}
+
+function buildArchiveDownloadUrl(
+	workspace: Workspace,
+	ticket: StreamTicketInfo,
+) {
+	if (/^https?:\/\//.test(ticket.download_path)) {
+		return ticket.download_path;
+	}
+
+	return joinApiUrl(
+		config.apiBaseUrl,
+		buildWorkspacePath(workspace, `/batch/archive-download/${ticket.token}`),
+	);
+}
 
 export function createBatchService(workspace: Workspace = PERSONAL_WORKSPACE) {
 	return {
@@ -36,6 +81,20 @@ export function createBatchService(workspace: Workspace = PERSONAL_WORKSPACE) {
 				folder_ids: folderIds,
 				target_folder_id: targetFolderId,
 			}),
+
+		streamArchiveDownload: (
+			fileIds: number[],
+			folderIds: number[],
+			archiveName?: string,
+		) =>
+			api
+				.post<StreamTicketInfo>(
+					buildWorkspacePath(workspace, "/batch/archive-download"),
+					buildArchiveDownloadPayload(fileIds, folderIds, archiveName),
+				)
+				.then((ticket) => {
+					triggerStreamingDownload(buildArchiveDownloadUrl(workspace, ticket));
+				}),
 	};
 }
 

@@ -21,6 +21,7 @@ import {
 	isTeamWorkspace,
 	workspaceRootPath,
 	workspaceSharesPath,
+	workspaceTasksPath,
 	workspaceTrashPath,
 	workspaceWebdavPath,
 } from "@/lib/workspace";
@@ -73,6 +74,11 @@ export function Sidebar({
 					to: workspaceSharesPath(workspace),
 					icon: "Link",
 					label: t("share:my_shares_title"),
+				},
+				{
+					to: workspaceTasksPath(workspace),
+					icon: "Clock",
+					label: t("tasks:title"),
 				},
 			];
 

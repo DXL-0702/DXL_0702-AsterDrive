@@ -1,4 +1,5 @@
 pub mod audit_log;
+pub mod background_task;
 pub mod contact_verification_token;
 pub mod entity_property;
 pub mod file;

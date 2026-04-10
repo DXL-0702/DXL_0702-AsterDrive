@@ -266,6 +266,7 @@ pub async fn download(
     params(("id" = i64, Path, description = "File ID")),
     responses(
         (status = 200, description = "Thumbnail image (WebP)"),
+        (status = 304, description = "Thumbnail not modified"),
         (status = 202, description = "Thumbnail generation in progress"),
         (status = 400, description = "Thumbnail not supported for this file type"),
         (status = 401, description = "Unauthorized"),
@@ -277,10 +278,12 @@ pub async fn download(
 pub async fn get_thumbnail(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
     get_thumbnail_response(
         &state,
+        &req,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
@@ -790,18 +793,47 @@ pub(crate) async fn download_response(
 
 pub(crate) async fn get_thumbnail_response(
     state: &AppState,
+    req: &HttpRequest,
     scope: WorkspaceStorageScope,
     file_id: i64,
 ) -> Result<HttpResponse> {
+    let if_none_match = req
+        .headers()
+        .get("If-None-Match")
+        .and_then(|value| value.to_str().ok());
+
     match file_service::get_thumbnail_data_in_scope(state, scope, file_id).await? {
-        Some(result) => Ok(HttpResponse::Ok()
-            .content_type("image/webp")
-            .insert_header(("Cache-Control", "private, max-age=0, must-revalidate"))
-            .body(result.data)),
+        Some(result) => Ok(thumbnail_response(
+            result,
+            if_none_match,
+            "private, max-age=0, must-revalidate".to_string(),
+        )),
         None => Ok(HttpResponse::Accepted()
             .insert_header(("Retry-After", "2"))
             .json(ApiResponse::<()>::ok_empty())),
     }
+}
+
+pub(crate) fn thumbnail_response(
+    result: file_service::ThumbnailResult,
+    if_none_match: Option<&str>,
+    cache_control: String,
+) -> HttpResponse {
+    let etag = format!("\"{}\"", result.blob_hash);
+    if let Some(if_none_match) = if_none_match
+        && file_service::if_none_match_matches(if_none_match, &result.blob_hash)
+    {
+        return HttpResponse::NotModified()
+            .insert_header(("ETag", etag))
+            .insert_header(("Cache-Control", cache_control))
+            .finish();
+    }
+
+    HttpResponse::Ok()
+        .content_type("image/webp")
+        .insert_header(("ETag", etag))
+        .insert_header(("Cache-Control", cache_control))
+        .body(result.data)
 }
 
 pub(crate) async fn delete_file_response(

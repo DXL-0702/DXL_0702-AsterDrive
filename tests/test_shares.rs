@@ -6,6 +6,43 @@ use actix_web::test;
 use serde_json::Value;
 use std::io::Cursor;
 
+fn tiny_png() -> Vec<u8> {
+    let mut buf = Cursor::new(Vec::new());
+    let encoder = image::codecs::png::PngEncoder::new(&mut buf);
+    image::ImageEncoder::write_image(encoder, &[255, 0, 0], 1, 1, image::ExtendedColorType::Rgb8)
+        .unwrap();
+    buf.into_inner()
+}
+
+macro_rules! upload_png {
+    ($app:expr, $token:expr) => {{
+        let png_bytes = tiny_png();
+        let boundary = "----ShareThumbnailBound";
+        let mut payload = Vec::new();
+        payload.extend_from_slice(b"------ShareThumbnailBound\r\n");
+        payload.extend_from_slice(
+            b"Content-Disposition: form-data; name=\"file\"; filename=\"shared-thumb.png\"\r\n",
+        );
+        payload.extend_from_slice(b"Content-Type: image/png\r\n\r\n");
+        payload.extend_from_slice(&png_bytes);
+        payload.extend_from_slice(b"\r\n------ShareThumbnailBound--\r\n");
+
+        let req = test::TestRequest::post()
+            .uri("/api/v1/files/upload")
+            .insert_header(("Cookie", format!("aster_access={}", $token)))
+            .insert_header((
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            ))
+            .set_payload(payload)
+            .to_request();
+        let resp: actix_web::dev::ServiceResponse = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 201, "upload should return 201");
+        let body: Value = test::read_body_json(resp).await;
+        body["data"]["id"].as_i64().unwrap()
+    }};
+}
+
 fn avatar_upload_payload() -> (String, Vec<u8>) {
     let boundary = "----AsterShareAvatarBoundary".to_string();
     let image = image::DynamicImage::ImageRgba8(image::RgbaImage::from_pixel(
@@ -104,6 +141,62 @@ async fn test_shares_crud() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
+}
+
+#[actix_web::test]
+async fn test_shared_thumbnail_returns_304_for_matching_if_none_match() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_png!(app, token);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "file_id": file_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/thumbnail"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let etag = resp
+        .headers()
+        .get("ETag")
+        .and_then(|value| value.to_str().ok())
+        .expect("shared thumbnail response should include ETag")
+        .to_string();
+    assert_eq!(
+        resp.headers()
+            .get("Cache-Control")
+            .and_then(|value| value.to_str().ok()),
+        Some("public, max-age=31536000, immutable")
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/thumbnail"))
+        .insert_header(("If-None-Match", etag.as_str()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 304);
+    assert_eq!(
+        resp.headers()
+            .get("ETag")
+            .and_then(|value| value.to_str().ok()),
+        Some(etag.as_str())
+    );
+    assert_eq!(
+        resp.headers()
+            .get("Cache-Control")
+            .and_then(|value| value.to_str().ok()),
+        Some("public, max-age=31536000, immutable")
+    );
 }
 
 #[actix_web::test]

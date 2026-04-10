@@ -7,7 +7,7 @@ use crate::runtime::AppState;
 use crate::services::{
     audit_service::{self, AuditContext},
     auth_service::Claims,
-    batch_service,
+    batch_service, stream_ticket_service, task_service,
     workspace_storage_service::WorkspaceStorageScope,
 };
 use actix_governor::Governor;
@@ -26,6 +26,11 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/delete", web::post().to(batch_delete))
         .route("/move", web::post().to(batch_move))
         .route("/copy", web::post().to(batch_copy))
+        .route("/archive-download", web::post().to(archive_download))
+        .route(
+            "/archive-download/{token}",
+            web::get().to(archive_download_stream),
+        )
 }
 
 #[derive(Deserialize)]
@@ -57,6 +62,16 @@ pub struct BatchCopyReq {
     pub folder_ids: Vec<i64>,
     /// 目标文件夹 ID（null = 根目录）
     pub target_folder_id: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ArchiveDownloadReq {
+    #[serde(default)]
+    pub file_ids: Vec<i64>,
+    #[serde(default)]
+    pub folder_ids: Vec<i64>,
+    pub archive_name: Option<String>,
 }
 
 #[api_docs_macros::path(
@@ -151,6 +166,64 @@ pub async fn batch_copy(
             user_id: claims.user_id,
         },
         &body,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/batch/archive-download",
+    tag = "batch",
+    operation_id = "batch_archive_download",
+    request_body = ArchiveDownloadReq,
+    responses(
+        (status = 200, description = "Archive download ticket", body = inline(ApiResponse<stream_ticket_service::StreamTicketInfo>)),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn archive_download(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    body: web::Json<ArchiveDownloadReq>,
+) -> Result<HttpResponse> {
+    let body = body.into_inner();
+    archive_download_ticket_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        &body,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/batch/archive-download/{token}",
+    tag = "batch",
+    operation_id = "batch_archive_download_stream",
+    params(("token" = String, Path, description = "Archive download ticket")),
+    responses(
+        (status = 200, description = "Archive stream download"),
+        (status = 400, description = "Invalid ticket"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn archive_download_stream(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<String>,
+) -> Result<HttpResponse> {
+    let token = path.into_inner();
+    archive_download_stream_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        &token,
     )
     .await
 }
@@ -255,4 +328,35 @@ pub(crate) async fn batch_copy_response(
     )
     .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
+}
+
+pub(crate) async fn archive_download_ticket_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    body: &ArchiveDownloadReq,
+) -> Result<HttpResponse> {
+    batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
+    let ticket = stream_ticket_service::create_archive_download_ticket_in_scope(
+        state,
+        scope,
+        &task_service::CreateArchiveTaskParams {
+            file_ids: body.file_ids.clone(),
+            folder_ids: body.folder_ids.clone(),
+            archive_name: body.archive_name.clone(),
+        },
+    )
+    .await?;
+
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(ticket)))
+}
+
+pub(crate) async fn archive_download_stream_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    token: &str,
+) -> Result<HttpResponse> {
+    let params =
+        stream_ticket_service::resolve_archive_download_ticket_in_scope(state, scope, token)
+            .await?;
+    task_service::stream_archive_download_in_scope(state, scope, params).await
 }

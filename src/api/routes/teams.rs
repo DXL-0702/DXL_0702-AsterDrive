@@ -2,7 +2,9 @@ use crate::api::middleware::auth::JwtAuth;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::LimitOffsetQuery;
 use crate::api::response::ApiResponse;
-use crate::api::routes::{team_batch, team_search, team_shares, team_space, team_trash};
+use crate::api::routes::{
+    team_batch, team_search, team_shares, team_space, team_tasks, team_trash,
+};
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
@@ -46,6 +48,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .service(team_search::routes())
         .service(team_shares::routes())
         .service(team_trash::routes())
+        .service(team_tasks::routes())
         .service(team_space::routes(rl))
 }
 

@@ -103,7 +103,7 @@ const UploadArea = lazy(async () => {
 });
 
 export default function FileBrowserPage() {
-	const { t } = useTranslation("files");
+	const { t } = useTranslation(["files", "tasks"]);
 	const navigate = useNavigate();
 	const workspace = useWorkspaceStore((s) => s.workspace);
 	const params = useParams<{ folderId?: string }>();
@@ -132,8 +132,7 @@ export default function FileBrowserPage() {
 	const sortOrder = useFileStore((s) => s.sortOrder);
 	const setSortBy = useFileStore((s) => s.setSortBy);
 	const setSortOrder = useFileStore((s) => s.setSortOrder);
-
-	const hasMoreFiles = useFileStore((s) => s.hasMoreFiles);
+	const hasMoreFiles = useFileStore((s) => s.hasMoreFiles());
 
 	const isSearching = searchQuery !== null;
 	const displayFolders = isSearching ? searchFolders : folders;
@@ -157,7 +156,7 @@ export default function FileBrowserPage() {
 
 	// Infinite scroll: load more files when sentinel is visible
 	useEffect(() => {
-		if (isSearching || !hasMoreFiles() || loadingMore) return;
+		if (isSearching || !hasMoreFiles || loadingMore) return;
 		const el = sentinelRef.current;
 		if (!el) return;
 		const observer = new IntersectionObserver(
@@ -170,7 +169,7 @@ export default function FileBrowserPage() {
 		);
 		observer.observe(el);
 		return () => observer.disconnect();
-	}, [isSearching, hasMoreFiles, loadingMore, loadMoreFiles, scrollViewport]);
+	}, [hasMoreFiles, isSearching, loadingMore, loadMoreFiles, scrollViewport]);
 	const [createFolderOpen, setCreateFolderOpen] = useState(false);
 	const [createFileOpen, setCreateFileOpen] = useState(false);
 	const [fadingFileIds, setFadingFileIds] = useState<Set<number>>(new Set());
@@ -295,6 +294,17 @@ export default function FileBrowserPage() {
 			}
 		},
 		[t],
+	);
+
+	const startArchiveDownload = useCallback(
+		async (fileIds: number[], folderIds: number[]) => {
+			if (fileIds.length === 0 && folderIds.length === 0) {
+				return;
+			}
+
+			await batchService.streamArchiveDownload(fileIds, folderIds);
+		},
+		[],
 	);
 
 	const handleMoveToFolder = useCallback(
@@ -492,6 +502,9 @@ export default function FileBrowserPage() {
 		onFileClick: (file: FileListItem) => setPreviewFile(file),
 		onShare: setShareTarget,
 		onDownload: handleDownload,
+		onArchiveDownload: (folderId: number) => {
+			void startArchiveDownload([], [folderId]).catch(handleApiError);
+		},
 		onCopy: handleCopy,
 		onMove: handleMove,
 		onToggleLock: handleToggleLock,
@@ -675,7 +688,7 @@ export default function FileBrowserPage() {
 							) : (
 								<FileTable {...sharedProps} />
 							)}
-							{!isSearching && hasMoreFiles() && (
+							{!isSearching && hasMoreFiles && (
 								<div ref={sentinelRef} className="flex justify-center py-4">
 									{loadingMore && (
 										<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
@@ -736,7 +749,7 @@ export default function FileBrowserPage() {
 				/>
 			</Suspense>
 
-			<BatchActionBar />
+			<BatchActionBar onArchiveDownload={startArchiveDownload} />
 
 			{shareTarget && (
 				<Suspense fallback={null}>

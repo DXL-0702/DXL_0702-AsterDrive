@@ -12,6 +12,7 @@ vi.mock("@/services/http", () => ({
 describe("batchService", () => {
 	beforeEach(() => {
 		apiPost.mockReset();
+		document.body.innerHTML = "";
 	});
 
 	it("posts delete, move, and copy batch payloads", () => {
@@ -53,5 +54,53 @@ describe("batchService", () => {
 			folder_ids: [],
 			target_folder_id: null,
 		});
+	});
+
+	it("creates archive download tickets with JSON bodies and triggers iframe downloads", async () => {
+		vi.useFakeTimers();
+		apiPost
+			.mockResolvedValueOnce({
+				token: "personal-ticket",
+				download_path: "/api/v1/batch/archive-download/personal-ticket",
+				expires_at: "2026-04-10T12:00:00Z",
+			})
+			.mockResolvedValueOnce({
+				token: "team-ticket",
+				download_path: "/api/v1/teams/4/batch/archive-download/team-ticket",
+				expires_at: "2026-04-10T12:00:00Z",
+			});
+
+		await batchService.streamArchiveDownload([1], [2], "bundle.zip");
+		const teamBatchService = createBatchService({ kind: "team", teamId: 4 });
+		await teamBatchService.streamArchiveDownload([], [9]);
+
+		expect(apiPost).toHaveBeenNthCalledWith(1, "/batch/archive-download", {
+			file_ids: [1],
+			folder_ids: [2],
+			archive_name: "bundle.zip",
+		});
+		expect(apiPost).toHaveBeenNthCalledWith(
+			2,
+			"/teams/4/batch/archive-download",
+			{
+				file_ids: [],
+				folder_ids: [9],
+			},
+		);
+
+		const iframes = Array.from(document.querySelectorAll("iframe"));
+		expect(iframes).toHaveLength(2);
+		expect(iframes[0]).toHaveAttribute(
+			"src",
+			"/api/v1/batch/archive-download/personal-ticket",
+		);
+		expect(iframes[1]).toHaveAttribute(
+			"src",
+			"/api/v1/teams/4/batch/archive-download/team-ticket",
+		);
+
+		vi.advanceTimersByTime(60_000);
+		expect(document.querySelector("iframe")).toBeNull();
+		vi.useRealTimers();
 	});
 });

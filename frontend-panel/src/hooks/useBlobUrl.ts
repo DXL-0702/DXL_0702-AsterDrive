@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { logger } from "@/lib/logger";
 import { api } from "@/services/http";
 
+type BlobFetchLane = "default" | "thumbnail";
+
 interface BlobCacheEntry {
+	lane?: BlobFetchLane;
 	objectUrl?: string;
 	etag?: string | null;
 	promise?: Promise<string>;
@@ -10,32 +13,49 @@ interface BlobCacheEntry {
 	revokeTimer?: ReturnType<typeof setTimeout>;
 }
 
+interface BlobUrlOptions {
+	lane?: BlobFetchLane;
+}
+
 const BLOB_URL_REVOKE_DELAY = 30_000;
-const MAX_CONCURRENT_BLOB_FETCHES = 6;
+const BLOB_FETCH_LIMITS: Record<BlobFetchLane, number> = {
+	default: 6,
+	thumbnail: 1,
+};
 const blobUrlCache = new Map<string, BlobCacheEntry>();
 const blobUrlListeners = new Map<string, Set<() => void>>();
-const pendingBlobFetches: Array<() => void> = [];
-let activeBlobFetches = 0;
+const pendingBlobFetches: Record<BlobFetchLane, Array<() => void>> = {
+	default: [],
+	thumbnail: [],
+};
+const activeBlobFetches: Record<BlobFetchLane, number> = {
+	default: 0,
+	thumbnail: 0,
+};
 
-function scheduleBlobFetch<T>(task: () => Promise<T>) {
+function shouldPersistBlobInSession(lane: BlobFetchLane) {
+	return lane === "thumbnail";
+}
+
+function scheduleBlobFetch<T>(lane: BlobFetchLane, task: () => Promise<T>) {
 	return new Promise<T>((resolve, reject) => {
 		const run = () => {
-			activeBlobFetches += 1;
+			activeBlobFetches[lane] += 1;
 			task()
 				.then(resolve, reject)
 				.finally(() => {
-					activeBlobFetches = Math.max(0, activeBlobFetches - 1);
-					const next = pendingBlobFetches.shift();
+					activeBlobFetches[lane] = Math.max(0, activeBlobFetches[lane] - 1);
+					const next = pendingBlobFetches[lane].shift();
 					next?.();
 				});
 		};
 
-		if (activeBlobFetches < MAX_CONCURRENT_BLOB_FETCHES) {
+		if (activeBlobFetches[lane] < BLOB_FETCH_LIMITS[lane]) {
 			run();
 			return;
 		}
 
-		pendingBlobFetches.push(run);
+		pendingBlobFetches[lane].push(run);
 	});
 }
 
@@ -87,22 +107,33 @@ function notifyBlobUrlInvalidation(path?: string) {
 	}
 }
 
-async function acquireBlobUrl(path: string): Promise<string> {
+async function acquireBlobUrl(
+	path: string,
+	lane: BlobFetchLane,
+): Promise<string> {
 	const cached = blobUrlCache.get(path);
 	if (cached?.revokeTimer) {
 		clearTimeout(cached.revokeTimer);
 		cached.revokeTimer = undefined;
 	}
-	if (cached?.objectUrl && cached.refCount > 0) {
+	if (
+		cached?.objectUrl &&
+		(cached.refCount > 0 ||
+			shouldPersistBlobInSession(cached.lane ?? lane) ||
+			shouldPersistBlobInSession(lane))
+	) {
+		cached.lane = lane;
 		cached.refCount += 1;
 		return cached.objectUrl;
 	}
 	if (cached?.promise) {
+		cached.lane = lane;
 		cached.refCount += 1;
 		return cached.promise;
 	}
 
 	const entry: BlobCacheEntry = cached ?? { refCount: 0 };
+	entry.lane = lane;
 	entry.refCount += 1;
 	const previousObjectUrl = entry.objectUrl;
 	const previousEtag = entry.etag ?? null;
@@ -114,7 +145,7 @@ async function acquireBlobUrl(path: string): Promise<string> {
 	const MAX_RETRIES = 5;
 
 	const fetchWithRetry = async (attempt: number): Promise<string> => {
-		const response = await scheduleBlobFetch(() =>
+		const response = await scheduleBlobFetch(lane, () =>
 			api.client.get(path, {
 				headers,
 				responseType: "blob",
@@ -179,6 +210,13 @@ function releaseBlobUrl(path: string) {
 	if (!cached) return;
 	cached.refCount = Math.max(0, cached.refCount - 1);
 	if (cached.refCount > 0) return;
+	if (shouldPersistBlobInSession(cached.lane ?? "default")) {
+		if (cached.revokeTimer) {
+			clearTimeout(cached.revokeTimer);
+			cached.revokeTimer = undefined;
+		}
+		return;
+	}
 	if (cached.revokeTimer) clearTimeout(cached.revokeTimer);
 	cached.revokeTimer = setTimeout(() => {
 		const current = blobUrlCache.get(path);
@@ -206,11 +244,12 @@ export function clearBlobUrlCache() {
 	}
 }
 
-export function useBlobUrl(path: string | null) {
+export function useBlobUrl(path: string | null, options?: BlobUrlOptions) {
 	const [blobUrl, setBlobUrl] = useState<string | null>(null);
 	const [error, setError] = useState(false);
 	const [loading, setLoading] = useState(false);
 	const [retryCount, setRetryCount] = useState(0);
+	const lane = options?.lane ?? "default";
 
 	const retry = () => {
 		setError(false);
@@ -242,7 +281,7 @@ export function useBlobUrl(path: string | null) {
 
 		let cancelled = false;
 		setLoading(cached?.objectUrl === undefined);
-		acquireBlobUrl(path)
+		acquireBlobUrl(path, lane)
 			.then((nextBlobUrl) => {
 				if (cancelled) return;
 				setBlobUrl(nextBlobUrl || null);
@@ -261,7 +300,7 @@ export function useBlobUrl(path: string | null) {
 			unsubscribe();
 			releaseBlobUrl(path);
 		};
-	}, [path, retryCount]);
+	}, [lane, path, retryCount]);
 
 	return { blobUrl, error, loading, retry };
 }

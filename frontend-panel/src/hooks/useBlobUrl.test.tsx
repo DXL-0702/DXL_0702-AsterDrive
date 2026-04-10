@@ -25,6 +25,16 @@ async function loadHookModule() {
 	return await import("@/hooks/useBlobUrl");
 }
 
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, resolve, reject };
+}
+
 describe("useBlobUrl", () => {
 	beforeEach(() => {
 		mockState.get.mockReset();
@@ -159,6 +169,34 @@ describe("useBlobUrl", () => {
 		clearBlobUrlCache();
 	});
 
+	it("keeps thumbnail blob urls for the whole session after the first successful fetch", async () => {
+		mockState.get.mockResolvedValue({
+			status: 200,
+			data: new Blob(["image"]),
+			headers: { etag: '"etag-5"' },
+		});
+		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
+
+		const first = renderHook(() => useBlobUrl("/thumb", { lane: "thumbnail" }));
+		await waitFor(() => {
+			expect(first.result.current.blobUrl).toBe("blob:1");
+		});
+		first.unmount();
+
+		const second = renderHook(() =>
+			useBlobUrl("/thumb", { lane: "thumbnail" }),
+		);
+		await waitFor(() => {
+			expect(second.result.current.blobUrl).toBe("blob:1");
+		});
+
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+		expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+
+		second.unmount();
+		clearBlobUrlCache();
+	});
+
 	it("stays idle when no path is provided", async () => {
 		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
 
@@ -203,6 +241,71 @@ describe("useBlobUrl", () => {
 			expect(result.current.blobUrl).toBe("blob:2");
 		});
 		expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:1");
+		clearBlobUrlCache();
+	});
+
+	it("serializes thumbnail fetches one by one", async () => {
+		const firstResponse = deferred<{
+			status: number;
+			data: Blob;
+			headers: Record<string, string>;
+		}>();
+		const secondResponse = deferred<{
+			status: number;
+			data: Blob;
+			headers: Record<string, string>;
+		}>();
+		mockState.get
+			.mockImplementationOnce(() => firstResponse.promise)
+			.mockImplementationOnce(() => secondResponse.promise);
+		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
+
+		const first = renderHook(() =>
+			useBlobUrl("/thumb-1", { lane: "thumbnail" }),
+		);
+		const second = renderHook(() =>
+			useBlobUrl("/thumb-2", { lane: "thumbnail" }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.get).toHaveBeenCalledTimes(1);
+		});
+		expect(mockState.get).toHaveBeenNthCalledWith(1, "/thumb-1", {
+			headers: {},
+			responseType: "blob",
+			validateStatus: expect.any(Function),
+		});
+
+		firstResponse.resolve({
+			status: 200,
+			data: new Blob(["image-1"]),
+			headers: { etag: '"etag-1"' },
+		});
+
+		await waitFor(() => {
+			expect(first.result.current.blobUrl).toBe("blob:1");
+		});
+		await waitFor(() => {
+			expect(mockState.get).toHaveBeenCalledTimes(2);
+		});
+		expect(mockState.get).toHaveBeenNthCalledWith(2, "/thumb-2", {
+			headers: {},
+			responseType: "blob",
+			validateStatus: expect.any(Function),
+		});
+
+		secondResponse.resolve({
+			status: 200,
+			data: new Blob(["image-2"]),
+			headers: { etag: '"etag-2"' },
+		});
+
+		await waitFor(() => {
+			expect(second.result.current.blobUrl).toBe("blob:2");
+		});
+
+		first.unmount();
+		second.unmount();
 		clearBlobUrlCache();
 	});
 });

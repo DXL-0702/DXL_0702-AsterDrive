@@ -2,6 +2,7 @@ use crate::api::constants::YEAR_SECS;
 use crate::api::middleware::rate_limit;
 use crate::api::pagination::FolderListQuery;
 use crate::api::response::ApiResponse;
+use crate::api::routes::files;
 use crate::config::RateLimitConfig;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::Result;
@@ -453,6 +454,7 @@ pub async fn shared_avatar(
     params(("token" = String, Path, description = "Share token")),
     responses(
         (status = 200, description = "Thumbnail image (WebP)"),
+        (status = 304, description = "Thumbnail not modified"),
         (status = 400, description = "Thumbnail not supported for this file type"),
         (status = 403, description = "Password required"),
         (status = 404, description = "Share or file not found"),
@@ -467,15 +469,17 @@ pub async fn shared_thumbnail(
     let cookie_value = share_cookie_value(&req, path.as_str());
     share_service::check_share_password_cookie(&state, &path, cookie_value.as_deref()).await?;
 
-    let data = share_service::get_shared_thumbnail(&state, &path).await?;
+    let result = share_service::get_shared_thumbnail(&state, &path).await?;
+    let if_none_match = req
+        .headers()
+        .get("If-None-Match")
+        .and_then(|value| value.to_str().ok());
 
-    Ok(HttpResponse::Ok()
-        .content_type("image/webp")
-        .insert_header((
-            "Cache-Control",
-            format!("public, max-age={YEAR_SECS}, immutable"),
-        ))
-        .body(data))
+    Ok(files::thumbnail_response(
+        result,
+        if_none_match,
+        format!("public, max-age={YEAR_SECS}, immutable"),
+    ))
 }
 
 #[api_docs_macros::path(
@@ -489,6 +493,7 @@ pub async fn shared_thumbnail(
     ),
     responses(
         (status = 200, description = "Thumbnail image (WebP)"),
+        (status = 304, description = "Thumbnail not modified"),
         (status = 400, description = "Thumbnail not supported for this file type"),
         (status = 403, description = "Password required or file outside shared scope"),
         (status = 404, description = "Share or file not found"),
@@ -504,13 +509,15 @@ pub async fn shared_folder_file_thumbnail(
     let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
-    let data = share_service::get_shared_folder_file_thumbnail(&state, &token, file_id).await?;
+    let result = share_service::get_shared_folder_file_thumbnail(&state, &token, file_id).await?;
+    let if_none_match = req
+        .headers()
+        .get("If-None-Match")
+        .and_then(|value| value.to_str().ok());
 
-    Ok(HttpResponse::Ok()
-        .content_type("image/webp")
-        .insert_header((
-            "Cache-Control",
-            format!("public, max-age={YEAR_SECS}, immutable"),
-        ))
-        .body(data))
+    Ok(files::thumbnail_response(
+        result,
+        if_none_match,
+        format!("public, max-age={YEAR_SECS}, immutable"),
+    ))
 }

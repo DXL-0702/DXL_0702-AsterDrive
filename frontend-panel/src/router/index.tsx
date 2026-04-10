@@ -39,6 +39,7 @@ const TrashPage = lazy(() => import("@/pages/TrashPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 const TeamManagePage = lazy(() => import("@/pages/TeamManagePage"));
 const MySharesPage = lazy(() => import("@/pages/MySharesPage"));
+const TasksPage = lazy(() => import("@/pages/TasksPage"));
 const AdminAuditPage = lazy(() => import("@/pages/admin/AdminAuditPage"));
 
 function Loading() {
@@ -148,6 +149,7 @@ export const router = createBrowserRouter([
 					{ path: "/", element: <FileBrowserPage /> },
 					{ path: "/folder/:folderId", element: <FileBrowserPage /> },
 					{ path: "/shares", element: <MySharesPage /> },
+					{ path: "/tasks", element: <TasksPage /> },
 					{ path: "/settings/webdav", element: <WebdavAccountsPage /> },
 					{ path: "/trash", element: <TrashPage /> },
 					{
@@ -187,6 +189,7 @@ export const router = createBrowserRouter([
 					{ index: true, element: <FileBrowserPage /> },
 					{ path: "folder/:folderId", element: <FileBrowserPage /> },
 					{ path: "shares", element: <MySharesPage /> },
+					{ path: "tasks", element: <TasksPage /> },
 					{ path: "trash", element: <TrashPage /> },
 				],
 			},

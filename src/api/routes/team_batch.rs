@@ -13,6 +13,11 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
         .route("/delete", web::post().to(batch_delete))
         .route("/move", web::post().to(batch_move))
         .route("/copy", web::post().to(batch_copy))
+        .route("/archive-download", web::post().to(archive_download))
+        .route(
+            "/archive-download/{token}",
+            web::get().to(archive_download_stream),
+        )
 }
 
 fn team_scope(team_id: i64, user_id: i64) -> WorkspaceStorageScope {
@@ -122,4 +127,58 @@ pub async fn batch_copy(
         &body,
     )
     .await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/teams/{team_id}/batch/archive-download",
+    tag = "teams",
+    operation_id = "batch_archive_download_team",
+    params(("team_id" = i64, Path, description = "Team ID")),
+    request_body = crate::api::routes::batch::ArchiveDownloadReq,
+    responses(
+        (status = 200, description = "Team archive download ticket", body = inline(ApiResponse<crate::services::stream_ticket_service::StreamTicketInfo>)),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn archive_download(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    body: web::Json<crate::api::routes::batch::ArchiveDownloadReq>,
+) -> Result<HttpResponse> {
+    let team_id = *path;
+    let body = body.into_inner();
+    batch::archive_download_ticket_response(&state, team_scope(team_id, claims.user_id), &body)
+        .await
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/teams/{team_id}/batch/archive-download/{token}",
+    tag = "teams",
+    operation_id = "batch_archive_download_stream_team",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("token" = String, Path, description = "Archive download ticket")
+    ),
+    responses(
+        (status = 200, description = "Team archive stream download"),
+        (status = 400, description = "Invalid ticket"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn archive_download_stream(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<(i64, String)>,
+) -> Result<HttpResponse> {
+    let (team_id, token) = path.into_inner();
+    batch::archive_download_stream_response(&state, team_scope(team_id, claims.user_id), &token)
+        .await
 }
