@@ -89,6 +89,14 @@ async fn test_admin_scope_allows_admin_users() {
     assert!(keys.contains(&"auth_allow_user_registration"));
     assert!(keys.contains(&"auth_access_token_ttl_secs"));
     assert!(keys.contains(&"auth_refresh_token_ttl_secs"));
+    assert!(keys.contains(&"mail_outbox_dispatch_interval_secs"));
+    assert!(keys.contains(&"background_task_dispatch_interval_secs"));
+    assert!(keys.contains(&"maintenance_cleanup_interval_secs"));
+    assert!(keys.contains(&"blob_reconcile_interval_secs"));
+    assert!(keys.contains(&"team_member_list_max_limit"));
+    assert!(keys.contains(&"task_list_max_limit"));
+    assert!(keys.contains(&"avatar_max_upload_size_bytes"));
+    assert!(keys.contains(&"thumbnail_max_source_bytes"));
     assert!(keys.contains(&"branding_title"));
     assert!(keys.contains(&"branding_description"));
     assert!(keys.contains(&"branding_favicon_url"));
@@ -134,6 +142,18 @@ async fn test_admin_scope_allows_admin_users() {
         branding_title["label_i18n_key"],
         "settings_item_branding_title_label"
     );
+
+    let task_limit = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["key"] == "task_list_max_limit")
+        .unwrap();
+    assert_eq!(
+        task_limit["label_i18n_key"],
+        "settings_item_task_list_max_limit_label"
+    );
+    assert_eq!(task_limit["category"], "operations");
 }
 
 #[actix_web::test]

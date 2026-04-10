@@ -17,14 +17,13 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::constants::YEAR_SECS;
-use crate::config::avatar;
+use crate::config::{avatar, operations};
 use crate::db::repository::{user_profile_repo, user_repo};
 use crate::entities::{user, user_profile};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::types::AvatarSource;
 
-const MAX_AVATAR_UPLOAD_SIZE: usize = 10 * 1024 * 1024;
 const MAX_AVATAR_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
 const AVATAR_SIZE_SM: u32 = 512;
 const AVATAR_SIZE_LG: u32 = 1024;
@@ -255,7 +254,7 @@ fn process_avatar_image(data: Vec<u8>) -> Result<(Vec<u8>, Vec<u8>)> {
     Ok((small_bytes, large_bytes))
 }
 
-async fn read_avatar_upload(payload: &mut Multipart) -> Result<Vec<u8>> {
+async fn read_avatar_upload(payload: &mut Multipart, max_upload_size: usize) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     let mut saw_file = false;
 
@@ -275,10 +274,10 @@ async fn read_avatar_upload(payload: &mut Multipart) -> Result<Vec<u8>> {
         saw_file = true;
         while let Some(chunk) = field.next().await {
             let chunk = chunk.map_aster_err(AsterError::file_upload_failed)?;
-            if bytes.len() + chunk.len() > MAX_AVATAR_UPLOAD_SIZE {
+            if bytes.len() + chunk.len() > max_upload_size {
                 return Err(AsterError::file_too_large(format!(
                     "avatar upload exceeds {} bytes",
-                    MAX_AVATAR_UPLOAD_SIZE
+                    max_upload_size
                 )));
             }
             bytes.extend_from_slice(&chunk);
@@ -486,7 +485,11 @@ pub async fn upload_avatar(
 ) -> Result<UserProfileInfo> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
-    let upload_data = read_avatar_upload(payload).await?;
+    let upload_data = read_avatar_upload(
+        payload,
+        operations::avatar_max_upload_size_bytes(&state.runtime_config),
+    )
+    .await?;
     let (small_bytes, large_bytes) = process_avatar_image(upload_data)?;
     user_repo::check_quota(
         &state.db,

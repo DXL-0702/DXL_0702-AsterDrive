@@ -7,22 +7,27 @@ use super::AppState;
 
 /// Spawn a periodic background task with panic recovery.
 ///
-/// Each iteration runs in a child `tokio::spawn` so that a panic is caught
-/// by the `JoinHandle` instead of killing the loop. On panic the error is
-/// logged and the next interval fires normally.
-fn spawn_periodic<F, Fut>(
+/// Each iteration sleeps using the latest runtime-configured interval before
+/// the next run. The task itself runs in a child `tokio::spawn` so that a
+/// panic is caught by the `JoinHandle` instead of killing the loop.
+fn spawn_periodic<F, I, Fut>(
     name: &'static str,
-    interval: Duration,
+    interval_fn: I,
     state: web::Data<AppState>,
     task_fn: F,
 ) where
+    I: Fn(&AppState) -> Duration + Send + Sync + 'static,
     F: Fn(web::Data<AppState>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
     tokio::spawn(async move {
-        let mut ticker = tokio::time::interval(interval);
+        let mut first_run = true;
         loop {
-            ticker.tick().await;
+            if !first_run {
+                tokio::time::sleep(interval_fn(state.get_ref())).await;
+            }
+            first_run = false;
+
             let s = state.clone();
             if let Err(e) = tokio::spawn(task_fn(s)).await {
                 tracing::error!("background task '{name}' panicked: {e}");
@@ -33,15 +38,9 @@ fn spawn_periodic<F, Fut>(
 
 /// Spawn all periodic background cleanup tasks.
 pub fn spawn_background_tasks(state: web::Data<AppState>) {
-    let mail_dispatch_interval = Duration::from_secs(
-        crate::services::mail_outbox_service::MAIL_OUTBOX_DISPATCH_INTERVAL_SECS,
-    );
-    let hourly = Duration::from_secs(3600);
-    let every_six_hours = Duration::from_secs(6 * 3600);
-
     spawn_periodic(
         "mail-outbox-dispatch",
-        mail_dispatch_interval,
+        mail_outbox_dispatch_interval,
         state.clone(),
         |s| async move {
             match crate::services::mail_outbox_service::dispatch_due(&s).await {
@@ -60,11 +59,9 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
         },
     );
 
-    let task_dispatch_interval =
-        Duration::from_secs(crate::services::task_service::TASK_DISPATCH_INTERVAL_SECS);
     spawn_periodic(
         "background-task-dispatch",
-        task_dispatch_interval,
+        background_task_dispatch_interval,
         state.clone(),
         |s| async move {
             match crate::services::task_service::dispatch_due(&s).await {
@@ -83,15 +80,20 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
         },
     );
 
-    spawn_periodic("upload-cleanup", hourly, state.clone(), |s| async move {
-        if let Err(e) = crate::services::upload_service::cleanup_expired(&s).await {
-            tracing::warn!("upload cleanup failed: {e}");
-        }
-    });
+    spawn_periodic(
+        "upload-cleanup",
+        maintenance_cleanup_interval,
+        state.clone(),
+        |s| async move {
+            if let Err(e) = crate::services::upload_service::cleanup_expired(&s).await {
+                tracing::warn!("upload cleanup failed: {e}");
+            }
+        },
+    );
 
     spawn_periodic(
         "completed-upload-cleanup",
-        hourly,
+        maintenance_cleanup_interval,
         state.clone(),
         |s| async move {
             match crate::services::maintenance_service::cleanup_expired_completed_upload_sessions(
@@ -113,7 +115,7 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
     // Full-table blob reconciliation is intentionally less frequent than lightweight cleanups.
     spawn_periodic(
         "blob-reconcile",
-        every_six_hours,
+        blob_reconcile_interval,
         state.clone(),
         |s| async move {
             match crate::services::maintenance_service::reconcile_blob_state(&s).await {
@@ -130,15 +132,20 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
         },
     );
 
-    spawn_periodic("trash-cleanup", hourly, state.clone(), |s| async move {
-        if let Err(e) = crate::services::trash_service::cleanup_expired(&s).await {
-            tracing::warn!("trash cleanup failed: {e}");
-        }
-    });
+    spawn_periodic(
+        "trash-cleanup",
+        maintenance_cleanup_interval,
+        state.clone(),
+        |s| async move {
+            if let Err(e) = crate::services::trash_service::cleanup_expired(&s).await {
+                tracing::warn!("trash cleanup failed: {e}");
+            }
+        },
+    );
 
     spawn_periodic(
         "team-archive-cleanup",
-        hourly,
+        maintenance_cleanup_interval,
         state.clone(),
         |s| async move {
             match crate::services::team_service::cleanup_expired_archived_teams(&s).await {
@@ -151,25 +158,66 @@ pub fn spawn_background_tasks(state: web::Data<AppState>) {
         },
     );
 
-    spawn_periodic("lock-cleanup", hourly, state.clone(), |s| async move {
-        match crate::services::lock_service::cleanup_expired(&s).await {
-            Ok(n) if n > 0 => tracing::info!("cleaned up {n} expired locks"),
-            Err(e) => tracing::warn!("lock cleanup failed: {e}"),
-            _ => {}
-        }
-    });
+    spawn_periodic(
+        "lock-cleanup",
+        maintenance_cleanup_interval,
+        state.clone(),
+        |s| async move {
+            match crate::services::lock_service::cleanup_expired(&s).await {
+                Ok(n) if n > 0 => tracing::info!("cleaned up {n} expired locks"),
+                Err(e) => tracing::warn!("lock cleanup failed: {e}"),
+                _ => {}
+            }
+        },
+    );
 
-    spawn_periodic("audit-cleanup", hourly, state.clone(), |s| async move {
-        if let Err(e) = crate::services::audit_service::cleanup_expired(&s).await {
-            tracing::warn!("audit log cleanup failed: {e}");
-        }
-    });
+    spawn_periodic(
+        "audit-cleanup",
+        maintenance_cleanup_interval,
+        state.clone(),
+        |s| async move {
+            if let Err(e) = crate::services::audit_service::cleanup_expired(&s).await {
+                tracing::warn!("audit log cleanup failed: {e}");
+            }
+        },
+    );
 
-    spawn_periodic("task-cleanup", hourly, state, |s| async move {
-        match crate::services::task_service::cleanup_expired(&s).await {
-            Ok(count) if count > 0 => tracing::info!("cleaned up {count} expired task artifacts"),
-            Err(e) => tracing::warn!("background task cleanup failed: {e}"),
-            _ => {}
-        }
-    });
+    spawn_periodic(
+        "task-cleanup",
+        maintenance_cleanup_interval,
+        state,
+        |s| async move {
+            match crate::services::task_service::cleanup_expired(&s).await {
+                Ok(count) if count > 0 => {
+                    tracing::info!("cleaned up {count} expired task artifacts")
+                }
+                Err(e) => tracing::warn!("background task cleanup failed: {e}"),
+                _ => {}
+            }
+        },
+    );
+}
+
+fn mail_outbox_dispatch_interval(state: &AppState) -> Duration {
+    Duration::from_secs(
+        crate::config::operations::mail_outbox_dispatch_interval_secs(&state.runtime_config),
+    )
+}
+
+fn background_task_dispatch_interval(state: &AppState) -> Duration {
+    Duration::from_secs(
+        crate::config::operations::background_task_dispatch_interval_secs(&state.runtime_config),
+    )
+}
+
+fn maintenance_cleanup_interval(state: &AppState) -> Duration {
+    Duration::from_secs(
+        crate::config::operations::maintenance_cleanup_interval_secs(&state.runtime_config),
+    )
+}
+
+fn blob_reconcile_interval(state: &AppState) -> Duration {
+    Duration::from_secs(crate::config::operations::blob_reconcile_interval_secs(
+        &state.runtime_config,
+    ))
 }

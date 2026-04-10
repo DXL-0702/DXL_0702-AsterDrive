@@ -8,6 +8,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
+use crate::config::operations;
 use crate::db::repository::{
     file_repo, lock_repo, policy_group_repo, share_repo, team_member_repo, team_repo,
     upload_session_repo, user_repo,
@@ -309,10 +310,11 @@ fn matches_team_member_filters(member: &TeamMemberInfo, filters: &TeamMemberList
 fn build_team_member_page(
     mut members: Vec<TeamMemberInfo>,
     filters: &TeamMemberListFilters,
+    max_limit: u64,
     limit: u64,
     offset: u64,
 ) -> TeamMemberPage {
-    let limit = limit.clamp(1, 100);
+    let limit = limit.clamp(1, max_limit);
     let owner_count = members
         .iter()
         .filter(|member| member.role.is_owner())
@@ -877,7 +879,13 @@ pub async fn list_admin_members(
         .into_iter()
         .map(|(membership, user)| build_team_member_info(membership, user))
         .collect();
-    Ok(build_team_member_page(members, &filters, limit, offset))
+    Ok(build_team_member_page(
+        members,
+        &filters,
+        operations::team_member_list_max_limit(&state.runtime_config),
+        limit,
+        offset,
+    ))
 }
 
 pub async fn get_admin_member(
@@ -1043,7 +1051,13 @@ pub async fn list_members(
         .into_iter()
         .map(|(membership, user)| build_team_member_info(membership, user))
         .collect();
-    Ok(build_team_member_page(members, &filters, limit, offset))
+    Ok(build_team_member_page(
+        members,
+        &filters,
+        operations::team_member_list_max_limit(&state.runtime_config),
+        limit,
+        offset,
+    ))
 }
 
 pub async fn get_member(

@@ -25,8 +25,20 @@ const mockState = vi.hoisted(() => ({
 
 const translationMap: Record<string, string> = {
 	settings_item_auth_access_token_ttl_secs_desc:
-		"Access token lifetime in seconds",
+		"Controls how long newly issued access tokens stay valid.",
 	settings_item_auth_access_token_ttl_secs_label: "Access token lifetime",
+	settings_time_unit_label: "Time unit",
+	settings_time_unit_seconds: "Seconds",
+	settings_time_unit_minutes: "Minutes",
+	settings_time_unit_hours: "Hours",
+	settings_time_unit_days: "Days",
+	settings_time_unit_weeks: "Weeks",
+	settings_size_unit_label: "Size unit",
+	settings_size_unit_bytes: "B",
+	settings_size_unit_kilobytes: "KB",
+	settings_size_unit_megabytes: "MB",
+	settings_size_unit_gigabytes: "GB",
+	settings_size_unit_terabytes: "TB",
 	mail_send_test_email: "mail_send_test_email",
 	mail_send_test_email_hint: "mail_send_test_email_hint",
 	mail_test_email_dialog_desc: "mail_test_email_dialog_desc",
@@ -155,32 +167,84 @@ vi.mock("@/components/ui/icon", () => ({
 
 vi.mock("@/components/ui/input", () => ({
 	Input: ({
-		ariaInvalid,
-		className,
 		onChange,
-		placeholder,
-		type,
 		value,
+		...props
 	}: {
-		ariaInvalid?: boolean;
-		className?: string;
 		onChange?: (event: { target: { value: string } }) => void;
-		placeholder?: string;
-		type?: string;
 		value?: string;
+		[key: string]: unknown;
 	}) => (
 		<input
-			aria-invalid={ariaInvalid}
-			className={className}
+			{...props}
 			onChange={(event) =>
 				onChange?.({ target: { value: event.target.value } })
 			}
-			placeholder={placeholder}
-			type={type}
 			value={value}
 		/>
 	),
 }));
+
+vi.mock("@/components/ui/select", async () => {
+	const React = await vi.importActual<typeof import("react")>("react");
+	const SelectContext = React.createContext<{
+		items?: Array<{ label: string; value: string }>;
+		onValueChange?: (value: string) => void;
+		value?: string;
+	}>({});
+
+	return {
+		Select: ({
+			children,
+			items,
+			onValueChange,
+			value,
+		}: {
+			children: React.ReactNode;
+			items?: Array<{ label: string; value: string }>;
+			onValueChange?: (value: string) => void;
+			value?: string;
+		}) => (
+			<SelectContext.Provider value={{ items, onValueChange, value }}>
+				<div>{children}</div>
+			</SelectContext.Provider>
+		),
+		SelectTrigger: ({
+			"aria-label": ariaLabel,
+			className,
+			id,
+		}: {
+			"aria-label"?: string;
+			className?: string;
+			id?: string;
+			[key: string]: unknown;
+		}) => {
+			const context = React.useContext(SelectContext);
+
+			return (
+				<select
+					aria-label={ariaLabel ?? id}
+					className={className}
+					value={context.value}
+					onChange={(event) => context.onValueChange?.(event.target.value)}
+				>
+					{(context.items ?? []).map((item) => (
+						<option key={item.value} value={item.value}>
+							{item.label}
+						</option>
+					))}
+				</select>
+			);
+		},
+		SelectValue: () => null,
+		SelectContent: ({ children }: { children: React.ReactNode }) => (
+			<div>{children}</div>
+		),
+		SelectItem: ({ children }: { children: React.ReactNode }) => (
+			<div>{children}</div>
+		),
+	};
+});
 
 vi.mock("@/components/files/preview/CodePreviewEditor", () => ({
 	CodePreviewEditor: ({
@@ -477,7 +541,9 @@ describe("AdminSettingsPage", () => {
 					value_type:
 						key === "storage.enabled"
 							? "boolean"
-							: key === "auth_access_token_ttl_secs"
+							: key === "auth_access_token_ttl_secs" ||
+									key === "default_storage_quota" ||
+									key.endsWith("_bytes")
 								? "number"
 								: "string",
 				}),
@@ -505,7 +571,7 @@ describe("AdminSettingsPage", () => {
 
 		render(<AdminSettingsPage />);
 
-		await screen.findByDisplayValue("1200");
+		await screen.findByDisplayValue("20");
 
 		expect(
 			screen.queryByRole("heading", { name: "settings_category_auth" }),
@@ -527,7 +593,7 @@ describe("AdminSettingsPage", () => {
 
 		render(<AdminSettingsPage section="auth" />);
 
-		await screen.findByDisplayValue("1200");
+		await screen.findByDisplayValue("20");
 
 		expect(screen.getAllByText("settings_category_auth_desc")).toHaveLength(1);
 		expect(screen.getAllByText("Shield")).toHaveLength(1);
@@ -757,10 +823,10 @@ describe("AdminSettingsPage", () => {
 	it("edits non-boolean values inline and saves them with the shared save button", async () => {
 		render(<AdminSettingsPage />);
 
-		await screen.findByDisplayValue("1200");
+		await screen.findByDisplayValue("20");
 
-		fireEvent.change(screen.getByDisplayValue("1200"), {
-			target: { value: "1800" },
+		fireEvent.change(screen.getByDisplayValue("20"), {
+			target: { value: "30" },
 		});
 
 		expect(
@@ -775,6 +841,71 @@ describe("AdminSettingsPage", () => {
 			);
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
+	});
+
+	it("renders a friendly time unit selector while keeping raw values on save", async () => {
+		render(<AdminSettingsPage section="auth" />);
+
+		expect(await screen.findByDisplayValue("20")).toBeInTheDocument();
+
+		const unitSelect = screen.getByRole("combobox");
+		expect(unitSelect).toHaveValue("minutes");
+
+		fireEvent.change(unitSelect, {
+			target: { value: "seconds" },
+		});
+		expect(screen.getByDisplayValue("1200")).toBeInTheDocument();
+
+		fireEvent.change(screen.getByDisplayValue("1200"), {
+			target: { value: "1800" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "save_changes" }));
+
+		await waitFor(() => {
+			expect(mockState.setConfig).toHaveBeenCalledWith(
+				"auth_access_token_ttl_secs",
+				"1800",
+			);
+		});
+	});
+
+	it("renders a friendly size unit selector while keeping raw byte values on save", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "storage",
+					key: "avatar_max_upload_size_bytes",
+					value: String(1024 * 1024),
+					value_type: "number",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "storage",
+				key: "avatar_max_upload_size_bytes",
+				value_type: "number",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="storage" />);
+
+		expect(await screen.findByDisplayValue("1")).toBeInTheDocument();
+
+		const unitSelect = screen.getByRole("combobox");
+		expect(unitSelect).toHaveValue("megabytes");
+
+		fireEvent.change(screen.getByDisplayValue("1"), {
+			target: { value: "2" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "save_changes" }));
+
+		await waitFor(() => {
+			expect(mockState.setConfig).toHaveBeenCalledWith(
+				"avatar_max_upload_size_bytes",
+				String(2 * 1024 * 1024),
+			);
+		});
 	});
 
 	it("renders multiline config values in a textarea and saves the edited template body", async () => {
@@ -888,11 +1019,11 @@ describe("AdminSettingsPage", () => {
 	it("saves staged changes when Cmd+S is pressed from a focused input", async () => {
 		render(<AdminSettingsPage />);
 
-		const ttlInput = await screen.findByDisplayValue("1200");
+		const ttlInput = await screen.findByDisplayValue("20");
 		ttlInput.focus();
 
 		fireEvent.change(ttlInput, {
-			target: { value: "1800" },
+			target: { value: "30" },
 		});
 
 		expect(
@@ -922,10 +1053,10 @@ describe("AdminSettingsPage", () => {
 	it("shows the combined save hint when valid staged changes are present", async () => {
 		render(<AdminSettingsPage />);
 
-		await screen.findByDisplayValue("1200");
+		await screen.findByDisplayValue("20");
 
-		fireEvent.change(screen.getByDisplayValue("1200"), {
-			target: { value: "1800" },
+		fireEvent.change(screen.getByDisplayValue("20"), {
+			target: { value: "30" },
 		});
 
 		expect(
@@ -938,10 +1069,10 @@ describe("AdminSettingsPage", () => {
 	it("renders the save actions in a floating bottom bar", async () => {
 		render(<AdminSettingsPage />);
 
-		await screen.findByDisplayValue("1200");
+		await screen.findByDisplayValue("20");
 
-		fireEvent.change(screen.getByDisplayValue("1200"), {
-			target: { value: "1800" },
+		fireEvent.change(screen.getByDisplayValue("20"), {
+			target: { value: "30" },
 		});
 
 		const saveBar = await screen.findByTestId("settings-save-bar");
@@ -954,10 +1085,10 @@ describe("AdminSettingsPage", () => {
 	it("reserves bottom space for settings content while the floating save bar is visible", async () => {
 		render(<AdminSettingsPage />);
 
-		await screen.findByDisplayValue("1200");
+		await screen.findByDisplayValue("20");
 
-		fireEvent.change(screen.getByDisplayValue("1200"), {
-			target: { value: "1800" },
+		fireEvent.change(screen.getByDisplayValue("20"), {
+			target: { value: "30" },
 		});
 
 		await screen.findByTestId("settings-save-bar");
@@ -972,10 +1103,10 @@ describe("AdminSettingsPage", () => {
 	it("keeps the floating save bar mounted for the exit animation before unmounting", async () => {
 		render(<AdminSettingsPage />);
 
-		await screen.findByDisplayValue("1200");
+		await screen.findByDisplayValue("20");
 
-		fireEvent.change(screen.getByDisplayValue("1200"), {
-			target: { value: "1800" },
+		fireEvent.change(screen.getByDisplayValue("20"), {
+			target: { value: "30" },
 		});
 
 		const saveBar = await screen.findByTestId("settings-save-bar");
@@ -997,11 +1128,13 @@ describe("AdminSettingsPage", () => {
 	it("renders translated system config metadata without exposing the raw config key", async () => {
 		render(<AdminSettingsPage section="auth" />);
 
-		await screen.findByDisplayValue("1200");
+		await screen.findByDisplayValue("20");
 
 		expect(screen.getByText("Access token lifetime")).toBeInTheDocument();
 		expect(
-			screen.getByText("Access token lifetime in seconds"),
+			screen.getByText(
+				"Controls how long newly issued access tokens stay valid.",
+			),
 		).toBeInTheDocument();
 		expect(
 			screen.queryByText("auth_access_token_ttl_secs"),
@@ -1158,10 +1291,10 @@ describe("AdminSettingsPage", () => {
 	it("discards draft changes without sending any requests", async () => {
 		render(<AdminSettingsPage />);
 
-		await screen.findByDisplayValue("1200");
+		await screen.findByDisplayValue("20");
 
-		fireEvent.change(screen.getByDisplayValue("1200"), {
-			target: { value: "1800" },
+		fireEvent.change(screen.getByDisplayValue("20"), {
+			target: { value: "30" },
 		});
 
 		expect(
@@ -1175,7 +1308,7 @@ describe("AdminSettingsPage", () => {
 				screen.queryByRole("button", { name: "save_changes" }),
 			).not.toBeInTheDocument();
 		});
-		expect(screen.getByDisplayValue("1200")).toBeInTheDocument();
+		expect(screen.getByDisplayValue("20")).toBeInTheDocument();
 		expect(mockState.setConfig).not.toHaveBeenCalled();
 		expect(mockState.deleteConfig).not.toHaveBeenCalled();
 	});

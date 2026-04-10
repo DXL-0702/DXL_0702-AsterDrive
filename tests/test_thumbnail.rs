@@ -86,6 +86,7 @@ async fn test_thumbnail_returns_200_after_generation() {
     aster_drive::services::thumbnail_service::spawn_worker(
         actix_web::web::Data::new(state.db.clone()),
         state.driver_registry.clone(),
+        state.runtime_config.clone(),
         state.policy_snapshot.clone(),
         rx,
     );
@@ -162,6 +163,7 @@ async fn test_thumbnail_returns_304_for_matching_if_none_match() {
     aster_drive::services::thumbnail_service::spawn_worker(
         actix_web::web::Data::new(state.db.clone()),
         state.driver_registry.clone(),
+        state.runtime_config.clone(),
         state.policy_snapshot.clone(),
         rx,
     );
@@ -250,6 +252,7 @@ async fn test_thumbnail_dedup_same_blob() {
     aster_drive::services::thumbnail_service::spawn_worker(
         actix_web::web::Data::new(state.db.clone()),
         state.driver_registry.clone(),
+        state.runtime_config.clone(),
         state.policy_snapshot.clone(),
         rx,
     );

@@ -5,6 +5,7 @@ use crate::config::branding;
 use crate::config::cors;
 use crate::config::definitions::ALL_CONFIGS;
 use crate::config::mail;
+use crate::config::operations;
 use crate::config::site_url;
 use crate::db::repository::{config_repo, user_repo};
 use crate::entities::system_config;
@@ -236,6 +237,19 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
             Ok(normalized)
         }
         cors::CORS_MAX_AGE_SECS_KEY => cors::normalize_max_age_config_value(value),
+        operations::MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY
+        | operations::BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY
+        | operations::MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY
+        | operations::BLOB_RECONCILE_INTERVAL_SECS_KEY => {
+            operations::normalize_interval_config_value(key, value)
+        }
+        operations::TEAM_MEMBER_LIST_MAX_LIMIT_KEY | operations::TASK_LIST_MAX_LIMIT_KEY => {
+            operations::normalize_list_max_limit_config_value(key, value)
+        }
+        operations::AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY
+        | operations::THUMBNAIL_MAX_SOURCE_BYTES_KEY => {
+            operations::normalize_bytes_config_value(key, value)
+        }
         mail::MAIL_SMTP_HOST_KEY => mail::normalize_smtp_host_config_value(value),
         mail::MAIL_SMTP_PORT_KEY => mail::normalize_smtp_port_config_value(value),
         mail::MAIL_FROM_ADDRESS_KEY => mail::normalize_mail_address_config_value(value),

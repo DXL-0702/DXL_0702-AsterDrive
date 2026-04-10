@@ -173,6 +173,79 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         category: "network",
         description: "CORS preflight cache duration in seconds",
     },
+    // ── Operations ──────────────────────────────────────────
+    ConfigDef {
+        key: "mail_outbox_dispatch_interval_secs",
+        label_i18n_key: "settings_item_mail_outbox_dispatch_interval_secs_label",
+        description_i18n_key: "settings_item_mail_outbox_dispatch_interval_secs_desc",
+        value_type: "number",
+        default_fn: || {
+            crate::config::operations::DEFAULT_MAIL_OUTBOX_DISPATCH_INTERVAL_SECS.to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "operations",
+        description: "Seconds between mail outbox dispatch polls",
+    },
+    ConfigDef {
+        key: "background_task_dispatch_interval_secs",
+        label_i18n_key: "settings_item_background_task_dispatch_interval_secs_label",
+        description_i18n_key: "settings_item_background_task_dispatch_interval_secs_desc",
+        value_type: "number",
+        default_fn: || {
+            crate::config::operations::DEFAULT_BACKGROUND_TASK_DISPATCH_INTERVAL_SECS.to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "operations",
+        description: "Seconds between background task dispatch polls",
+    },
+    ConfigDef {
+        key: "maintenance_cleanup_interval_secs",
+        label_i18n_key: "settings_item_maintenance_cleanup_interval_secs_label",
+        description_i18n_key: "settings_item_maintenance_cleanup_interval_secs_desc",
+        value_type: "number",
+        default_fn: || {
+            crate::config::operations::DEFAULT_MAINTENANCE_CLEANUP_INTERVAL_SECS.to_string()
+        },
+        requires_restart: false,
+        is_sensitive: false,
+        category: "operations",
+        description: "Seconds between periodic maintenance cleanup runs",
+    },
+    ConfigDef {
+        key: "blob_reconcile_interval_secs",
+        label_i18n_key: "settings_item_blob_reconcile_interval_secs_label",
+        description_i18n_key: "settings_item_blob_reconcile_interval_secs_desc",
+        value_type: "number",
+        default_fn: || crate::config::operations::DEFAULT_BLOB_RECONCILE_INTERVAL_SECS.to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "operations",
+        description: "Seconds between full blob reconciliation runs",
+    },
+    ConfigDef {
+        key: "team_member_list_max_limit",
+        label_i18n_key: "settings_item_team_member_list_max_limit_label",
+        description_i18n_key: "settings_item_team_member_list_max_limit_desc",
+        value_type: "number",
+        default_fn: || crate::config::operations::DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT.to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "operations",
+        description: "Maximum page size accepted by team member listing endpoints",
+    },
+    ConfigDef {
+        key: "task_list_max_limit",
+        label_i18n_key: "settings_item_task_list_max_limit_label",
+        description_i18n_key: "settings_item_task_list_max_limit_desc",
+        value_type: "number",
+        default_fn: || crate::config::operations::DEFAULT_TASK_LIST_MAX_LIMIT.to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "operations",
+        description: "Maximum page size accepted by background task listing endpoints",
+    },
     // ── Storage ─────────────────────────────────────────────
     ConfigDef {
         key: "max_versions_per_file",
@@ -230,6 +303,17 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         description: "Default storage quota for new users in bytes (0 = unlimited)",
     },
     ConfigDef {
+        key: "thumbnail_max_source_bytes",
+        label_i18n_key: "settings_item_thumbnail_max_source_bytes_label",
+        description_i18n_key: "settings_item_thumbnail_max_source_bytes_desc",
+        value_type: "number",
+        default_fn: || crate::config::operations::DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES.to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "storage",
+        description: "Maximum original file size eligible for thumbnail generation in bytes",
+    },
+    ConfigDef {
         key: "auth_allow_user_registration",
         label_i18n_key: "settings_item_auth_allow_user_registration_label",
         description_i18n_key: "settings_item_auth_allow_user_registration_desc",
@@ -250,6 +334,17 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: "user",
         description: "Local directory used for uploaded avatar files (relative paths resolve under ./data)",
+    },
+    ConfigDef {
+        key: "avatar_max_upload_size_bytes",
+        label_i18n_key: "settings_item_avatar_max_upload_size_bytes_label",
+        description_i18n_key: "settings_item_avatar_max_upload_size_bytes_desc",
+        value_type: "number",
+        default_fn: || crate::config::operations::DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES.to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "user",
+        description: "Maximum avatar upload size in bytes before the request is rejected",
     },
     // ── Audit ─────────────────────────────────────────────
     ConfigDef {

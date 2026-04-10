@@ -79,6 +79,7 @@ pub async fn prepare() -> Result<AppState> {
     crate::services::thumbnail_service::spawn_worker(
         actix_web::web::Data::new(state.db.clone()),
         state.driver_registry.clone(),
+        state.runtime_config.clone(),
         state.policy_snapshot.clone(),
         thumbnail_rx,
     );

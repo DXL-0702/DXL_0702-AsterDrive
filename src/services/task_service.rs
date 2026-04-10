@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::api::pagination::OffsetPage;
+use crate::config::operations;
 use crate::db::repository::{background_task_repo, file_repo};
 use crate::entities::{background_task, file};
 use crate::errors::{AsterError, MapAsterErr, Result};
@@ -20,8 +21,6 @@ use crate::services::{
 };
 use crate::storage::{DriverRegistry, PolicySnapshot};
 use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
-
-pub const TASK_DISPATCH_INTERVAL_SECS: u64 = 5;
 
 const DEFAULT_TASK_RETENTION_HOURS: i64 = 24;
 const TASK_DISPATCH_BATCH_SIZE: u64 = 8;
@@ -114,7 +113,7 @@ pub(crate) async fn list_tasks_paginated_in_scope(
 ) -> Result<OffsetPage<TaskInfo>> {
     workspace_storage_service::require_scope_access(state, scope).await?;
 
-    let limit = limit.clamp(1, 100);
+    let limit = limit.clamp(1, operations::task_list_max_limit(&state.runtime_config));
     let (tasks, total) = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
             background_task_repo::find_paginated_personal(&state.db, user_id, limit, offset).await?

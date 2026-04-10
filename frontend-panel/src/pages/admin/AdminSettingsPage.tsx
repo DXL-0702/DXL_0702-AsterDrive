@@ -35,6 +35,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { handleApiError } from "@/hooks/useApiError";
@@ -63,6 +70,7 @@ const CATEGORY_ORDER = [
 	"auth",
 	"mail",
 	"network",
+	"operations",
 	"storage",
 	"webdav",
 	"audit",
@@ -131,6 +139,19 @@ const BRANDING_ASSET_PREVIEW_APPEARANCES: Record<
 };
 
 type DraftValues = Record<string, string>;
+type TimeConfigBaseUnit = "seconds" | "hours" | "days";
+type TimeDisplayUnitValue = "seconds" | "minutes" | "hours" | "days" | "weeks";
+type SizeDisplayUnitValue =
+	| "bytes"
+	| "kilobytes"
+	| "megabytes"
+	| "gigabytes"
+	| "terabytes";
+type DisplayUnit = {
+	labelKey: string;
+	multiplier: number;
+	value: string;
+};
 
 type NewCustomDraft = {
 	id: string;
@@ -156,6 +177,85 @@ type SystemSubcategoryGroup = {
 	configs: SystemConfig[];
 };
 
+const TIME_DISPLAY_UNITS: Record<TimeConfigBaseUnit, readonly DisplayUnit[]> = {
+	seconds: [
+		{
+			value: "days",
+			labelKey: "settings_time_unit_days",
+			multiplier: 24 * 60 * 60,
+		},
+		{
+			value: "hours",
+			labelKey: "settings_time_unit_hours",
+			multiplier: 60 * 60,
+		},
+		{
+			value: "minutes",
+			labelKey: "settings_time_unit_minutes",
+			multiplier: 60,
+		},
+		{
+			value: "seconds",
+			labelKey: "settings_time_unit_seconds",
+			multiplier: 1,
+		},
+	],
+	hours: [
+		{
+			value: "days",
+			labelKey: "settings_time_unit_days",
+			multiplier: 24,
+		},
+		{
+			value: "hours",
+			labelKey: "settings_time_unit_hours",
+			multiplier: 1,
+		},
+	],
+	days: [
+		{
+			value: "weeks",
+			labelKey: "settings_time_unit_weeks",
+			multiplier: 7,
+		},
+		{
+			value: "days",
+			labelKey: "settings_time_unit_days",
+			multiplier: 1,
+		},
+	],
+};
+
+const SIZE_DISPLAY_UNITS: readonly DisplayUnit[] = [
+	{
+		value: "terabytes",
+		labelKey: "settings_size_unit_terabytes",
+		multiplier: 1024 ** 4,
+	},
+	{
+		value: "gigabytes",
+		labelKey: "settings_size_unit_gigabytes",
+		multiplier: 1024 ** 3,
+	},
+	{
+		value: "megabytes",
+		labelKey: "settings_size_unit_megabytes",
+		multiplier: 1024 ** 2,
+	},
+	{
+		value: "kilobytes",
+		labelKey: "settings_size_unit_kilobytes",
+		multiplier: 1024,
+	},
+	{
+		value: "bytes",
+		labelKey: "settings_size_unit_bytes",
+		multiplier: 1,
+	},
+];
+
+const SIZE_CONFIG_KEYS = new Set(["default_storage_quota"]);
+
 export type AdminSettingsTab = (typeof CATEGORY_ORDER)[number];
 type SaveBarPhase = "hidden" | "entering" | "visible" | "exiting";
 
@@ -172,6 +272,8 @@ function getCategoryIcon(category: string): IconName {
 			return "Shield";
 		case "network":
 			return "Globe";
+		case "operations":
+			return "Clock";
 		case "mail":
 			return "EnvelopeSimple";
 		case "storage":
@@ -200,6 +302,8 @@ function getAdminSettingsSectionTitle(
 			return t("settings_category_auth");
 		case "network":
 			return t("settings_category_network");
+		case "operations":
+			return t("settings_category_operations");
 		case "mail":
 			return t("settings_category_mail");
 		case "storage":
@@ -247,6 +351,84 @@ function isBrandingAssetConfig(config: SystemConfig) {
 
 function getBrandingAssetPreviewAppearance(config: SystemConfig) {
 	return BRANDING_ASSET_PREVIEW_APPEARANCES[config.key];
+}
+
+function getTimeConfigBaseUnit(
+	config: SystemConfig,
+): TimeConfigBaseUnit | null {
+	if (!isNumberType(getConfigValueType(config))) {
+		return null;
+	}
+	if (config.key.endsWith("_secs")) {
+		return "seconds";
+	}
+	if (config.key.endsWith("_hours")) {
+		return "hours";
+	}
+	if (config.key.endsWith("_days")) {
+		return "days";
+	}
+	return null;
+}
+
+function isSizeConfig(config: SystemConfig) {
+	return (
+		isNumberType(getConfigValueType(config)) &&
+		(config.key.endsWith("_bytes") || SIZE_CONFIG_KEYS.has(config.key))
+	);
+}
+
+function parseWholeNumber(value: string) {
+	const trimmed = value.trim();
+	if (!trimmed) {
+		return null;
+	}
+	if (!/^-?\d+$/.test(trimmed)) {
+		return null;
+	}
+
+	const parsed = Number(trimmed);
+	return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
+function getAvailableDisplayUnits<T extends DisplayUnit>(
+	units: readonly T[],
+	value: string,
+) {
+	const parsed = parseWholeNumber(value);
+
+	if (parsed === null) {
+		return units;
+	}
+
+	return units.filter(
+		(unit) => unit.multiplier === 1 || parsed % unit.multiplier === 0,
+	);
+}
+
+function getPreferredDisplayUnit<T extends DisplayUnit>(
+	units: readonly T[],
+	value: string,
+) {
+	const parsed = parseWholeNumber(value);
+	if (parsed === 0) {
+		return units[units.length - 1];
+	}
+
+	return getAvailableDisplayUnits(units, value)[0] ?? units[units.length - 1];
+}
+
+function formatDisplayValue(value: string, unit: DisplayUnit) {
+	if (!value.trim()) {
+		return "";
+	}
+
+	const parsed = parseWholeNumber(value);
+	if (parsed === null) {
+		return value;
+	}
+
+	return String(parsed / unit.multiplier);
 }
 
 function normalizeAssetPreviewUrl(value: string) {
@@ -668,6 +850,9 @@ export default function AdminSettingsPage({
 		"forward",
 	);
 	const [draftValues, setDraftValues] = useState<DraftValues>({});
+	const [displayUnits, setDisplayUnits] = useState<
+		Partial<Record<string, TimeDisplayUnitValue | SizeDisplayUnitValue>>
+	>({});
 	const [deletedCustomKeys, setDeletedCustomKeys] = useState<string[]>([]);
 	const [newCustomRows, setNewCustomRows] = useState<NewCustomDraft[]>([]);
 	const [compactInlineCategories, setCompactInlineCategories] = useState<
@@ -756,6 +941,7 @@ export default function AdminSettingsPage({
 
 	useEffect(() => {
 		setDraftValues(buildDraftValues(configs));
+		setDisplayUnits({});
 		setDeletedCustomKeys([]);
 		setNewCustomRows([]);
 	}, [configs]);
@@ -1051,6 +1237,8 @@ export default function AdminSettingsPage({
 					return t("settings_category_auth");
 				case "network":
 					return t("settings_category_network");
+				case "operations":
+					return t("settings_category_operations");
 				case "mail":
 					return t("settings_category_mail");
 				case "storage":
@@ -1081,6 +1269,8 @@ export default function AdminSettingsPage({
 					return t("settings_category_auth_desc");
 				case "network":
 					return t("settings_category_network_desc");
+				case "operations":
+					return t("settings_category_operations_desc");
 				case "mail":
 					return t("settings_category_mail_desc");
 				case "storage":
@@ -1416,6 +1606,7 @@ export default function AdminSettingsPage({
 
 	const discardChanges = () => {
 		setDraftValues(buildDraftValues(configs));
+		setDisplayUnits({});
 		setDeletedCustomKeys([]);
 		setNewCustomRows([]);
 	};
@@ -1631,6 +1822,136 @@ export default function AdminSettingsPage({
 		[t],
 	);
 
+	const renderScaledNumberInputControl = (
+		config: SystemConfig,
+		draftValue: string,
+		units: readonly DisplayUnit[],
+		unitLabelKey: string,
+		options?: {
+			fullWidth?: boolean;
+		},
+	) => {
+		if (draftValue.trim() && parseWholeNumber(draftValue) === null) {
+			return null;
+		}
+
+		const availableUnits = getAvailableDisplayUnits(units, draftValue);
+		const preferredUnit = getPreferredDisplayUnit(units, draftValue);
+		const selectedUnit =
+			availableUnits.find((unit) => unit.value === displayUnits[config.key]) ??
+			preferredUnit;
+
+		return (
+			<div
+				className={cn(
+					"flex flex-col gap-3 sm:flex-row sm:items-center",
+					options?.fullWidth ? "w-full max-w-2xl" : "max-w-2xl",
+				)}
+			>
+				<Input
+					type="number"
+					inputMode="numeric"
+					step="1"
+					className="w-full sm:max-w-48"
+					value={formatDisplayValue(draftValue, selectedUnit)}
+					onChange={(event) => {
+						const nextDisplayValue = event.target.value.trim();
+						if (!nextDisplayValue) {
+							updateDraftValue(config.key, "");
+							return;
+						}
+						if (!/^\d+$/.test(nextDisplayValue)) {
+							return;
+						}
+
+						const parsed = Number(nextDisplayValue);
+						if (!Number.isSafeInteger(parsed)) {
+							return;
+						}
+
+						updateDraftValue(
+							config.key,
+							String(parsed * selectedUnit.multiplier),
+						);
+					}}
+					placeholder={t("config_value")}
+				/>
+				<Select
+					items={availableUnits.map((unit) => ({
+						label: t(unit.labelKey),
+						value: unit.value,
+					}))}
+					value={selectedUnit.value}
+					onValueChange={(value) =>
+						setDisplayUnits((previous) => ({
+							...previous,
+							[config.key]: value as
+								| TimeDisplayUnitValue
+								| SizeDisplayUnitValue,
+						}))
+					}
+				>
+					<SelectTrigger
+						id={`${config.key}-unit`}
+						width="fit"
+						className="min-w-28"
+						aria-label={t(unitLabelKey)}
+					>
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						{availableUnits.map((unit) => (
+							<SelectItem key={unit.value} value={unit.value}>
+								{t(unit.labelKey)}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			</div>
+		);
+	};
+
+	const renderTimeConfigInputControl = (
+		config: SystemConfig,
+		draftValue: string,
+		options?: {
+			fullWidth?: boolean;
+		},
+	) => {
+		const baseUnit = getTimeConfigBaseUnit(config);
+		if (!baseUnit) {
+			return null;
+		}
+
+		return renderScaledNumberInputControl(
+			config,
+			draftValue,
+			TIME_DISPLAY_UNITS[baseUnit],
+			"settings_time_unit_label",
+			options,
+		);
+	};
+
+	const renderSizeConfigInputControl = (
+		config: SystemConfig,
+		draftValue: string,
+		options?: {
+			fullWidth?: boolean;
+		},
+	) => {
+		if (!isSizeConfig(config)) {
+			return null;
+		}
+
+		return renderScaledNumberInputControl(
+			config,
+			draftValue,
+			SIZE_DISPLAY_UNITS,
+			"settings_size_unit_label",
+			options,
+		);
+	};
+
 	const renderConfigInputControl = (
 		config: SystemConfig,
 		draftValue: string,
@@ -1682,6 +2003,24 @@ export default function AdminSettingsPage({
 					onChange={(value) => updateDraftValue(config.key, value)}
 				/>
 			);
+		}
+
+		const timeConfigInput = renderTimeConfigInputControl(
+			config,
+			draftValue,
+			options,
+		);
+		if (timeConfigInput) {
+			return timeConfigInput;
+		}
+
+		const sizeConfigInput = renderSizeConfigInputControl(
+			config,
+			draftValue,
+			options,
+		);
+		if (sizeConfigInput) {
+			return sizeConfigInput;
 		}
 
 		return (

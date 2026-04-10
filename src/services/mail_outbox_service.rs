@@ -15,8 +15,6 @@ use crate::services::{
 };
 use crate::types::MailOutboxStatus;
 
-pub const MAIL_OUTBOX_DISPATCH_INTERVAL_SECS: u64 = 5;
-
 const MAIL_OUTBOX_BATCH_SIZE: u64 = 20;
 const MAIL_OUTBOX_PROCESSING_STALE_SECS: i64 = 60;
 const MAIL_OUTBOX_MAX_ATTEMPTS: i32 = 6;

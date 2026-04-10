@@ -7,6 +7,7 @@ use image::imageops::FilterType;
 use image::{ImageReader, Limits};
 use tokio::sync::{Mutex, Semaphore, mpsc};
 
+use crate::config::operations;
 use crate::db::repository::file_repo;
 use crate::entities::file_blob;
 use crate::errors::{AsterError, MapAsterErr, Result};
@@ -18,8 +19,6 @@ const THUMB_PREFIX: &str = "_thumb";
 const THUMB_VERSION: &str = "v2";
 /// 单次解码最大内存分配（防止恶意/超大图 OOM）
 const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
-/// 在解码前限制源文件大小，避免原始字节和像素 buffer 双重叠峰。
-const MAX_THUMB_SOURCE_BYTES: i64 = 64 * 1024 * 1024;
 const MAX_THUMB_WORKERS: usize = 2;
 
 /// 判断 MIME 类型是否支持生成缩略图
@@ -68,7 +67,10 @@ pub(crate) fn thumbnail_etag_value(blob_hash: &str) -> String {
 
 /// 尝试获取已有缩略图，如果不存在则入队后台生成并返回 None
 pub async fn get_or_enqueue(state: &AppState, blob: &file_blob::Model) -> Result<Option<Vec<u8>>> {
-    ensure_source_size_supported(blob)?;
+    ensure_source_size_supported(
+        blob,
+        operations::thumbnail_max_source_bytes(&state.runtime_config),
+    )?;
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let path = thumb_path(&blob.hash);
@@ -91,7 +93,10 @@ pub async fn get_or_enqueue(state: &AppState, blob: &file_blob::Model) -> Result
 
 /// 获取或同步生成缩略图（仅用于公开分享等无法等待的场景）
 pub async fn get_or_generate(state: &AppState, blob: &file_blob::Model) -> Result<Vec<u8>> {
-    ensure_source_size_supported(blob)?;
+    ensure_source_size_supported(
+        blob,
+        operations::thumbnail_max_source_bytes(&state.runtime_config),
+    )?;
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
     let path = thumb_path(&blob.hash);
@@ -177,6 +182,7 @@ fn max_concurrent_thumbnails() -> usize {
 pub fn spawn_worker(
     db: actix_web::web::Data<sea_orm::DatabaseConnection>,
     driver_registry: Arc<DriverRegistry>,
+    runtime_config: Arc<crate::config::RuntimeConfig>,
     policy_snapshot: Arc<PolicySnapshot>,
     mut rx: mpsc::Receiver<i64>,
 ) {
@@ -201,6 +207,7 @@ pub fn spawn_worker(
 
             let db = db.clone();
             let registry = driver_registry.clone();
+            let runtime_config = runtime_config.clone();
             let policy_snapshot = policy_snapshot.clone();
             let pending_inner = pending.clone();
             let sem = semaphore.clone();
@@ -210,8 +217,14 @@ pub fn spawn_worker(
                 // 获取许可（背压：队列消费速度受限于并发上限）
                 let _permit = sem.acquire().await;
 
-                if let Err(e) =
-                    process_one_thumbnail(&db, &registry, &policy_snapshot, blob_id).await
+                if let Err(e) = process_one_thumbnail(
+                    &db,
+                    &registry,
+                    runtime_config.as_ref(),
+                    &policy_snapshot,
+                    blob_id,
+                )
+                .await
                 {
                     tracing::warn!("thumbnail generation failed for blob #{blob_id}: {e}");
                 }
@@ -228,11 +241,15 @@ pub fn spawn_worker(
 async fn process_one_thumbnail(
     db: &sea_orm::DatabaseConnection,
     driver_registry: &DriverRegistry,
+    runtime_config: &crate::config::RuntimeConfig,
     policy_snapshot: &PolicySnapshot,
     blob_id: i64,
 ) -> Result<()> {
     let blob = file_repo::find_blob_by_id(db, blob_id).await?;
-    ensure_source_size_supported(&blob)?;
+    ensure_source_size_supported(
+        &blob,
+        operations::thumbnail_max_source_bytes(runtime_config),
+    )?;
     let policy = policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let driver = driver_registry.get_driver(&policy)?;
     let path = thumb_path(&blob.hash);
@@ -257,11 +274,11 @@ async fn process_one_thumbnail(
     Ok(())
 }
 
-fn ensure_source_size_supported(blob: &file_blob::Model) -> Result<()> {
-    if blob.size > MAX_THUMB_SOURCE_BYTES {
+fn ensure_source_size_supported(blob: &file_blob::Model, max_source_bytes: i64) -> Result<()> {
+    if blob.size > max_source_bytes {
         return Err(AsterError::validation_error(format!(
             "thumbnail source exceeds {} MiB limit",
-            MAX_THUMB_SOURCE_BYTES / 1024 / 1024
+            max_source_bytes / 1024 / 1024
         )));
     }
 
@@ -271,9 +288,10 @@ fn ensure_source_size_supported(blob: &file_blob::Model) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_THUMB_SOURCE_BYTES, MAX_THUMB_WORKERS, ensure_source_size_supported,
-        max_concurrent_thumbnails, thumb_path, thumbnail_etag_value,
+        MAX_THUMB_WORKERS, ensure_source_size_supported, max_concurrent_thumbnails, thumb_path,
+        thumbnail_etag_value,
     };
+    use crate::config::operations::DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES;
     use crate::entities::file_blob;
     use chrono::Utc;
 
@@ -292,12 +310,24 @@ mod tests {
 
     #[test]
     fn accepts_thumbnail_source_within_size_limit() {
-        assert!(ensure_source_size_supported(&blob_with_size(MAX_THUMB_SOURCE_BYTES)).is_ok());
+        assert!(
+            ensure_source_size_supported(
+                &blob_with_size(DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES as i64),
+                DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES as i64,
+            )
+            .is_ok()
+        );
     }
 
     #[test]
     fn rejects_thumbnail_source_above_size_limit() {
-        assert!(ensure_source_size_supported(&blob_with_size(MAX_THUMB_SOURCE_BYTES + 1)).is_err());
+        assert!(
+            ensure_source_size_supported(
+                &blob_with_size(DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES as i64 + 1),
+                DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES as i64,
+            )
+            .is_err()
+        );
     }
 
     #[test]
