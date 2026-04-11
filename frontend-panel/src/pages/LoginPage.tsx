@@ -514,16 +514,24 @@ export default function LoginPage() {
 				return;
 			}
 
-			await authService.register(un, em, password);
-			toast.success(t("register_success"));
-			setPendingActivation({
-				email: em,
-				identifier: em,
-				username: un,
-			});
+			const registeredUser = await authService.register(un, em, password);
 			setPassword("");
 			setShowPassword(false);
 			setErrors({});
+			if (registeredUser.email_verified) {
+				toast.success(t("register_success_direct"));
+				setPendingActivation(null);
+				setMode("login");
+				setIdentifier(em);
+				setExtraField("");
+			} else {
+				toast.success(t("register_success"));
+				setPendingActivation({
+					email: em,
+					identifier: em,
+					username: un,
+				});
+			}
 		} catch (error) {
 			if (
 				error instanceof ApiError &&

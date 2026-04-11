@@ -28,6 +28,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("", web::get().to(list_root))
         .route("", web::post().to(create_folder))
         .route("/{id}", web::get().to(list_folder))
+        .route("/{id}/info", web::get().to(get_folder_info))
         .route("/{id}/ancestors", web::get().to(get_ancestors))
         .route("/{id}/lock", web::post().to(set_lock))
         .route("/{id}/copy", web::post().to(copy_folder))
@@ -126,6 +127,34 @@ pub async fn list_folder(
         },
         Some(*path),
         &query,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/folders/{id}/info",
+    tag = "folders",
+    operation_id = "get_folder_info",
+    params(("id" = i64, Path, description = "Folder ID")),
+    responses(
+        (status = 200, description = "Folder info", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_folder_info(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
+    get_folder_info_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
     )
     .await
 }
@@ -367,6 +396,15 @@ pub(crate) async fn get_ancestors_response(
 ) -> Result<HttpResponse> {
     let ancestors = folder_service::get_ancestors_in_scope(state, scope, folder_id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(ancestors)))
+}
+
+pub(crate) async fn get_folder_info_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+) -> Result<HttpResponse> {
+    let folder = folder_service::get_info_in_scope(state, scope, folder_id).await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
 }
 
 pub(crate) async fn delete_folder_response(

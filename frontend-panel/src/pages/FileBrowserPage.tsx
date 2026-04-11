@@ -33,6 +33,7 @@ import {
 	ContextMenu,
 	ContextMenuContent,
 	ContextMenuItem,
+	ContextMenuSeparator,
 	ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Icon } from "@/components/ui/icon";
@@ -57,6 +58,7 @@ import { batchService } from "@/services/batchService";
 import { fileService } from "@/services/fileService";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
+import { usePreviewAppStore } from "@/stores/previewAppStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type {
 	FileInfo,
@@ -115,11 +117,14 @@ export default function FileBrowserPage() {
 	const refresh = useFileStore((s) => s.refresh);
 	const moveToFolder = useFileStore((s) => s.moveToFolder);
 	const search = useFileStore((s) => s.search);
+	const previewAppsLoaded = usePreviewAppStore((s) => s.isLoaded);
+	const loadPreviewApps = usePreviewAppStore((s) => s.load);
 	const breadcrumb = useFileStore((s) => s.breadcrumb);
 	const folders = useFileStore((s) => s.folders);
 	const files = useFileStore((s) => s.files);
 	const loading = useFileStore((s) => s.loading);
 	const viewMode = useFileStore((s) => s.viewMode);
+	const browserOpenMode = useFileStore((s) => s.browserOpenMode);
 	const setViewMode = useFileStore((s) => s.setViewMode);
 	const searchQuery = useFileStore((s) => s.searchQuery);
 	const searchFolders = useFileStore((s) => s.searchFolders);
@@ -176,9 +181,10 @@ export default function FileBrowserPage() {
 	const [fadingFolderIds, setFadingFolderIds] = useState<Set<number>>(
 		new Set(),
 	);
-	const [previewFile, setPreviewFile] = useState<
-		FileInfo | FileListItem | null
-	>(null);
+	const [previewState, setPreviewState] = useState<{
+		file: FileInfo | FileListItem;
+		openMode: "auto" | "direct" | "picker";
+	} | null>(null);
 	const [shareTarget, setShareTarget] = useState<{
 		fileId?: number;
 		folderId?: number;
@@ -216,6 +222,11 @@ export default function FileBrowserPage() {
 	useEffect(() => {
 		navigateTo(folderId, folderName).catch(handleApiError);
 	}, [folderId, folderName, navigateTo]);
+
+	useEffect(() => {
+		if (previewAppsLoaded) return;
+		void loadPreviewApps();
+	}, [loadPreviewApps, previewAppsLoaded]);
 
 	useEffect(() => {
 		function onRenameRequest(e: Event) {
@@ -495,11 +506,17 @@ export default function FileBrowserPage() {
 	const sharedProps = {
 		folders: displayFolders,
 		files: displayFiles,
+		browserOpenMode,
 		scrollElement: scrollViewport,
 		breadcrumbPathIds,
 		onFolderOpen: (id: number, name: string) =>
 			navigate(workspaceFolderPath(workspace, id, name)),
-		onFileClick: (file: FileListItem) => setPreviewFile(file),
+		onFileClick: (file: FileListItem) =>
+			setPreviewState({ file, openMode: "auto" }),
+		onFileOpen: (file: FileListItem) =>
+			setPreviewState({ file, openMode: "direct" }),
+		onFileChooseOpenMethod: (file: FileListItem) =>
+			setPreviewState({ file, openMode: "picker" }),
 		onShare: setShareTarget,
 		onDownload: handleDownload,
 		onArchiveDownload: (folderId: number) => {
@@ -712,6 +729,7 @@ export default function FileBrowserPage() {
 							<Icon name="FolderOpen" className="mr-2 h-4 w-4" />
 							{t("upload_folder")}
 						</ContextMenuItem>
+						<ContextMenuSeparator />
 						<ContextMenuItem onClick={() => setCreateFolderOpen(true)}>
 							<Icon name="FolderPlus" className="mr-2 h-4 w-4" />
 							{t("new_folder")}
@@ -719,6 +737,11 @@ export default function FileBrowserPage() {
 						<ContextMenuItem onClick={() => setCreateFileOpen(true)}>
 							<Icon name="FilePlus" className="mr-2 h-4 w-4" />
 							{t("new_file")}
+						</ContextMenuItem>
+						<ContextMenuSeparator />
+						<ContextMenuItem onClick={() => void refresh()}>
+							<Icon name="ArrowsClockwise" className="mr-2 h-4 w-4" />
+							{t("core:refresh")}
 						</ContextMenuItem>
 					</ContextMenuContent>
 				</ContextMenu>
@@ -765,14 +788,15 @@ export default function FileBrowserPage() {
 					/>
 				</Suspense>
 			)}
-			{previewFile && (
+			{previewState && (
 				<Suspense fallback={null}>
 					<FilePreview
-						file={previewFile}
-						onClose={() => setPreviewFile(null)}
+						file={previewState.file}
+						openMode={previewState.openMode}
+						onClose={() => setPreviewState(null)}
 						onFileUpdated={() => refresh()}
 						previewLinkFactory={() =>
-							fileService.createPreviewLink(previewFile.id)
+							fileService.createPreviewLink(previewState.file.id)
 						}
 					/>
 				</Suspense>

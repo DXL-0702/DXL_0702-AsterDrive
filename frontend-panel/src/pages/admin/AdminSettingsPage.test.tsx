@@ -1247,6 +1247,65 @@ describe("AdminSettingsPage", () => {
 		expect(preview).toHaveClass("bg-black", "w-36");
 	});
 
+	it("renders preview app registry config with the structured list editor", async () => {
+		mockState.codeEditorProps = null;
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "general.preview",
+					key: "frontend_preview_apps_json",
+					value: JSON.stringify(
+						{
+							version: 1,
+							apps: [
+								{
+									key: "builtin.image",
+									icon: "Eye",
+									enabled: true,
+									label_i18n_key: "open_with_image",
+								},
+							],
+							rules: [
+								{
+									matches: { categories: ["image"] },
+									apps: ["builtin.image"],
+									default_app: "builtin.image",
+								},
+							],
+						},
+						null,
+						2,
+					),
+					value_type: "multiline",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "general.preview",
+				key: "frontend_preview_apps_json",
+				value_type: "multiline",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="general" />);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: /settings_section_expand/i }),
+		);
+
+		expect(
+			await screen.findByText("preview_apps_editor_title"),
+		).toBeInTheDocument();
+		expect(
+			screen.getAllByText((content) =>
+				["Image preview", "图片预览", "builtin.image"].includes(content),
+			).length,
+		).toBeGreaterThan(0);
+		expect(screen.queryByLabelText("Code editor")).not.toBeInTheDocument();
+		expect(mockState.codeEditorProps).toBeNull();
+	});
+
 	it("debounces favicon asset preview updates while typing", async () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [

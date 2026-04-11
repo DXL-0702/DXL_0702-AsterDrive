@@ -6,6 +6,8 @@ const mockState = vi.hoisted(() => ({
 	store: {
 		selectedFileIds: new Set<number>(),
 		selectedFolderIds: new Set<number>(),
+		selectOnlyFile: vi.fn(),
+		selectOnlyFolder: vi.fn(),
 		toggleFileSelection: vi.fn(),
 		toggleFolderSelection: vi.fn(),
 	},
@@ -111,6 +113,7 @@ vi.mock("@/components/files/FileCard", () => ({
 		selected,
 		onSelect,
 		onClick,
+		onDoubleClick,
 		dragData,
 		targetPathIds,
 		fading,
@@ -120,6 +123,7 @@ vi.mock("@/components/files/FileCard", () => ({
 		selected: boolean;
 		onSelect: () => void;
 		onClick: () => void;
+		onDoubleClick?: () => void;
 		dragData?: { fileIds: number[]; folderIds: number[] };
 		targetPathIds?: number[];
 		fading?: boolean;
@@ -135,6 +139,9 @@ vi.mock("@/components/files/FileCard", () => ({
 			<button type="button" onClick={onClick}>
 				open:{item.name}
 			</button>
+			<button type="button" onClick={onDoubleClick}>
+				open-double:{item.name}
+			</button>
 			<button type="button" onClick={onSelect}>
 				select:{item.name}
 			</button>
@@ -146,6 +153,8 @@ describe("FileGrid", () => {
 	beforeEach(() => {
 		mockState.store.selectedFileIds = new Set();
 		mockState.store.selectedFolderIds = new Set();
+		mockState.store.selectOnlyFile.mockReset();
+		mockState.store.selectOnlyFolder.mockReset();
 		mockState.store.toggleFileSelection.mockReset();
 		mockState.store.toggleFolderSelection.mockReset();
 	});
@@ -158,6 +167,7 @@ describe("FileGrid", () => {
 			<FileGrid
 				folders={[{ id: 1, name: "Docs" } as never]}
 				files={[{ id: 2, name: "report.pdf" } as never]}
+				browserOpenMode="single_click"
 				breadcrumbPathIds={[10, 11]}
 				onFolderOpen={vi.fn()}
 				onFileClick={vi.fn()}
@@ -211,6 +221,7 @@ describe("FileGrid", () => {
 			<FileGrid
 				folders={[{ id: 1, name: "Docs" } as never]}
 				files={[{ id: 2, name: "report.pdf" } as never]}
+				browserOpenMode="single_click"
 				onFolderOpen={onFolderOpen}
 				onFileClick={onFileClick}
 				onShare={vi.fn()}
@@ -234,6 +245,42 @@ describe("FileGrid", () => {
 		expect(mockState.store.toggleFileSelection).toHaveBeenCalledWith(2);
 	});
 
+	it("selects folders and files on single click and opens them on double click in double-click mode", () => {
+		const onFolderOpen = vi.fn();
+		const onFileClick = vi.fn();
+
+		render(
+			<FileGrid
+				folders={[{ id: 1, name: "Docs" } as never]}
+				files={[{ id: 2, name: "report.pdf" } as never]}
+				browserOpenMode="double_click"
+				onFolderOpen={onFolderOpen}
+				onFileClick={onFileClick}
+				onShare={vi.fn()}
+				onDownload={vi.fn()}
+				onCopy={vi.fn()}
+				onToggleLock={vi.fn()}
+				onDelete={vi.fn()}
+			/>,
+		);
+
+		fireEvent.click(screen.getByRole("button", { name: "open:Docs" }));
+		fireEvent.click(screen.getByRole("button", { name: "open:report.pdf" }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "open-double:Docs" }),
+		);
+		fireEvent.click(
+			screen.getByRole("button", { name: "open-double:report.pdf" }),
+		);
+
+		expect(mockState.store.selectOnlyFolder).toHaveBeenCalledWith(1);
+		expect(mockState.store.selectOnlyFile).toHaveBeenCalledWith(2);
+		expect(onFolderOpen).toHaveBeenCalledWith(1, "Docs");
+		expect(onFileClick).toHaveBeenCalledWith(
+			expect.objectContaining({ id: 2 }),
+		);
+	});
+
 	it("maps context menu actions to the expected callbacks", () => {
 		const onShare = vi.fn();
 		const onDownload = vi.fn();
@@ -249,6 +296,7 @@ describe("FileGrid", () => {
 			<FileGrid
 				folders={[{ id: 1, name: "Docs", is_locked: false } as never]}
 				files={[{ id: 2, name: "report.pdf", is_locked: true } as never]}
+				browserOpenMode="single_click"
 				onFolderOpen={vi.fn()}
 				onFileClick={vi.fn()}
 				onShare={onShare}

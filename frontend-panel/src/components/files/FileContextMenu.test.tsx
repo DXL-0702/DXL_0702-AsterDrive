@@ -50,6 +50,7 @@ function renderMenu(
 	overrides: Partial<React.ComponentProps<typeof FileContextMenu>> = {},
 ) {
 	const handlers = {
+		onChooseOpenMethod: vi.fn(),
 		onArchiveDownload: vi.fn(),
 		onCopy: vi.fn(),
 		onDelete: vi.fn(),
@@ -57,6 +58,7 @@ function renderMenu(
 		onDirectShare: vi.fn(),
 		onInfo: vi.fn(),
 		onMove: vi.fn(),
+		onOpen: vi.fn(),
 		onPageShare: vi.fn(),
 		onRename: vi.fn(),
 		onToggleLock: vi.fn(),
@@ -81,6 +83,8 @@ describe("FileContextMenu", () => {
 	it("renders file actions and invokes the matching callbacks", () => {
 		const handlers = renderMenu();
 
+		fireEvent.click(screen.getByText("open"));
+		fireEvent.click(screen.getByText("open_with_action"));
 		fireEvent.click(screen.getByText("download"));
 		fireEvent.click(screen.getByText("share:share_mode_page"));
 		fireEvent.click(screen.getByText("share:share_mode_direct"));
@@ -92,6 +96,8 @@ describe("FileContextMenu", () => {
 		fireEvent.click(screen.getByText("lock"));
 		fireEvent.click(screen.getByText("delete"));
 
+		expect(handlers.onOpen).toHaveBeenCalledTimes(1);
+		expect(handlers.onChooseOpenMethod).toHaveBeenCalledTimes(1);
 		expect(handlers.onDownload).toHaveBeenCalledTimes(1);
 		expect(handlers.onPageShare).toHaveBeenCalledTimes(1);
 		expect(handlers.onDirectShare).toHaveBeenCalledTimes(1);
@@ -111,6 +117,7 @@ describe("FileContextMenu", () => {
 		});
 
 		expect(screen.queryByText("download")).not.toBeInTheDocument();
+		expect(screen.getByText("open")).toBeInTheDocument();
 		expect(
 			screen.getByText("tasks:archive_download_action"),
 		).toBeInTheDocument();
@@ -118,6 +125,7 @@ describe("FileContextMenu", () => {
 		expect(
 			screen.queryByText("share:share_mode_direct"),
 		).not.toBeInTheDocument();
+		expect(screen.queryByText("open_with_action")).not.toBeInTheDocument();
 		expect(screen.queryByText("versions")).not.toBeInTheDocument();
 		expect(screen.getByText("unlock")).toBeInTheDocument();
 		expect(screen.getByText("delete")).toBeDisabled();

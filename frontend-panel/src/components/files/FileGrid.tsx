@@ -3,16 +3,19 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileCard } from "@/components/files/FileCard";
 import { FileContextMenu } from "@/components/files/FileContextMenu";
-import { useFileStore } from "@/stores/fileStore";
+import { useFileStore, type BrowserOpenMode } from "@/stores/fileStore";
 import type { FileListItem, FolderListItem } from "@/types/api";
 
 interface FileGridProps {
 	folders: FolderListItem[];
 	files: FileListItem[];
+	browserOpenMode: BrowserOpenMode;
 	scrollElement?: HTMLDivElement | null;
 	breadcrumbPathIds?: number[];
 	onFolderOpen: (id: number, name: string) => void;
 	onFileClick: (file: FileListItem) => void;
+	onFileOpen?: (file: FileListItem) => void;
+	onFileChooseOpenMethod?: (file: FileListItem) => void;
 	onShare: (target: {
 		fileId?: number;
 		folderId?: number;
@@ -74,10 +77,13 @@ function getGridColumnCount(viewportWidth: number) {
 export function FileGrid({
 	folders,
 	files,
+	browserOpenMode,
 	scrollElement,
 	breadcrumbPathIds = [],
 	onFolderOpen,
 	onFileClick,
+	onFileOpen,
+	onFileChooseOpenMethod,
 	onShare,
 	onDownload,
 	onArchiveDownload,
@@ -97,6 +103,8 @@ export function FileGrid({
 	const selectedFolderIds = useFileStore((s) => s.selectedFolderIds);
 	const toggleFileSelection = useFileStore((s) => s.toggleFileSelection);
 	const toggleFolderSelection = useFileStore((s) => s.toggleFolderSelection);
+	const selectOnlyFile = useFileStore((s) => s.selectOnlyFile);
+	const selectOnlyFolder = useFileStore((s) => s.selectOnlyFolder);
 	const [viewportWidth, setViewportWidth] = useState(() =>
 		typeof window === "undefined" ? 1280 : window.innerWidth,
 	);
@@ -140,6 +148,7 @@ export function FileGrid({
 			key={`folder-${folder.id}`}
 			isFolder
 			isLocked={folder.is_locked ?? false}
+			onOpen={() => onFolderOpen(folder.id, folder.name)}
 			onPageShare={() =>
 				onShare({
 					folderId: folder.id,
@@ -166,7 +175,18 @@ export function FileGrid({
 				isFolder
 				selected={selectedFolderIds.has(folder.id)}
 				onSelect={() => toggleFolderSelection(folder.id)}
-				onClick={() => onFolderOpen(folder.id, folder.name)}
+				onClick={() => {
+					if (browserOpenMode === "double_click") {
+						selectOnlyFolder(folder.id);
+						return;
+					}
+					onFolderOpen(folder.id, folder.name);
+				}}
+				onDoubleClick={
+					browserOpenMode === "double_click"
+						? () => onFolderOpen(folder.id, folder.name)
+						: undefined
+				}
 				dragData={getDragData(folder.id, true)}
 				onDrop={onMoveToFolder}
 				targetPathIds={getTargetPathIds(folder.id)}
@@ -180,6 +200,10 @@ export function FileGrid({
 			key={`file-${file.id}`}
 			isFolder={false}
 			isLocked={file.is_locked ?? false}
+			onOpen={() => (onFileOpen ?? onFileClick)(file)}
+			onChooseOpenMethod={
+				onFileChooseOpenMethod ? () => onFileChooseOpenMethod(file) : undefined
+			}
 			onDownload={() => onDownload(file.id, file.name)}
 			onPageShare={() =>
 				onShare({
@@ -212,7 +236,18 @@ export function FileGrid({
 				isFolder={false}
 				selected={selectedFileIds.has(file.id)}
 				onSelect={() => toggleFileSelection(file.id)}
-				onClick={() => onFileClick(file)}
+				onClick={() => {
+					if (browserOpenMode === "double_click") {
+						selectOnlyFile(file.id);
+						return;
+					}
+					onFileClick(file);
+				}}
+				onDoubleClick={
+					browserOpenMode === "double_click"
+						? () => onFileClick(file)
+						: undefined
+				}
 				dragData={getDragData(file.id, false)}
 				fading={fadingFileIds?.has(file.id)}
 			/>

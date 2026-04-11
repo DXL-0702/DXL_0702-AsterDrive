@@ -16,6 +16,10 @@ const mockState = vi.hoisted(() => ({
 	handleApiError: vi.fn(),
 	navigate: vi.fn(),
 	params: { folderId: "12" as string | undefined },
+	previewAppStore: {
+		isLoaded: false,
+		load: vi.fn(async () => {}),
+	},
 	readInternalDragData: vi.fn(),
 	refreshUser: vi.fn(),
 	searchParams: new URLSearchParams("name=Projects"),
@@ -44,6 +48,7 @@ const mockState = vi.hoisted(() => ({
 		searchFiles: [] as Array<Record<string, unknown>>,
 		searchFolders: [] as Array<Record<string, unknown>>,
 		searchQuery: null as string | null,
+		browserOpenMode: "single_click" as "single_click" | "double_click",
 		setSortBy: vi.fn(),
 		setSortOrder: vi.fn(),
 		setViewMode: vi.fn(),
@@ -126,6 +131,12 @@ vi.mock("sonner", () => ({
 		error: (...args: unknown[]) => mockState.toastError(...args),
 		success: (...args: unknown[]) => mockState.toastSuccess(...args),
 	},
+}));
+
+vi.mock("@/stores/previewAppStore", () => ({
+	usePreviewAppStore: (
+		selector: (state: typeof mockState.previewAppStore) => unknown,
+	) => selector(mockState.previewAppStore),
 }));
 
 vi.mock("@/components/common/BatchActionBar", () => ({
@@ -246,6 +257,33 @@ vi.mock("@/components/files/FileGrid", () => ({
 					}
 				>
 					open-file
+				</button>
+				<button
+					type="button"
+					onClick={() =>
+						(props.onFileOpen as (file: { id: number; name: string }) => void)({
+							id: 3,
+							name: "report.pdf",
+						})
+					}
+				>
+					open-file-direct
+				</button>
+				<button
+					type="button"
+					onClick={() =>
+						(
+							props.onFileChooseOpenMethod as (file: {
+								id: number;
+								name: string;
+							}) => void
+						)({
+							id: 3,
+							name: "report.pdf",
+						})
+					}
+				>
+					open-file-picker
 				</button>
 				<button
 					type="button"
@@ -405,13 +443,15 @@ vi.mock("@/components/files/FileInfoDialog", () => ({
 vi.mock("@/components/files/FilePreview", () => ({
 	FilePreview: ({
 		file,
+		openMode,
 		onClose,
 	}: {
 		file: { name: string };
+		openMode?: string;
 		onClose: () => void;
 	}) => (
 		<div>
-			<div>{`preview:${file.name}`}</div>
+			<div>{`preview:${file.name}:${openMode ?? "auto"}`}</div>
 			<button type="button" onClick={onClose}>
 				close-preview
 			</button>
@@ -558,6 +598,7 @@ vi.mock("@/components/ui/context-menu", () => ({
 			{children}
 		</button>
 	),
+	ContextMenuSeparator: () => <hr data-testid="context-menu-separator" />,
 	ContextMenuTrigger: ({
 		children,
 		className,
@@ -693,6 +734,7 @@ describe("FileBrowserPage", () => {
 		mockState.formatBatchToast.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.navigate.mockReset();
+		mockState.previewAppStore.load.mockReset();
 		mockState.readInternalDragData.mockReset();
 		mockState.refreshUser.mockReset();
 		mockState.setFileLock.mockReset();
@@ -714,7 +756,10 @@ describe("FileBrowserPage", () => {
 		mockState.useKeyboardShortcuts.mockReset();
 
 		mockState.params = { folderId: "12" };
+		mockState.previewAppStore.isLoaded = false;
+		mockState.previewAppStore.load.mockResolvedValue(undefined);
 		mockState.searchParams = new URLSearchParams("name=Projects");
+		mockState.store.browserOpenMode = "single_click";
 		mockState.store.breadcrumb = [
 			{ id: null, name: "Root" },
 			{ id: 12, name: "Projects" },
@@ -766,6 +811,7 @@ describe("FileBrowserPage", () => {
 		await waitFor(() => {
 			expect(mockState.store.navigateTo).toHaveBeenCalledWith(12, "Projects");
 		});
+		expect(mockState.previewAppStore.load).toHaveBeenCalledTimes(1);
 		expect(screen.getByText(/core:search:\s*"budget"/)).toBeInTheDocument();
 		expect(screen.getByText("grid:1:1")).toBeInTheDocument();
 		expect(screen.getByText("view:grid")).toBeInTheDocument();
@@ -787,15 +833,31 @@ describe("FileBrowserPage", () => {
 			expect(mockState.store.navigateTo).toHaveBeenCalledWith(12, "Projects");
 		});
 
-		fireEvent.click(screen.getByRole("button", { name: "core:refresh" }));
+		fireEvent.click(screen.getByTitle("core:refresh"));
+		const contextRefreshButton = screen
+			.getByText("core:refresh")
+			.closest("button");
+		expect(contextRefreshButton).toBeTruthy();
+		if (!contextRefreshButton) {
+			throw new Error("missing context menu refresh button");
+		}
+		fireEvent.click(contextRefreshButton);
 		fireEvent.click(screen.getByRole("button", { name: "Root" }));
 		fireEvent.click(screen.getByRole("button", { name: "open-folder" }));
 		fireEvent.click(screen.getByRole("button", { name: "open-file" }));
 
-		expect(mockState.store.refresh).toHaveBeenCalledTimes(1);
+		expect(mockState.store.refresh).toHaveBeenCalledTimes(2);
 		expect(mockState.navigate).toHaveBeenCalledWith("/");
 		expect(mockState.navigate).toHaveBeenCalledWith("/folder/5?name=Docs%20A");
-		expect(await screen.findByText("preview:report.pdf")).toBeInTheDocument();
+		expect(
+			await screen.findByText("preview:report.pdf:auto"),
+		).toBeInTheDocument();
+	});
+
+	it("groups page context menu actions with separators", () => {
+		render(<FileBrowserPage />);
+
+		expect(screen.getAllByTestId("context-menu-separator")).toHaveLength(2);
 	});
 
 	it("copies files and folders through the batch target dialog and refreshes after success", async () => {

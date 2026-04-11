@@ -26,7 +26,7 @@ import { FOLDER_LIMIT } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
 import type { BreadcrumbItem as FileBreadcrumbItem } from "@/stores/fileStore";
-import type { FolderInfo } from "@/types/api";
+import type { FolderListItem } from "@/types/api";
 
 interface BatchTargetFolderDialogProps {
 	open: boolean;
@@ -53,7 +53,7 @@ export function BatchTargetFolderDialog({
 	const [creatingFolder, setCreatingFolder] = useState(false);
 	const [showCreateFolder, setShowCreateFolder] = useState(false);
 	const [newFolderName, setNewFolderName] = useState("");
-	const [folders, setFolders] = useState<FolderInfo[]>([]);
+	const [folders, setFolders] = useState<FolderListItem[]>([]);
 	const [activeFolderId, setActiveFolderId] = useState<number | null>(null);
 	const [breadcrumb, setBreadcrumb] = useState<FileBreadcrumbItem[]>([
 		{ id: null, name: t("files:root") },
@@ -103,7 +103,7 @@ export function BatchTargetFolderDialog({
 		loadFolder(currentFolderId);
 	}, [open, currentFolderId, initialBreadcrumb, loadFolder, t]);
 
-	const navigateTo = async (folder: FolderInfo) => {
+	const navigateTo = async (folder: FolderListItem) => {
 		const existingIndex = breadcrumb.findIndex((item) => item.id === folder.id);
 		if (existingIndex >= 0) {
 			setBreadcrumb((prev) => prev.slice(0, existingIndex + 1));

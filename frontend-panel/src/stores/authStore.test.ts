@@ -74,6 +74,7 @@ describe("useAuthStore", () => {
 		});
 		expect(useFileStore.getState()).toMatchObject({
 			viewMode: "grid",
+			browserOpenMode: "double_click",
 			sortBy: "updated_at",
 			sortOrder: "desc",
 		});

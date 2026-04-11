@@ -125,6 +125,59 @@ async fn test_folder_lock_unlock() {
 }
 
 #[actix_web::test]
+async fn test_folder_list_items_are_lightweight_and_info_endpoint_returns_full_details() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(serde_json::json!({ "name": "Projects" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let folder = &body["data"]["folders"][0];
+    let file = &body["data"]["files"][0];
+    assert_eq!(folder["id"], folder_id);
+    assert!(folder["created_at"].is_null());
+    assert!(folder["parent_id"].is_null());
+    assert!(folder["policy_id"].is_null());
+    assert!(folder["user_id"].is_null());
+    assert_eq!(file["id"], file_id);
+    assert!(file["blob_id"].is_null());
+    assert!(file["created_at"].is_null());
+    assert!(file["folder_id"].is_null());
+    assert!(file["user_id"].is_null());
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{folder_id}/info"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["id"], folder_id);
+    assert_eq!(body["data"]["name"], "Projects");
+    assert!(body["data"]["created_at"].is_string());
+    assert!(body["data"]["parent_id"].is_null());
+    assert!(body["data"]["user_id"].as_i64().unwrap() > 0);
+}
+
+#[actix_web::test]
 async fn test_folder_copy() {
     let state = common::setup().await;
     let app = create_test_app!(state);

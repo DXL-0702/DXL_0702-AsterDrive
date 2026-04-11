@@ -4,7 +4,12 @@ import i18n from "@/i18n";
 import { logger } from "@/lib/logger";
 import { cancelPreferenceSync } from "@/lib/preferenceSync";
 import { authService } from "@/services/authService";
-import type { SortBy, SortOrder, ViewMode } from "@/stores/fileStore";
+import type {
+	BrowserOpenMode,
+	SortBy,
+	SortOrder,
+	ViewMode,
+} from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useTeamStore } from "@/stores/teamStore";
 import type { ColorPreset, ThemeMode } from "@/stores/themeStore";
@@ -129,6 +134,9 @@ function applyServerPreferences(prefs: UserPreferences): void {
 	});
 	fileStore._applyFromServer({
 		viewMode: (prefs.view_mode as ViewMode) ?? fileStore.viewMode,
+		browserOpenMode:
+			(prefs.browser_open_mode as BrowserOpenMode) ??
+			fileStore.browserOpenMode,
 		sortBy: (prefs.sort_by as SortBy) ?? fileStore.sortBy,
 		sortOrder: (prefs.sort_order as SortOrder) ?? fileStore.sortOrder,
 	});

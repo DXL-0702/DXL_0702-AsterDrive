@@ -62,12 +62,8 @@ fn build_search_file_list_items(
         .map(|file| FileListItem {
             id: file.id,
             name: file.name,
-            folder_id: file.folder_id,
-            blob_id: file.blob_id,
             size: file.size,
-            user_id: file.user_id,
             mime_type: file.mime_type,
-            created_at: file.created_at,
             updated_at: file.updated_at,
             is_locked: file.is_locked,
             is_shared: shared_file_ids.contains(&file.id),

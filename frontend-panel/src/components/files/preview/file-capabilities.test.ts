@@ -176,7 +176,7 @@ describe("file preview capabilities", () => {
 		});
 		expect(detectFilePreviewProfile(json)).toMatchObject({
 			category: "json",
-			defaultMode: "formatted",
+			defaultMode: "formatted_json",
 		});
 		expect(detectFilePreviewProfile(image)).toMatchObject({
 			category: "image",
@@ -186,12 +186,12 @@ describe("file preview capabilities", () => {
 		expect(detectFilePreviewProfile(document)).toMatchObject({
 			category: "document",
 			isBlobPreview: false,
-			defaultMode: "officeOnline",
+			defaultMode: "office_microsoft",
 			isEditableText: false,
 		});
 		expect(detectFilePreviewProfile(tsv)).toMatchObject({
 			category: "tsv",
-			defaultMode: "table",
+			defaultMode: "table_tsv",
 			isEditableText: true,
 		});
 		expect(detectFilePreviewProfile(shell)).toMatchObject({
@@ -202,19 +202,231 @@ describe("file preview capabilities", () => {
 			category: "unknown",
 			defaultMode: null,
 			isEditableText: true,
-			options: [{ mode: "code", labelKey: "open_with_try_text" }],
+			options: [
+				{ key: "try_text", mode: "code", labelKey: "open_with_try_text" },
+			],
 		});
 
 		expect(getAvailableOpenWithOptions(json)).toEqual([
-			expect.objectContaining({ mode: "formatted" }),
+			expect.objectContaining({
+				key: "formatted_json",
+				mode: "formatted_json",
+			}),
 			expect.objectContaining({ mode: "code" }),
 		]);
-		expect(getDefaultOpenWith(json)).toBe("formatted");
-		expect(getDefaultOpenWith(document)).toBe("officeOnline");
-		expect(getDefaultOpenWith(tsv)).toBe("table");
+		expect(getDefaultOpenWith(json)).toBe("formatted_json");
+		expect(getDefaultOpenWith(document)).toBe("office_microsoft");
+		expect(getDefaultOpenWith(tsv)).toBe("table_tsv");
 		expect(isEditableTextFile(markdown)).toBe(true);
 		expect(isEditableTextFile(image)).toBe(false);
 		expect(isEditableTextFile(shell)).toBe(true);
+	});
+
+	it("uses Google viewer as the only office option for OpenDocument files", () => {
+		const document = {
+			name: "report.odt",
+			mime_type: "application/octet-stream",
+		};
+
+		expect(detectFilePreviewProfile(document)).toMatchObject({
+			category: "document",
+			defaultMode: "office_google",
+			options: [
+				expect.objectContaining({
+					key: "office_google",
+					mode: "url_template",
+				}),
+			],
+		});
+	});
+
+	it("uses backend-configured preview app rules when available", () => {
+		const markdown = { name: "notes.md", mime_type: "text/markdown" };
+		const previewApps = {
+			version: 1,
+			apps: [
+				{
+					icon: "Scroll",
+					key: "builtin.markdown",
+					label_i18n_key: "open_with_markdown",
+				},
+				{
+					icon: "FileCode",
+					key: "builtin.code",
+					label_i18n_key: "open_with_code",
+				},
+				{
+					config: {
+						allowed_origins: ["https://viewer.example.com"],
+						mode: "iframe",
+						url_template:
+							"https://viewer.example.com/open?src={{file_preview_url}}",
+					},
+					icon: "https://cdn.example.com/icons/external-viewer.svg",
+					key: "external",
+					labels: {
+						en: "External Viewer",
+						zh: "外部查看器",
+					},
+				},
+			],
+			rules: [
+				{
+					apps: ["builtin.markdown", "builtin.code", "external"],
+					default_app: "builtin.markdown",
+					matches: { categories: ["markdown"] },
+				},
+			],
+		};
+
+		expect(detectFilePreviewProfile(markdown, previewApps)).toMatchObject({
+			category: "markdown",
+			defaultMode: "builtin.markdown",
+			options: [
+				{ key: "builtin.markdown", mode: "markdown" },
+				{ key: "builtin.code", mode: "code" },
+				{
+					config: {
+						allowed_origins: ["https://viewer.example.com"],
+						mode: "iframe",
+						url_template:
+							"https://viewer.example.com/open?src={{file_preview_url}}",
+					},
+					key: "external",
+					labels: {
+						en: "External Viewer",
+						zh: "外部查看器",
+					},
+					mode: "url_template",
+				},
+			],
+		});
+	});
+
+	it("matches configured office rules when any declared file matcher applies", () => {
+		const spreadsheet = {
+			name: "2025级选课名单0320.xlsx",
+			mime_type:
+				"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		};
+		const previewApps = {
+			version: 1,
+			apps: [
+				{
+					config: {
+						allowed_origins: ["https://view.officeapps.live.com"],
+						mode: "iframe",
+						url_template:
+							"https://view.officeapps.live.com/op/embed.aspx?src={{file_preview_url}}",
+					},
+					icon: "/static/preview-apps/microsoft-onedrive.svg",
+					key: "builtin.office_microsoft",
+					labels: {
+						en: "Microsoft Viewer",
+						zh: "Microsoft 预览器",
+					},
+				},
+				{
+					config: {
+						allowed_origins: ["https://docs.google.com"],
+						mode: "iframe",
+						url_template:
+							"https://docs.google.com/gview?embedded=true&url={{file_preview_url}}",
+					},
+					icon: "/static/preview-apps/google-drive.svg",
+					key: "builtin.office_google",
+					labels: {
+						en: "Google Viewer",
+						zh: "Google 预览器",
+					},
+				},
+			],
+			rules: [
+				{
+					apps: ["builtin.office_microsoft", "builtin.office_google"],
+					default_app: "builtin.office_microsoft",
+					matches: {
+						extensions: ["xls", "xlsx"],
+						mime_types: ["application/vnd.ms-excel"],
+						mime_prefixes: [
+							"application/vnd.openxmlformats-officedocument.spreadsheetml",
+						],
+					},
+				},
+			],
+		};
+
+		expect(detectFilePreviewProfile(spreadsheet, previewApps)).toMatchObject({
+			category: "spreadsheet",
+			defaultMode: "builtin.office_microsoft",
+			options: [
+				expect.objectContaining({
+					key: "builtin.office_microsoft",
+					mode: "url_template",
+				}),
+				expect.objectContaining({
+					key: "builtin.office_google",
+					mode: "url_template",
+				}),
+			],
+		});
+	});
+
+	it("keeps configured choices first while exposing every registered app", () => {
+		const markdown = { name: "notes.md", mime_type: "text/markdown" };
+		const previewApps = {
+			version: 1,
+			apps: [
+				{
+					icon: "/static/preview-apps/markdown.svg",
+					key: "builtin.markdown",
+					label_i18n_key: "open_with_markdown",
+				},
+				{
+					icon: "/static/preview-apps/code.svg",
+					key: "builtin.code",
+					label_i18n_key: "open_with_code",
+				},
+				{
+					config: {
+						allowed_origins: ["https://viewer.example.com"],
+						mode: "iframe",
+						url_template:
+							"https://viewer.example.com/open?src={{file_preview_url}}",
+					},
+					icon: "https://cdn.example.com/icons/external-viewer.svg",
+					key: "external",
+					labels: {
+						en: "External Viewer",
+						zh: "外部查看器",
+					},
+				},
+				{
+					icon: "/static/preview-apps/pdf.svg",
+					key: "builtin.pdf",
+					label_i18n_key: "open_with_pdf",
+				},
+			],
+			rules: [
+				{
+					apps: ["builtin.markdown"],
+					default_app: "builtin.markdown",
+					matches: { categories: ["markdown"] },
+				},
+			],
+		};
+
+		expect(detectFilePreviewProfile(markdown, previewApps)).toMatchObject({
+			category: "markdown",
+			defaultMode: "builtin.markdown",
+			options: [{ key: "builtin.markdown", mode: "markdown" }],
+			allOptions: [
+				{ key: "builtin.markdown", mode: "markdown" },
+				{ key: "builtin.code", mode: "code" },
+				{ key: "external", mode: "url_template" },
+				{ key: "builtin.pdf", mode: "pdf" },
+			],
+		});
 	});
 
 	it("recognizes newly added text extensions", () => {
@@ -241,11 +453,44 @@ describe("file preview capabilities", () => {
 
 		expect(detectFilePreviewProfile(unknown).isEditableText).toBe(true);
 		expect(detectFilePreviewProfile(unknown).options).toEqual([
-			expect.objectContaining({ mode: "code", labelKey: "open_with_try_text" }),
+			expect.objectContaining({
+				key: "try_text",
+				mode: "code",
+				labelKey: "open_with_try_text",
+			}),
 		]);
 		expect(detectFilePreviewProfile(unknown).defaultMode).toBeNull();
 
 		expect(detectFilePreviewProfile(archive).isEditableText).toBe(false);
 		expect(detectFilePreviewProfile(archive).options).toEqual([]);
+	});
+
+	it("falls back to legacy defaults when configured rules omit a default app", () => {
+		const json = { name: "data.json", mime_type: "application/json" };
+		const previewApps = {
+			version: 1,
+			apps: [
+				{
+					icon: "BracketsCurly",
+					key: "builtin.formatted_json",
+					label_i18n_key: "open_with_formatted",
+				},
+				{
+					icon: "FileCode",
+					key: "builtin.code",
+					label_i18n_key: "open_with_code",
+				},
+			],
+			rules: [
+				{
+					apps: ["builtin.formatted_json", "builtin.code"],
+					matches: { categories: ["json"] },
+				},
+			],
+		};
+
+		expect(getDefaultOpenWith(json, previewApps)).toBe(
+			"builtin.formatted_json",
+		);
 	});
 });

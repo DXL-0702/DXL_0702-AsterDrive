@@ -27,6 +27,7 @@ interface Clipboard {
 }
 
 export type ViewMode = "grid" | "list";
+export type BrowserOpenMode = "single_click" | "double_click";
 export type SortBy = "name" | "size" | "created_at" | "updated_at" | "type";
 export type SortOrder = "asc" | "desc";
 
@@ -62,6 +63,7 @@ interface FileState {
 
 	// View preferences (persisted)
 	viewMode: ViewMode;
+	browserOpenMode: BrowserOpenMode;
 	sortBy: SortBy;
 	sortOrder: SortOrder;
 
@@ -86,10 +88,12 @@ interface FileState {
 
 	// View actions
 	setViewMode: (mode: ViewMode) => void;
+	setBrowserOpenMode: (mode: BrowserOpenMode) => void;
 	setSortBy: (sortBy: SortBy) => void;
 	setSortOrder: (sortOrder: SortOrder) => void;
 	_applyFromServer: (prefs: {
 		viewMode: ViewMode;
+		browserOpenMode: BrowserOpenMode;
 		sortBy: SortBy;
 		sortOrder: SortOrder;
 	}) => void;
@@ -97,6 +101,8 @@ interface FileState {
 	// Selection actions
 	toggleFileSelection: (id: number) => void;
 	toggleFolderSelection: (id: number) => void;
+	selectOnlyFile: (id: number) => void;
+	selectOnlyFolder: (id: number) => void;
 	selectAll: () => void;
 	clearSelection: () => void;
 	selectionCount: () => number;
@@ -207,6 +213,7 @@ export const useFileStore = create<FileState>((set, get) => ({
 	nextFileCursor: null,
 
 	viewMode: getStored(STORAGE_KEYS.viewMode, "list"),
+	browserOpenMode: getStored(STORAGE_KEYS.browserOpenMode, "single_click"),
 	sortBy: getStored(STORAGE_KEYS.sortBy, "name"),
 	sortOrder: getStored(STORAGE_KEYS.sortOrder, "asc"),
 
@@ -353,6 +360,12 @@ export const useFileStore = create<FileState>((set, get) => ({
 		queuePreferenceSync({ view_mode: mode });
 	},
 
+	setBrowserOpenMode: (mode) => {
+		localStorage.setItem(STORAGE_KEYS.browserOpenMode, mode);
+		set({ browserOpenMode: mode });
+		queuePreferenceSync({ browser_open_mode: mode });
+	},
+
 	setSortBy: (sortBy) => {
 		localStorage.setItem(STORAGE_KEYS.sortBy, sortBy);
 		queuePreferenceSync({ sort_by: sortBy });
@@ -413,11 +426,12 @@ export const useFileStore = create<FileState>((set, get) => ({
 			});
 	},
 
-	_applyFromServer: ({ viewMode, sortBy, sortOrder }) => {
+	_applyFromServer: ({ viewMode, browserOpenMode, sortBy, sortOrder }) => {
 		localStorage.setItem(STORAGE_KEYS.viewMode, viewMode);
+		localStorage.setItem(STORAGE_KEYS.browserOpenMode, browserOpenMode);
 		localStorage.setItem(STORAGE_KEYS.sortBy, sortBy);
 		localStorage.setItem(STORAGE_KEYS.sortOrder, sortOrder);
-		set({ viewMode, sortBy, sortOrder });
+		set({ viewMode, browserOpenMode, sortBy, sortOrder });
 	},
 
 	toggleFileSelection: (id) => {
@@ -438,6 +452,20 @@ export const useFileStore = create<FileState>((set, get) => ({
 			next.add(id);
 		}
 		set({ selectedFolderIds: next });
+	},
+
+	selectOnlyFile: (id) => {
+		set({
+			selectedFileIds: new Set([id]),
+			selectedFolderIds: new Set(),
+		});
+	},
+
+	selectOnlyFolder: (id) => {
+		set({
+			selectedFileIds: new Set(),
+			selectedFolderIds: new Set([id]),
+		});
 	},
 
 	selectAll: () => {

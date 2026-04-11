@@ -58,6 +58,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::folders::list_root,
         crate::api::routes::folders::create_folder,
         crate::api::routes::folders::list_folder,
+        crate::api::routes::folders::get_folder_info,
         crate::api::routes::folders::get_ancestors,
         crate::api::routes::folders::delete_folder,
         crate::api::routes::folders::patch_folder,
@@ -161,6 +162,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::team_space::list_root,
         crate::api::routes::team_space::create_folder,
         crate::api::routes::team_space::list_folder,
+        crate::api::routes::team_space::get_folder_info,
         crate::api::routes::team_space::get_ancestors,
         crate::api::routes::team_space::patch_folder,
         crate::api::routes::team_space::delete_folder,
@@ -216,6 +218,7 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::share_public::shared_folder_file_thumbnail,
         // public config
         crate::api::routes::public::get_branding,
+        crate::api::routes::public::get_preview_apps,
     ),
     components(
         schemas(
@@ -322,6 +325,10 @@ use utoipa::{Modify, OpenApi};
             crate::services::config_service::TemplateVariableGroup,
             crate::services::config_service::ConfigActionType,
             crate::services::config_service::PublicBranding,
+            crate::services::preview_app_service::PublicPreviewAppDefinition,
+            crate::services::preview_app_service::PublicPreviewAppMatch,
+            crate::services::preview_app_service::PublicPreviewAppRule,
+            crate::services::preview_app_service::PublicPreviewAppsConfig,
             crate::services::policy_service::StoragePolicyGroupItemInfo,
             crate::services::policy_service::StoragePolicyGroupInfo,
             crate::services::policy_service::StoragePolicyGroupItemInput,

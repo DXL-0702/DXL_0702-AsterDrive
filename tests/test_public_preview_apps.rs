@@ -1,0 +1,181 @@
+#[macro_use]
+mod common;
+
+use actix_web::test;
+use serde_json::{Value, json};
+
+#[actix_web::test]
+async fn test_public_preview_apps_returns_default_registry() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/public/preview-apps")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["version"], 1);
+    assert!(
+        body["data"]["apps"]
+            .as_array()
+            .is_some_and(|apps| !apps.is_empty())
+    );
+    assert!(
+        body["data"]["rules"]
+            .as_array()
+            .is_some_and(|rules| !rules.is_empty())
+    );
+    assert!(body["data"]["apps"].as_array().unwrap().iter().any(|app| {
+        app["key"] == "builtin.code"
+            && app["labels"]["en"] == "Source view"
+            && app["labels"]["zh"] == "源码视图"
+    }));
+    assert!(body["data"]["apps"].as_array().unwrap().iter().any(|app| {
+        app["key"] == "builtin.try_text"
+            && app["icon"] == "/static/preview-apps/file.svg"
+            && app["labels"]["en"] == "Open as text"
+    }));
+}
+
+#[actix_web::test]
+async fn test_public_preview_apps_uses_admin_config_and_filters_disabled_apps() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/public/preview-apps")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let default_body: Value = test::read_body_json(resp).await;
+    let mut custom_config = default_body["data"].clone();
+    let apps = custom_config["apps"]
+        .as_array_mut()
+        .expect("default apps should be an array");
+    for app in apps.iter_mut() {
+        let key = app["key"].as_str().unwrap_or_default();
+        if key != "builtin.code" {
+            app["enabled"] = json!(false);
+        }
+    }
+    apps.push(json!({
+        "key": "custom.viewer",
+        "icon": "Globe",
+        "enabled": false,
+        "labels": {
+            "en": "Viewer"
+        },
+        "config": {
+            "mode": "iframe",
+            "url_template": "https://viewer.example.com/?src={{file_preview_url}}"
+        }
+    }));
+    custom_config["rules"] = json!([
+        {
+            "matches": {
+                "categories": ["text"]
+            },
+            "apps": ["custom.viewer", "builtin.code"],
+            "default_app": "builtin.code"
+        }
+    ]);
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/admin/config/frontend_preview_apps_json")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(json!({ "value": custom_config.to_string() }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/public/preview-apps")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: Value = test::read_body_json(resp).await;
+    let apps = body["data"]["apps"]
+        .as_array()
+        .expect("apps should be an array");
+    assert_eq!(apps.len(), 1);
+    assert_eq!(apps[0]["key"], "builtin.code");
+
+    let rules = body["data"]["rules"]
+        .as_array()
+        .expect("rules should be an array");
+    assert_eq!(rules.len(), 1);
+    assert_eq!(rules[0]["apps"], json!(["builtin.code"]));
+    assert_eq!(rules[0]["default_app"], "builtin.code");
+}
+
+#[actix_web::test]
+async fn test_admin_preview_apps_config_rejects_invalid_json() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/admin/config/frontend_preview_apps_json")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(json!({ "value": "{bad json" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+
+    let body: Value = test::read_body_json(resp).await;
+    assert!(
+        body["msg"]
+            .as_str()
+            .is_some_and(|msg| msg.contains("valid JSON"))
+    );
+}
+
+#[actix_web::test]
+async fn test_admin_preview_apps_config_rejects_builtin_removal() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::put()
+        .uri("/api/v1/admin/config/frontend_preview_apps_json")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .set_json(json!({
+            "value": json!({
+                "version": 1,
+                "apps": [
+                    {
+                        "key": "custom.viewer",
+                        "icon": "Globe",
+                        "labels": {
+                            "en": "Viewer"
+                        },
+                        "config": {
+                            "mode": "iframe",
+                            "url_template": "https://viewer.example.com/?src={{file_preview_url}}"
+                        }
+                    }
+                ],
+                "rules": [
+                    {
+                        "apps": ["custom.viewer"],
+                        "matches": { "categories": ["text"] }
+                    }
+                ]
+            }).to_string()
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+
+    let body: Value = test::read_body_json(resp).await;
+    assert!(
+        body["msg"]
+            .as_str()
+            .is_some_and(|msg| msg.contains("cannot be removed"))
+    );
+}

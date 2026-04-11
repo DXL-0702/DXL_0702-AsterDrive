@@ -474,6 +474,7 @@ pub async fn register(
 
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
     let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let email_verified_at = (!auth_policy.register_activation_enabled).then_some(Utc::now());
     let user = create_user_with_role(
         &txn,
         state,
@@ -482,24 +483,26 @@ pub async fn register(
         password,
         UserRole::User,
         UserStatus::Active,
-        None,
+        email_verified_at,
     )
     .await?;
-    let token = issue_contact_verification_token(
-        &txn,
-        user.id,
-        VerificationPurpose::RegisterActivation,
-        &user.email,
-        policy.register_activation_ttl_secs,
-    )
-    .await?;
-    mail_outbox_service::enqueue(
-        &txn,
-        &user.email,
-        Some(&user.username),
-        MailTemplatePayload::register_activation(&user.username, &token),
-    )
-    .await?;
+    if auth_policy.register_activation_enabled {
+        let token = issue_contact_verification_token(
+            &txn,
+            user.id,
+            VerificationPurpose::RegisterActivation,
+            &user.email,
+            policy.register_activation_ttl_secs,
+        )
+        .await?;
+        mail_outbox_service::enqueue(
+            &txn,
+            &user.email,
+            Some(&user.username),
+            MailTemplatePayload::register_activation(&user.username, &token),
+        )
+        .await?;
+    }
     txn.commit().await.map_err(AsterError::from)?;
 
     Ok(user)

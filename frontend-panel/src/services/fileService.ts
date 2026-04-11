@@ -46,6 +46,9 @@ export function createFileService(workspace: Workspace) {
 				buildWorkspacePath(workspace, `/folders/${id}/ancestors`),
 			),
 
+		getFolderInfo: (id: number) =>
+			api.get<FolderInfo>(buildWorkspacePath(workspace, `/folders/${id}/info`)),
+
 		createFolder: (name: string, parentId?: number | null) =>
 			api.post<FolderInfo>(buildWorkspacePath(workspace, "/folders"), {
 				name,

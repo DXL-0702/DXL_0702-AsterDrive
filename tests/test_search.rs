@@ -91,6 +91,10 @@ async fn test_search_includes_share_and_lock_status() {
     assert_eq!(files.len(), 1);
     assert_eq!(files[0]["is_locked"], true);
     assert_eq!(files[0]["is_shared"], true);
+    assert!(files[0]["blob_id"].is_null());
+    assert!(files[0]["created_at"].is_null());
+    assert!(files[0]["folder_id"].is_null());
+    assert!(files[0]["user_id"].is_null());
 
     let folder_search_req = test::TestRequest::get()
         .uri("/api/v1/search?type=folder&q=status")
@@ -103,6 +107,10 @@ async fn test_search_includes_share_and_lock_status() {
     assert_eq!(folders.len(), 1);
     assert_eq!(folders[0]["is_locked"], true);
     assert_eq!(folders[0]["is_shared"], true);
+    assert!(folders[0]["created_at"].is_null());
+    assert!(folders[0]["parent_id"].is_null());
+    assert!(folders[0]["policy_id"].is_null());
+    assert!(folders[0]["user_id"].is_null());
 }
 
 #[actix_web::test]

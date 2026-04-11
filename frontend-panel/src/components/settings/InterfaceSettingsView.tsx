@@ -9,7 +9,7 @@ import type { IconName } from "@/components/ui/icon";
 import { Switch } from "@/components/ui/switch";
 import { queuePreferenceSync } from "@/lib/preferenceSync";
 import { useAuthStore } from "@/stores/authStore";
-import { useFileStore } from "@/stores/fileStore";
+import { useFileStore, type BrowserOpenMode } from "@/stores/fileStore";
 import { useThemeStore } from "@/stores/themeStore";
 
 type ThemeMode = "light" | "dark" | "system";
@@ -19,7 +19,9 @@ export function InterfaceSettingsView() {
 	const { t, i18n } = useTranslation(["core", "files", "settings"]);
 	const { mode, setMode } = useThemeStore();
 	const viewMode = useFileStore((s) => s.viewMode);
+	const browserOpenMode = useFileStore((s) => s.browserOpenMode);
 	const setViewMode = useFileStore((s) => s.setViewMode);
+	const setBrowserOpenMode = useFileStore((s) => s.setBrowserOpenMode);
 	const storageEventStreamEnabled = useAuthStore(
 		(s) => s.user?.preferences?.storage_event_stream_enabled !== false,
 	);
@@ -52,6 +54,19 @@ export function InterfaceSettingsView() {
 		{ value: "list", label: t("files:list_view"), icon: "ListBullets" },
 		{ value: "grid", label: t("files:grid_view"), icon: "Grid" },
 	];
+	const browserOpenOptions: Array<{
+		value: BrowserOpenMode;
+		label: string;
+	}> = [
+		{
+			value: "single_click",
+			label: t("settings:settings_browser_open_single_click"),
+		},
+		{
+			value: "double_click",
+			label: t("settings:settings_browser_open_double_click"),
+		},
+	];
 
 	const currentLanguage = i18n.language?.startsWith("zh") ? "zh" : "en";
 	const themeDescriptions: Record<ThemeMode, string> = {
@@ -66,6 +81,10 @@ export function InterfaceSettingsView() {
 	const browserDescriptions: Record<ViewMode, string> = {
 		list: t("settings:settings_browser_list_desc"),
 		grid: t("settings:settings_browser_grid_desc"),
+	};
+	const browserOpenDescriptions: Record<BrowserOpenMode, string> = {
+		single_click: t("settings:settings_browser_open_single_click_desc"),
+		double_click: t("settings:settings_browser_open_double_click_desc"),
 	};
 	const storageEventStreamDescription = storageEventStreamEnabled
 		? t("settings:settings_storage_event_stream_enabled_desc")
@@ -116,6 +135,17 @@ export function InterfaceSettingsView() {
 					options={browserOptions}
 					value={viewMode}
 					onChange={setViewMode}
+				/>
+			</SettingsRow>
+
+			<SettingsRow
+				label={t("settings:settings_browser_open_mode")}
+				description={browserOpenDescriptions[browserOpenMode]}
+			>
+				<SettingsChoiceGroup
+					options={browserOpenOptions}
+					value={browserOpenMode}
+					onChange={setBrowserOpenMode}
 				/>
 			</SettingsRow>
 

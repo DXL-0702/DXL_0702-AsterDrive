@@ -7,6 +7,8 @@ const mockState = vi.hoisted(() => ({
 	store: {
 		selectedFileIds: new Set<number>(),
 		selectedFolderIds: new Set<number>(),
+		selectOnlyFile: vi.fn(),
+		selectOnlyFolder: vi.fn(),
 		toggleFileSelection: vi.fn(),
 		toggleFolderSelection: vi.fn(),
 		selectAll: vi.fn(),
@@ -84,6 +86,7 @@ vi.mock("@/components/ui/table", () => ({
 	TableRow: ({
 		children,
 		onClick,
+		onDoubleClick,
 		onDragStart,
 		onDragOver,
 		onDragLeave,
@@ -93,6 +96,7 @@ vi.mock("@/components/ui/table", () => ({
 	}: {
 		children: React.ReactNode;
 		onClick?: () => void;
+		onDoubleClick?: () => void;
 		onDragStart?: (event: React.DragEvent<HTMLTableRowElement>) => void;
 		onDragOver?: (event: React.DragEvent<HTMLTableRowElement>) => void;
 		onDragLeave?: () => void;
@@ -103,6 +107,7 @@ vi.mock("@/components/ui/table", () => ({
 			data-testid="row"
 			className={className}
 			onClick={onClick}
+			onDoubleClick={onDoubleClick}
 			onDragStart={onDragStart}
 			onDragOver={onDragOver}
 			onDragLeave={onDragLeave}
@@ -181,6 +186,8 @@ describe("FileTable", () => {
 	beforeEach(() => {
 		mockState.store.selectedFileIds = new Set();
 		mockState.store.selectedFolderIds = new Set();
+		mockState.store.selectOnlyFile.mockReset();
+		mockState.store.selectOnlyFolder.mockReset();
 		mockState.store.toggleFileSelection.mockReset();
 		mockState.store.toggleFolderSelection.mockReset();
 		mockState.store.selectAll.mockReset();
@@ -207,6 +214,7 @@ describe("FileTable", () => {
 			<FileTable
 				folders={[folder as never]}
 				files={[file as never]}
+				browserOpenMode="single_click"
 				onFolderOpen={vi.fn()}
 				onFileClick={vi.fn()}
 				onShare={vi.fn()}
@@ -240,6 +248,7 @@ describe("FileTable", () => {
 			<FileTable
 				folders={[folder as never]}
 				files={[file as never]}
+				browserOpenMode="single_click"
 				onFolderOpen={vi.fn()}
 				onFileClick={vi.fn()}
 				onShare={vi.fn()}
@@ -259,6 +268,7 @@ describe("FileTable", () => {
 			<FileTable
 				folders={[folder as never]}
 				files={[file as never]}
+				browserOpenMode="single_click"
 				onFolderOpen={vi.fn()}
 				onFileClick={vi.fn()}
 				onShare={vi.fn()}
@@ -282,6 +292,7 @@ describe("FileTable", () => {
 			<FileTable
 				folders={[folder as never]}
 				files={[file as never]}
+				browserOpenMode="single_click"
 				onFolderOpen={onFolderOpen}
 				onFileClick={onFileClick}
 				onShare={vi.fn()}
@@ -318,6 +329,39 @@ describe("FileTable", () => {
 		);
 	});
 
+	it("selects folders and files on single click and opens them on double click in double-click mode", () => {
+		const onFolderOpen = vi.fn();
+		const onFileClick = vi.fn();
+
+		render(
+			<FileTable
+				folders={[folder as never]}
+				files={[file as never]}
+				browserOpenMode="double_click"
+				onFolderOpen={onFolderOpen}
+				onFileClick={onFileClick}
+				onShare={vi.fn()}
+				onDownload={vi.fn()}
+				onCopy={vi.fn()}
+				onToggleLock={vi.fn()}
+				onDelete={vi.fn()}
+			/>,
+		);
+
+		const rows = screen.getAllByTestId("row");
+		fireEvent.click(rows[1]);
+		fireEvent.click(rows[2]);
+		fireEvent.doubleClick(rows[1]);
+		fireEvent.doubleClick(rows[2]);
+
+		expect(mockState.store.selectOnlyFolder).toHaveBeenCalledWith(1);
+		expect(mockState.store.selectOnlyFile).toHaveBeenCalledWith(2);
+		expect(onFolderOpen).toHaveBeenCalledWith(1, "Docs");
+		expect(onFileClick).toHaveBeenCalledWith(
+			expect.objectContaining({ id: 2 }),
+		);
+	});
+
 	it("accepts valid folder drops and ignores invalid ones", () => {
 		const onMoveToFolder = vi.fn();
 		const dataTransfer = {
@@ -334,6 +378,7 @@ describe("FileTable", () => {
 			<FileTable
 				folders={[folder as never]}
 				files={[]}
+				browserOpenMode="single_click"
 				breadcrumbPathIds={[10]}
 				onFolderOpen={vi.fn()}
 				onFileClick={vi.fn()}

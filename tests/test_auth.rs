@@ -422,6 +422,42 @@ async fn test_register_requires_activation_until_confirmed() {
 }
 
 #[actix_web::test]
+async fn test_register_skips_activation_when_register_activation_is_disabled() {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let mail_sender = state.mail_sender.clone();
+    let runtime_config = state.runtime_config.clone();
+    state.runtime_config.apply(common::system_config_model(
+        aster_drive::config::auth_runtime::AUTH_REGISTER_ACTIVATION_ENABLED_KEY,
+        "false",
+    ));
+    let app = create_test_app!(state);
+
+    let _ = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "directuser",
+            "email": "directuser@example.com",
+            "password": "password123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["email_verified"], true);
+
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
+        .expect("memory mail sender should be available in tests");
+    assert!(memory_sender.messages().is_empty());
+
+    let (_access, _refresh) = login_user!(app, "directuser", "password123");
+}
+
+#[actix_web::test]
 async fn test_register_resend_is_generic_for_unknown_identifier_and_cooldown() {
     let state = common::setup().await;
     let db = state.db.clone();
@@ -1399,6 +1435,7 @@ async fn test_patch_preferences_set_and_get() {
             "theme_mode": "dark",
             "color_preset": "green",
             "view_mode": "grid",
+            "browser_open_mode": "double_click",
             "sort_by": "size",
             "sort_order": "desc",
             "language": "zh",
@@ -1412,6 +1449,7 @@ async fn test_patch_preferences_set_and_get() {
     assert_eq!(body["data"]["theme_mode"], "dark");
     assert_eq!(body["data"]["color_preset"], "green");
     assert_eq!(body["data"]["view_mode"], "grid");
+    assert_eq!(body["data"]["browser_open_mode"], "double_click");
     assert_eq!(body["data"]["sort_by"], "size");
     assert_eq!(body["data"]["sort_order"], "desc");
     assert_eq!(body["data"]["language"], "zh");
@@ -1427,6 +1465,10 @@ async fn test_patch_preferences_set_and_get() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["preferences"]["theme_mode"], "dark");
     assert_eq!(body["data"]["preferences"]["view_mode"], "grid");
+    assert_eq!(
+        body["data"]["preferences"]["browser_open_mode"],
+        "double_click"
+    );
     assert_eq!(body["data"]["preferences"]["language"], "zh");
     assert_eq!(
         body["data"]["preferences"]["storage_event_stream_enabled"],
@@ -1447,7 +1489,8 @@ async fn test_patch_preferences_partial_update() {
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({
             "theme_mode": "dark",
-            "view_mode": "grid"
+            "view_mode": "grid",
+            "browser_open_mode": "double_click"
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -1467,6 +1510,7 @@ async fn test_patch_preferences_partial_update() {
     // Previously set fields should be preserved
     assert_eq!(body["data"]["theme_mode"], "dark");
     assert_eq!(body["data"]["view_mode"], "grid");
+    assert_eq!(body["data"]["browser_open_mode"], "double_click");
     // Newly set field
     assert_eq!(body["data"]["sort_by"], "size");
 }
@@ -1519,6 +1563,7 @@ async fn test_patch_preferences_empty_body() {
     // All fields should be null for a fresh user
     assert!(body["data"]["theme_mode"].is_null());
     assert!(body["data"]["color_preset"].is_null());
+    assert!(body["data"]["browser_open_mode"].is_null());
     assert!(body["data"]["language"].is_null());
     assert!(body["data"]["storage_event_stream_enabled"].is_null());
 

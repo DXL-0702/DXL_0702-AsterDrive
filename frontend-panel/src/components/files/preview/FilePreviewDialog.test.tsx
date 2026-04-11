@@ -4,7 +4,6 @@ import { FilePreviewDialog } from "@/components/files/preview/FilePreviewDialog"
 
 const mockState = vi.hoisted(() => ({
 	downloadPath: vi.fn((fileId: number) => `/files/${fileId}/download`),
-	getStoredPreference: vi.fn(),
 	profile: {
 		category: "markdown",
 		defaultMode: "code",
@@ -12,32 +11,33 @@ const mockState = vi.hoisted(() => ({
 		isEditableText: true,
 		isTextBased: true,
 		options: [
-			{ icon: "TextT", labelKey: "mode_code", mode: "code" },
-			{ icon: "MarkdownLogo", labelKey: "mode_markdown", mode: "markdown" },
+			{ icon: "TextT", key: "code", labelKey: "mode_code", mode: "code" },
+			{
+				icon: "MarkdownLogo",
+				key: "markdown",
+				labelKey: "mode_markdown",
+				mode: "markdown",
+			},
 		],
 	},
-	setStoredPreference: vi.fn(),
+	previewAppStore: {
+		config: null,
+		isLoaded: true,
+		load: vi.fn(async () => {}),
+	},
 	videoBrowserOption: null as {
+		config?: Record<string, unknown>;
 		icon: string;
+		key: string;
 		label?: string;
 		labelKey: string;
 		mode: string;
-	} | null,
-	videoBrowserTarget: null as {
-		label: string;
-		mode: "iframe" | "new_tab";
-		url: string;
 	} | null,
 }));
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
-		t: (key: string, opts?: Record<string, unknown>) => {
-			if (key === "files:open_modes_count") {
-				return `modes:${opts?.count}`;
-			}
-			return key;
-		},
+		t: (key: string) => key,
 	}),
 }));
 
@@ -122,59 +122,42 @@ vi.mock("@/services/fileService", () => ({
 	},
 }));
 
+vi.mock("@/stores/previewAppStore", () => ({
+	usePreviewAppStore: (
+		selector: (state: typeof mockState.previewAppStore) => unknown,
+	) => selector(mockState.previewAppStore),
+}));
+
 vi.mock("@/components/files/preview/BlobMediaPreview", () => ({
 	BlobMediaPreview: ({ mode, path }: { mode: string; path: string }) => (
 		<div>{`blob:${mode}:${path}`}</div>
 	),
 }));
 
-vi.mock("@/components/files/preview/CustomVideoBrowserPreview", () => ({
-	CustomVideoBrowserPreview: ({
-		target,
+vi.mock("@/components/files/preview/UrlTemplatePreview", () => ({
+	UrlTemplatePreview: ({
+		createPreviewLink,
+		downloadPath,
+		label,
+		rawConfig,
 	}: {
-		target: { url: string } | null;
-	}) => <div>{`video-browser:${target?.url ?? "null"}`}</div>,
+		createPreviewLink?: (() => Promise<unknown>) | undefined;
+		downloadPath: string;
+		label: string;
+		rawConfig: Record<string, unknown> | null | undefined;
+	}) => (
+		<div>
+			{`url-template:${label}:${downloadPath}:${String(rawConfig?.url_template ?? "")}:${String(Boolean(createPreviewLink))}`}
+		</div>
+	),
 }));
 
 vi.mock("@/components/files/preview/file-capabilities", () => ({
 	detectFilePreviewProfile: () => mockState.profile,
 }));
 
-vi.mock("@/components/files/preview/open-with-preferences", () => ({
-	getStoredOpenWithPreference: (...args: unknown[]) =>
-		mockState.getStoredPreference(...args),
-	setStoredOpenWithPreference: (...args: unknown[]) =>
-		mockState.setStoredPreference(...args),
-}));
-
 vi.mock("@/components/files/preview/video-browser-config", () => ({
 	getVideoBrowserOpenWithOption: () => mockState.videoBrowserOption,
-	resolveVideoBrowserTarget: () => mockState.videoBrowserTarget,
-}));
-
-vi.mock("@/components/files/preview/PreviewModeSwitch", () => ({
-	PreviewModeSwitch: ({
-		options,
-		value,
-		onChange,
-	}: {
-		options: Array<{ labelKey: string; mode: string }>;
-		value: string;
-		onChange: (value: string) => void;
-	}) => (
-		<div>
-			<div>{`active:${value}`}</div>
-			{options.map((option) => (
-				<button
-					key={option.mode}
-					type="button"
-					onClick={() => onChange(option.mode)}
-				>
-					{option.label ?? option.labelKey}
-				</button>
-			))}
-		</div>
-	),
 }));
 
 vi.mock("@/components/files/preview/PreviewUnavailable", () => ({
@@ -217,12 +200,6 @@ vi.mock("@/components/files/preview/PdfPreview", () => ({
 vi.mock("@/components/files/preview/MarkdownPreview", () => ({
 	MarkdownPreview: ({ path }: { path: string }) => (
 		<div>{`markdown:${path}`}</div>
-	),
-}));
-
-vi.mock("@/components/files/preview/OfficeOnlinePreview", () => ({
-	OfficeOnlinePreview: ({ downloadPath }: { downloadPath: string }) => (
-		<div>{`office:${downloadPath}`}</div>
 	),
 }));
 
@@ -291,11 +268,19 @@ function renderDialog(
 	return { onClose, onFileUpdated };
 }
 
+async function chooseOpenMethod(name: string) {
+	const label = await screen.findByText(name);
+	const button = label.closest("button");
+	if (!button) {
+		throw new Error(`Open method button not found for label: ${name}`);
+	}
+	fireEvent.click(button);
+}
+
 describe("FilePreviewDialog", () => {
 	beforeEach(() => {
 		mockState.downloadPath.mockClear();
-		mockState.getStoredPreference.mockReset();
-		mockState.setStoredPreference.mockReset();
+		mockState.previewAppStore.load.mockReset();
 		mockState.profile = {
 			category: "markdown",
 			defaultMode: "code",
@@ -303,76 +288,108 @@ describe("FilePreviewDialog", () => {
 			isEditableText: true,
 			isTextBased: true,
 			options: [
-				{ icon: "TextT", labelKey: "mode_code", mode: "code" },
-				{ icon: "MarkdownLogo", labelKey: "mode_markdown", mode: "markdown" },
+				{ icon: "TextT", key: "code", labelKey: "mode_code", mode: "code" },
+				{
+					icon: "MarkdownLogo",
+					key: "markdown",
+					labelKey: "mode_markdown",
+					mode: "markdown",
+				},
 			],
 		};
-		mockState.getStoredPreference.mockReturnValue(null);
+		mockState.previewAppStore.config = null;
+		mockState.previewAppStore.isLoaded = true;
 		mockState.videoBrowserOption = null;
-		mockState.videoBrowserTarget = null;
 	});
 
-	it("uses a valid stored preference and the default download path", async () => {
-		mockState.getStoredPreference.mockReturnValueOnce("markdown");
-
+	it("uses the default open method and the default download path", async () => {
 		renderDialog();
 
-		expect(mockState.getStoredPreference).toHaveBeenCalledWith("markdown");
 		expect(mockState.downloadPath).toHaveBeenCalledWith(7);
+		expect(screen.getByText("files:choose_open_method")).toBeInTheDocument();
+		expect(screen.getByText("notes.md · bytes:128")).toBeInTheDocument();
+		expect(
+			screen.getByTestId("dialog-content").className.split(/\s+/),
+		).toContain("max-h-[min(90vh,calc(100vh-2rem))]");
+		expect(
+			screen.getByText("files:mode_code").closest("button")?.className,
+		).toContain("border-primary");
+		await chooseOpenMethod("files:mode_markdown");
 		expect(
 			await screen.findByText("markdown:/files/7/download"),
 		).toBeInTheDocument();
-		expect(screen.getByText("modes:2")).toBeInTheDocument();
-		expect(screen.getByText("active:markdown")).toBeInTheDocument();
 	});
 
 	it("keeps a fixed work area for editor-style previews", async () => {
 		renderDialog();
 
+		await chooseOpenMethod("files:mode_code");
 		await screen.findByText("code:/files/7/download:true");
 		expect(
 			screen.getByTestId("dialog-content").className.split(/\s+/),
 		).toContain("h-[90vh]");
 	});
 
-	it("switches modes immediately when the editor is clean and persists the choice", async () => {
+	it("opens the selected mode from the chooser without persisting the choice", async () => {
 		renderDialog();
 
+		await chooseOpenMethod("files:mode_code");
 		expect(
 			await screen.findByText("code:/files/7/download:true"),
 		).toBeInTheDocument();
-		fireEvent.click(screen.getByRole("button", { name: "mode_markdown" }));
-
-		await screen.findByText("markdown:/files/7/download");
-		expect(mockState.setStoredPreference).toHaveBeenCalledWith(
-			"markdown",
-			"markdown",
-		);
-		expect(screen.getByText("active:markdown")).toBeInTheDocument();
+		expect(screen.queryByText("files:mode_markdown")).not.toBeInTheDocument();
 	});
 
-	it("guards mode switches when there are unsaved changes and applies them after discard", async () => {
+	it("always shows the more-open-methods button while the chooser is visible", () => {
 		renderDialog();
 
-		await screen.findByText("code:/files/7/download:true");
-		fireEvent.click(screen.getByRole("button", { name: "mark-dirty" }));
-		fireEvent.click(screen.getByRole("button", { name: "mode_markdown" }));
+		expect(screen.getByText("files:more_open_methods")).toBeInTheDocument();
+	});
 
-		expect(screen.getByText("unsaved-guard")).toBeInTheDocument();
-		expect(mockState.setStoredPreference).not.toHaveBeenCalled();
+	it("reveals extra open methods after expanding the more button", async () => {
+		mockState.profile = {
+			category: "markdown",
+			defaultMode: "code",
+			isBlobPreview: false,
+			isEditableText: true,
+			isTextBased: true,
+			options: [
+				{ icon: "TextT", key: "code", labelKey: "mode_code", mode: "code" },
+			],
+			allOptions: [
+				{ icon: "TextT", key: "code", labelKey: "mode_code", mode: "code" },
+				{
+					icon: "MarkdownLogo",
+					key: "markdown",
+					labelKey: "mode_markdown",
+					mode: "markdown",
+				},
+			],
+		};
 
-		fireEvent.click(screen.getByRole("button", { name: "discard-changes" }));
+		renderDialog();
 
-		await screen.findByText("markdown:/files/7/download");
-		expect(mockState.setStoredPreference).toHaveBeenCalledWith(
-			"markdown",
-			"markdown",
+		expect(screen.getByText("files:more_open_methods")).toBeInTheDocument();
+		expect(screen.queryByText("files:mode_markdown")).not.toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: /files:more_open_methods/i }),
 		);
+		expect(
+			screen.queryByText("files:more_open_methods"),
+		).not.toBeInTheDocument();
+		expect(screen.getByText("files:mode_markdown")).toBeInTheDocument();
+
+		await chooseOpenMethod("files:mode_markdown");
+		expect(
+			await screen.findByText("markdown:/files/7/download"),
+		).toBeInTheDocument();
 	});
 
 	it("guards closing when dirty and only closes after discard confirmation", async () => {
 		const { onClose } = renderDialog();
 
+		await chooseOpenMethod("files:mode_code");
 		await screen.findByText("code:/files/7/download:true");
 		fireEvent.click(screen.getByRole("button", { name: "mark-dirty" }));
 		fireEvent.click(screen.getByRole("button", { name: "X" }));
@@ -400,10 +417,9 @@ describe("FilePreviewDialog", () => {
 		renderDialog();
 
 		expect(await screen.findByText("preview-unavailable")).toBeInTheDocument();
-		expect(screen.getByText("modes:0")).toBeInTheDocument();
 	});
 
-	it("adds the configured custom video browser as an extra video open mode", async () => {
+	it("opens the configured custom video browser from the chooser", async () => {
 		mockState.profile = {
 			category: "video",
 			defaultMode: "video",
@@ -411,19 +427,25 @@ describe("FilePreviewDialog", () => {
 			isEditableText: false,
 			isTextBased: false,
 			options: [
-				{ icon: "Monitor", labelKey: "open_with_video", mode: "video" },
+				{
+					icon: "Monitor",
+					key: "video",
+					labelKey: "open_with_video",
+					mode: "video",
+				},
 			],
 		};
 		mockState.videoBrowserOption = {
+			config: {
+				allowed_origins: ["https://videos.example.com"],
+				mode: "iframe",
+				url_template: "https://videos.example.com/watch?id={{fileId}}",
+			},
 			icon: "Globe",
+			key: "videoBrowser",
 			label: "Jellyfin",
 			labelKey: "open_with_custom_video_browser",
-			mode: "videoBrowser",
-		};
-		mockState.videoBrowserTarget = {
-			label: "Jellyfin",
-			mode: "iframe",
-			url: "https://videos.example.com/watch?id=7",
+			mode: "url_template",
 		};
 
 		renderDialog({
@@ -435,21 +457,11 @@ describe("FilePreviewDialog", () => {
 			} as never,
 		});
 
-		expect(
-			await screen.findByText("video:/files/7/download"),
-		).toBeInTheDocument();
-		expect(screen.getByText("modes:2")).toBeInTheDocument();
-
-		fireEvent.click(screen.getByRole("button", { name: "Jellyfin" }));
+		await chooseOpenMethod("Jellyfin");
 
 		await screen.findByText(
-			"video-browser:https://videos.example.com/watch?id=7",
+			"url-template:Jellyfin:/files/7/download:https://videos.example.com/watch?id={{fileId}}:false",
 		);
-		expect(mockState.setStoredPreference).toHaveBeenCalledWith(
-			"video",
-			"videoBrowser",
-		);
-		expect(screen.getByText("active:videoBrowser")).toBeInTheDocument();
 	});
 
 	it("lets plain video previews size the dialog from their content", async () => {
@@ -460,7 +472,12 @@ describe("FilePreviewDialog", () => {
 			isEditableText: false,
 			isTextBased: false,
 			options: [
-				{ icon: "Monitor", labelKey: "open_with_video", mode: "video" },
+				{
+					icon: "Monitor",
+					key: "video",
+					labelKey: "open_with_video",
+					mode: "video",
+				},
 			],
 		};
 
@@ -479,6 +496,16 @@ describe("FilePreviewDialog", () => {
 		expect(classes).not.toContain("h-[90vh]");
 	});
 
+	it("loads the preview app registry when the store is still cold", async () => {
+		mockState.previewAppStore.isLoaded = false;
+
+		renderDialog();
+
+		await waitFor(() => {
+			expect(mockState.previewAppStore.load).toHaveBeenCalledTimes(1);
+		});
+	});
+
 	it("lets image previews size to content without forcing a fixed-height work area", async () => {
 		mockState.profile = {
 			category: "image",
@@ -486,7 +513,14 @@ describe("FilePreviewDialog", () => {
 			isBlobPreview: true,
 			isEditableText: false,
 			isTextBased: false,
-			options: [{ icon: "Eye", labelKey: "open_with_image", mode: "image" }],
+			options: [
+				{
+					icon: "Eye",
+					key: "image",
+					labelKey: "open_with_image",
+					mode: "image",
+				},
+			],
 		};
 
 		renderDialog({
@@ -504,18 +538,25 @@ describe("FilePreviewDialog", () => {
 		).not.toContain("h-[90vh]");
 	});
 
-	it("renders office previews in the fixed-height workspace when a preview link factory exists", async () => {
+	it("renders iframe url-template previews in the fixed-height workspace", async () => {
 		mockState.profile = {
 			category: "document",
-			defaultMode: "officeOnline",
+			defaultMode: "office_microsoft",
 			isBlobPreview: false,
 			isEditableText: false,
 			isTextBased: false,
 			options: [
 				{
+					config: {
+						allowed_origins: ["https://view.officeapps.live.com"],
+						mode: "iframe",
+						url_template:
+							"https://view.officeapps.live.com/op/embed.aspx?src={{file_preview_url}}",
+					},
 					icon: "Globe",
-					labelKey: "open_with_office_online",
-					mode: "officeOnline",
+					key: "office_microsoft",
+					labelKey: "open_with_office_microsoft",
+					mode: "url_template",
 				},
 			],
 		};
@@ -536,25 +577,34 @@ describe("FilePreviewDialog", () => {
 		});
 
 		expect(
-			await screen.findByText("office:/files/7/download"),
+			await screen.findByText(
+				"url-template:files:open_with_office_microsoft:/files/7/download:https://view.officeapps.live.com/op/embed.aspx?src={{file_preview_url}}:true",
+			),
 		).toBeInTheDocument();
 		expect(
 			screen.getByTestId("dialog-content").className.split(/\s+/),
 		).toContain("h-[90vh]");
 	});
 
-	it("falls back when office preview is selected without a preview link factory", async () => {
+	it("passes url-template previews through even without a preview link factory", async () => {
 		mockState.profile = {
 			category: "document",
-			defaultMode: "officeOnline",
+			defaultMode: "office_microsoft",
 			isBlobPreview: false,
 			isEditableText: false,
 			isTextBased: false,
 			options: [
 				{
+					config: {
+						allowed_origins: ["https://view.officeapps.live.com"],
+						mode: "iframe",
+						url_template:
+							"https://view.officeapps.live.com/op/embed.aspx?src={{file_preview_url}}",
+					},
 					icon: "Globe",
-					labelKey: "open_with_office_online",
-					mode: "officeOnline",
+					key: "office_microsoft",
+					labelKey: "open_with_office_microsoft",
+					mode: "url_template",
 				},
 			],
 		};
@@ -569,6 +619,10 @@ describe("FilePreviewDialog", () => {
 			} as never,
 		});
 
-		expect(await screen.findByText("preview-unavailable")).toBeInTheDocument();
+		expect(
+			await screen.findByText(
+				"url-template:files:open_with_office_microsoft:/files/7/download:https://view.officeapps.live.com/op/embed.aspx?src={{file_preview_url}}:false",
+			),
+		).toBeInTheDocument();
 	});
 });

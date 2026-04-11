@@ -13,7 +13,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{
     audit_service::{self, AuditContext},
-    mail_service,
+    mail_service, preview_app_service,
 };
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -205,6 +205,9 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
         auth_runtime::AUTH_ALLOW_USER_REGISTRATION_KEY => {
             auth_runtime::normalize_allow_user_registration_config_value(value)
         }
+        auth_runtime::AUTH_REGISTER_ACTIVATION_ENABLED_KEY => {
+            auth_runtime::normalize_register_activation_enabled_config_value(value)
+        }
         auth_runtime::AUTH_ACCESS_TOKEN_TTL_SECS_KEY
         | auth_runtime::AUTH_REFRESH_TOKEN_TTL_SECS_KEY
         | auth_runtime::AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY
@@ -279,6 +282,9 @@ fn normalize_system_value(state: &AppState, key: &str, value: &str) -> Result<St
         branding::BRANDING_WORDMARK_LIGHT_URL_KEY => {
             branding::normalize_wordmark_light_url_config_value(value)
         }
+        preview_app_service::PREVIEW_APPS_CONFIG_KEY => {
+            preview_app_service::normalize_public_preview_apps_config_value(value)
+        }
         _ => Ok(value.to_string()),
     }
 }
@@ -323,6 +329,10 @@ pub fn get_public_branding(state: &AppState) -> PublicBranding {
         site_url: site_url::public_site_url(&state.runtime_config),
         allow_user_registration: auth_policy.allow_user_registration,
     }
+}
+
+pub fn get_public_preview_apps(state: &AppState) -> preview_app_service::PublicPreviewAppsConfig {
+    preview_app_service::get_public_preview_apps(state)
 }
 
 // ── Config Schema ─────────────────────────────────────────────────────

@@ -17,24 +17,28 @@ export type FileCategory =
 	| "presentation"
 	| "unknown";
 
-export type OpenWithMode =
+export type OpenWithMode = string;
+
+export type PreviewProviderKind =
 	| "image"
 	| "video"
-	| "videoBrowser"
 	| "audio"
 	| "pdf"
-	| "officeOnline"
 	| "markdown"
 	| "table"
-	| "structured"
-	| "formatted"
-	| "code";
+	| "formatted_json"
+	| "formatted_xml"
+	| "code"
+	| "url_template";
 
 export interface OpenWithOption {
-	mode: OpenWithMode;
+	key: string;
+	mode: PreviewProviderKind;
 	labelKey: string;
 	label?: string;
-	icon: IconName;
+	labels?: Record<string, string>;
+	icon: string;
+	config?: Record<string, unknown>;
 }
 
 export interface FileTypeInfo {
@@ -48,8 +52,9 @@ export interface FilePreviewProfile {
 	isBlobPreview: boolean;
 	isTextBased: boolean;
 	isEditableText: boolean;
-	defaultMode: OpenWithMode | null;
+	defaultMode: string | null;
 	options: OpenWithOption[];
+	allOptions?: OpenWithOption[];
 }
 
 export interface PreviewableFileLike {

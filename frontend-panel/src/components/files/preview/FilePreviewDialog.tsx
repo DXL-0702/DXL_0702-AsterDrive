@@ -1,5 +1,16 @@
-import { lazy, Suspense, useCallback, useMemo, useState } from "react";
+import {
+	lazy,
+	type ReactNode,
+	Suspense,
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { useTranslation } from "react-i18next";
+import { PreviewAppIcon } from "@/components/common/PreviewAppIcon";
 import { FileTypeIcon } from "@/components/files/FileTypeIcon";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,24 +24,18 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatBytes } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
+import { usePreviewAppStore } from "@/stores/previewAppStore";
 import type { FileInfo, FileListItem, PreviewLinkInfo } from "@/types/api";
 import { BlobMediaPreview } from "./BlobMediaPreview";
-import { CustomVideoBrowserPreview } from "./CustomVideoBrowserPreview";
 import { detectFilePreviewProfile } from "./file-capabilities";
-import {
-	getStoredOpenWithPreference,
-	setStoredOpenWithPreference,
-} from "./open-with-preferences";
+import { resolveOpenWithOptionLabel } from "./openWithLabel";
 import { PreviewLoadingState } from "./PreviewLoadingState";
-import { PreviewModeSwitch } from "./PreviewModeSwitch";
 import { PreviewUnavailable } from "./PreviewUnavailable";
-import type { OpenWithMode } from "./types";
+import type { OpenWithMode, OpenWithOption } from "./types";
 import { UnsavedChangesGuard } from "./UnsavedChangesGuard";
+import { UrlTemplatePreview } from "./UrlTemplatePreview";
 import { VideoPreview } from "./VideoPreview";
-import {
-	getVideoBrowserOpenWithOption,
-	resolveVideoBrowserTarget,
-} from "./video-browser-config";
+import { getVideoBrowserOpenWithOption } from "./video-browser-config";
 
 const PdfPreview = lazy(async () => {
 	const module = await import("./PdfPreview");
@@ -40,11 +45,6 @@ const PdfPreview = lazy(async () => {
 const MarkdownPreview = lazy(async () => {
 	const module = await import("./MarkdownPreview");
 	return { default: module.MarkdownPreview };
-});
-
-const OfficeOnlinePreview = lazy(async () => {
-	const module = await import("./OfficeOnlinePreview");
-	return { default: module.OfficeOnlinePreview };
 });
 
 const CsvTablePreview = lazy(async () => {
@@ -67,6 +67,126 @@ const TextCodePreview = lazy(async () => {
 	return { default: module.TextCodePreview };
 });
 
+const MORE_METHODS_EXPAND_DURATION_MS = 220;
+const MORE_METHODS_COLLAPSE_DURATION_MS = 160;
+
+function AnimatedCollapsible({
+	children,
+	className,
+	contentClassName,
+	open,
+}: {
+	children: ReactNode;
+	className?: string;
+	contentClassName?: string;
+	open: boolean;
+}) {
+	const containerRef = useRef<HTMLDivElement | null>(null);
+	const contentRef = useRef<HTMLDivElement | null>(null);
+	const [mounted, setMounted] = useState(open);
+
+	useEffect(() => {
+		if (typeof window === "undefined") {
+			setMounted(open);
+			return;
+		}
+
+		if (open) {
+			setMounted(true);
+		}
+	}, [open]);
+
+	useLayoutEffect(() => {
+		if (typeof window === "undefined" || !mounted) {
+			return;
+		}
+
+		const container = containerRef.current;
+		const content = contentRef.current;
+		if (!container || !content) {
+			return;
+		}
+
+		const prefersReducedMotion =
+			typeof window.matchMedia === "function" &&
+			window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+		const duration = prefersReducedMotion
+			? 0
+			: open
+				? MORE_METHODS_EXPAND_DURATION_MS
+				: MORE_METHODS_COLLAPSE_DURATION_MS;
+		let frameA: number | null = null;
+		let frameB: number | null = null;
+		let timer: number | null = null;
+		const fullHeight = `${content.scrollHeight}px`;
+
+		container.style.overflow = "hidden";
+		container.style.transitionProperty = "max-height, opacity, transform";
+		container.style.transitionDuration = `${duration}ms`;
+		container.style.transitionTimingFunction = open
+			? "cubic-bezier(0.22, 1, 0.36, 1)"
+			: "cubic-bezier(0.4, 0, 1, 1)";
+
+		if (open) {
+			container.style.maxHeight = "0px";
+			container.style.opacity = "0";
+			container.style.transform = "translateY(-6px)";
+			frameA = window.requestAnimationFrame(() => {
+				frameB = window.requestAnimationFrame(() => {
+					container.style.maxHeight = fullHeight;
+					container.style.opacity = "1";
+					container.style.transform = "translateY(0)";
+				});
+			});
+			timer = window.setTimeout(() => {
+				container.style.maxHeight = "none";
+				container.style.opacity = "1";
+				container.style.transform = "translateY(0)";
+			}, duration);
+		} else {
+			container.style.maxHeight = fullHeight;
+			container.style.opacity = "1";
+			container.style.transform = "translateY(0)";
+			frameA = window.requestAnimationFrame(() => {
+				container.style.maxHeight = "0px";
+				container.style.opacity = "0";
+				container.style.transform = "translateY(-6px)";
+			});
+			timer = window.setTimeout(() => {
+				setMounted(false);
+			}, duration);
+		}
+
+		return () => {
+			if (frameA !== null) {
+				window.cancelAnimationFrame(frameA);
+			}
+			if (frameB !== null) {
+				window.cancelAnimationFrame(frameB);
+			}
+			if (timer !== null) {
+				window.clearTimeout(timer);
+			}
+		};
+	}, [mounted, open]);
+
+	if (!mounted) {
+		return null;
+	}
+
+	return (
+		<div
+			ref={containerRef}
+			aria-hidden={!open}
+			className={cn("overflow-hidden", className)}
+		>
+			<div ref={contentRef} className={cn("min-h-0", contentClassName)}>
+				{children}
+			</div>
+		</div>
+	);
+}
+
 interface FilePreviewDialogProps {
 	file: FileInfo | FileListItem;
 	onClose: () => void;
@@ -74,6 +194,7 @@ interface FilePreviewDialogProps {
 	downloadPath?: string;
 	editable?: boolean;
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
+	openMode?: "auto" | "direct" | "picker";
 }
 
 export function FilePreviewDialog({
@@ -83,24 +204,38 @@ export function FilePreviewDialog({
 	downloadPath,
 	editable = true,
 	previewLinkFactory,
+	openMode = "auto",
 }: FilePreviewDialogProps) {
-	const { t } = useTranslation(["core", "files"]);
-	const baseProfile = useMemo(() => detectFilePreviewProfile(file), [file]);
+	const { i18n, t } = useTranslation(["core", "files"]);
+	const previewApps = usePreviewAppStore((state) => state.config);
+	const previewAppsLoaded = usePreviewAppStore((state) => state.isLoaded);
+	const loadPreviewApps = usePreviewAppStore((state) => state.load);
 	const resolvedDownloadPath =
 		downloadPath ?? fileService.downloadPath(file.id);
+
+	useEffect(() => {
+		if (previewAppsLoaded) return;
+		void loadPreviewApps();
+	}, [loadPreviewApps, previewAppsLoaded]);
+
+	const baseProfile = useMemo(() => {
+		if (!previewAppsLoaded) return null;
+		return detectFilePreviewProfile(file, previewApps);
+	}, [file, previewApps, previewAppsLoaded]);
+
 	const customVideoBrowserOption = useMemo(
 		() => getVideoBrowserOpenWithOption(),
 		[],
 	);
-	const resolvedVideoBrowser = useMemo(() => {
-		if (baseProfile.category !== "video") return null;
-		return resolveVideoBrowserTarget(file, resolvedDownloadPath);
-	}, [baseProfile.category, file, resolvedDownloadPath]);
+
 	const profile = useMemo(() => {
+		if (!baseProfile) return null;
 		if (
 			baseProfile.category !== "video" ||
 			!customVideoBrowserOption ||
-			!resolvedVideoBrowser
+			baseProfile.options.some(
+				(option) => option.key === customVideoBrowserOption.key,
+			)
 		) {
 			return baseProfile;
 		}
@@ -108,33 +243,94 @@ export function FilePreviewDialog({
 		return {
 			...baseProfile,
 			options: [...baseProfile.options, customVideoBrowserOption],
+			allOptions: [
+				...(baseProfile.allOptions ?? baseProfile.options),
+				customVideoBrowserOption,
+			],
 		};
-	}, [baseProfile, customVideoBrowserOption, resolvedVideoBrowser]);
+	}, [baseProfile, customVideoBrowserOption]);
+
+	const allOptions = useMemo(
+		() => profile?.allOptions ?? profile?.options ?? [],
+		[profile],
+	);
+	const visibleOptions = useMemo(
+		() =>
+			profile && profile.options.length > 0 ? profile.options : allOptions,
+		[allOptions, profile],
+	);
+	const hiddenOptions = useMemo(
+		() =>
+			allOptions.filter(
+				(option) =>
+					!visibleOptions.some((candidate) => candidate.key === option.key),
+			),
+		[allOptions, visibleOptions],
+	);
+
 	const preferredMode = useMemo(() => {
-		const stored = getStoredOpenWithPreference(profile.category);
-		if (stored && profile.options.some((option) => option.mode === stored)) {
-			return stored;
+		if (!profile) return null;
+		return profile.defaultMode ?? allOptions[0]?.key ?? null;
+	}, [allOptions, profile]);
+
+	const [mode, setMode] = useState<OpenWithMode | null>(null);
+	const previousFileIdRef = useRef(file.id);
+	const [hasConfirmedInitialMode, setHasConfirmedInitialMode] = useState(false);
+	useEffect(() => {
+		const hasFileChanged = previousFileIdRef.current !== file.id;
+		if (hasFileChanged) {
+			previousFileIdRef.current = file.id;
+			setHasConfirmedInitialMode(false);
 		}
-		return profile.defaultMode;
-	}, [profile.category, profile.defaultMode, profile.options]);
-	const [mode, setMode] = useState<OpenWithMode | null>(preferredMode);
+		setMode(preferredMode);
+	}, [file.id, preferredMode]);
+
 	const [isDirty, setIsDirty] = useState(false);
 	const [confirmOpen, setConfirmOpen] = useState(false);
-	const [pendingMode, setPendingMode] = useState<OpenWithMode | null>(null);
 	const activeMode = mode ?? preferredMode;
+	const [showAllOpenMethods, setShowAllOpenMethods] = useState(false);
+	useEffect(() => {
+		setShowAllOpenMethods(
+			Boolean(
+				activeMode && hiddenOptions.some((option) => option.key === activeMode),
+			),
+		);
+	}, [activeMode, hiddenOptions]);
+	const activeOption = useMemo(() => {
+		if (!profile || !activeMode) return null;
+		return allOptions.find((option) => option.key === activeMode) ?? null;
+	}, [activeMode, allOptions, profile]);
+
+	const getOptionLabel = useCallback(
+		(option: OpenWithOption) =>
+			resolveOpenWithOptionLabel(option, i18n?.language, (key) =>
+				t(`files:${key}`),
+			),
+		[i18n?.language, t],
+	);
+	const showOpenMethodChooser =
+		previewAppsLoaded &&
+		(openMode === "picker"
+			? allOptions.length > 0
+			: openMode === "direct"
+				? false
+				: allOptions.length > 1) &&
+		!hasConfirmedInitialMode;
+
 	const usesInnerScroll =
-		activeMode === "pdf" ||
-		activeMode === "officeOnline" ||
-		activeMode === "table" ||
-		(activeMode === "videoBrowser" && resolvedVideoBrowser?.mode === "iframe");
+		activeOption?.mode === "pdf" ||
+		activeOption?.mode === "table" ||
+		(activeOption?.mode === "url_template" &&
+			activeOption.config?.mode !== "new_tab");
 	const fillsViewportHeight =
-		activeMode === "code" ||
-		activeMode === "formatted" ||
-		activeMode === "markdown" ||
-		activeMode === "pdf" ||
-		activeMode === "officeOnline" ||
-		activeMode === "table" ||
-		(activeMode === "videoBrowser" && resolvedVideoBrowser?.mode === "iframe");
+		activeOption?.mode === "code" ||
+		activeOption?.mode === "formatted_json" ||
+		activeOption?.mode === "formatted_xml" ||
+		activeOption?.mode === "markdown" ||
+		activeOption?.mode === "pdf" ||
+		activeOption?.mode === "table" ||
+		(activeOption?.mode === "url_template" &&
+			activeOption.config?.mode !== "new_tab");
 	const previewLoadingState = (
 		<PreviewLoadingState
 			text={t("files:loading_preview")}
@@ -144,140 +340,101 @@ export function FilePreviewDialog({
 
 	const closeWithGuard = useCallback(() => {
 		if (isDirty) {
-			setPendingMode(null);
 			setConfirmOpen(true);
 			return;
 		}
 		onClose();
 	}, [isDirty, onClose]);
 
-	const handleModeChange = useCallback(
+	const handleOpenMethodSelect = useCallback(
 		(nextMode: OpenWithMode) => {
-			if (nextMode === activeMode) return;
-			if (isDirty) {
-				setPendingMode(nextMode);
-				setConfirmOpen(true);
-				return;
-			}
 			setMode(nextMode);
-			setStoredOpenWithPreference(profile.category, nextMode);
+			setHasConfirmedInitialMode(true);
 		},
-		[activeMode, isDirty, profile.category],
+		[],
 	);
 
 	const handleDiscardChanges = useCallback(() => {
 		setConfirmOpen(false);
 		setIsDirty(false);
-		if (pendingMode) {
-			setMode(pendingMode);
-			setStoredOpenWithPreference(profile.category, pendingMode);
-			setPendingMode(null);
-			return;
-		}
 		onClose();
-	}, [onClose, pendingMode, profile.category]);
+	}, [onClose]);
 
 	const body = (() => {
-		if (!activeMode && profile.options.length > 0) {
-			return (
-				<div className="flex flex-1 items-center justify-center p-6">
-					<div className="flex flex-col items-center gap-4">
-						<Icon name="File" className="h-10 w-10 text-muted-foreground" />
-						<p className="text-sm text-muted-foreground">
-							{t("files:choose_open_method")}
-						</p>
-						<div className="flex gap-3">
-							{profile.options.map((option) => (
-								<Button
-									key={option.mode}
-									variant="outline"
-									onClick={() => {
-										setMode(option.mode);
-										setStoredOpenWithPreference(profile.category, option.mode);
-									}}
-								>
-									<Icon name={option.icon} className="mr-2 h-4 w-4" />
-									{option.label ?? t(`files:${option.labelKey}`)}
-								</Button>
-							))}
-						</div>
-					</div>
-				</div>
-			);
+		if (!previewAppsLoaded) {
+			return previewLoadingState;
 		}
-		if (!activeMode) return <PreviewUnavailable />;
-		if (activeMode === "pdf") {
+		if (!profile) return <PreviewUnavailable />;
+		if (!activeOption) return <PreviewUnavailable />;
+		if (activeOption.mode === "pdf") {
 			return (
 				<Suspense fallback={previewLoadingState}>
 					<PdfPreview path={resolvedDownloadPath} fileName={file.name} />
 				</Suspense>
 			);
 		}
-		if (activeMode === "officeOnline") {
-			if (!previewLinkFactory) {
-				return <PreviewUnavailable />;
-			}
-			return (
-				<Suspense fallback={previewLoadingState}>
-					<OfficeOnlinePreview
-						file={file}
-						downloadPath={resolvedDownloadPath}
-						createPreviewLink={previewLinkFactory}
-					/>
-				</Suspense>
-			);
-		}
-		if (activeMode === "image" || activeMode === "audio") {
+		if (activeOption.mode === "image" || activeOption.mode === "audio") {
 			return (
 				<BlobMediaPreview
 					file={file}
-					mode={activeMode}
+					mode={activeOption.mode}
 					path={resolvedDownloadPath}
 				/>
 			);
 		}
-		if (activeMode === "video") {
+		if (activeOption.mode === "video") {
 			return <VideoPreview file={file} path={resolvedDownloadPath} />;
 		}
-		if (activeMode === "videoBrowser") {
-			return <CustomVideoBrowserPreview target={resolvedVideoBrowser} />;
+		if (activeOption.mode === "url_template") {
+			return (
+				<UrlTemplatePreview
+					file={file}
+					downloadPath={resolvedDownloadPath}
+					label={getOptionLabel(activeOption)}
+					rawConfig={activeOption.config ?? null}
+					createPreviewLink={previewLinkFactory}
+				/>
+			);
 		}
-		if (activeMode === "markdown") {
+		if (activeOption.mode === "markdown") {
 			return (
 				<Suspense fallback={previewLoadingState}>
 					<MarkdownPreview path={resolvedDownloadPath} />
 				</Suspense>
 			);
 		}
-		if (activeMode === "table") {
+		if (activeOption.mode === "table") {
+			const delimiter: "," | "\t" =
+				activeOption.config?.delimiter === "\t" || profile.category === "tsv"
+					? "\t"
+					: ",";
+
 			return (
 				<Suspense fallback={previewLoadingState}>
-					<CsvTablePreview
-						path={resolvedDownloadPath}
-						delimiter={profile.category === "tsv" ? "\t" : ","}
-					/>
+					<CsvTablePreview path={resolvedDownloadPath} delimiter={delimiter} />
 				</Suspense>
 			);
 		}
-		if (activeMode === "formatted" && profile.category === "json") {
+		if (activeOption.mode === "formatted_json") {
 			return (
 				<Suspense fallback={previewLoadingState}>
 					<JsonPreview path={resolvedDownloadPath} />
 				</Suspense>
 			);
 		}
-		if (activeMode === "formatted" && profile.category === "xml") {
+		if (activeOption.mode === "formatted_xml") {
 			return (
 				<Suspense fallback={previewLoadingState}>
 					<XmlPreview path={resolvedDownloadPath} mode="formatted" />
 				</Suspense>
 			);
 		}
-		if (activeMode === "code") {
+		if (activeOption.mode === "code") {
 			return (
 				<Suspense fallback={previewLoadingState}>
 					<TextCodePreview
 						file={file}
+						modeLabel={getOptionLabel(activeOption)}
 						path={resolvedDownloadPath}
 						onFileUpdated={onFileUpdated}
 						onDirtyChange={setIsDirty}
@@ -291,81 +448,183 @@ export function FilePreviewDialog({
 
 	return (
 		<>
-			<Dialog open onOpenChange={(open) => !open && closeWithGuard()}>
-				<DialogContent
-					showCloseButton={false}
-					className={cn(
-						"flex max-h-[90vh] w-[min(96vw,1200px)] max-w-[min(96vw,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1200px)]",
-						fillsViewportHeight && "h-[90vh]",
-					)}
-				>
-					<DialogHeader className="gap-0 border-b px-4 py-3">
-						<div className="flex items-center gap-3">
-							<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-								<FileTypeIcon
-									mimeType={file.mime_type}
-									fileName={file.name}
-									className="h-5 w-5"
-								/>
-							</div>
-							<div className="min-w-0 flex-1">
-								<DialogTitle className="truncate text-sm font-semibold">
-									{file.name}
-								</DialogTitle>
-								<div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-									<span>{file.mime_type}</span>
-									<span>·</span>
-									<span>{formatBytes(file.size)}</span>
-									<span>·</span>
-									<span>{profile.category}</span>
+			{showOpenMethodChooser ? (
+				<Dialog open onOpenChange={(open) => !open && onClose()}>
+					<DialogContent className="flex max-h-[min(90vh,calc(100vh-2rem))] w-[min(96vw,32rem)] max-w-[min(96vw,32rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,32rem)]">
+						<DialogHeader className="border-b px-5 py-4">
+							<div className="flex items-center gap-3">
+								<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
+									<FileTypeIcon
+										mimeType={file.mime_type}
+										fileName={file.name}
+										className="h-5 w-5"
+									/>
+								</div>
+								<div className="min-w-0 flex-1">
+									<DialogTitle className="truncate">
+										{t("files:choose_open_method")}
+									</DialogTitle>
+									<p className="mt-1 truncate text-sm text-muted-foreground">
+										{file.name} · {formatBytes(file.size)}
+									</p>
 								</div>
 							</div>
-							<Button variant="ghost" size="icon-sm" onClick={closeWithGuard}>
-								<Icon name="X" className="h-4 w-4" />
-							</Button>
+						</DialogHeader>
+						<div className="min-h-0 overflow-y-auto p-4">
+							<div className="grid gap-2">
+								{visibleOptions.map((option) => {
+									const isActive = option.key === activeMode;
+									return (
+										<Button
+											key={option.key}
+											variant="ghost"
+											className={cn(
+												"h-auto justify-start rounded-xl border px-3.5 py-2.5 text-left",
+												isActive && "border-primary bg-accent text-foreground",
+											)}
+											onClick={() => handleOpenMethodSelect(option.key)}
+										>
+											<div className="flex w-full items-center gap-2.5">
+												<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+													<PreviewAppIcon
+														icon={option.icon}
+														className="h-4 w-4"
+													/>
+												</div>
+												<div className="min-w-0 flex-1">
+													<div className="truncate font-medium">
+														{getOptionLabel(option)}
+													</div>
+												</div>
+												<Icon
+													name={isActive ? "Check" : "CaretRight"}
+													className="h-4 w-4 text-muted-foreground"
+												/>
+											</div>
+										</Button>
+									);
+								})}
+								<AnimatedCollapsible open={showAllOpenMethods}>
+									<div className="grid gap-2">
+										{hiddenOptions.map((option) => {
+											const isActive = option.key === activeMode;
+											return (
+												<Button
+													key={option.key}
+													variant="ghost"
+													className={cn(
+														"h-auto justify-start rounded-xl border px-3.5 py-2.5 text-left",
+														isActive &&
+															"border-primary bg-accent text-foreground",
+													)}
+													onClick={() => handleOpenMethodSelect(option.key)}
+												>
+													<div className="flex w-full items-center gap-2.5">
+														<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+															<PreviewAppIcon
+																icon={option.icon}
+																className="h-4 w-4"
+															/>
+														</div>
+														<div className="min-w-0 flex-1">
+															<div className="truncate font-medium">
+																{getOptionLabel(option)}
+															</div>
+														</div>
+														<Icon
+															name={isActive ? "Check" : "CaretRight"}
+															className="h-4 w-4 text-muted-foreground"
+														/>
+													</div>
+												</Button>
+											);
+										})}
+									</div>
+								</AnimatedCollapsible>
+								{!showAllOpenMethods && allOptions.length > 0 ? (
+									<Button
+										variant="ghost"
+										className="h-auto justify-start rounded-xl border border-dashed px-3.5 py-2.5 text-left text-muted-foreground"
+										onClick={() => setShowAllOpenMethods(true)}
+									>
+										<div className="flex w-full items-center gap-2.5">
+											<div className="min-w-0 flex-1">
+												<div className="font-medium">
+													{t("files:more_open_methods")}
+												</div>
+											</div>
+											<Icon
+												name="CaretDown"
+												className="h-4 w-4"
+											/>
+										</div>
+									</Button>
+								) : null}
+							</div>
 						</div>
-					</DialogHeader>
-					<div className="flex items-center gap-3 border-b bg-muted/20 px-4 py-2">
-						<PreviewModeSwitch
-							options={profile.options}
-							value={activeMode ?? "code"}
-							onChange={handleModeChange}
-						/>
-						<div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-							<Icon name="Eye" className="h-3.5 w-3.5" />
-							<span>
-								{t("files:open_modes_count", { count: profile.options.length })}
-							</span>
-						</div>
-					</div>
-					{usesInnerScroll ? (
-						<div
-							className={cn(
-								"bg-muted/20 p-3",
-								fillsViewportHeight && "min-h-0 flex-1",
-							)}
-						>
-							{body}
-						</div>
-					) : (
-						<ScrollArea
-							className={cn(
-								"bg-muted/20",
-								fillsViewportHeight && "min-h-0 flex-1",
-							)}
-						>
+					</DialogContent>
+				</Dialog>
+			) : null}
+			{showOpenMethodChooser ? null : (
+				<Dialog open onOpenChange={(open) => !open && closeWithGuard()}>
+					<DialogContent
+						showCloseButton={false}
+						className={cn(
+							"flex max-h-[90vh] w-[min(96vw,1200px)] max-w-[min(96vw,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1200px)]",
+							fillsViewportHeight && "h-[90vh]",
+						)}
+					>
+						<DialogHeader className="gap-0 border-b px-4 py-3">
+							<div className="flex items-center gap-3">
+								<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+									<FileTypeIcon
+										mimeType={file.mime_type}
+										fileName={file.name}
+										className="h-5 w-5"
+									/>
+								</div>
+								<div className="min-w-0 flex-1">
+									<DialogTitle className="flex items-center gap-2 text-sm font-semibold">
+										<span className="min-w-0 truncate">{file.name}</span>
+										<span className="shrink-0 text-xs font-normal text-muted-foreground">
+											· {formatBytes(file.size)}
+										</span>
+									</DialogTitle>
+								</div>
+								<Button variant="ghost" size="icon-sm" onClick={closeWithGuard}>
+									<Icon name="X" className="h-4 w-4" />
+								</Button>
+							</div>
+						</DialogHeader>
+						{usesInnerScroll ? (
 							<div
 								className={cn(
-									"w-full p-3",
-									fillsViewportHeight && "h-full min-h-full",
+									"bg-muted/20 p-3",
+									fillsViewportHeight && "min-h-0 flex-1",
 								)}
 							>
 								{body}
 							</div>
-						</ScrollArea>
-					)}
-				</DialogContent>
-			</Dialog>
+						) : (
+							<ScrollArea
+								className={cn(
+									"bg-muted/20",
+									fillsViewportHeight && "min-h-0 flex-1",
+								)}
+							>
+								<div
+									className={cn(
+										"w-full p-3",
+										fillsViewportHeight && "h-full min-h-full",
+									)}
+								>
+									{body}
+								</div>
+							</ScrollArea>
+						)}
+					</DialogContent>
+				</Dialog>
+			)}
 			<UnsavedChangesGuard
 				open={confirmOpen}
 				onOpenChange={setConfirmOpen}

@@ -48,6 +48,7 @@ vi.mock("@/stores/fileStore", () => ({
 	useFileStore: {
 		getState: () => ({
 			viewMode: "list",
+			browserOpenMode: "single_click",
 			sortBy: "name",
 			sortOrder: "asc",
 			_applyFromServer: mockState.applyFilePrefs,

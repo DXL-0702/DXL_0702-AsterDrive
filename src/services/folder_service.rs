@@ -27,13 +27,8 @@ pub struct FolderAncestorItem {
 pub struct FileListItem {
     pub id: i64,
     pub name: String,
-    pub folder_id: Option<i64>,
-    pub blob_id: i64,
     pub size: i64,
-    pub user_id: i64,
     pub mime_type: String,
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
-    pub created_at: chrono::DateTime<chrono::Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub is_locked: bool,
@@ -45,11 +40,6 @@ pub struct FileListItem {
 pub struct FolderListItem {
     pub id: i64,
     pub name: String,
-    pub parent_id: Option<i64>,
-    pub user_id: i64,
-    pub policy_id: Option<i64>,
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
-    pub created_at: chrono::DateTime<chrono::Utc>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub is_locked: bool,
@@ -84,12 +74,8 @@ pub fn build_file_list_items(
         .map(|file| FileListItem {
             id: file.id,
             name: file.name,
-            folder_id: file.folder_id,
-            blob_id: file.blob_id,
             size: file.size,
-            user_id: file.user_id,
             mime_type: file.mime_type,
-            created_at: file.created_at,
             updated_at: file.updated_at,
             is_locked: file.is_locked,
             is_shared: shared_file_ids.contains(&file.id),
@@ -106,10 +92,6 @@ pub fn build_folder_list_items(
         .map(|folder| FolderListItem {
             id: folder.id,
             name: folder.name,
-            parent_id: folder.parent_id,
-            user_id: folder.user_id,
-            policy_id: folder.policy_id,
-            created_at: folder.created_at,
             updated_at: folder.updated_at,
             is_locked: folder.is_locked,
             is_shared: shared_folder_ids.contains(&folder.id),
@@ -520,6 +502,14 @@ pub(crate) async fn delete_in_scope(
         ),
     );
     Ok(())
+}
+
+pub(crate) async fn get_info_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    folder_id: i64,
+) -> Result<folder::Model> {
+    workspace_storage_service::verify_folder_access(state, scope, folder_id).await
 }
 
 pub(crate) async fn update_in_scope(

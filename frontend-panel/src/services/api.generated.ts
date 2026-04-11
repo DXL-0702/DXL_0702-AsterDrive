@@ -1225,6 +1225,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/folders/{id}/info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_folder_info"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/folders/{id}/lock": {
         parameters: {
             query?: never;
@@ -1281,6 +1297,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["get_public_branding"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/preview-apps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_public_preview_apps"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2105,6 +2137,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/teams/{team_id}/folders/{id}/info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_team_folder_info"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/teams/{team_id}/folders/{id}/lock": {
         parameters: {
             query?: never;
@@ -2685,6 +2733,11 @@ export interface components {
             /** Format: int32 */
             succeeded: number;
         };
+        /**
+         * @description Preferred gesture for opening items in the browser.
+         * @enum {string}
+         */
+        BrowserOpenMode: "single_click" | "double_click";
         ChangePasswordReq: {
             current_password: string;
             new_password: string;
@@ -2860,11 +2913,6 @@ export interface components {
         };
         FileListItem: {
             /** Format: int64 */
-            blob_id: number;
-            created_at: string;
-            /** Format: int64 */
-            folder_id?: number | null;
-            /** Format: int64 */
             id: number;
             is_locked: boolean;
             is_shared: boolean;
@@ -2873,8 +2921,6 @@ export interface components {
             /** Format: int64 */
             size: number;
             updated_at: string;
-            /** Format: int64 */
-            user_id: number;
         };
         FileQuery: {
             /** Format: int64 */
@@ -2946,19 +2992,12 @@ export interface components {
             user_id: number;
         };
         FolderListItem: {
-            created_at: string;
             /** Format: int64 */
             id: number;
             is_locked: boolean;
             is_shared: boolean;
             name: string;
-            /** Format: int64 */
-            parent_id?: number | null;
-            /** Format: int64 */
-            policy_id?: number | null;
             updated_at: string;
-            /** Format: int64 */
-            user_id: number;
         };
         HealthResponse: {
             build_time: string;
@@ -3475,6 +3514,35 @@ export interface components {
             wordmark_dark_url: string;
             wordmark_light_url: string;
         };
+        PublicPreviewAppDefinition: {
+            config?: {
+                [key: string]: unknown;
+            };
+            enabled?: boolean;
+            icon: string;
+            key: string;
+            label_i18n_key?: string | null;
+            labels?: {
+                [key: string]: string;
+            };
+        };
+        PublicPreviewAppMatch: {
+            categories?: string[];
+            extensions?: string[];
+            mime_prefixes?: string[];
+            mime_types?: string[];
+        };
+        PublicPreviewAppRule: {
+            apps?: string[];
+            default_app?: string | null;
+            matches?: components["schemas"]["PublicPreviewAppMatch"];
+        };
+        PublicPreviewAppsConfig: {
+            apps?: components["schemas"]["PublicPreviewAppDefinition"][];
+            rules?: components["schemas"]["PublicPreviewAppRule"][];
+            /** Format: int32 */
+            version?: number;
+        };
         PurgedCountResponse: {
             /** Format: int32 */
             purged: number;
@@ -3910,6 +3978,7 @@ export interface components {
         };
         /** @description PATCH request — only non-null fields are merged into existing preferences. */
         UpdatePreferencesReq: {
+            browser_open_mode?: null | components["schemas"]["BrowserOpenMode"];
             color_preset?: null | components["schemas"]["ColorPreset"];
             language?: null | components["schemas"]["Language"];
             sort_by?: null | components["schemas"]["SortBy"];
@@ -4025,6 +4094,7 @@ export interface components {
          *     Empty struct (all fields None) is treated as null by `get_preferences`.
          */
         UserPreferences: {
+            browser_open_mode?: null | components["schemas"]["BrowserOpenMode"];
             color_preset?: null | components["schemas"]["ColorPreset"];
             language?: null | components["schemas"]["Language"];
             sort_by?: null | components["schemas"]["SortBy"];
@@ -7165,6 +7235,7 @@ export interface operations {
                          *     Empty struct (all fields None) is treated as null by `get_preferences`.
                          */
                         data?: {
+                            browser_open_mode?: null | components["schemas"]["BrowserOpenMode"];
                             color_preset?: null | components["schemas"]["ColorPreset"];
                             language?: null | components["schemas"]["Language"];
                             sort_by?: null | components["schemas"]["SortBy"];
@@ -9222,6 +9293,63 @@ export interface operations {
             };
         };
     };
+    get_folder_info: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Folder ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Folder info */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            deleted_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            is_locked?: boolean;
+                            name: string;
+                            /** Format: int64 */
+                            parent_id?: number | null;
+                            /** Format: int64 */
+                            policy_id?: number | null;
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Folder not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     set_folder_lock: {
         parameters: {
             query?: never;
@@ -9471,6 +9599,35 @@ export interface operations {
                             title: string;
                             wordmark_dark_url: string;
                             wordmark_light_url: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+        };
+    };
+    get_public_preview_apps: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Public preview app config */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            apps?: components["schemas"]["PublicPreviewAppDefinition"][];
+                            rules?: components["schemas"]["PublicPreviewAppRule"][];
+                            /** Format: int32 */
+                            version?: number;
                         };
                         msg: string;
                     };
@@ -13224,6 +13381,72 @@ export interface operations {
         responses: {
             /** @description Team folder copied */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            deleted_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            is_locked?: boolean;
+                            name: string;
+                            /** Format: int64 */
+                            parent_id?: number | null;
+                            /** Format: int64 */
+                            policy_id?: number | null;
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                            /** Format: int64 */
+                            user_id: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Folder not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    get_team_folder_info: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+                /** @description Folder ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Team folder info */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

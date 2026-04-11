@@ -48,6 +48,16 @@ pub enum PrefViewMode {
     Grid,
 }
 
+/// Preferred gesture for opening items in the browser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserOpenMode {
+    #[default]
+    SingleClick,
+    DoubleClick,
+}
+
 /// Interface display language.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -66,6 +76,7 @@ pub struct UserPreferences {
     pub theme_mode: Option<ThemeMode>,
     pub color_preset: Option<ColorPreset>,
     pub view_mode: Option<PrefViewMode>,
+    pub browser_open_mode: Option<BrowserOpenMode>,
     pub sort_by: Option<SortBy>,
     pub sort_order: Option<SortOrder>,
     pub language: Option<Language>,
@@ -86,6 +97,7 @@ pub struct UpdatePreferencesReq {
     pub theme_mode: Option<ThemeMode>,
     pub color_preset: Option<ColorPreset>,
     pub view_mode: Option<PrefViewMode>,
+    pub browser_open_mode: Option<BrowserOpenMode>,
     pub sort_by: Option<SortBy>,
     pub sort_order: Option<SortOrder>,
     pub language: Option<Language>,
@@ -571,6 +583,7 @@ pub async fn update_preferences(
     prefs.theme_mode = patch.theme_mode.or(prefs.theme_mode);
     prefs.color_preset = patch.color_preset.or(prefs.color_preset);
     prefs.view_mode = patch.view_mode.or(prefs.view_mode);
+    prefs.browser_open_mode = patch.browser_open_mode.or(prefs.browser_open_mode);
     prefs.sort_by = patch.sort_by.or(prefs.sort_by);
     prefs.sort_order = patch.sort_order.or(prefs.sort_order);
     prefs.language = patch.language.or(prefs.language);

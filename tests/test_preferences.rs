@@ -56,11 +56,13 @@ async fn test_preferences_patch_and_get() {
         .insert_header(("Cookie", format!("aster_access={token}")))
         .set_json(serde_json::json!({
             "theme_mode": "dark",
+            "browser_open_mode": "double_click",
             "storage_event_stream_enabled": false
         }))
         .to_request();
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
     assert_eq!(body["data"]["theme_mode"], "dark");
+    assert_eq!(body["data"]["browser_open_mode"], "double_click");
     assert_eq!(body["data"]["storage_event_stream_enabled"], false);
 
     // 再 PATCH 设置 language（合并，不覆盖之前的）
@@ -74,6 +76,7 @@ async fn test_preferences_patch_and_get() {
         body["data"]["theme_mode"], "dark",
         "existing pref preserved"
     );
+    assert_eq!(body["data"]["browser_open_mode"], "double_click");
     assert_eq!(body["data"]["language"], "zh");
     assert_eq!(body["data"]["storage_event_stream_enabled"], false);
 
@@ -84,6 +87,10 @@ async fn test_preferences_patch_and_get() {
         .to_request();
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
     assert_eq!(body["data"]["preferences"]["theme_mode"], "dark");
+    assert_eq!(
+        body["data"]["preferences"]["browser_open_mode"],
+        "double_click"
+    );
     assert_eq!(body["data"]["preferences"]["language"], "zh");
     assert_eq!(
         body["data"]["preferences"]["storage_event_stream_enabled"],

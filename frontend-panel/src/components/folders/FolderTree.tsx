@@ -30,10 +30,10 @@ import { fileService } from "@/services/fileService";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import type { FolderInfo } from "@/types/api";
+import type { FolderListItem } from "@/types/api";
 
 interface FolderTreeNode {
-	folder: FolderInfo;
+	folder: FolderListItem;
 	parentId: number | null;
 	childIds: number[];
 }
@@ -86,7 +86,7 @@ function cloneNodeEntries(
 function upsertChildren(
 	nodeMap: Map<number, FolderTreeNode>,
 	parentId: number | null,
-	folders: FolderInfo[],
+	folders: FolderListItem[],
 	getCachedChildIds?: (id: number) => number[] | undefined,
 ): { nodeMap: Map<number, FolderTreeNode>; rootIds: number[] } {
 	const nextNodeMap = new Map(nodeMap);
@@ -317,7 +317,7 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 	);
 	const [rootDragOver, setRootDragOver] = useState(false);
 
-	const childrenCacheRef = useRef<Map<number | null, FolderInfo[]>>(new Map());
+	const childrenCacheRef = useRef<Map<number | null, FolderListItem[]>>(new Map());
 	const inflightLoadsRef = useRef<Map<number | null, Promise<void>>>(new Map());
 	const expandingPathRef = useRef<string>("");
 	const hoverExpandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -364,7 +364,7 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 	}, [currentWorkspaceKey, expandedIds, loadedIds, nodeMap, rootIds, userId]);
 
 	const syncFolderChildren = useCallback(
-		(parentId: number | null, folders: FolderInfo[]) => {
+		(parentId: number | null, folders: FolderListItem[]) => {
 			childrenCacheRef.current.set(parentId, folders);
 			setNodeMap(
 				(prev) =>

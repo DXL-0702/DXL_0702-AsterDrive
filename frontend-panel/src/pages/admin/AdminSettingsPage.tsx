@@ -11,6 +11,11 @@ import {
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { PreviewAppsConfigEditor } from "@/components/admin/PreviewAppsConfigEditor";
+import {
+	getPreviewAppsConfigIssuesFromString,
+	PREVIEW_APPS_CONFIG_KEY,
+} from "@/components/admin/previewAppsConfigEditorShared";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
 import { CodePreviewEditor } from "@/components/files/preview/CodePreviewEditor";
@@ -1190,11 +1195,23 @@ export default function AdminSettingsPage({
 		[configs, deletedCustomKeySet, draftValues],
 	);
 
+	const previewAppsValidationIssues = useMemo(() => {
+		const config = configs.find((item) => item.key === PREVIEW_APPS_CONFIG_KEY);
+		if (!config) {
+			return [];
+		}
+
+		return getPreviewAppsConfigIssuesFromString(
+			draftValues[config.key] ?? config.value,
+		);
+	}, [configs, draftValues]);
+
 	const changedCount =
 		changedExistingConfigs.length +
 		deletedCustomConfigs.length +
 		activeNewCustomRows.length;
-	const hasValidationError = newCustomRowErrors.size > 0;
+	const hasValidationError =
+		newCustomRowErrors.size > 0 || previewAppsValidationIssues.length > 0;
 	const hasUnsavedChanges = changedCount > 0;
 	const hasAnyConfig = configs.length > 0;
 	const handleSaveShortcut = useEffectEvent((event: KeyboardEvent) => {
@@ -1994,6 +2011,15 @@ export default function AdminSettingsPage({
 			);
 		}
 
+		if (config.key === PREVIEW_APPS_CONFIG_KEY) {
+			return (
+				<PreviewAppsConfigEditor
+					value={draftValue}
+					onChange={(nextValue) => updateDraftValue(config.key, nextValue)}
+				/>
+			);
+		}
+
 		if (multiline) {
 			return (
 				<ConfigCodeEditor
@@ -2762,7 +2788,9 @@ export default function AdminSettingsPage({
 									}
 								>
 									{hasValidationError
-										? t("custom_config_validation_error")
+										? previewAppsValidationIssues.length > 0
+											? t("preview_apps_validation_error")
+											: t("custom_config_validation_error")
 										: t("settings_save_hint")}
 								</p>
 							</div>

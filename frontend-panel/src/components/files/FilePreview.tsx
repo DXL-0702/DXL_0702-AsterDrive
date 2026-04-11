@@ -8,6 +8,7 @@ interface FilePreviewProps {
 	downloadPath?: string;
 	editable?: boolean;
 	previewLinkFactory?: () => Promise<PreviewLinkInfo>;
+	openMode?: "auto" | "direct" | "picker";
 }
 
 export function FilePreview({
@@ -17,6 +18,7 @@ export function FilePreview({
 	downloadPath,
 	editable,
 	previewLinkFactory,
+	openMode,
 }: FilePreviewProps) {
 	return (
 		<FilePreviewDialog
@@ -26,6 +28,7 @@ export function FilePreview({
 			downloadPath={downloadPath}
 			editable={editable}
 			previewLinkFactory={previewLinkFactory}
+			openMode={openMode}
 		/>
 	);
 }

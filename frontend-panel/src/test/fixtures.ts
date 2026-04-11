@@ -31,6 +31,7 @@ export function createMeResponse(
 			theme_mode: "dark",
 			color_preset: "orange",
 			view_mode: "grid",
+			browser_open_mode: "double_click",
 			sort_by: "updated_at",
 			sort_order: "desc",
 			language: "zh",

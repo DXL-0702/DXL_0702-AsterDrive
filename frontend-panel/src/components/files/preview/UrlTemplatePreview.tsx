@@ -1,0 +1,119 @@
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { EmptyState } from "@/components/common/EmptyState";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import type { PreviewLinkInfo } from "@/types/api";
+import { EmbeddedWebAppPreview } from "./EmbeddedWebAppPreview";
+import { PreviewLoadingState } from "./PreviewLoadingState";
+import {
+	type ResolvedVideoBrowserTarget,
+	resolveUrlTemplateTarget,
+	type VideoBrowserFileContext,
+} from "./video-browser-config";
+
+interface UrlTemplatePreviewProps {
+	createPreviewLink?: () => Promise<PreviewLinkInfo>;
+	downloadPath: string;
+	file: VideoBrowserFileContext;
+	label: string;
+	rawConfig: Record<string, unknown> | null | undefined;
+}
+
+export function UrlTemplatePreview({
+	createPreviewLink,
+	downloadPath,
+	file,
+	label,
+	rawConfig,
+}: UrlTemplatePreviewProps) {
+	const { t } = useTranslation("files");
+	const [isLoading, setIsLoading] = useState(true);
+	const [target, setTarget] = useState<ResolvedVideoBrowserTarget | null>(null);
+
+	useEffect(() => {
+		let cancelled = false;
+
+		setIsLoading(true);
+		setTarget(null);
+
+		void resolveUrlTemplateTarget(
+			file,
+			downloadPath,
+			label,
+			rawConfig,
+			createPreviewLink,
+		)
+			.then((resolvedTarget) => {
+				if (cancelled) return;
+				setTarget(resolvedTarget);
+			})
+			.catch(() => {
+				if (cancelled) return;
+				setTarget(null);
+			})
+			.finally(() => {
+				if (cancelled) return;
+				setIsLoading(false);
+			});
+
+		return () => {
+			cancelled = true;
+		};
+	}, [createPreviewLink, downloadPath, file, label, rawConfig]);
+
+	const openTarget = () => {
+		if (!target) return;
+		window.open(target.url, "_blank", "noopener,noreferrer");
+	};
+
+	if (isLoading) {
+		return (
+			<PreviewLoadingState
+				text={t("loading_preview")}
+				className="h-full min-h-[16rem]"
+			/>
+		);
+	}
+
+	if (!target) {
+		return (
+			<EmptyState
+				icon={<Icon name="Globe" className="h-10 w-10" />}
+				title={t("url_template_unavailable")}
+				description={t("url_template_unavailable_desc")}
+			/>
+		);
+	}
+
+	if (target.mode === "new_tab") {
+		return (
+			<EmptyState
+				icon={<Icon name="ArrowSquareOut" className="h-10 w-10" />}
+				title={target.label}
+				description={t("url_template_external_desc", { label: target.label })}
+				action={
+					<Button variant="outline" onClick={openTarget}>
+						<Icon name="ArrowSquareOut" className="mr-2 h-4 w-4" />
+						{t("url_template_open", { label: target.label })}
+					</Button>
+				}
+			/>
+		);
+	}
+
+	return (
+		<EmbeddedWebAppPreview
+			title={target.label}
+			src={target.url}
+			actions={
+				<Button variant="outline" size="sm" onClick={openTarget}>
+					<Icon name="ArrowSquareOut" className="mr-2 h-4 w-4" />
+					{t("url_template_open", { label: target.label })}
+				</Button>
+			}
+			iframeAllow="autoplay; fullscreen; picture-in-picture"
+			iframeReferrerPolicy="same-origin"
+		/>
+	);
+}

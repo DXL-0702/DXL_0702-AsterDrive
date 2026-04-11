@@ -120,6 +120,14 @@ export type TemplateVariableGroup =
 export type TemplateVariableItem =
 	components["schemas"]["TemplateVariableItem"];
 export type PublicBranding = components["schemas"]["PublicBranding"];
+export type PublicPreviewAppDefinition =
+	components["schemas"]["PublicPreviewAppDefinition"];
+export type PublicPreviewAppMatch =
+	components["schemas"]["PublicPreviewAppMatch"];
+export type PublicPreviewAppRule =
+	components["schemas"]["PublicPreviewAppRule"];
+export type PublicPreviewAppsConfig =
+	components["schemas"]["PublicPreviewAppsConfig"];
 export type SystemConfig = components["schemas"]["SystemConfig"];
 export type SystemConfigPage = components["schemas"]["OffsetPage_SystemConfig"];
 export type WebdavAccount = components["schemas"]["WebdavAccount"];

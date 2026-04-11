@@ -12,6 +12,8 @@ import { Icon } from "@/components/ui/icon";
 
 interface FileContextMenuProps {
 	children: ReactNode;
+	onOpen?: () => void;
+	onChooseOpenMethod?: () => void;
 	onDownload?: () => void;
 	onArchiveDownload?: () => void;
 	onPageShare: () => void;
@@ -30,6 +32,8 @@ interface FileContextMenuProps {
 
 export function FileContextMenu({
 	children,
+	onOpen,
+	onChooseOpenMethod,
 	onDownload,
 	onArchiveDownload,
 	onPageShare,
@@ -58,6 +62,21 @@ export function FileContextMenu({
 		<ContextMenu>
 			{trigger}
 			<ContextMenuContent>
+				{onOpen && (
+					<ContextMenuItem onClick={onOpen}>
+						<Icon name="Eye" className="h-4 w-4 mr-2" />
+						{t("open")}
+					</ContextMenuItem>
+				)}
+				{!isFolder && onChooseOpenMethod && (
+					<ContextMenuItem onClick={onChooseOpenMethod}>
+						<Icon name="ListBullets" className="h-4 w-4 mr-2" />
+						{t("open_with_action")}
+					</ContextMenuItem>
+				)}
+				{onOpen || (!isFolder && onChooseOpenMethod) ? (
+					<ContextMenuSeparator />
+				) : null}
 				{!isFolder && onDownload && (
 					<ContextMenuItem onClick={onDownload}>
 						<Icon name="Download" className="h-4 w-4 mr-2" />

@@ -313,6 +313,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         category: "storage",
         description: "Maximum original file size eligible for thumbnail generation in bytes",
     },
+    // ── User ───────────────────────────────────────────────
     ConfigDef {
         key: "auth_allow_user_registration",
         label_i18n_key: "settings_item_auth_allow_user_registration_label",
@@ -321,8 +322,19 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || "true".to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "user",
+        category: "user.registration_and_login",
         description: "Whether new users can self-register from the public auth flow",
+    },
+    ConfigDef {
+        key: "auth_register_activation_enabled",
+        label_i18n_key: "settings_item_auth_register_activation_enabled_label",
+        description_i18n_key: "settings_item_auth_register_activation_enabled_desc",
+        value_type: "boolean",
+        default_fn: || "true".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "user.registration_and_login",
+        description: "Whether newly registered users must activate their account by email before signing in",
     },
     ConfigDef {
         key: "avatar_dir",
@@ -332,7 +344,7 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::avatar::DEFAULT_AVATAR_DIR.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "user",
+        category: "user.avatar",
         description: "Local directory used for uploaded avatar files (relative paths resolve under ./data)",
     },
     ConfigDef {
@@ -343,8 +355,19 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         default_fn: || crate::config::operations::DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES.to_string(),
         requires_restart: false,
         is_sensitive: false,
-        category: "user",
+        category: "user.avatar",
         description: "Maximum avatar upload size in bytes before the request is rejected",
+    },
+    ConfigDef {
+        key: "gravatar_base_url",
+        label_i18n_key: "settings_item_gravatar_base_url_label",
+        description_i18n_key: "settings_item_gravatar_base_url_desc",
+        value_type: "string",
+        default_fn: || "https://www.gravatar.com/avatar".to_string(),
+        requires_restart: false,
+        is_sensitive: false,
+        category: "user.avatar",
+        description: "Gravatar avatar base URL (change to proxy/mirror if needed)",
     },
     // ── Audit ─────────────────────────────────────────────
     ConfigDef {
@@ -609,17 +632,6 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
     },
     // ── General ─────────────────────────────────────────────
     ConfigDef {
-        key: "gravatar_base_url",
-        label_i18n_key: "settings_item_gravatar_base_url_label",
-        description_i18n_key: "settings_item_gravatar_base_url_desc",
-        value_type: "string",
-        default_fn: || "https://www.gravatar.com/avatar".to_string(),
-        requires_restart: false,
-        is_sensitive: false,
-        category: "general",
-        description: "Gravatar avatar base URL (change to proxy/mirror if needed)",
-    },
-    ConfigDef {
         key: "public_site_url",
         label_i18n_key: "settings_item_public_site_url_label",
         description_i18n_key: "settings_item_public_site_url_desc",
@@ -684,5 +696,16 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: "general",
         description: "Public site logo URL used on dark surfaces such as the login hero panel",
+    },
+    ConfigDef {
+        key: crate::services::preview_app_service::PREVIEW_APPS_CONFIG_KEY,
+        label_i18n_key: "settings_item_frontend_preview_apps_json_label",
+        description_i18n_key: "settings_item_frontend_preview_apps_json_desc",
+        value_type: "multiline",
+        default_fn: crate::services::preview_app_service::default_public_preview_apps_json,
+        requires_restart: false,
+        is_sensitive: false,
+        category: "general.preview",
+        description: "Public preview app registry and matching rules used by the web frontend",
     },
 ];

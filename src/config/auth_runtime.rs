@@ -3,6 +3,7 @@ use crate::errors::{AsterError, Result};
 
 pub const AUTH_COOKIE_SECURE_KEY: &str = "auth_cookie_secure";
 pub const AUTH_ALLOW_USER_REGISTRATION_KEY: &str = "auth_allow_user_registration";
+pub const AUTH_REGISTER_ACTIVATION_ENABLED_KEY: &str = "auth_register_activation_enabled";
 pub const AUTH_ACCESS_TOKEN_TTL_SECS_KEY: &str = "auth_access_token_ttl_secs";
 pub const AUTH_REFRESH_TOKEN_TTL_SECS_KEY: &str = "auth_refresh_token_ttl_secs";
 pub const AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY: &str = "auth_register_activation_ttl_secs";
@@ -15,6 +16,7 @@ pub const AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS_KEY: &str =
 
 pub const DEFAULT_AUTH_COOKIE_SECURE: bool = true;
 pub const DEFAULT_AUTH_ALLOW_USER_REGISTRATION: bool = true;
+pub const DEFAULT_AUTH_REGISTER_ACTIVATION_ENABLED: bool = true;
 pub const DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECS: u64 = 900;
 pub const DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECS: u64 = 604800;
 pub const DEFAULT_AUTH_REGISTER_ACTIVATION_TTL_SECS: u64 = 86_400;
@@ -27,6 +29,7 @@ pub const DEFAULT_AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS: u64 = 60;
 pub struct RuntimeAuthPolicy {
     pub cookie_secure: bool,
     pub allow_user_registration: bool,
+    pub register_activation_enabled: bool,
     pub access_token_ttl_secs: u64,
     pub refresh_token_ttl_secs: u64,
 }
@@ -72,6 +75,22 @@ impl RuntimeAuthPolicy {
             None => DEFAULT_AUTH_ALLOW_USER_REGISTRATION,
         };
 
+        let register_activation_enabled =
+            match runtime_config.get(AUTH_REGISTER_ACTIVATION_ENABLED_KEY) {
+                Some(raw) => match parse_bool_str(&raw) {
+                    Some(value) => value,
+                    None => {
+                        tracing::warn!(
+                            key = AUTH_REGISTER_ACTIVATION_ENABLED_KEY,
+                            value = %raw,
+                            "invalid runtime auth register activation config; using default"
+                        );
+                        DEFAULT_AUTH_REGISTER_ACTIVATION_ENABLED
+                    }
+                },
+                None => DEFAULT_AUTH_REGISTER_ACTIVATION_ENABLED,
+            };
+
         let access_token_ttl_secs = match runtime_config.get(AUTH_ACCESS_TOKEN_TTL_SECS_KEY) {
             Some(raw) => match parse_positive_u64(&raw) {
                 Some(value) => value,
@@ -105,6 +124,7 @@ impl RuntimeAuthPolicy {
         Self {
             cookie_secure,
             allow_user_registration,
+            register_activation_enabled,
             access_token_ttl_secs,
             refresh_token_ttl_secs,
         }
@@ -167,6 +187,15 @@ pub fn normalize_allow_user_registration_config_value(value: &str) -> Result<Str
     }
 }
 
+pub fn normalize_register_activation_enabled_config_value(value: &str) -> Result<String> {
+    match parse_bool_str(value) {
+        Some(value) => Ok(if value { "true" } else { "false" }.to_string()),
+        None => Err(AsterError::validation_error(
+            "auth_register_activation_enabled must be 'true' or 'false'",
+        )),
+    }
+}
+
 pub fn normalize_token_ttl_config_value(key: &str, value: &str) -> Result<String> {
     let Some(ttl) = parse_positive_u64(value) else {
         return Err(AsterError::validation_error(format!(
@@ -206,9 +235,10 @@ fn read_positive_u64(runtime_config: &RuntimeConfig, key: &str, default: u64) ->
 mod tests {
     use super::{
         AUTH_ACCESS_TOKEN_TTL_SECS_KEY, AUTH_ALLOW_USER_REGISTRATION_KEY, AUTH_COOKIE_SECURE_KEY,
-        AUTH_REFRESH_TOKEN_TTL_SECS_KEY, DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECS,
-        DEFAULT_AUTH_ALLOW_USER_REGISTRATION, DEFAULT_AUTH_COOKIE_SECURE,
-        DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECS, RuntimeAuthPolicy,
+        AUTH_REFRESH_TOKEN_TTL_SECS_KEY, AUTH_REGISTER_ACTIVATION_ENABLED_KEY,
+        DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECS, DEFAULT_AUTH_ALLOW_USER_REGISTRATION,
+        DEFAULT_AUTH_COOKIE_SECURE, DEFAULT_AUTH_REFRESH_TOKEN_TTL_SECS,
+        DEFAULT_AUTH_REGISTER_ACTIVATION_ENABLED, RuntimeAuthPolicy,
     };
     use crate::config::RuntimeConfig;
     use crate::entities::system_config;
@@ -242,6 +272,10 @@ mod tests {
             DEFAULT_AUTH_ALLOW_USER_REGISTRATION
         );
         assert_eq!(
+            policy.register_activation_enabled,
+            DEFAULT_AUTH_REGISTER_ACTIVATION_ENABLED
+        );
+        assert_eq!(
             policy.access_token_ttl_secs,
             DEFAULT_AUTH_ACCESS_TOKEN_TTL_SECS
         );
@@ -256,6 +290,7 @@ mod tests {
         let runtime_config = RuntimeConfig::new();
         runtime_config.apply(config_model(AUTH_COOKIE_SECURE_KEY, "false"));
         runtime_config.apply(config_model(AUTH_ALLOW_USER_REGISTRATION_KEY, "false"));
+        runtime_config.apply(config_model(AUTH_REGISTER_ACTIVATION_ENABLED_KEY, "false"));
         runtime_config.apply(config_model(AUTH_ACCESS_TOKEN_TTL_SECS_KEY, "120"));
         runtime_config.apply(config_model(AUTH_REFRESH_TOKEN_TTL_SECS_KEY, "3600"));
 
@@ -263,6 +298,7 @@ mod tests {
 
         assert!(!policy.cookie_secure);
         assert!(!policy.allow_user_registration);
+        assert!(!policy.register_activation_enabled);
         assert_eq!(policy.access_token_ttl_secs, 120);
         assert_eq!(policy.refresh_token_ttl_secs, 3600);
     }

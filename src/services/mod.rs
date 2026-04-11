@@ -12,6 +12,7 @@ pub mod mail_service;
 pub mod mail_template;
 pub mod maintenance_service;
 pub mod policy_service;
+pub mod preview_app_service;
 pub mod preview_link_service;
 pub mod profile_service;
 pub mod property_service;

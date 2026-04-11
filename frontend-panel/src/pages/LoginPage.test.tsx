@@ -205,7 +205,7 @@ describe("LoginPage", () => {
 		mockState.toastError.mockReset();
 		mockState.toastSuccess.mockReset();
 		mockState.login.mockResolvedValue(undefined);
-		mockState.register.mockResolvedValue(undefined);
+		mockState.register.mockResolvedValue({ email_verified: false });
 		mockState.requestPasswordReset.mockResolvedValue(undefined);
 		mockState.resendRegisterActivation.mockResolvedValue(undefined);
 		mockState.setup.mockResolvedValue(undefined);
@@ -435,6 +435,49 @@ describe("LoginPage", () => {
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("register_success");
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("activation_resent");
+	});
+
+	it("returns to sign-in mode when registration does not require activation", async () => {
+		mockState.check.mockResolvedValueOnce({
+			has_users: true,
+			allow_user_registration: true,
+		});
+		mockState.register.mockResolvedValueOnce({ email_verified: true });
+
+		render(<LoginPage />);
+
+		fireEvent.click(await screen.findByRole("button", { name: "sign_up" }));
+		fireEvent.change(screen.getByLabelText("email_or_username"), {
+			target: { value: "direct@example.com" },
+		});
+		fireEvent.change(await screen.findByLabelText("username"), {
+			target: { value: "directuser" },
+		});
+		fireEvent.change(screen.getByLabelText("password"), {
+			target: { value: "secret123" },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "sign_up" }));
+
+		await waitFor(() => {
+			expect(mockState.register).toHaveBeenCalledWith(
+				"directuser",
+				"direct@example.com",
+				"secret123",
+			);
+		});
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"register_success_direct",
+		);
+		expect(mockState.login).not.toHaveBeenCalled();
+		expect(
+			screen.queryByText("activation_pending_notice"),
+		).not.toBeInTheDocument();
+		await waitFor(() => {
+			expect(
+				screen.getByRole("button", { name: "sign_in" }),
+			).toBeInTheDocument();
+		});
+		expect(screen.getByLabelText("email")).toHaveValue("direct@example.com");
 	});
 
 	it("switches pending-activation login failures into the activation state", async () => {

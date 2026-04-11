@@ -164,6 +164,21 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 1);
     assert_eq!(body["data"]["files"][0]["name"], "team.txt");
+    assert!(body["data"]["files"][0]["blob_id"].is_null());
+    assert!(body["data"]["files"][0]["created_at"].is_null());
+    assert!(body["data"]["folders"].is_array());
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/teams/{team_id}/folders/{docs_id}/info"))
+        .insert_header(("Cookie", format!("aster_access={member_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["id"], docs_id);
+    assert_eq!(body["data"]["name"], "Docs");
+    assert!(body["data"]["created_at"].is_string());
+    assert_eq!(body["data"]["team_id"], team_id);
 
     let req = test::TestRequest::get()
         .uri("/api/v1/folders")

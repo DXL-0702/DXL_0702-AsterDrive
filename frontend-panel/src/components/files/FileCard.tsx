@@ -20,6 +20,7 @@ interface FileCardProps {
 	selected: boolean;
 	onSelect: () => void;
 	onClick: () => void;
+	onDoubleClick?: () => void;
 	/** IDs to drag when this item is part of a selection */
 	dragData?: { fileIds: number[]; folderIds: number[] };
 	onDrop?: (
@@ -40,6 +41,7 @@ export function FileCard({
 	selected,
 	onSelect,
 	onClick,
+	onDoubleClick,
 	dragData,
 	onDrop,
 	targetPathIds = [],
@@ -112,7 +114,12 @@ export function FileCard({
 			onDragLeave={draggable ? handleDragLeave : undefined}
 			onDrop={draggable ? handleDrop : undefined}
 			onClick={onClick}
-			onKeyDown={(e) => e.key === "Enter" && onClick()}
+			onDoubleClick={onDoubleClick}
+			onKeyDown={(e) => {
+				if (e.key !== "Enter") return;
+				e.preventDefault();
+				(onDoubleClick ?? onClick)();
+			}}
 			role="button"
 			tabIndex={0}
 		>

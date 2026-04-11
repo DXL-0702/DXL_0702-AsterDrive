@@ -228,6 +228,10 @@ export interface IconProps {
 	className?: string;
 }
 
+export function isIconName(value: string): value is IconName {
+	return Object.hasOwn(iconMap, value);
+}
+
 export function Icon({
 	name,
 	className,

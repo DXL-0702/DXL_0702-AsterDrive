@@ -53,6 +53,7 @@ describe("fileService", () => {
 		fileService.listRoot({ file_limit: 50 });
 		fileService.listFolder(7, { sort_by: "updated_at" });
 		fileService.getFolderAncestors(7);
+		fileService.getFolderInfo(7);
 		fileService.createFolder("Docs", null);
 		fileService.renameFolder(7, "Renamed");
 		fileService.getFile(8);
@@ -75,6 +76,7 @@ describe("fileService", () => {
 			params: { sort_by: "updated_at" },
 		});
 		expect(mockState.get).toHaveBeenNthCalledWith(3, "/folders/7/ancestors");
+		expect(mockState.get).toHaveBeenNthCalledWith(4, "/folders/7/info");
 		expect(mockState.post).toHaveBeenNthCalledWith(1, "/folders", {
 			name: "Docs",
 			parent_id: null,
@@ -82,8 +84,8 @@ describe("fileService", () => {
 		expect(mockState.patch).toHaveBeenNthCalledWith(1, "/folders/7", {
 			name: "Renamed",
 		});
-		expect(mockState.get).toHaveBeenNthCalledWith(4, "/files/8");
-		expect(mockState.get).toHaveBeenNthCalledWith(5, "/files/8/direct-link");
+		expect(mockState.get).toHaveBeenNthCalledWith(5, "/files/8");
+		expect(mockState.get).toHaveBeenNthCalledWith(6, "/files/8/direct-link");
 		expect(mockState.delete).toHaveBeenNthCalledWith(1, "/files/8");
 		expect(mockState.patch).toHaveBeenNthCalledWith(2, "/files/8", {
 			name: "notes.md",
@@ -104,7 +106,7 @@ describe("fileService", () => {
 		expect(mockState.post).toHaveBeenNthCalledWith(6, "/folders/7/copy", {
 			parent_id: 3,
 		});
-		expect(mockState.get).toHaveBeenNthCalledWith(6, "/files/8/versions");
+		expect(mockState.get).toHaveBeenNthCalledWith(7, "/files/8/versions");
 		expect(mockState.post).toHaveBeenNthCalledWith(
 			7,
 			"/files/8/versions/2/restore",

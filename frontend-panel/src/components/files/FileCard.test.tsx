@@ -143,6 +143,29 @@ describe("FileCard", () => {
 		expect(onClick).toHaveBeenCalledTimes(2);
 	});
 
+	it("uses the double-click handler for keyboard Enter when provided", () => {
+		const onClick = vi.fn();
+		const onDoubleClick = vi.fn();
+
+		render(
+			<FileCard
+				item={folder as never}
+				isFolder
+				selected={false}
+				onSelect={vi.fn()}
+				onClick={onClick}
+				onDoubleClick={onDoubleClick}
+			/>,
+		);
+
+		fireEvent.keyDown(screen.getByRole("button", { name: /Docs/i }), {
+			key: "Enter",
+		});
+
+		expect(onDoubleClick).toHaveBeenCalledTimes(1);
+		expect(onClick).not.toHaveBeenCalled();
+	});
+
 	it("renders file thumbnails and compact status indicators for files", () => {
 		const { container } = render(
 			<FileCard

@@ -29,17 +29,20 @@ import {
 	writeInternalDragData,
 } from "@/lib/dragDrop";
 import { cn } from "@/lib/utils";
-import type { SortBy } from "@/stores/fileStore";
+import type { BrowserOpenMode, SortBy } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
 import type { FileListItem, FolderListItem } from "@/types/api";
 
 interface FileTableProps {
 	folders: FolderListItem[];
 	files: FileListItem[];
+	browserOpenMode: BrowserOpenMode;
 	scrollElement?: HTMLDivElement | null;
 	breadcrumbPathIds?: number[];
 	onFolderOpen: (id: number, name: string) => void;
 	onFileClick: (file: FileListItem) => void;
+	onFileOpen?: (file: FileListItem) => void;
+	onFileChooseOpenMethod?: (file: FileListItem) => void;
 	onShare: (target: {
 		fileId?: number;
 		folderId?: number;
@@ -91,10 +94,13 @@ function SortIcon({
 export function FileTable({
 	folders,
 	files,
+	browserOpenMode,
 	scrollElement,
 	breadcrumbPathIds = [],
 	onFolderOpen,
 	onFileClick,
+	onFileOpen,
+	onFileChooseOpenMethod,
 	onShare,
 	onDownload,
 	onArchiveDownload,
@@ -114,6 +120,8 @@ export function FileTable({
 	const selectedFolderIds = useFileStore((s) => s.selectedFolderIds);
 	const toggleFileSelection = useFileStore((s) => s.toggleFileSelection);
 	const toggleFolderSelection = useFileStore((s) => s.toggleFolderSelection);
+	const selectOnlyFile = useFileStore((s) => s.selectOnlyFile);
+	const selectOnlyFolder = useFileStore((s) => s.selectOnlyFolder);
 	const selectAll = useFileStore((s) => s.selectAll);
 	const clearSelection = useFileStore((s) => s.clearSelection);
 	const sortBy = useFileStore((s) => s.sortBy);
@@ -209,6 +217,7 @@ export function FileTable({
 			key={`folder-${folder.id}`}
 			isFolder
 			isLocked={folder.is_locked ?? false}
+			onOpen={() => onFolderOpen(folder.id, folder.name)}
 			onPageShare={() =>
 				onShare({
 					folderId: folder.id,
@@ -242,7 +251,18 @@ export function FileTable({
 				onDragOver={(e) => handleFolderDragOver(e, folder.id)}
 				onDragLeave={() => setDragOverId(null)}
 				onDrop={(e) => handleFolderDrop(e, folder.id)}
-				onClick={() => onFolderOpen(folder.id, folder.name)}
+				onClick={() => {
+					if (browserOpenMode === "double_click") {
+						selectOnlyFolder(folder.id);
+						return;
+					}
+					onFolderOpen(folder.id, folder.name);
+				}}
+				onDoubleClick={
+					browserOpenMode === "double_click"
+						? () => onFolderOpen(folder.id, folder.name)
+						: undefined
+				}
 			>
 				<TableCell
 					className="w-12 pr-0 first:pl-3 md:first:pl-3"
@@ -268,6 +288,10 @@ export function FileTable({
 			key={`file-${file.id}`}
 			isFolder={false}
 			isLocked={file.is_locked ?? false}
+			onOpen={() => (onFileOpen ?? onFileClick)(file)}
+			onChooseOpenMethod={
+				onFileChooseOpenMethod ? () => onFileChooseOpenMethod(file) : undefined
+			}
 			onDownload={() => onDownload(file.id, file.name)}
 			onPageShare={() =>
 				onShare({
@@ -302,7 +326,18 @@ export function FileTable({
 				)}
 				draggable
 				onDragStart={(e) => handleDragStart(e, file.id, false)}
-				onClick={() => onFileClick(file)}
+				onClick={() => {
+					if (browserOpenMode === "double_click") {
+						selectOnlyFile(file.id);
+						return;
+					}
+					onFileClick(file);
+				}}
+				onDoubleClick={
+					browserOpenMode === "double_click"
+						? () => onFileClick(file)
+						: undefined
+				}
 			>
 				<TableCell
 					className="w-12 pr-0 first:pl-3 md:first:pl-3"

@@ -87,6 +87,7 @@ async fn test_admin_scope_allows_admin_users() {
         .collect::<Vec<_>>();
     assert!(keys.contains(&"auth_cookie_secure"));
     assert!(keys.contains(&"auth_allow_user_registration"));
+    assert!(keys.contains(&"auth_register_activation_enabled"));
     assert!(keys.contains(&"auth_access_token_ttl_secs"));
     assert!(keys.contains(&"auth_refresh_token_ttl_secs"));
     assert!(keys.contains(&"mail_outbox_dispatch_interval_secs"));
@@ -130,7 +131,22 @@ async fn test_admin_scope_allows_admin_users() {
         register_toggle["description_i18n_key"],
         "settings_item_auth_allow_user_registration_desc"
     );
-    assert_eq!(register_toggle["category"], "user");
+    assert_eq!(register_toggle["category"], "user.registration_and_login");
+
+    let register_activation_toggle = body["data"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["key"] == "auth_register_activation_enabled")
+        .unwrap();
+    assert_eq!(
+        register_activation_toggle["label_i18n_key"],
+        "settings_item_auth_register_activation_enabled_label"
+    );
+    assert_eq!(
+        register_activation_toggle["description_i18n_key"],
+        "settings_item_auth_register_activation_enabled_desc"
+    );
 
     let branding_title = body["data"]
         .as_array()

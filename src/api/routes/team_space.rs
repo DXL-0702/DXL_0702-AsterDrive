@@ -14,6 +14,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/folders", web::get().to(list_root))
         .route("/folders", web::post().to(create_folder))
         .route("/folders/{id}", web::get().to(list_folder))
+        .route("/folders/{id}/info", web::get().to(get_folder_info))
         .route("/folders/{id}", web::patch().to(patch_folder))
         .route("/folders/{id}", web::delete().to(delete_folder))
         .route("/folders/{id}/lock", web::post().to(set_folder_lock))
@@ -155,6 +156,32 @@ pub async fn list_folder(
         &query,
     )
     .await
+}
+
+#[api_docs_macros::path(
+    get,
+    path = "/api/v1/teams/{team_id}/folders/{id}/info",
+    tag = "teams",
+    operation_id = "get_team_folder_info",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("id" = i64, Path, description = "Folder ID")
+    ),
+    responses(
+        (status = 200, description = "Team folder info", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "Folder not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn get_folder_info(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<(i64, i64)>,
+) -> Result<HttpResponse> {
+    let (team_id, folder_id) = path.into_inner();
+    folders::get_folder_info_response(&state, team_scope(team_id, claims.user_id), folder_id).await
 }
 
 #[api_docs_macros::path(

@@ -41,7 +41,13 @@ import { FOLDER_LIMIT, PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { formatDateShort } from "@/lib/format";
 import { ApiError } from "@/services/http";
 import { shareService } from "@/services/shareService";
-import type { FileInfo, FolderContents, SharePublicInfo } from "@/types/api";
+import { usePreviewAppStore } from "@/stores/previewAppStore";
+import type {
+	FileInfo,
+	FileListItem,
+	FolderContents,
+	SharePublicInfo,
+} from "@/types/api";
 import { ErrorCode } from "@/types/api-helpers";
 
 interface ShareBreadcrumbItem {
@@ -83,6 +89,8 @@ const FilePreview = lazy(async () => {
 export default function ShareViewPage() {
 	const { t } = useTranslation(["core", "share"]);
 	const { token } = useParams<{ token: string }>();
+	const previewAppsLoaded = usePreviewAppStore((state) => state.isLoaded);
+	const loadPreviewApps = usePreviewAppStore((state) => state.load);
 	const [info, setInfo] = useState<SharePublicInfo | null>(null);
 	const [needsPassword, setNeedsPassword] = useState(false);
 	const [passwordVerified, setPasswordVerified] = useState(false);
@@ -93,7 +101,9 @@ export default function ShareViewPage() {
 		null,
 	);
 	const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-	const [previewFile, setPreviewFile] = useState<FileInfo | null>(null);
+	const [previewFile, setPreviewFile] = useState<FileInfo | FileListItem | null>(
+		null,
+	);
 	const [breadcrumb, setBreadcrumb] = useState<ShareBreadcrumbItem[]>([]);
 	const [navigating, setNavigating] = useState(false);
 	const [loadingMore, setLoadingMore] = useState(false);
@@ -137,6 +147,11 @@ export default function ShareViewPage() {
 	useEffect(() => {
 		void loadInfo().catch(() => {});
 	}, [loadInfo]);
+
+	useEffect(() => {
+		if (previewAppsLoaded) return;
+		void loadPreviewApps();
+	}, [loadPreviewApps, previewAppsLoaded]);
 
 	const navigateToFolder = useCallback(
 		async (folderId: number | null, folderName?: string) => {
@@ -254,7 +269,7 @@ export default function ShareViewPage() {
 		window.open(url, "_blank");
 	};
 
-	const handleFolderFileDownload = (file: FileInfo) => {
+	const handleFolderFileDownload = (file: FileListItem) => {
 		if (!token) return;
 		const url = shareService.downloadFolderFileUrl(token, file.id);
 		window.open(url, "_blank");

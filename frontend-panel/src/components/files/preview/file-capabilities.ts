@@ -1,4 +1,9 @@
+import {
+	getBuiltinPreviewAppIconUrl,
+	PREVIEW_APP_ICON_URLS,
+} from "@/components/common/previewAppIconUrls";
 import type { IconName } from "@/components/ui/icon";
+import type { PublicPreviewAppsConfig } from "@/types/api";
 import type {
 	FilePreviewProfile,
 	FileTypeInfo,
@@ -316,62 +321,220 @@ const DEFAULT_TYPE_INFO: FileTypeInfo = {
 	color: "text-muted-foreground",
 };
 
+const GOOGLE_VIEWER_CONFIG = {
+	allowed_origins: ["https://docs.google.com"],
+	mode: "iframe",
+	url_template:
+		"https://docs.google.com/gview?embedded=true&url={{file_preview_url}}",
+} as const;
+
+const MICROSOFT_VIEWER_CONFIG = {
+	allowed_origins: ["https://view.officeapps.live.com"],
+	mode: "iframe",
+	url_template:
+		"https://view.officeapps.live.com/op/embed.aspx?src={{file_preview_url}}",
+} as const;
+
 export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
-	image: [{ mode: "image", labelKey: "open_with_image", icon: "Eye" }],
-	video: [{ mode: "video", labelKey: "open_with_video", icon: "Monitor" }],
-	audio: [{ mode: "audio", labelKey: "open_with_audio", icon: "FileAudio" }],
-	pdf: [{ mode: "pdf", labelKey: "open_with_pdf", icon: "FileText" }],
+	image: [
+		{
+			key: "image",
+			mode: "image",
+			labelKey: "open_with_image",
+			icon: PREVIEW_APP_ICON_URLS.image,
+		},
+	],
+	video: [
+		{
+			key: "video",
+			mode: "video",
+			labelKey: "open_with_video",
+			icon: PREVIEW_APP_ICON_URLS.video,
+		},
+	],
+	audio: [
+		{
+			key: "audio",
+			mode: "audio",
+			labelKey: "open_with_audio",
+			icon: PREVIEW_APP_ICON_URLS.audio,
+		},
+	],
+	pdf: [
+		{
+			key: "pdf",
+			mode: "pdf",
+			labelKey: "open_with_pdf",
+			icon: PREVIEW_APP_ICON_URLS.pdf,
+		},
+	],
 	document: [
 		{
-			mode: "officeOnline",
-			labelKey: "open_with_office_online",
-			icon: "Globe",
+			key: "office_microsoft",
+			mode: "url_template",
+			labelKey: "open_with_office_microsoft",
+			icon: PREVIEW_APP_ICON_URLS.microsoftOnedrive,
+			config: MICROSOFT_VIEWER_CONFIG,
+		},
+		{
+			key: "office_google",
+			mode: "url_template",
+			labelKey: "open_with_office_google",
+			icon: PREVIEW_APP_ICON_URLS.googleDrive,
+			config: GOOGLE_VIEWER_CONFIG,
 		},
 	],
 	spreadsheet: [
 		{
-			mode: "officeOnline",
-			labelKey: "open_with_office_online",
-			icon: "Globe",
+			key: "office_microsoft",
+			mode: "url_template",
+			labelKey: "open_with_office_microsoft",
+			icon: PREVIEW_APP_ICON_URLS.microsoftOnedrive,
+			config: MICROSOFT_VIEWER_CONFIG,
+		},
+		{
+			key: "office_google",
+			mode: "url_template",
+			labelKey: "open_with_office_google",
+			icon: PREVIEW_APP_ICON_URLS.googleDrive,
+			config: GOOGLE_VIEWER_CONFIG,
 		},
 	],
 	presentation: [
 		{
-			mode: "officeOnline",
-			labelKey: "open_with_office_online",
-			icon: "Globe",
+			key: "office_microsoft",
+			mode: "url_template",
+			labelKey: "open_with_office_microsoft",
+			icon: PREVIEW_APP_ICON_URLS.microsoftOnedrive,
+			config: MICROSOFT_VIEWER_CONFIG,
+		},
+		{
+			key: "office_google",
+			mode: "url_template",
+			labelKey: "open_with_office_google",
+			icon: PREVIEW_APP_ICON_URLS.googleDrive,
+			config: GOOGLE_VIEWER_CONFIG,
 		},
 	],
 	markdown: [
-		{ mode: "markdown", labelKey: "open_with_markdown", icon: "Eye" },
-		{ mode: "code", labelKey: "open_with_code", icon: "FileCode" },
+		{
+			key: "markdown",
+			mode: "markdown",
+			labelKey: "open_with_markdown",
+			icon: PREVIEW_APP_ICON_URLS.markdown,
+		},
+		{
+			key: "code",
+			mode: "code",
+			labelKey: "open_with_code",
+			icon: PREVIEW_APP_ICON_URLS.code,
+		},
 	],
 	csv: [
-		{ mode: "table", labelKey: "open_with_table", icon: "Table" },
-		{ mode: "code", labelKey: "open_with_code", icon: "FileCode" },
+		{
+			key: "table_csv",
+			mode: "table",
+			labelKey: "open_with_table",
+			icon: PREVIEW_APP_ICON_URLS.table,
+			config: { delimiter: "," },
+		},
+		{
+			key: "code",
+			mode: "code",
+			labelKey: "open_with_code",
+			icon: PREVIEW_APP_ICON_URLS.code,
+		},
 	],
 	tsv: [
-		{ mode: "table", labelKey: "open_with_table", icon: "Table" },
-		{ mode: "code", labelKey: "open_with_code", icon: "FileCode" },
+		{
+			key: "table_tsv",
+			mode: "table",
+			labelKey: "open_with_table",
+			icon: PREVIEW_APP_ICON_URLS.table,
+			config: { delimiter: "\t" },
+		},
+		{
+			key: "code",
+			mode: "code",
+			labelKey: "open_with_code",
+			icon: PREVIEW_APP_ICON_URLS.code,
+		},
 	],
 	json: [
 		{
-			mode: "formatted",
+			key: "formatted_json",
+			mode: "formatted_json",
 			labelKey: "open_with_formatted",
-			icon: "BracketsCurly",
+			icon: PREVIEW_APP_ICON_URLS.json,
 		},
-		{ mode: "code", labelKey: "open_with_code", icon: "FileCode" },
+		{
+			key: "code",
+			mode: "code",
+			labelKey: "open_with_code",
+			icon: PREVIEW_APP_ICON_URLS.code,
+		},
 	],
 	xml: [
 		{
-			mode: "formatted",
+			key: "formatted_xml",
+			mode: "formatted_xml",
 			labelKey: "open_with_formatted",
-			icon: "BracketsCurly",
+			icon: PREVIEW_APP_ICON_URLS.xml,
 		},
-		{ mode: "code", labelKey: "open_with_code", icon: "FileCode" },
+		{
+			key: "code",
+			mode: "code",
+			labelKey: "open_with_code",
+			icon: PREVIEW_APP_ICON_URLS.code,
+		},
 	],
-	text: [{ mode: "code", labelKey: "open_with_code", icon: "FileCode" }],
+	text: [
+		{
+			key: "code",
+			mode: "code",
+			labelKey: "open_with_code",
+			icon: PREVIEW_APP_ICON_URLS.code,
+		},
+	],
 };
+
+const BUILTIN_KEY_BY_LEGACY_OPTION_KEY: Partial<Record<string, string>> = {
+	audio: "builtin.audio",
+	code: "builtin.code",
+	formatted_json: "builtin.formatted_json",
+	formatted_xml: "builtin.formatted_xml",
+	image: "builtin.image",
+	markdown: "builtin.markdown",
+	office_google: "builtin.office_google",
+	office_microsoft: "builtin.office_microsoft",
+	pdf: "builtin.pdf",
+	table_csv: "builtin.table_csv",
+	table_tsv: "builtin.table_tsv",
+	try_text: "builtin.try_text",
+	video: "builtin.video",
+};
+
+type ConfiguredPreviewApp = NonNullable<
+	PublicPreviewAppsConfig["apps"]
+>[number];
+type ConfiguredPreviewRule = NonNullable<
+	PublicPreviewAppsConfig["rules"]
+>[number];
+
+function mergeOpenWithOptions(...groups: OpenWithOption[][]): OpenWithOption[] {
+	const merged: OpenWithOption[] = [];
+
+	for (const group of groups) {
+		for (const option of group) {
+			if (merged.some((candidate) => candidate.key === option.key)) {
+				continue;
+			}
+			merged.push(option);
+		}
+	}
+
+	return merged;
+}
 
 function getExtension(name: string) {
 	const trimmed = name.trim();
@@ -456,11 +619,12 @@ export function getFileTypeInfo(file: PreviewableFileLike): FileTypeInfo {
 	return DEFAULT_TYPE_INFO;
 }
 
-export function detectFilePreviewProfile(
+function detectLegacyFilePreviewProfile(
 	file: PreviewableFileLike,
 ): FilePreviewProfile {
 	const typeInfo = getFileTypeInfo(file);
 	const { ext } = getExtension(file.name);
+	const isOpenDocument = ext === "odt" || ext === "ods" || ext === "odp";
 
 	if (typeInfo.category === "image") {
 		return {
@@ -508,8 +672,13 @@ export function detectFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: false,
 			isEditableText: false,
-			defaultMode: "officeOnline",
-			options: OPEN_WITH_OPTIONS.document,
+			defaultMode: isOpenDocument ? "office_google" : "office_microsoft",
+			options: isOpenDocument
+				? [OPEN_WITH_OPTIONS.document[1]].filter(
+						(option): option is (typeof OPEN_WITH_OPTIONS.document)[number] =>
+							option !== undefined,
+					)
+				: OPEN_WITH_OPTIONS.document,
 		};
 	}
 	if (typeInfo.category === "spreadsheet") {
@@ -518,8 +687,15 @@ export function detectFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: false,
 			isEditableText: false,
-			defaultMode: "officeOnline",
-			options: OPEN_WITH_OPTIONS.spreadsheet,
+			defaultMode: isOpenDocument ? "office_google" : "office_microsoft",
+			options: isOpenDocument
+				? [OPEN_WITH_OPTIONS.spreadsheet[1]].filter(
+						(
+							option,
+						): option is (typeof OPEN_WITH_OPTIONS.spreadsheet)[number] =>
+							option !== undefined,
+					)
+				: OPEN_WITH_OPTIONS.spreadsheet,
 		};
 	}
 	if (typeInfo.category === "presentation") {
@@ -528,8 +704,15 @@ export function detectFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: false,
 			isEditableText: false,
-			defaultMode: "officeOnline",
-			options: OPEN_WITH_OPTIONS.presentation,
+			defaultMode: isOpenDocument ? "office_google" : "office_microsoft",
+			options: isOpenDocument
+				? [OPEN_WITH_OPTIONS.presentation[1]].filter(
+						(
+							option,
+						): option is (typeof OPEN_WITH_OPTIONS.presentation)[number] =>
+							option !== undefined,
+					)
+				: OPEN_WITH_OPTIONS.presentation,
 		};
 	}
 	if (typeInfo.category === "markdown") {
@@ -548,7 +731,7 @@ export function detectFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "table",
+			defaultMode: "table_csv",
 			options: OPEN_WITH_OPTIONS.csv,
 		};
 	}
@@ -558,7 +741,7 @@ export function detectFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "table",
+			defaultMode: "table_tsv",
 			options: OPEN_WITH_OPTIONS.tsv,
 		};
 	}
@@ -568,7 +751,7 @@ export function detectFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "formatted",
+			defaultMode: "formatted_json",
 			options: OPEN_WITH_OPTIONS.json,
 		};
 	}
@@ -578,7 +761,7 @@ export function detectFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "formatted",
+			defaultMode: "formatted_xml",
 			options: OPEN_WITH_OPTIONS.xml,
 		};
 	}
@@ -610,19 +793,220 @@ export function detectFilePreviewProfile(
 		defaultMode: null,
 		options:
 			typeInfo.category === "unknown"
-				? [{ mode: "code", labelKey: "open_with_try_text", icon: "FileCode" }]
+				? [
+						{
+							key: "try_text",
+							mode: "code",
+							labelKey: "open_with_try_text",
+							icon: PREVIEW_APP_ICON_URLS.file,
+						},
+					]
 				: [],
 	};
 }
 
-export function getAvailableOpenWithOptions(file: PreviewableFileLike) {
-	return detectFilePreviewProfile(file).options;
+function normalizeConfiguredOption(app: ConfiguredPreviewApp): OpenWithOption {
+	return {
+		key: app.key,
+		mode: getConfiguredPreviewMode(app.key),
+		labelKey: app.label_i18n_key ?? "",
+		labels: app.labels ?? undefined,
+		icon: app.icon?.trim() || getConfiguredPreviewIcon(app.key),
+		config: (app.config as Record<string, unknown> | undefined) ?? {},
+	};
 }
 
-export function getDefaultOpenWith(file: PreviewableFileLike) {
-	return detectFilePreviewProfile(file).defaultMode;
+function normalizeLegacyOptionForConfiguredProfile(
+	option: OpenWithOption,
+	appMap: Map<string, OpenWithOption>,
+) {
+	const builtinKey = BUILTIN_KEY_BY_LEGACY_OPTION_KEY[option.key];
+	if (!builtinKey) {
+		return option;
+	}
+
+	return appMap.get(builtinKey) ?? option;
+}
+
+function getConfiguredPreviewIcon(key: string): string {
+	return getBuiltinPreviewAppIconUrl(key);
+}
+
+function getConfiguredPreviewMode(key: string): OpenWithOption["mode"] {
+	switch (key) {
+		case "builtin.image":
+			return "image";
+		case "builtin.video":
+			return "video";
+		case "builtin.audio":
+			return "audio";
+		case "builtin.pdf":
+			return "pdf";
+		case "builtin.markdown":
+			return "markdown";
+		case "builtin.table_csv":
+		case "builtin.table_tsv":
+			return "table";
+		case "builtin.formatted_json":
+			return "formatted_json";
+		case "builtin.formatted_xml":
+			return "formatted_xml";
+		case "builtin.code":
+		case "builtin.try_text":
+			return "code";
+		default:
+			return "url_template";
+	}
+}
+
+function matchesConfiguredRule(
+	file: PreviewableFileLike,
+	category: FilePreviewProfile["category"],
+	rule: ConfiguredPreviewRule,
+) {
+	const extension = getFileExtension(file);
+	const mimeType = file.mime_type.toLowerCase();
+	const matches = rule.matches ?? {};
+	const extensions: string[] = matches.extensions ?? [];
+	const mimeTypes: string[] = matches.mime_types ?? [];
+	const mimePrefixes: string[] = matches.mime_prefixes ?? [];
+	const categories: string[] = matches.categories ?? [];
+	const hasConditions =
+		extensions.length > 0 ||
+		mimeTypes.length > 0 ||
+		mimePrefixes.length > 0 ||
+		categories.length > 0;
+
+	if (!hasConditions) return true;
+
+	const matchesExtension =
+		extensions.length > 0 &&
+		extensions.some((candidate) => candidate === extension);
+	const matchesMimeType =
+		mimeTypes.length > 0 &&
+		mimeTypes.some((candidate) => candidate === mimeType);
+	const matchesMimePrefix =
+		mimePrefixes.length > 0 &&
+		mimePrefixes.some((candidate) => mimeType.startsWith(candidate));
+	const matchesCategory =
+		categories.length > 0 &&
+		categories.some((candidate) => candidate === category);
+
+	return (
+		matchesExtension || matchesMimeType || matchesMimePrefix || matchesCategory
+	);
+}
+
+function detectConfiguredFilePreviewProfile(
+	file: PreviewableFileLike,
+	previewApps: PublicPreviewAppsConfig,
+): FilePreviewProfile {
+	const legacyProfile = detectLegacyFilePreviewProfile(file);
+	const configuredApps = previewApps.apps ?? [];
+	const configuredRules = previewApps.rules ?? [];
+	const appMap = new Map(
+		configuredApps.map((app) => [app.key, normalizeConfiguredOption(app)]),
+	);
+	const options: OpenWithOption[] = [];
+	let defaultMode: string | null = null;
+
+	for (const rule of configuredRules) {
+		if (!matchesConfiguredRule(file, legacyProfile.category, rule)) {
+			continue;
+		}
+
+		for (const appKey of rule.apps ?? []) {
+			const option = appMap.get(appKey);
+			if (
+				!option ||
+				options.some((candidate) => candidate.key === option.key)
+			) {
+				continue;
+			}
+			options.push(option);
+		}
+	}
+
+	const fallbackOptions = legacyProfile.options.map((option) =>
+		normalizeLegacyOptionForConfiguredProfile(option, appMap),
+	);
+	const registeredOptions = configuredApps
+		.map((app) => appMap.get(app.key))
+		.filter((option): option is OpenWithOption => option !== undefined);
+	const allOptions = mergeOpenWithOptions(
+		options,
+		registeredOptions,
+		fallbackOptions,
+	);
+
+	for (const rule of configuredRules) {
+		if (!matchesConfiguredRule(file, legacyProfile.category, rule)) {
+			continue;
+		}
+		if (
+			defaultMode === null &&
+			rule.default_app &&
+			allOptions.some((option) => option.key === rule.default_app)
+		) {
+			defaultMode = rule.default_app;
+		}
+	}
+
+	if (defaultMode === null && legacyProfile.defaultMode) {
+		const legacyDefaultOption = legacyProfile.options.find(
+			(option) => option.key === legacyProfile.defaultMode,
+		);
+		const legacyDefault = legacyDefaultOption
+			? normalizeLegacyOptionForConfiguredProfile(legacyDefaultOption, appMap)
+			: null;
+		if (
+			legacyDefault &&
+			allOptions.some((option) => option.key === legacyDefault.key)
+		) {
+			defaultMode = legacyDefault.key;
+		}
+	}
+
+	if (defaultMode === null && options.length > 0) {
+		defaultMode = options[0]?.key ?? null;
+	}
+	if (defaultMode === null && allOptions.length > 0) {
+		defaultMode = allOptions[0]?.key ?? null;
+	}
+
+	return {
+		...legacyProfile,
+		defaultMode,
+		allOptions,
+		options,
+	};
+}
+
+export function detectFilePreviewProfile(
+	file: PreviewableFileLike,
+	previewApps?: PublicPreviewAppsConfig | null,
+): FilePreviewProfile {
+	if (!previewApps) {
+		return detectLegacyFilePreviewProfile(file);
+	}
+	return detectConfiguredFilePreviewProfile(file, previewApps);
+}
+
+export function getAvailableOpenWithOptions(
+	file: PreviewableFileLike,
+	previewApps?: PublicPreviewAppsConfig | null,
+) {
+	const profile = detectFilePreviewProfile(file, previewApps);
+	return profile.allOptions ?? profile.options;
+}
+
+export function getDefaultOpenWith(
+	file: PreviewableFileLike,
+	previewApps?: PublicPreviewAppsConfig | null,
+) {
+	return detectFilePreviewProfile(file, previewApps).defaultMode;
 }
 
 export function isEditableTextFile(file: PreviewableFileLike) {
-	return detectFilePreviewProfile(file).isEditableText;
+	return detectLegacyFilePreviewProfile(file).isEditableText;
 }

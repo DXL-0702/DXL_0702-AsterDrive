@@ -86,6 +86,23 @@ describe("useFileStore edge cases", () => {
 		});
 	});
 
+	it("persists browser open mode changes and can select a single folder", async () => {
+		const { useFileStore } = await loadStore();
+
+		useFileStore.getState().setBrowserOpenMode("double_click");
+		useFileStore.getState().selectOnlyFolder(8);
+
+		expect(useFileStore.getState().browserOpenMode).toBe("double_click");
+		expect(localStorage.getItem("aster-browser-open-mode")).toBe(
+			"double_click",
+		);
+		expect(mockState.queuePreferenceSync).toHaveBeenCalledWith({
+			browser_open_mode: "double_click",
+		});
+		expect(useFileStore.getState().selectedFileIds.size).toBe(0);
+		expect(useFileStore.getState().selectedFolderIds).toEqual(new Set([8]));
+	});
+
 	it("populates and clears search results", async () => {
 		mockState.search.mockResolvedValue({
 			files: [{ id: 7, name: "notes.txt" }],

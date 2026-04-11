@@ -39,7 +39,7 @@ import { formatDateShort } from "@/lib/format";
 import { absoluteAppUrl } from "@/lib/publicSiteUrl";
 import { fileService } from "@/services/fileService";
 import { webdavAccountService } from "@/services/webdavAccountService";
-import type { FolderInfo } from "@/types/api";
+import type { FolderListItem } from "@/types/api";
 
 function CopyField({
 	value,
@@ -90,7 +90,7 @@ export default function WebdavAccountsPage() {
 	const [selectedFolderId, setSelectedFolderId] = useState<number | undefined>(
 		undefined,
 	);
-	const [folders, setFolders] = useState<FolderInfo[]>([]);
+	const [folders, setFolders] = useState<FolderListItem[]>([]);
 	const [showPassword, setShowPassword] = useState<{
 		username: string;
 		password: string;

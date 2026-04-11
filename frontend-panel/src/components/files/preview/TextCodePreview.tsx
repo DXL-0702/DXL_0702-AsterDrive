@@ -15,6 +15,7 @@ import type { PreviewableFileLike } from "./types";
 
 interface TextCodePreviewProps {
 	file: PreviewableFileLike & { id: number };
+	modeLabel?: string;
 	path: string;
 	onFileUpdated?: () => void;
 	onDirtyChange?: (dirty: boolean) => void;
@@ -42,6 +43,7 @@ function useIsDark() {
 
 export function TextCodePreview({
 	file,
+	modeLabel,
 	path,
 	onFileUpdated,
 	onDirtyChange,
@@ -148,7 +150,9 @@ export function TextCodePreview({
 				<span>{language}</span>
 				<span>·</span>
 				<span>
-					{editable && editing ? t("core:edit") : t("files:open_with_code")}
+					{editable && editing
+						? t("core:edit")
+						: (modeLabel?.trim() ?? "") || t("files:open_with_code")}
 				</span>
 				<span>·</span>
 				<span>{dirty ? t("files:unsaved_changes") : t("core:active")}</span>

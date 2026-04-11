@@ -20,6 +20,10 @@ const mockState = vi.hoisted(() => ({
 	listSubfolderContent: vi.fn(),
 	openWindow: vi.fn(),
 	params: { token: "share-token" as string | undefined },
+	previewAppStore: {
+		isLoaded: false,
+		load: vi.fn(async () => {}),
+	},
 	toastSuccess: vi.fn(),
 	translate: (key: string, opts?: Record<string, unknown>) => {
 		if (key === "share:expires_date") return `expires:${opts?.date}`;
@@ -50,6 +54,12 @@ vi.mock("sonner", () => ({
 	toast: {
 		success: (...args: unknown[]) => mockState.toastSuccess(...args),
 	},
+}));
+
+vi.mock("@/stores/previewAppStore", () => ({
+	usePreviewAppStore: (
+		selector: (state: typeof mockState.previewAppStore) => unknown,
+	) => selector(mockState.previewAppStore),
 }));
 
 vi.mock("@/components/common/SkeletonCard", () => ({
@@ -334,6 +344,9 @@ describe("ShareViewPage", () => {
 		mockState.listSubfolderContent.mockReset();
 		mockState.openWindow.mockReset();
 		mockState.params = { token: "share-token" };
+		mockState.previewAppStore.load.mockReset();
+		mockState.previewAppStore.isLoaded = false;
+		mockState.previewAppStore.load.mockResolvedValue(undefined);
 		mockState.toastSuccess.mockReset();
 		mockState.verifyPassword.mockReset();
 		mockState.verifyPassword.mockResolvedValue(undefined);
@@ -378,6 +391,7 @@ describe("ShareViewPage", () => {
 		render(<ShareViewPage />);
 
 		await screen.findByText("Secret Folder");
+		expect(mockState.previewAppStore.load).toHaveBeenCalledTimes(1);
 		fireEvent.change(screen.getByPlaceholderText("auth:password"), {
 			target: { value: "letmein" },
 		});

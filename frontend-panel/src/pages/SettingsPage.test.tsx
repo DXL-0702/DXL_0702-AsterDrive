@@ -40,6 +40,8 @@ const mockState = vi.hoisted(() => ({
 	},
 	changeLanguage: vi.fn(),
 	fileStore: {
+		browserOpenMode: "double_click" as "single_click" | "double_click",
+		setBrowserOpenMode: vi.fn(),
 		setViewMode: vi.fn(),
 		viewMode: "list" as "list" | "grid",
 	},
@@ -309,6 +311,8 @@ describe("SettingsPage", () => {
 		mockState.authStore.syncSession.mockReset();
 		mockState.authStore.user.preferences.storage_event_stream_enabled = true;
 		mockState.changeLanguage.mockReset();
+		mockState.fileStore.browserOpenMode = "double_click";
+		mockState.fileStore.setBrowserOpenMode.mockReset();
 		mockState.fileStore.setViewMode.mockReset();
 		mockState.fileStore.viewMode = "list";
 		mockState.navigate.mockReset();
@@ -325,7 +329,7 @@ describe("SettingsPage", () => {
 		};
 	});
 
-	it("renders current descriptions from the selected theme, language, and browser mode", () => {
+	it("renders current descriptions from the selected theme, language, browser mode, and open mode", () => {
 		render(<SettingsPage section="interface" />);
 
 		expect(screen.getByTestId("app-layout")).toBeInTheDocument();
@@ -340,6 +344,9 @@ describe("SettingsPage", () => {
 		expect(
 			screen.getByText("settings:settings_browser_list_desc"),
 		).toBeInTheDocument();
+		expect(
+			screen.getByText("settings:settings_browser_open_double_click_desc"),
+		).toBeInTheDocument();
 		expect(screen.getByText("color-preset-picker")).toBeInTheDocument();
 		expect(screen.getAllByTestId("choice-group")[0]).toHaveAttribute(
 			"data-value",
@@ -353,6 +360,10 @@ describe("SettingsPage", () => {
 			"data-value",
 			"list",
 		);
+		expect(screen.getAllByTestId("choice-group")[3]).toHaveAttribute(
+			"data-value",
+			"double_click",
+		);
 		expect(
 			screen.getByRole("switch", {
 				name: "settings:settings_storage_event_stream",
@@ -363,12 +374,17 @@ describe("SettingsPage", () => {
 		).toBeInTheDocument();
 	});
 
-	it("dispatches theme, language, browser, and realtime sync preference changes", () => {
+	it("dispatches theme, language, browser, open mode, and realtime sync preference changes", () => {
 		render(<SettingsPage section="interface" />);
 
 		fireEvent.click(screen.getByRole("button", { name: "theme_light" }));
 		fireEvent.click(screen.getByRole("button", { name: "language_en" }));
 		fireEvent.click(screen.getByRole("button", { name: "files:grid_view" }));
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_browser_open_single_click",
+			}),
+		);
 		fireEvent.click(
 			screen.getByRole("switch", {
 				name: "settings:settings_storage_event_stream",
@@ -379,6 +395,9 @@ describe("SettingsPage", () => {
 		expect(mockState.changeLanguage).toHaveBeenCalledWith("en");
 		expect(mockState.preferenceSync).toHaveBeenCalledWith({ language: "en" });
 		expect(mockState.fileStore.setViewMode).toHaveBeenCalledWith("grid");
+		expect(mockState.fileStore.setBrowserOpenMode).toHaveBeenCalledWith(
+			"single_click",
+		);
 		expect(
 			mockState.authStore.setStorageEventStreamEnabled,
 		).toHaveBeenCalledWith(false);
