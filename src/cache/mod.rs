@@ -7,6 +7,20 @@ use async_trait::async_trait;
 use serde::{Serialize, de::DeserializeOwned};
 use std::sync::Arc;
 
+fn redis_backend_target(redis_url: &str) -> String {
+    let Some((scheme, rest)) = redis_url.split_once("://") else {
+        return "configured".to_string();
+    };
+
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+    let host = authority.rsplit('@').next().unwrap_or(authority);
+    if host.is_empty() {
+        format!("{scheme}://configured")
+    } else {
+        format!("{scheme}://{host}")
+    }
+}
+
 /// 通用缓存后端 trait（dyn compatible，用 bytes 接口）
 #[async_trait]
 pub trait CacheBackend: Send + Sync {
@@ -55,7 +69,10 @@ pub async fn create_cache(config: &CacheConfig) -> Arc<dyn CacheBackend> {
         "redis" => {
             match redis_cache::RedisCache::new(&config.redis_url, config.default_ttl).await {
                 Ok(cache) => {
-                    tracing::info!("cache backend: redis ({})", config.redis_url);
+                    tracing::info!(
+                        target = %redis_backend_target(&config.redis_url),
+                        "cache backend: redis"
+                    );
                     Arc::new(cache)
                 }
                 Err(e) => {
@@ -68,5 +85,26 @@ pub async fn create_cache(config: &CacheConfig) -> Arc<dyn CacheBackend> {
             tracing::info!("cache backend: memory (ttl={}s)", config.default_ttl);
             Arc::new(memory::MemoryCache::new(config.default_ttl))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redis_backend_target;
+
+    #[test]
+    fn redis_backend_target_strips_credentials() {
+        assert_eq!(
+            redis_backend_target("redis://user:secret@example.com:6379/0"),
+            "redis://example.com:6379"
+        );
+    }
+
+    #[test]
+    fn redis_backend_target_keeps_host_without_credentials() {
+        assert_eq!(
+            redis_backend_target("rediss://cache.internal:6380/1"),
+            "rediss://cache.internal:6380"
+        );
     }
 }

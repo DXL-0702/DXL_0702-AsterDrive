@@ -286,6 +286,38 @@ pub async fn find_by_ids<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<Vec<
         .map_err(AsterError::from)
 }
 
+async fn find_by_ids_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FolderScope,
+    ids: &[i64],
+) -> Result<Vec<folder::Model>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    Folder::find()
+        .filter(scope_condition(scope))
+        .filter(folder::Column::Id.is_in(ids.iter().copied()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_by_ids_in_personal_scope<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    ids: &[i64],
+) -> Result<Vec<folder::Model>> {
+    find_by_ids_in_scope(db, FolderScope::Personal { user_id }, ids).await
+}
+
+pub async fn find_by_ids_in_team_scope<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    ids: &[i64],
+) -> Result<Vec<folder::Model>> {
+    find_by_ids_in_scope(db, FolderScope::Team { team_id }, ids).await
+}
+
 async fn find_children_in_scope<C: ConnectionTrait>(
     db: &C,
     scope: FolderScope,
@@ -502,6 +534,44 @@ async fn find_top_level_deleted_paginated_in_scope<C: ConnectionTrait>(
     Ok((items, total))
 }
 
+async fn find_top_level_deleted_cursor_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FolderScope,
+    limit: u64,
+    after: Option<(chrono::DateTime<Utc>, i64)>,
+) -> Result<(Vec<folder::Model>, u64)> {
+    let base_cond = top_level_deleted_condition(scope);
+    let base = Folder::find().filter(base_cond.clone());
+
+    let total = base.clone().count(db).await.map_err(AsterError::from)?;
+    if total == 0 || limit == 0 {
+        return Ok((vec![], total));
+    }
+
+    let mut q = Folder::find().filter(base_cond);
+    if let Some((after_deleted_at, after_id)) = after {
+        q = q.filter(
+            Condition::any()
+                .add(folder::Column::DeletedAt.lt(after_deleted_at))
+                .add(
+                    Condition::all()
+                        .add(folder::Column::DeletedAt.eq(after_deleted_at))
+                        .add(folder::Column::Id.lt(after_id)),
+                ),
+        );
+    }
+
+    let items = q
+        .order_by_desc(folder::Column::DeletedAt)
+        .order_by_desc(folder::Column::Id)
+        .limit(limit)
+        .all(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    Ok((items, total))
+}
+
 pub async fn find_top_level_deleted_paginated<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
@@ -520,6 +590,25 @@ pub async fn find_top_level_deleted_by_team_paginated<C: ConnectionTrait>(
 ) -> Result<(Vec<folder::Model>, u64)> {
     find_top_level_deleted_paginated_in_scope(db, FolderScope::Team { team_id }, limit, offset)
         .await
+}
+
+pub async fn find_top_level_deleted_cursor<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    limit: u64,
+    after: Option<(chrono::DateTime<Utc>, i64)>,
+) -> Result<(Vec<folder::Model>, u64)> {
+    find_top_level_deleted_cursor_in_scope(db, FolderScope::Personal { user_id }, limit, after)
+        .await
+}
+
+pub async fn find_top_level_deleted_by_team_cursor<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    limit: u64,
+    after: Option<(chrono::DateTime<Utc>, i64)>,
+) -> Result<(Vec<folder::Model>, u64)> {
+    find_top_level_deleted_cursor_in_scope(db, FolderScope::Team { team_id }, limit, after).await
 }
 
 /// 按名称查文件夹（排除已删除）

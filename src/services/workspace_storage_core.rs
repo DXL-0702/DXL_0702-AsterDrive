@@ -217,12 +217,18 @@ async fn ensure_folder_in_parent<C: ConnectionTrait>(
     }
 }
 
-pub(crate) async fn resolve_upload_path(
+pub(crate) struct ParsedUploadPath {
+    pub base_folder_id: Option<i64>,
+    pub parent_segments: Vec<String>,
+    pub filename: String,
+}
+
+pub(crate) async fn parse_relative_upload_path(
     state: &AppState,
     scope: WorkspaceStorageScope,
     base_folder_id: Option<i64>,
     relative_path: &str,
-) -> Result<(Option<i64>, String)> {
+) -> Result<ParsedUploadPath> {
     if let Some(folder_id) = base_folder_id {
         verify_folder_access(state, scope, folder_id).await?;
     }
@@ -239,20 +245,40 @@ pub(crate) async fn resolve_upload_path(
         .ok_or_else(|| AsterError::validation_error("relative_path cannot be empty"))?;
     crate::utils::validate_name(filename)?;
 
-    if segments.len() == 1 {
-        return Ok((base_folder_id, (*filename).to_string()));
+    let parent_segments: Vec<String> = segments[..segments.len().saturating_sub(1)]
+        .iter()
+        .map(|segment| {
+            crate::utils::validate_name(segment)?;
+            Ok((*segment).to_string())
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(ParsedUploadPath {
+        base_folder_id,
+        parent_segments,
+        filename: (*filename).to_string(),
+    })
+}
+
+pub(crate) async fn ensure_upload_parent_path(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    parsed: &ParsedUploadPath,
+) -> Result<Option<i64>> {
+    if parsed.parent_segments.is_empty() {
+        return Ok(parsed.base_folder_id);
     }
 
     let txn = state.db.begin().await.map_err(AsterError::from)?;
-    let mut current_parent = base_folder_id;
+    let mut current_parent = parsed.base_folder_id;
 
-    for segment in &segments[..segments.len() - 1] {
+    for segment in &parsed.parent_segments {
         let folder = ensure_folder_in_parent(&txn, scope, current_parent, segment).await?;
         current_parent = Some(folder.id);
     }
 
     txn.commit().await.map_err(AsterError::from)?;
-    Ok((current_parent, (*filename).to_string()))
+    Ok(current_parent)
 }
 
 pub(crate) async fn create_new_file_from_blob<C: ConnectionTrait>(

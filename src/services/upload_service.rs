@@ -168,9 +168,24 @@ async fn init_upload_for_scope(
     let user_id = scope.actor_user_id();
     let team_id = scope.team_id();
 
+    tracing::debug!(
+        scope = ?scope,
+        folder_id,
+        filename = %filename,
+        total_size,
+        relative_path = relative_path.unwrap_or(""),
+        "initializing upload session"
+    );
+
     let (resolved_folder_id, resolved_filename) = match relative_path {
         Some(path) => {
-            workspace_storage_service::resolve_upload_path(state, scope, folder_id, path).await?
+            let parsed = workspace_storage_service::parse_relative_upload_path(
+                state, scope, folder_id, path,
+            )
+            .await?;
+            let resolved_folder_id =
+                workspace_storage_service::ensure_upload_parent_path(state, scope, &parsed).await?;
+            (resolved_folder_id, parsed.filename)
         }
         None => {
             crate::utils::validate_name(filename)?;
@@ -181,6 +196,13 @@ async fn init_upload_for_scope(
         }
     };
 
+    tracing::debug!(
+        scope = ?scope,
+        folder_id = resolved_folder_id,
+        filename = %resolved_filename,
+        "resolved upload session target"
+    );
+
     let policy = workspace_storage_service::resolve_policy_for_size(
         state,
         scope,
@@ -188,6 +210,15 @@ async fn init_upload_for_scope(
         total_size,
     )
     .await?;
+
+    tracing::debug!(
+        scope = ?scope,
+        policy_id = policy.id,
+        driver_type = ?policy.driver_type,
+        chunk_size = policy.chunk_size,
+        total_size,
+        "resolved upload storage policy"
+    );
 
     if policy.max_file_size > 0 && total_size > policy.max_file_size {
         return Err(AsterError::file_too_large(format!(
@@ -239,6 +270,15 @@ async fn init_upload_for_scope(
                 };
                 upload_session_repo::create(db, session).await?;
 
+                tracing::debug!(
+                    scope = ?scope,
+                    upload_id = %upload_id,
+                    policy_id = policy.id,
+                    mode = ?UploadMode::Presigned,
+                    folder_id = resolved_folder_id,
+                    "initialized presigned upload session"
+                );
+
                 return Ok(InitUploadResponse {
                     mode: UploadMode::Presigned,
                     upload_id: Some(upload_id),
@@ -277,6 +317,17 @@ async fn init_upload_for_scope(
             };
             upload_session_repo::create(db, session).await?;
 
+            tracing::debug!(
+                scope = ?scope,
+                upload_id = %upload_id,
+                policy_id = policy.id,
+                mode = ?UploadMode::PresignedMultipart,
+                chunk_size,
+                total_chunks,
+                folder_id = resolved_folder_id,
+                "initialized presigned multipart upload session"
+            );
+
             return Ok(InitUploadResponse {
                 mode: UploadMode::PresignedMultipart,
                 upload_id: Some(upload_id),
@@ -289,6 +340,13 @@ async fn init_upload_for_scope(
         if strategy == S3UploadStrategy::RelayStream {
             let chunk_size = effective_s3_multipart_chunk_size(policy.chunk_size);
             if policy.chunk_size == 0 || total_size <= chunk_size {
+                tracing::debug!(
+                    scope = ?scope,
+                    policy_id = policy.id,
+                    mode = ?UploadMode::Direct,
+                    folder_id = resolved_folder_id,
+                    "selected direct relay upload mode"
+                );
                 return Ok(InitUploadResponse {
                     mode: UploadMode::Direct,
                     upload_id: None,
@@ -328,6 +386,17 @@ async fn init_upload_for_scope(
             };
             upload_session_repo::create(db, session).await?;
 
+            tracing::debug!(
+                scope = ?scope,
+                upload_id = %upload_id,
+                policy_id = policy.id,
+                mode = ?UploadMode::Chunked,
+                chunk_size,
+                total_chunks,
+                folder_id = resolved_folder_id,
+                "initialized relay multipart upload session"
+            );
+
             return Ok(InitUploadResponse {
                 mode: UploadMode::Chunked,
                 upload_id: Some(upload_id),
@@ -339,6 +408,13 @@ async fn init_upload_for_scope(
     }
 
     if policy.chunk_size == 0 || total_size <= policy.chunk_size {
+        tracing::debug!(
+            scope = ?scope,
+            policy_id = policy.id,
+            mode = ?UploadMode::Direct,
+            folder_id = resolved_folder_id,
+            "selected direct upload mode"
+        );
         return Ok(InitUploadResponse {
             mode: UploadMode::Direct,
             upload_id: None,
@@ -379,6 +455,17 @@ async fn init_upload_for_scope(
         updated_at: Set(now),
     };
     upload_session_repo::create(db, session).await?;
+
+    tracing::debug!(
+        scope = ?scope,
+        upload_id = %upload_id,
+        policy_id = policy.id,
+        mode = ?UploadMode::Chunked,
+        chunk_size,
+        total_chunks,
+        folder_id = resolved_folder_id,
+        "initialized chunked upload session"
+    );
 
     Ok(InitUploadResponse {
         mode: UploadMode::Chunked,
@@ -440,6 +527,14 @@ async fn upload_chunk_impl(
 ) -> Result<ChunkUploadResponse> {
     let db = &state.db;
     let upload_id = session.id.as_str();
+    tracing::debug!(
+        upload_id,
+        chunk_number,
+        chunk_size = data.len(),
+        status = ?session.status,
+        total_chunks = session.total_chunks,
+        "handling upload chunk"
+    );
     if session.status != UploadSessionStatus::Uploading {
         return Err(AsterError::chunk_upload_failed(format!(
             "session status is '{:?}', expected 'uploading'",
@@ -472,6 +567,14 @@ async fn upload_chunk_impl(
 
         if !upload_session_part_repo::try_claim_part(db, upload_id, s3_part_number).await? {
             let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+            tracing::debug!(
+                upload_id,
+                chunk_number,
+                part_number = s3_part_number,
+                received_count = updated.received_count,
+                total_chunks = updated.total_chunks,
+                "skipping already claimed relay multipart part"
+            );
             return Ok(ChunkUploadResponse {
                 received_count: updated.received_count,
                 total_chunks: updated.total_chunks,
@@ -534,6 +637,14 @@ async fn upload_chunk_impl(
         }
 
         let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+        tracing::debug!(
+            upload_id,
+            chunk_number,
+            part_number = s3_part_number,
+            received_count = updated.received_count,
+            total_chunks = updated.total_chunks,
+            "stored relay multipart chunk"
+        );
         return Ok(ChunkUploadResponse {
             received_count: updated.received_count,
             total_chunks: updated.total_chunks,
@@ -563,6 +674,13 @@ async fn upload_chunk_impl(
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
             // 幂等：分片已上传过，直接返回当前进度
             let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+            tracing::debug!(
+                upload_id,
+                chunk_number,
+                received_count = updated.received_count,
+                total_chunks = updated.total_chunks,
+                "skipping already uploaded chunk"
+            );
             return Ok(ChunkUploadResponse {
                 received_count: updated.received_count,
                 total_chunks: updated.total_chunks,
@@ -579,6 +697,13 @@ async fn upload_chunk_impl(
     increment_session_received_count(db, upload_id).await?;
 
     let updated = upload_session_repo::find_by_id(db, upload_id).await?;
+    tracing::debug!(
+        upload_id,
+        chunk_number,
+        received_count = updated.received_count,
+        total_chunks = updated.total_chunks,
+        "stored upload chunk"
+    );
     Ok(ChunkUploadResponse {
         received_count: updated.received_count,
         total_chunks: updated.total_chunks,
@@ -630,6 +755,14 @@ async fn complete_upload_impl(
 ) -> Result<file::Model> {
     let db = &state.db;
     let upload_id = session.id.as_str();
+    tracing::debug!(
+        upload_id,
+        status = ?session.status,
+        received_count = session.received_count,
+        total_chunks = session.total_chunks,
+        has_parts = parts.as_ref().is_some_and(|items| !items.is_empty()),
+        "completing upload session"
+    );
 
     // ── 幂等性处理：如果已完成，返回对应文件 ──
     if session.status == UploadSessionStatus::Completed {
@@ -784,6 +917,13 @@ async fn complete_upload_impl(
             // ── [事务外] 清理临时文件 ──
             let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
             crate::utils::cleanup_temp_dir(&temp_dir).await;
+            tracing::debug!(
+                upload_id,
+                file_id = created.id,
+                blob_id = created.blob_id,
+                size = created.size,
+                "completed upload session"
+            );
             Ok(created)
         }
         Err(e) => {
@@ -932,6 +1072,15 @@ async fn complete_s3_multipart_upload_session(
     let driver = state.driver_registry.get_driver(&policy)?;
     let upload_id = session.id.clone();
 
+    tracing::debug!(
+        upload_id = %upload_id,
+        status = ?session.status,
+        expected_status = ?expected_status,
+        policy_id = policy.id,
+        part_count = completed_parts.len(),
+        "completing S3 multipart upload session"
+    );
+
     transition_upload_session_to_assembling(db, &upload_id, session.status, expected_status)
         .await?;
 
@@ -954,7 +1103,16 @@ async fn complete_s3_multipart_upload_session(
     .await;
 
     match result {
-        Ok(file) => Ok(file),
+        Ok(file) => {
+            tracing::debug!(
+                upload_id = %upload_id,
+                file_id = file.id,
+                blob_id = file.blob_id,
+                size = file.size,
+                "completed S3 multipart upload session"
+            );
+            Ok(file)
+        }
         Err(e) => {
             mark_session_failed(db, &upload_id).await;
             Err(e)
@@ -986,6 +1144,12 @@ async fn complete_presigned_upload(
     .await?;
 
     let upload_id = session.id.clone();
+    tracing::debug!(
+        upload_id = %upload_id,
+        status = ?session.status,
+        policy_id = policy.id,
+        "completing presigned upload session"
+    );
     transition_upload_session_to_assembling(
         db,
         &upload_id,
@@ -1000,7 +1164,16 @@ async fn complete_presigned_upload(
     .await;
 
     match result {
-        Ok(f) => Ok(f),
+        Ok(f) => {
+            tracing::debug!(
+                upload_id = %upload_id,
+                file_id = f.id,
+                blob_id = f.blob_id,
+                size = f.size,
+                "completed presigned upload session"
+            );
+            Ok(f)
+        }
         Err(e) => {
             mark_session_failed(db, &upload_id).await;
             Err(e)
@@ -1092,6 +1265,14 @@ async fn find_file_by_session<C: sea_orm::ConnectionTrait>(
 /// 取消上传
 async fn cancel_upload_impl(state: &AppState, session: upload_session::Model) -> Result<()> {
     let upload_id = session.id.as_str();
+    tracing::debug!(
+        upload_id,
+        status = ?session.status,
+        policy_id = session.policy_id,
+        has_temp_key = session.s3_temp_key.is_some(),
+        has_multipart_id = session.s3_multipart_id.is_some(),
+        "canceling upload session"
+    );
 
     // 清理 S3 临时对象 / multipart upload
     if let Some(ref temp_key) = session.s3_temp_key {
@@ -1109,7 +1290,9 @@ async fn cancel_upload_impl(state: &AppState, session: upload_session::Model) ->
 
     let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
     crate::utils::cleanup_temp_dir(&temp_dir).await;
-    upload_session_repo::delete(&state.db, upload_id).await
+    upload_session_repo::delete(&state.db, upload_id).await?;
+    tracing::debug!(upload_id, "canceled upload session");
+    Ok(())
 }
 
 pub async fn cancel_upload(state: &AppState, upload_id: &str, user_id: i64) -> Result<()> {
@@ -1145,6 +1328,13 @@ async fn get_progress_impl(
     state: &AppState,
     session: upload_session::Model,
 ) -> Result<UploadProgressResponse> {
+    tracing::debug!(
+        upload_id = %session.id,
+        status = ?session.status,
+        total_chunks = session.total_chunks,
+        received_count = session.received_count,
+        "loading upload progress"
+    );
     // S3 relay multipart 在整个生命周期都以 upload_session_parts 为准；
     // S3 presigned multipart 仅在 Presigned 阶段查询远端已上传 parts；
     // 其他上传模式仍按本地临时分片扫描。
@@ -1180,7 +1370,7 @@ async fn get_progress_impl(
         scan_received_chunks(state, &session.id).await
     };
 
-    Ok(UploadProgressResponse {
+    let progress = UploadProgressResponse {
         upload_id: session.id,
         status: session.status,
         received_count: session.received_count,
@@ -1188,7 +1378,16 @@ async fn get_progress_impl(
         chunk_size: session.chunk_size,
         total_chunks: session.total_chunks,
         filename: session.filename,
-    })
+    };
+    tracing::debug!(
+        upload_id = %progress.upload_id,
+        status = ?progress.status,
+        received_count = progress.received_count,
+        total_chunks = progress.total_chunks,
+        chunk_count = progress.chunks_on_disk.len(),
+        "loaded upload progress"
+    );
+    Ok(progress)
 }
 
 pub async fn get_progress(
@@ -1229,6 +1428,12 @@ async fn presign_parts_impl(
     session: upload_session::Model,
     part_numbers: Vec<i32>,
 ) -> Result<std::collections::HashMap<i32, String>> {
+    tracing::debug!(
+        upload_id = %session.id,
+        status = ?session.status,
+        requested_part_count = part_numbers.len(),
+        "presigning multipart upload parts"
+    );
     if session.status != UploadSessionStatus::Presigned {
         return Err(AsterError::validation_error(format!(
             "session status is '{:?}', expected 'presigned'",
@@ -1256,6 +1461,11 @@ async fn presign_parts_impl(
             .await?;
         urls.insert(part_num, url);
     }
+    tracing::debug!(
+        upload_id = %session.id,
+        url_count = urls.len(),
+        "presigned multipart upload parts"
+    );
     Ok(urls)
 }
 

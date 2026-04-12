@@ -186,6 +186,7 @@ impl AsterError {
         match self {
             // 507 在这里表示用户配额耗尽，属于可预期业务限制，不按服务故障记录。
             Self::StorageQuotaExceeded(_)
+            | Self::RateLimited(_)
             | Self::MailNotConfigured(_)
             | Self::MailDeliveryFailed(_) => ResponseLogLevel::Warn,
             _ => {

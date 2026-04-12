@@ -124,6 +124,38 @@ pub async fn find_by_ids<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<Vec<
         .map_err(AsterError::from)
 }
 
+async fn find_by_ids_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: FileScope,
+    ids: &[i64],
+) -> Result<Vec<file::Model>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    File::find()
+        .filter(scope_condition(scope))
+        .filter(file::Column::Id.is_in(ids.iter().copied()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_by_ids_in_personal_scope<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    ids: &[i64],
+) -> Result<Vec<file::Model>> {
+    find_by_ids_in_scope(db, FileScope::Personal { user_id }, ids).await
+}
+
+pub async fn find_by_ids_in_team_scope<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    ids: &[i64],
+) -> Result<Vec<file::Model>> {
+    find_by_ids_in_scope(db, FileScope::Team { team_id }, ids).await
+}
+
 /// 批量查询多个文件夹下的未删除文件
 pub async fn find_by_folders<C: ConnectionTrait>(
     db: &C,

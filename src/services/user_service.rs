@@ -278,11 +278,6 @@ pub async fn get_self_info(state: &AppState, user_id: i64) -> Result<UserInfo> {
     to_user_info(state, &user, profile_service::AvatarAudience::SelfUser).await
 }
 
-pub async fn list_all(state: &AppState) -> Result<Vec<UserInfo>> {
-    let users = user_repo::find_all(&state.db).await?;
-    to_user_infos(state, users, profile_service::AvatarAudience::AdminUser).await
-}
-
 pub async fn list_paginated(
     state: &AppState,
     limit: u64,

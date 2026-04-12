@@ -1,5 +1,5 @@
 use chrono::{Duration, Utc};
-use sea_orm::Set;
+use sea_orm::{ConnectionTrait, Set};
 use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
@@ -197,7 +197,7 @@ async fn do_unlock_by_entity(
 
 /// 同步 is_locked boolean 缓存（pub 给 db_lock_system 调用）
 pub async fn set_entity_locked(
-    db: &sea_orm::DatabaseConnection,
+    db: &impl ConnectionTrait,
     entity_type: EntityType,
     entity_id: i64,
     locked: bool,

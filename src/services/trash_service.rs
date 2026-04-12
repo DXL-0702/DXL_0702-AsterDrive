@@ -15,6 +15,7 @@ use crate::services::{
 };
 
 const DEFAULT_RETENTION_DAYS: i64 = 7;
+const PURGE_ALL_BATCH_SIZE: u64 = 100;
 
 #[derive(Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -74,6 +75,14 @@ async fn list_trash_in_scope(
     file_limit: u64,
     file_cursor: Option<(chrono::DateTime<chrono::Utc>, i64)>,
 ) -> Result<TrashContents> {
+    tracing::debug!(
+        scope = ?scope,
+        folder_limit,
+        folder_offset,
+        file_limit,
+        has_file_cursor = file_cursor.is_some(),
+        "listing trash contents"
+    );
     workspace_storage_service::require_scope_access(state, scope).await?;
 
     let (raw_folders, folders_total) = match scope {
@@ -136,13 +145,23 @@ async fn list_trash_in_scope(
         .map(|file| build_trash_file_item(file, &folder_paths))
         .collect::<Result<Vec<_>>>()?;
 
-    Ok(TrashContents {
+    let contents = TrashContents {
         folders,
         files,
         folders_total,
         files_total,
         next_file_cursor,
-    })
+    };
+    tracing::debug!(
+        scope = ?scope,
+        folders_total = contents.folders_total,
+        files_total = contents.files_total,
+        returned_folders = contents.folders.len(),
+        returned_files = contents.files.len(),
+        has_next_file_cursor = contents.next_file_cursor.is_some(),
+        "listed trash contents"
+    );
+    Ok(contents)
 }
 
 /// 列出用户回收站内容（分页）
@@ -348,6 +367,7 @@ async fn restore_file_in_scope(
     scope: WorkspaceStorageScope,
     id: i64,
 ) -> Result<()> {
+    tracing::debug!(scope = ?scope, file_id = id, "restoring file from trash");
     let file = verify_file_in_trash_in_scope(state, scope, id).await?;
     let mut restored_parent_id = file.folder_id;
 
@@ -370,6 +390,13 @@ async fn restore_file_in_scope(
                     vec![restored_parent_id],
                 ),
             );
+            tracing::debug!(
+                scope = ?scope,
+                file_id = id,
+                restored_parent_id,
+                restored_to_root = restored_parent_id.is_none(),
+                "restored file from trash"
+            );
             return Ok(());
         }
     }
@@ -385,6 +412,13 @@ async fn restore_file_in_scope(
             vec![restored_parent_id],
         ),
     );
+    tracing::debug!(
+        scope = ?scope,
+        file_id = id,
+        restored_parent_id,
+        restored_to_root = restored_parent_id.is_none(),
+        "restored file from trash"
+    );
     Ok(())
 }
 
@@ -393,6 +427,7 @@ async fn restore_folder_in_scope(
     scope: WorkspaceStorageScope,
     id: i64,
 ) -> Result<()> {
+    tracing::debug!(scope = ?scope, folder_id = id, "restoring folder from trash");
     let folder = verify_folder_in_trash_in_scope(state, scope, id).await?;
     let mut restored_parent_id = folder.parent_id;
 
@@ -416,6 +451,13 @@ async fn restore_folder_in_scope(
                     vec![restored_parent_id],
                 ),
             );
+            tracing::debug!(
+                scope = ?scope,
+                folder_id = id,
+                restored_parent_id,
+                restored_to_root = restored_parent_id.is_none(),
+                "restored folder from trash"
+            );
             return Ok(());
         }
     }
@@ -431,6 +473,13 @@ async fn restore_folder_in_scope(
             vec![id],
             vec![restored_parent_id],
         ),
+    );
+    tracing::debug!(
+        scope = ?scope,
+        folder_id = id,
+        restored_parent_id,
+        restored_to_root = restored_parent_id.is_none(),
+        "restored folder from trash"
     );
     Ok(())
 }
@@ -482,8 +531,10 @@ pub async fn restore_team_folder(
 /// 永久删除单个文件
 pub async fn purge_file(state: &AppState, id: i64, user_id: i64) -> Result<()> {
     let scope = WorkspaceStorageScope::Personal { user_id };
+    tracing::debug!(scope = ?scope, file_id = id, "purging file from trash");
     let file = verify_file_in_trash_in_scope(state, scope, id).await?;
     file_service::batch_purge_in_scope(state, scope, vec![file]).await?;
+    tracing::debug!(scope = ?scope, file_id = id, "purged file from trash");
     Ok(())
 }
 
@@ -492,15 +543,21 @@ pub async fn purge_team_file(state: &AppState, team_id: i64, id: i64, user_id: i
         team_id,
         actor_user_id: user_id,
     };
+    tracing::debug!(scope = ?scope, file_id = id, "purging file from trash");
     let file = verify_file_in_trash_in_scope(state, scope, id).await?;
     file_service::batch_purge_in_scope(state, scope, vec![file]).await?;
+    tracing::debug!(scope = ?scope, file_id = id, "purged file from trash");
     Ok(())
 }
 
 /// 永久删除单个文件夹（递归）
 pub async fn purge_folder(state: &AppState, id: i64, user_id: i64) -> Result<()> {
-    verify_folder_in_trash_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id).await?;
-    recursive_purge_folder_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id).await
+    let scope = WorkspaceStorageScope::Personal { user_id };
+    tracing::debug!(scope = ?scope, folder_id = id, "purging folder from trash");
+    verify_folder_in_trash_in_scope(state, scope, id).await?;
+    recursive_purge_folder_in_scope(state, scope, id).await?;
+    tracing::debug!(scope = ?scope, folder_id = id, "purged folder from trash");
+    Ok(())
 }
 
 pub async fn purge_team_folder(
@@ -513,47 +570,91 @@ pub async fn purge_team_folder(
         team_id,
         actor_user_id: user_id,
     };
+    tracing::debug!(scope = ?scope, folder_id = id, "purging folder from trash");
     verify_folder_in_trash_in_scope(state, scope, id).await?;
-    recursive_purge_folder_in_scope(state, scope, id).await
+    recursive_purge_folder_in_scope(state, scope, id).await?;
+    tracing::debug!(scope = ?scope, folder_id = id, "purged folder from trash");
+    Ok(())
 }
 
 async fn purge_all_in_scope(state: &AppState, scope: WorkspaceStorageScope) -> Result<u32> {
+    tracing::debug!(scope = ?scope, "purging all trash contents");
     workspace_storage_service::require_scope_access(state, scope).await?;
     let mut count: u32 = 0;
 
-    let (top_folders, _) = match scope {
-        WorkspaceStorageScope::Personal { user_id } => {
-            folder_repo::find_top_level_deleted_paginated(&state.db, user_id, 10000, 0).await?
-        }
-        WorkspaceStorageScope::Team { team_id, .. } => {
-            folder_repo::find_top_level_deleted_by_team_paginated(&state.db, team_id, 10000, 0)
+    let mut folder_cursor: Option<(chrono::DateTime<chrono::Utc>, i64)> = None;
+    loop {
+        let (top_folders, _) = match scope {
+            WorkspaceStorageScope::Personal { user_id } => {
+                folder_repo::find_top_level_deleted_cursor(
+                    &state.db,
+                    user_id,
+                    PURGE_ALL_BATCH_SIZE,
+                    folder_cursor,
+                )
                 .await?
+            }
+            WorkspaceStorageScope::Team { team_id, .. } => {
+                folder_repo::find_top_level_deleted_by_team_cursor(
+                    &state.db,
+                    team_id,
+                    PURGE_ALL_BATCH_SIZE,
+                    folder_cursor,
+                )
+                .await?
+            }
+        };
+        if top_folders.is_empty() {
+            break;
         }
-    };
-    for folder in top_folders {
-        match recursive_purge_folder_in_scope(state, scope, folder.id).await {
-            Ok(()) => count += 1,
-            Err(e) => tracing::warn!("purge folder {} failed: {e}", folder.id),
+
+        folder_cursor = top_folders
+            .last()
+            .and_then(|folder| folder.deleted_at.map(|deleted_at| (deleted_at, folder.id)));
+        for folder in top_folders {
+            match recursive_purge_folder_in_scope(state, scope, folder.id).await {
+                Ok(()) => count += 1,
+                Err(e) => tracing::warn!("purge folder {} failed: {e}", folder.id),
+            }
         }
     }
 
-    let (top_files, _) = match scope {
-        WorkspaceStorageScope::Personal { user_id } => {
-            file_repo::find_top_level_deleted_paginated(&state.db, user_id, 10000, None).await?
-        }
-        WorkspaceStorageScope::Team { team_id, .. } => {
-            file_repo::find_top_level_deleted_by_team_paginated(&state.db, team_id, 10000, None)
+    let mut file_cursor = None;
+    loop {
+        let (top_files, _) = match scope {
+            WorkspaceStorageScope::Personal { user_id } => {
+                file_repo::find_top_level_deleted_paginated(
+                    &state.db,
+                    user_id,
+                    PURGE_ALL_BATCH_SIZE,
+                    file_cursor,
+                )
                 .await?
+            }
+            WorkspaceStorageScope::Team { team_id, .. } => {
+                file_repo::find_top_level_deleted_by_team_paginated(
+                    &state.db,
+                    team_id,
+                    PURGE_ALL_BATCH_SIZE,
+                    file_cursor,
+                )
+                .await?
+            }
+        };
+        if top_files.is_empty() {
+            break;
         }
-    };
-    if !top_files.is_empty() {
-        let file_count = top_files.len() as u32;
+
+        file_cursor = top_files
+            .last()
+            .and_then(|file| file.deleted_at.map(|deleted_at| (deleted_at, file.id)));
         match file_service::batch_purge_in_scope(state, scope, top_files).await {
-            Ok(_) => count += file_count,
+            Ok(purged) => count += purged,
             Err(e) => tracing::warn!("batch purge top-level files failed: {e}"),
         }
     }
 
+    tracing::debug!(scope = ?scope, purged_count = count, "purged all trash contents");
     Ok(count)
 }
 
@@ -596,7 +697,6 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
 
     // 清理过期文件（批量）
     let expired_files = file_repo::find_expired_deleted(&state.db, cutoff).await?;
-    let expired_file_count = expired_files.len() as u32;
     let mut by_user: std::collections::HashMap<i64, Vec<file::Model>> =
         std::collections::HashMap::new();
     let mut by_team: std::collections::HashMap<i64, Vec<file::Model>> =
@@ -609,18 +709,19 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
         }
     }
     for (uid, files) in by_user {
-        if let Err(e) = file_service::batch_purge_in_scope(
+        match file_service::batch_purge_in_scope(
             state,
             WorkspaceStorageScope::Personal { user_id: uid },
             files,
         )
         .await
         {
-            tracing::warn!("trash cleanup expired files for user #{uid} failed: {e}");
+            Ok(purged) => count += purged,
+            Err(e) => tracing::warn!("trash cleanup expired files for user #{uid} failed: {e}"),
         }
     }
     for (team_id, files) in by_team {
-        if let Err(e) = file_service::batch_purge_in_scope(
+        match file_service::batch_purge_in_scope(
             state,
             WorkspaceStorageScope::Team {
                 team_id,
@@ -630,10 +731,10 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
         )
         .await
         {
-            tracing::warn!("trash cleanup expired files for team #{team_id} failed: {e}");
+            Ok(purged) => count += purged,
+            Err(e) => tracing::warn!("trash cleanup expired files for team #{team_id} failed: {e}"),
         }
     }
-    count += expired_file_count;
 
     // 清理过期文件夹——只处理顶层（父文件夹也过期则由父递归处理，避免重复）
     let expired_folders = folder_repo::find_expired_deleted(&state.db, cutoff).await?;
@@ -665,11 +766,11 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
             )
             .await
         };
-        if let Err(e) = result {
-            tracing::warn!("trash cleanup folder {} failed: {e}", f.id);
+        match result {
+            Ok(()) => count += 1,
+            Err(e) => tracing::warn!("trash cleanup folder {} failed: {e}", f.id),
         }
     }
-    count += top_level_folders.len() as u32;
 
     if count > 0 {
         tracing::info!("trash cleanup: purged {count} expired items (retention={retention_days}d)");

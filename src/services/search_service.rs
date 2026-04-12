@@ -140,6 +140,19 @@ pub(crate) async fn search_in_scope(
     let limit = params.limit.unwrap_or(50).clamp(1, 100);
     let offset = params.offset.unwrap_or(0);
     let query = normalized_query(params);
+    tracing::debug!(
+        scope = ?scope,
+        search_type = params.search_type.as_deref().unwrap_or("all"),
+        has_query = query.is_some(),
+        query_len = query.map(str::len),
+        mime_type = params.mime_type.as_deref().unwrap_or(""),
+        min_size = params.min_size,
+        max_size = params.max_size,
+        folder_id = params.folder_id,
+        limit,
+        offset,
+        "running search"
+    );
 
     let search_type = params.search_type.as_deref().unwrap_or("all");
     let (created_after, created_before) = parse_search_dates(params)?;
@@ -253,12 +266,21 @@ pub(crate) async fn search_in_scope(
             }
         };
 
-    Ok(SearchResults {
+    let results = SearchResults {
         files: build_search_file_list_items(files, &shared_file_ids),
         folders: build_folder_list_items(folders, &shared_folder_ids),
         total_files,
         total_folders,
-    })
+    };
+    tracing::debug!(
+        scope = ?scope,
+        total_files = results.total_files,
+        total_folders = results.total_folders,
+        returned_files = results.files.len(),
+        returned_folders = results.folders.len(),
+        "completed search"
+    );
+    Ok(results)
 }
 
 pub async fn search(

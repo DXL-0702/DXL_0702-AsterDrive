@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
@@ -272,75 +271,60 @@ fn build_team_member_info(membership: team_member::Model, user: user::Model) -> 
     }
 }
 
-fn team_member_role_rank(role: TeamMemberRole) -> u8 {
-    match role {
-        TeamMemberRole::Owner => 0,
-        TeamMemberRole::Admin => 1,
-        TeamMemberRole::Member => 2,
-    }
-}
-
-fn compare_team_members(a: &TeamMemberInfo, b: &TeamMemberInfo) -> Ordering {
-    team_member_role_rank(a.role)
-        .cmp(&team_member_role_rank(b.role))
-        .then_with(|| a.username.cmp(&b.username))
-        .then_with(|| a.user_id.cmp(&b.user_id))
-}
-
-fn matches_team_member_filters(member: &TeamMemberInfo, filters: &TeamMemberListFilters) -> bool {
-    if filters.role.is_some_and(|role| member.role != role) {
-        return false;
-    }
-    if filters.status.is_some_and(|status| member.status != status) {
-        return false;
-    }
-
-    let Some(keyword) = filters.keyword.as_deref() else {
-        return true;
-    };
-    if keyword.is_empty() {
-        return true;
-    }
-
-    member.username.to_lowercase().contains(keyword)
-        || member.email.to_lowercase().contains(keyword)
-        || member.user_id.to_string().contains(keyword)
-}
-
 fn build_team_member_page(
-    mut members: Vec<TeamMemberInfo>,
-    filters: &TeamMemberListFilters,
-    max_limit: u64,
+    items: Vec<TeamMemberInfo>,
+    total: u64,
     limit: u64,
     offset: u64,
+    owner_count: u64,
+    manager_count: u64,
 ) -> TeamMemberPage {
-    let limit = limit.clamp(1, max_limit);
-    let owner_count = members
-        .iter()
-        .filter(|member| member.role.is_owner())
-        .count() as u64;
-    let manager_count = members
-        .iter()
-        .filter(|member| member.role.can_manage_team())
-        .count() as u64;
-
-    members.sort_by(compare_team_members);
-    let filtered: Vec<TeamMemberInfo> = members
-        .into_iter()
-        .filter(|member| matches_team_member_filters(member, filters))
-        .collect();
-    let total = filtered.len() as u64;
-    let start = (offset.min(total)) as usize;
-    let end = ((start as u64 + limit).min(total)) as usize;
-
     TeamMemberPage {
-        items: filtered[start..end].to_vec(),
+        items,
         total,
         limit,
         offset,
         owner_count,
         manager_count,
     }
+}
+
+async fn load_team_member_page(
+    state: &AppState,
+    team_id: i64,
+    filters: &TeamMemberListFilters,
+    limit: u64,
+    offset: u64,
+) -> Result<TeamMemberPage> {
+    let effective_limit = limit.clamp(
+        1,
+        operations::team_member_list_max_limit(&state.runtime_config),
+    );
+    let (rows, total) = team_member_repo::list_page_by_team_with_user(
+        &state.db,
+        team_id,
+        filters.role,
+        filters.status,
+        filters.keyword.as_deref(),
+        effective_limit,
+        offset,
+    )
+    .await?;
+    let owner_count =
+        team_member_repo::count_by_team_and_role(&state.db, team_id, TeamMemberRole::Owner).await?;
+    let admin_count =
+        team_member_repo::count_by_team_and_role(&state.db, team_id, TeamMemberRole::Admin).await?;
+
+    Ok(build_team_member_page(
+        rows.into_iter()
+            .map(|(membership, user)| build_team_member_info(membership, user))
+            .collect(),
+        total,
+        effective_limit,
+        offset,
+        owner_count,
+        owner_count + admin_count,
+    ))
 }
 
 async fn resolve_target_user(
@@ -591,7 +575,7 @@ fn load_team_archive_retention_days(state: &AppState) -> i64 {
 
 async fn cleanup_team_upload_sessions(
     state: &AppState,
-    sessions: Vec<upload_session::Model>,
+    sessions: &[upload_session::Model],
 ) -> Result<()> {
     for session in sessions {
         if let Some(temp_key) = session.s3_temp_key.as_deref()
@@ -616,23 +600,27 @@ async fn cleanup_team_upload_sessions(
         let temp_dir =
             crate::utils::paths::upload_temp_dir(&state.config.server.upload_temp_dir, &session.id);
         crate::utils::cleanup_temp_dir(&temp_dir).await;
-        upload_session_repo::delete(&state.db, &session.id).await?;
     }
 
     Ok(())
 }
 
-async fn clear_team_locks(state: &AppState, team_id: i64) -> Result<()> {
+fn is_missing_cleanup_target(err: &AsterError) -> bool {
+    matches!(err.code(), "E006" | "E020" | "E040")
+}
+
+async fn clear_team_locks<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<()> {
     let prefix = format!("/teams/{team_id}/");
-    let locks = lock_repo::find_by_path_prefix(&state.db, &prefix).await?;
+    let locks = lock_repo::find_by_path_prefix(db, &prefix).await?;
     for lock in &locks {
         if let Err(err) = crate::services::lock_service::set_entity_locked(
-            &state.db,
+            db,
             lock.entity_type,
             lock.entity_id,
             false,
         )
         .await
+            && !is_missing_cleanup_target(&err)
         {
             tracing::warn!(
                 lock_id = lock.id,
@@ -641,16 +629,14 @@ async fn clear_team_locks(state: &AppState, team_id: i64) -> Result<()> {
             );
         }
     }
-    lock_repo::delete_by_path_prefix(&state.db, &prefix).await?;
+    lock_repo::delete_by_path_prefix(db, &prefix).await?;
     Ok(())
 }
 
 async fn force_delete_archived_team(state: &AppState, team: team::Model) -> Result<()> {
     let team_id = team.id;
     let upload_sessions = upload_session_repo::find_by_team(&state.db, team_id).await?;
-    cleanup_team_upload_sessions(state, upload_sessions).await?;
-    clear_team_locks(state, team_id).await?;
-    share_repo::delete_all_by_team(&state.db, team_id).await?;
+    cleanup_team_upload_sessions(state, &upload_sessions).await?;
 
     let all_files = file_repo::find_all_by_team(&state.db, team_id).await?;
     crate::services::file_service::batch_purge_in_scope(
@@ -663,17 +649,23 @@ async fn force_delete_archived_team(state: &AppState, team: team::Model) -> Resu
     )
     .await?;
 
-    let all_folders =
-        crate::db::repository::folder_repo::find_all_by_team(&state.db, team_id).await?;
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    team_repo::lock_archived_by_id(&txn, team_id).await?;
+    upload_session_repo::delete_all_by_team(&txn, team_id).await?;
+    clear_team_locks(&txn, team_id).await?;
+    share_repo::delete_all_by_team(&txn, team_id).await?;
+
+    let all_folders = crate::db::repository::folder_repo::find_all_by_team(&txn, team_id).await?;
     let folder_ids: Vec<i64> = all_folders.iter().map(|folder| folder.id).collect();
     crate::db::repository::property_repo::delete_all_for_entities(
-        &state.db,
+        &txn,
         EntityType::Folder,
         &folder_ids,
     )
     .await?;
-    crate::db::repository::folder_repo::delete_many(&state.db, &folder_ids).await?;
-    team_repo::delete(&state.db, team_id).await?;
+    crate::db::repository::folder_repo::delete_many(&txn, &folder_ids).await?;
+    team_repo::delete(&txn, team_id).await?;
+    txn.commit().await.map_err(AsterError::from)?;
 
     Ok(())
 }
@@ -874,18 +866,7 @@ pub async fn list_admin_members(
     offset: u64,
 ) -> Result<TeamMemberPage> {
     team_repo::find_by_id(&state.db, team_id).await?;
-    let rows = team_member_repo::list_by_team_with_user(&state.db, team_id).await?;
-    let members = rows
-        .into_iter()
-        .map(|(membership, user)| build_team_member_info(membership, user))
-        .collect();
-    Ok(build_team_member_page(
-        members,
-        &filters,
-        operations::team_member_list_max_limit(&state.runtime_config),
-        limit,
-        offset,
-    ))
+    load_team_member_page(state, team_id, &filters, limit, offset).await
 }
 
 pub async fn get_admin_member(
@@ -1046,18 +1027,7 @@ pub async fn list_members(
     offset: u64,
 ) -> Result<TeamMemberPage> {
     require_team_membership(state, team_id, actor_user_id).await?;
-    let rows = team_member_repo::list_by_team_with_user(&state.db, team_id).await?;
-    let members = rows
-        .into_iter()
-        .map(|(membership, user)| build_team_member_info(membership, user))
-        .collect();
-    Ok(build_team_member_page(
-        members,
-        &filters,
-        operations::team_member_list_max_limit(&state.runtime_config),
-        limit,
-        offset,
-    ))
+    load_team_member_page(state, team_id, &filters, limit, offset).await
 }
 
 pub async fn get_member(

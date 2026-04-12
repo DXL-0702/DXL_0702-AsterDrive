@@ -188,14 +188,6 @@ pub struct UpdateStoragePolicyGroupInput {
     pub items: Option<Vec<StoragePolicyGroupItemInput>>,
 }
 
-pub async fn list_all(state: &AppState) -> Result<Vec<StoragePolicy>> {
-    Ok(policy_repo::find_all(&state.db)
-        .await?
-        .into_iter()
-        .map(Into::into)
-        .collect())
-}
-
 pub async fn list_paginated(
     state: &AppState,
     limit: u64,

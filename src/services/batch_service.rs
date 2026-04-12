@@ -82,6 +82,36 @@ fn build_folder_map(folders: Vec<folder::Model>) -> HashMap<i64, folder::Model> 
         .collect()
 }
 
+async fn find_files_by_ids_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    ids: &[i64],
+) -> Result<Vec<file::Model>> {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            file_repo::find_by_ids_in_personal_scope(&state.db, user_id, ids).await
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            file_repo::find_by_ids_in_team_scope(&state.db, team_id, ids).await
+        }
+    }
+}
+
+async fn find_folders_by_ids_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    ids: &[i64],
+) -> Result<Vec<folder::Model>> {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            folder_repo::find_by_ids_in_personal_scope(&state.db, user_id, ids).await
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            folder_repo::find_by_ids_in_team_scope(&state.db, team_id, ids).await
+        }
+    }
+}
+
 pub(crate) struct NormalizedSelection {
     pub file_ids: Vec<i64>,
     pub folder_ids: Vec<i64>,
@@ -90,7 +120,8 @@ pub(crate) struct NormalizedSelection {
 }
 
 async fn load_folder_hierarchy_map(
-    db: &sea_orm::DatabaseConnection,
+    state: &AppState,
+    scope: WorkspaceStorageScope,
     file_map: &HashMap<i64, file::Model>,
     folder_map: &HashMap<i64, folder::Model>,
 ) -> Result<HashMap<i64, folder::Model>> {
@@ -104,7 +135,7 @@ async fn load_folder_hierarchy_map(
 
     while !frontier.is_empty() {
         let ids: Vec<i64> = frontier.drain().collect();
-        let rows = folder_repo::find_by_ids(db, &ids).await?;
+        let rows = find_folders_by_ids_in_scope(state, scope, &ids).await?;
         for row in rows {
             let parent_id = row.parent_id;
             let id = row.id;
@@ -180,9 +211,10 @@ pub(crate) async fn load_normalized_selection_in_scope(
     workspace_storage_service::require_scope_access(state, scope).await?;
     validate_batch_ids(file_ids, folder_ids)?;
 
-    let file_map = build_file_map(file_repo::find_by_ids(&state.db, file_ids).await?);
-    let folder_map = build_folder_map(folder_repo::find_by_ids(&state.db, folder_ids).await?);
-    let hierarchy = load_folder_hierarchy_map(&state.db, &file_map, &folder_map).await?;
+    let file_map = build_file_map(find_files_by_ids_in_scope(state, scope, file_ids).await?);
+    let folder_map =
+        build_folder_map(find_folders_by_ids_in_scope(state, scope, folder_ids).await?);
+    let hierarchy = load_folder_hierarchy_map(state, scope, &file_map, &folder_map).await?;
     let (normalized_file_ids, normalized_folder_ids) =
         normalize_selection(file_ids, folder_ids, &file_map, &folder_map, &hierarchy);
 
@@ -246,14 +278,13 @@ pub(crate) async fn batch_delete_in_scope(
     file_ids: &[i64],
     folder_ids: &[i64],
 ) -> Result<BatchResult> {
-    workspace_storage_service::require_scope_access(state, scope).await?;
-
     let mut result = BatchResult::new();
-    let file_map = build_file_map(file_repo::find_by_ids(&state.db, file_ids).await?);
-    let folder_map = build_folder_map(folder_repo::find_by_ids(&state.db, folder_ids).await?);
-    let hierarchy = load_folder_hierarchy_map(&state.db, &file_map, &folder_map).await?;
-    let (normalized_file_ids, normalized_folder_ids) =
-        normalize_selection(file_ids, folder_ids, &file_map, &folder_map, &hierarchy);
+    let NormalizedSelection {
+        file_ids: normalized_file_ids,
+        folder_ids: normalized_folder_ids,
+        file_map,
+        folder_map,
+    } = load_normalized_selection_in_scope(state, scope, file_ids, folder_ids).await?;
 
     let mut file_ids_to_delete = HashSet::new();
     let mut root_folder_ids_to_delete = Vec::new();
@@ -383,14 +414,13 @@ pub(crate) async fn batch_move_in_scope(
     folder_ids: &[i64],
     target_folder_id: Option<i64>,
 ) -> Result<BatchResult> {
-    workspace_storage_service::require_scope_access(state, scope).await?;
-
     let mut result = BatchResult::new();
-    let file_map = build_file_map(file_repo::find_by_ids(&state.db, file_ids).await?);
-    let folder_map = build_folder_map(folder_repo::find_by_ids(&state.db, folder_ids).await?);
-    let hierarchy = load_folder_hierarchy_map(&state.db, &file_map, &folder_map).await?;
-    let (normalized_file_ids, normalized_folder_ids) =
-        normalize_selection(file_ids, folder_ids, &file_map, &folder_map, &hierarchy);
+    let NormalizedSelection {
+        file_ids: normalized_file_ids,
+        folder_ids: normalized_folder_ids,
+        file_map,
+        folder_map,
+    } = load_normalized_selection_in_scope(state, scope, file_ids, folder_ids).await?;
 
     let (target_folder, target_error) =
         match load_target_folder_in_scope(state, scope, target_folder_id).await {
@@ -586,14 +616,13 @@ pub(crate) async fn batch_copy_in_scope(
     folder_ids: &[i64],
     target_folder_id: Option<i64>,
 ) -> Result<BatchResult> {
-    workspace_storage_service::require_scope_access(state, scope).await?;
-
     let mut result = BatchResult::new();
-    let file_map = build_file_map(file_repo::find_by_ids(&state.db, file_ids).await?);
-    let folder_map = build_folder_map(folder_repo::find_by_ids(&state.db, folder_ids).await?);
-    let hierarchy = load_folder_hierarchy_map(&state.db, &file_map, &folder_map).await?;
-    let (normalized_file_ids, normalized_folder_ids) =
-        normalize_selection(file_ids, folder_ids, &file_map, &folder_map, &hierarchy);
+    let NormalizedSelection {
+        file_ids: normalized_file_ids,
+        folder_ids: normalized_folder_ids,
+        file_map,
+        folder_map: _,
+    } = load_normalized_selection_in_scope(state, scope, file_ids, folder_ids).await?;
     let target_error = load_target_folder_in_scope(state, scope, target_folder_id)
         .await
         .err();

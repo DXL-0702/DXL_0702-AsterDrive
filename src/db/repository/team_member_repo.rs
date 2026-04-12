@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
-    QueryOrder, QuerySelect, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    sea_query::{Expr, Func, Order},
 };
 
 use crate::entities::{
@@ -11,7 +12,37 @@ use crate::entities::{
     user,
 };
 use crate::errors::{AsterError, Result};
-use crate::types::TeamMemberRole;
+use crate::types::{TeamMemberRole, UserStatus};
+
+fn escape_like_query(query: &str) -> String {
+    query.replace('%', "\\%").replace('_', "\\_")
+}
+
+fn team_member_keyword_condition(keyword: &str) -> Condition {
+    let pattern = format!("%{}%", escape_like_query(keyword));
+    let mut condition = Condition::any()
+        .add(Expr::expr(Func::lower(Expr::col(user::Column::Username))).like(pattern.clone()))
+        .add(Expr::expr(Func::lower(Expr::col(user::Column::Email))).like(pattern));
+
+    if let Ok(user_id) = keyword.parse::<i64>() {
+        condition = condition.add(user::Column::Id.eq(user_id));
+    }
+
+    condition
+}
+
+fn team_member_role_rank_expr() -> sea_orm::sea_query::SimpleExpr {
+    Expr::case(
+        Expr::col((team_member::Entity, team_member::Column::Role)).eq(TeamMemberRole::Owner),
+        0i32,
+    )
+    .case(
+        Expr::col((team_member::Entity, team_member::Column::Role)).eq(TeamMemberRole::Admin),
+        1i32,
+    )
+    .finally(2i32)
+    .into()
+}
 
 pub async fn create<C: ConnectionTrait>(
     db: &C,
@@ -148,6 +179,53 @@ pub async fn list_by_team_with_user<C: ConnectionTrait>(
                 .map(|user| (membership, user))
         })
         .collect())
+}
+
+pub async fn list_page_by_team_with_user<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    role: Option<TeamMemberRole>,
+    status: Option<UserStatus>,
+    keyword: Option<&str>,
+    limit: u64,
+    offset: u64,
+) -> Result<(Vec<(team_member::Model, user::Model)>, u64)> {
+    let mut query = TeamMember::find()
+        .inner_join(user::Entity)
+        .select_also(user::Entity)
+        .filter(team_member::Column::TeamId.eq(team_id));
+
+    if let Some(role) = role {
+        query = query.filter(team_member::Column::Role.eq(role));
+    }
+    if let Some(status) = status {
+        query = query.filter(user::Column::Status.eq(status));
+    }
+    if let Some(keyword) = keyword.filter(|keyword| !keyword.is_empty()) {
+        query = query.filter(team_member_keyword_condition(keyword));
+    }
+
+    query = query
+        .order_by(team_member_role_rank_expr(), Order::Asc)
+        .order_by_asc(user::Column::Username)
+        .order_by_asc(user::Column::Id);
+
+    let total = query.clone().count(db).await.map_err(AsterError::from)?;
+    if total == 0 || limit == 0 {
+        return Ok((vec![], total));
+    }
+
+    let items = query
+        .offset(offset)
+        .limit(limit)
+        .all(db)
+        .await
+        .map_err(AsterError::from)?
+        .into_iter()
+        .filter_map(|(membership, user)| user.map(|user| (membership, user)))
+        .collect();
+
+    Ok((items, total))
 }
 
 pub async fn count_by_team<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<u64> {

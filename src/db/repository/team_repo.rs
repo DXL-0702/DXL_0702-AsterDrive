@@ -67,6 +67,30 @@ pub async fn lock_active_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<te
     }
 }
 
+pub async fn lock_archived_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<team::Model> {
+    match db.get_database_backend() {
+        DbBackend::Postgres | DbBackend::MySql => Team::find()
+            .filter(team::Column::Id.eq(id))
+            .filter(team::Column::ArchivedAt.is_not_null())
+            .lock_exclusive()
+            .one(db)
+            .await
+            .map_err(AsterError::from)?
+            .ok_or_else(|| AsterError::record_not_found(format!("team #{id}"))),
+        DbBackend::Sqlite => {
+            Team::update_many()
+                .col_expr(team::Column::UpdatedAt, Expr::col(team::Column::UpdatedAt))
+                .filter(team::Column::Id.eq(id))
+                .filter(team::Column::ArchivedAt.is_not_null())
+                .exec(db)
+                .await
+                .map_err(AsterError::from)?;
+            find_archived_by_id(db, id).await
+        }
+        _ => find_archived_by_id(db, id).await,
+    }
+}
+
 pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<team::Model>> {
     Team::find()
         .order_by_asc(team::Column::Id)

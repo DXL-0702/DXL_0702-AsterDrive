@@ -106,6 +106,20 @@ fn unauthorized_error_skips_logging() {
     assert!(events.is_empty());
 }
 
+#[test]
+fn validation_error_logs_warn() {
+    let err = AsterError::validation_error("file name is invalid");
+
+    let events = capture_events(|| {
+        let resp = err.error_response();
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    });
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].level, Level::WARN);
+    assert_eq!(events[0].message.as_deref(), Some("request error"));
+}
+
 #[actix_web::test]
 async fn internal_error_redacts_response_message() {
     let err = AsterError::internal_error("db pool poisoned");

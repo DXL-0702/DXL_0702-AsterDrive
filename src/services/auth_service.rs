@@ -165,6 +165,7 @@ pub fn is_email_verified(user: &user::Model) -> bool {
 pub async fn get_auth_snapshot(state: &AppState, user_id: i64) -> Result<AuthSnapshot> {
     let cache_key = auth_snapshot_cache_key(user_id);
     if let Some(snapshot) = state.cache.get(&cache_key).await {
+        tracing::debug!(user_id, "auth snapshot cache hit");
         return Ok(snapshot);
     }
 
@@ -174,6 +175,7 @@ pub async fn get_auth_snapshot(state: &AppState, user_id: i64) -> Result<AuthSna
         .cache
         .set(&cache_key, &snapshot, Some(AUTH_SNAPSHOT_TTL))
         .await;
+    tracing::debug!(user_id, "auth snapshot cache miss");
     Ok(snapshot)
 }
 
@@ -186,6 +188,10 @@ async fn authenticate_token(
     token: &str,
     expected_type: TokenType,
 ) -> Result<(Claims, AuthSnapshot)> {
+    tracing::debug!(
+        expected_type = expected_type.as_str(),
+        "authenticating token"
+    );
     let claims = verify_token(token, &state.config.auth.jwt_secret)?;
     ensure_token_type(&claims, expected_type)?;
 
@@ -194,6 +200,13 @@ async fn authenticate_token(
         return Err(AsterError::auth_forbidden("account is disabled"));
     }
     ensure_session_current(&claims, snapshot)?;
+
+    tracing::debug!(
+        user_id = claims.user_id,
+        expected_type = expected_type.as_str(),
+        session_version = snapshot.session_version,
+        "authenticated token"
+    );
 
     Ok((claims, snapshot))
 }
@@ -213,6 +226,7 @@ pub async fn authenticate_refresh_token(
 }
 
 pub async fn revoke_user_sessions(state: &AppState, user_id: i64) -> Result<UserAuditInfo> {
+    tracing::debug!(user_id, "revoking user sessions");
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let next_session_version = user.session_version.saturating_add(1);
     let mut active = user.into_active_model();
@@ -220,6 +234,11 @@ pub async fn revoke_user_sessions(state: &AppState, user_id: i64) -> Result<User
     active.updated_at = Set(Utc::now());
     let updated = active.update(&state.db).await.map_err(AsterError::from)?;
     invalidate_auth_snapshot_cache(state, updated.id).await;
+    tracing::debug!(
+        user_id = updated.id,
+        session_version = updated.session_version,
+        "revoked user sessions"
+    );
     Ok(user_audit_info(&updated))
 }
 
@@ -539,6 +558,11 @@ pub async fn register(
     password: &str,
 ) -> Result<AuthUserInfo> {
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+    tracing::debug!(
+        registration_enabled = auth_policy.allow_user_registration,
+        activation_enabled = auth_policy.register_activation_enabled,
+        "registering user"
+    );
     if !auth_policy.allow_user_registration {
         return Err(AsterError::auth_forbidden(
             "new user registration is disabled",
@@ -584,6 +608,12 @@ pub async fn register(
     }
     txn.commit().await.map_err(AsterError::from)?;
 
+    tracing::debug!(
+        user_id = user.id,
+        activation_enabled = auth_policy.register_activation_enabled,
+        email_verified = user.email_verified_at.is_some(),
+        "registered user"
+    );
     Ok(AuthUserInfo::from(user))
 }
 
@@ -607,7 +637,7 @@ pub async fn resend_register_activation(
     )
     .await?
     {
-        tracing::info!(
+        tracing::debug!(
             user_id = user.id,
             "register activation resend skipped due to cooldown"
         );
@@ -641,6 +671,7 @@ pub async fn request_email_change(
     user_id: i64,
     new_email: &str,
 ) -> Result<AuthUserInfo> {
+    tracing::debug!(user_id, "requesting email change");
     let normalized_email = normalize_email(new_email)?;
     let existing = user_repo::find_by_id(&state.db, user_id).await?;
 
@@ -692,6 +723,11 @@ pub async fn request_email_change(
     .await?;
     txn.commit().await.map_err(AsterError::from)?;
 
+    tracing::debug!(
+        user_id = updated.id,
+        has_pending_email = updated.pending_email.is_some(),
+        "requested email change"
+    );
     Ok(AuthUserInfo::from(updated))
 }
 
@@ -720,7 +756,7 @@ pub async fn resend_email_change(state: &AppState, user_id: i64) -> Result<Optio
     )
     .await?
     {
-        tracing::info!(
+        tracing::debug!(
             user_id = user.id,
             "email change resend skipped due to cooldown"
         );
@@ -753,6 +789,7 @@ pub async fn request_password_reset(
     state: &AppState,
     email: &str,
 ) -> Result<PasswordResetRequestResult> {
+    tracing::debug!("requesting password reset");
     let normalized_email = normalize_email(email)?;
     let Some(user) = user_repo::find_by_email(&state.db, &normalized_email).await? else {
         return Ok(PasswordResetRequestResult { user: None });
@@ -763,7 +800,7 @@ pub async fn request_password_reset(
     }
 
     if !password_reset_request_allowed(state, &state.db, user.id).await? {
-        tracing::info!(
+        tracing::debug!(
             user_id = user.id,
             "password reset request skipped due to cooldown"
         );
@@ -791,6 +828,7 @@ pub async fn request_password_reset(
     .await?;
     txn.commit().await.map_err(AsterError::from)?;
 
+    tracing::debug!(user_id = user.id, "enqueued password reset");
     Ok(PasswordResetRequestResult {
         user: Some(user_audit_info(&user)),
     })
@@ -801,6 +839,7 @@ pub async fn confirm_password_reset(
     token: &str,
     new_password: &str,
 ) -> Result<AuthUserInfo> {
+    tracing::debug!("confirming password reset");
     validate_password(new_password)?;
 
     let token_hash = hash::sha256_hex(token.as_bytes());
@@ -855,6 +894,11 @@ pub async fn confirm_password_reset(
     .await?;
     txn.commit().await.map_err(AsterError::from)?;
     invalidate_auth_snapshot_cache(state, updated.id).await;
+    tracing::debug!(
+        user_id = updated.id,
+        session_version = updated.session_version,
+        "confirmed password reset"
+    );
     Ok(AuthUserInfo::from(updated))
 }
 
@@ -862,6 +906,7 @@ pub async fn confirm_contact_verification(
     state: &AppState,
     token: &str,
 ) -> Result<ContactVerificationConfirmResult> {
+    tracing::debug!("confirming contact verification");
     let token_hash = hash::sha256_hex(token.as_bytes());
     let record = contact_verification_token_repo::find_by_token_hash(&state.db, &token_hash)
         .await?
@@ -883,6 +928,7 @@ pub async fn confirm_contact_verification(
     let target = record.target.clone();
     let purpose = record.purpose;
     let user_id = record.user_id;
+    tracing::debug!(user_id, purpose = ?purpose, "loaded contact verification record");
 
     let txn = state.db.begin().await.map_err(AsterError::from)?;
     let existing_user = user_repo::find_by_id(&txn, user_id).await?;
@@ -960,6 +1006,7 @@ pub async fn confirm_contact_verification(
     }
     txn.commit().await.map_err(AsterError::from)?;
 
+    tracing::debug!(user_id, purpose = ?purpose, "confirmed contact verification");
     Ok(ContactVerificationConfirmResult {
         purpose,
         user_id,
@@ -993,12 +1040,15 @@ pub async fn setup(
     password: &str,
 ) -> Result<AuthUserInfo> {
     let db = &state.db;
+    tracing::debug!("running initial setup");
     if user_repo::count_all(db).await? > 0 {
         return Err(AsterError::validation_error("system already initialized"));
     }
-    create_first_admin(state, username, email, password)
+    let user = create_first_admin(state, username, email, password)
         .await
-        .map(AuthUserInfo::from)
+        .map(AuthUserInfo::from)?;
+    tracing::debug!(user_id = user.id, "completed initial setup");
+    Ok(user)
 }
 
 /// 登录结果：access/refresh tokens + user_id（用于审计）
@@ -1054,21 +1104,34 @@ pub fn issue_tokens_for_user(state: &AppState, user: &user::Model) -> Result<(St
 pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result<LoginResult> {
     let db = &state.db;
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
+    let identifier_kind = if identifier.trim().contains('@') {
+        "email"
+    } else {
+        "username"
+    };
+    tracing::debug!(identifier_kind, "login attempt");
 
-    let user = find_user_by_identifier(db, identifier)
-        .await?
-        .ok_or_else(|| AsterError::auth_invalid_credentials("user not found"))?;
+    let Some(user) = find_user_by_identifier(db, identifier).await? else {
+        tracing::debug!(identifier_kind, "login rejected: user not found");
+        return Err(AsterError::auth_invalid_credentials("user not found"));
+    };
 
     if !user.status.is_active() {
+        tracing::debug!(user_id = user.id, "login rejected: account disabled");
         return Err(AsterError::auth_forbidden("account is disabled"));
     }
     if !is_email_verified(&user) {
+        tracing::debug!(
+            user_id = user.id,
+            "login rejected: account pending activation"
+        );
         return Err(AsterError::auth_pending_activation(
             "account pending activation",
         ));
     }
 
     if !hash::verify_password(password, &user.password_hash)? {
+        tracing::debug!(user_id = user.id, "login rejected: invalid password");
         return Err(AsterError::auth_invalid_credentials("wrong password"));
     }
 
@@ -1078,6 +1141,12 @@ pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result
         &state.config.auth.jwt_secret,
         auth_policy,
     )?;
+
+    tracing::debug!(
+        user_id = user.id,
+        session_version = user.session_version,
+        "login succeeded"
+    );
 
     Ok(LoginResult {
         access_token: access,
@@ -1092,6 +1161,7 @@ pub async fn change_password(
     current_password: &str,
     new_password: &str,
 ) -> Result<AuthUserInfo> {
+    tracing::debug!(user_id, "changing password");
     let user = user_repo::find_by_id(&state.db, user_id).await?;
 
     if !user.status.is_active() {
@@ -1110,9 +1180,15 @@ pub async fn set_password(
     user_id: i64,
     new_password: &str,
 ) -> Result<AuthUserInfo> {
+    tracing::debug!(user_id, "setting password");
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let updated = update_password_in_connection(&state.db, user, new_password).await?;
     invalidate_auth_snapshot_cache(state, updated.id).await;
+    tracing::debug!(
+        user_id = updated.id,
+        session_version = updated.session_version,
+        "set password"
+    );
     Ok(AuthUserInfo::from(updated))
 }
 
@@ -1122,15 +1198,22 @@ pub async fn cleanup_expired_contact_verification_tokens(state: &AppState) -> Re
 
 /// 用 refresh token 换 access token
 pub async fn refresh_token(state: &AppState, refresh: &str) -> Result<String> {
+    tracing::debug!("refreshing access token");
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     let (claims, snapshot) = authenticate_refresh_token(state, refresh).await?;
-    create_token(
+    let token = create_token(
         claims.user_id,
         snapshot.session_version,
         TokenType::Access,
         auth_policy.access_token_ttl_secs,
         &state.config.auth.jwt_secret,
-    )
+    )?;
+    tracing::debug!(
+        user_id = claims.user_id,
+        session_version = snapshot.session_version,
+        "refreshed access token"
+    );
+    Ok(token)
 }
 
 fn create_token(

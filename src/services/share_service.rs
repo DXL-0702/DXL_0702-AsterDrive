@@ -69,6 +69,11 @@ impl From<share::Model> for ShareInfo {
     }
 }
 
+pub(crate) struct ShareUpdateOutcome {
+    pub share: ShareInfo,
+    pub has_password: bool,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct MyShareInfo {
@@ -178,6 +183,15 @@ pub(crate) async fn create_share_in_scope(
     max_downloads: i64,
 ) -> Result<ShareInfo> {
     let db = &state.db;
+    tracing::debug!(
+        scope = ?scope,
+        file_id,
+        folder_id,
+        has_password = password.as_ref().is_some_and(|value| !value.is_empty()),
+        has_expiry = expires_at.is_some(),
+        max_downloads,
+        "creating share"
+    );
     workspace_storage_service::require_scope_access(state, scope).await?;
 
     validate_max_downloads(max_downloads)?;
@@ -238,6 +252,13 @@ pub(crate) async fn create_share_in_scope(
     };
     let created = share_repo::create(&txn, model).await?;
     txn.commit().await.map_err(AsterError::from)?;
+    tracing::debug!(
+        scope = ?scope,
+        share_id = created.id,
+        file_id = created.file_id,
+        folder_id = created.folder_id,
+        "created share"
+    );
     Ok(created.into())
 }
 
@@ -265,6 +286,7 @@ pub async fn create_share(
 pub async fn get_share_info(state: &AppState, token: &str) -> Result<SharePublicInfo> {
     let db = &state.db;
     let share = load_valid_share(state, token).await?;
+    tracing::debug!(share_id = share.id, "loading public share info");
 
     // increment view count (fire and forget)
     if let Err(e) = share_repo::increment_view_count(db, share.id).await {
@@ -276,7 +298,7 @@ pub async fn get_share_info(state: &AppState, token: &str) -> Result<SharePublic
 
     let is_expired = share.expires_at.is_some_and(|exp| exp < Utc::now());
 
-    Ok(SharePublicInfo {
+    let info = SharePublicInfo {
         token: share.token,
         name,
         share_type,
@@ -289,7 +311,16 @@ pub async fn get_share_info(state: &AppState, token: &str) -> Result<SharePublic
         mime_type,
         size,
         shared_by,
-    })
+    };
+    tracing::debug!(
+        share_id = share.id,
+        has_password = info.has_password,
+        is_expired = info.is_expired,
+        download_count = info.download_count,
+        view_count = info.view_count,
+        "loaded public share info"
+    );
+    Ok(info)
 }
 
 fn resolve_share_owner_name(
@@ -330,6 +361,7 @@ pub async fn get_share_avatar_bytes(state: &AppState, token: &str, size: u32) ->
 
 pub async fn verify_password(state: &AppState, token: &str, password: &str) -> Result<()> {
     let share = load_valid_share(state, token).await?;
+    tracing::debug!(share_id = share.id, "verifying share password");
 
     let pw_hash = share
         .password
@@ -340,6 +372,7 @@ pub async fn verify_password(state: &AppState, token: &str, password: &str) -> R
         return Err(AsterError::auth_invalid_credentials("wrong share password"));
     }
 
+    tracing::debug!(share_id = share.id, "verified share password");
     Ok(())
 }
 
@@ -453,9 +486,19 @@ pub async fn list_shared_folder(
     sort_order: crate::api::pagination::SortOrder,
 ) -> Result<folder_service::FolderContents> {
     let (_, folder_id) = load_valid_folder_share_root(state, token).await?;
+    tracing::debug!(
+        folder_id,
+        folder_limit,
+        folder_offset,
+        file_limit,
+        has_file_cursor = file_cursor.is_some(),
+        sort_by = ?sort_by,
+        sort_order = ?sort_order,
+        "listing shared folder root"
+    );
 
     // list folder contents (bypass user ownership — shared access)
-    folder_service::list_shared(
+    let contents = folder_service::list_shared(
         state,
         folder_id,
         folder_limit,
@@ -465,23 +508,16 @@ pub async fn list_shared_folder(
         sort_by,
         sort_order,
     )
-    .await
-}
-
-async fn list_shares_in_scope(
-    state: &AppState,
-    scope: WorkspaceStorageScope,
-) -> Result<Vec<MyShareInfo>> {
-    workspace_storage_service::require_scope_access(state, scope).await?;
-    let shares = match scope {
-        WorkspaceStorageScope::Personal { user_id } => {
-            share_repo::find_by_user(&state.db, user_id).await?
-        }
-        WorkspaceStorageScope::Team { team_id, .. } => {
-            share_repo::find_by_team(&state.db, team_id).await?
-        }
-    };
-    build_my_share_infos(&state.db, shares).await
+    .await?;
+    tracing::debug!(
+        folder_id,
+        folders_total = contents.folders_total,
+        files_total = contents.files_total,
+        returned_folders = contents.folders.len(),
+        returned_files = contents.files.len(),
+        "listed shared folder root"
+    );
+    Ok(contents)
 }
 
 pub(crate) async fn list_shares_paginated_in_scope(
@@ -490,8 +526,14 @@ pub(crate) async fn list_shares_paginated_in_scope(
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<MyShareInfo>> {
+    tracing::debug!(
+        scope = ?scope,
+        limit,
+        offset,
+        "listing paginated shares"
+    );
     workspace_storage_service::require_scope_access(state, scope).await?;
-    load_offset_page(limit, offset, 100, |limit, offset| async move {
+    let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (shares, total) = match scope {
             WorkspaceStorageScope::Personal { user_id } => {
                 share_repo::find_by_user_paginated(&state.db, user_id, limit, offset).await?
@@ -503,7 +545,16 @@ pub(crate) async fn list_shares_paginated_in_scope(
         let items = build_my_share_infos(&state.db, shares).await?;
         Ok((items, total))
     })
-    .await
+    .await?;
+    tracing::debug!(
+        scope = ?scope,
+        total = page.total,
+        returned = page.items.len(),
+        limit = page.limit,
+        offset = page.offset,
+        "listed paginated shares"
+    );
+    Ok(page)
 }
 
 async fn load_share_in_scope(
@@ -517,24 +568,16 @@ async fn load_share_in_scope(
     Ok(share)
 }
 
-pub(crate) async fn share_has_password_in_scope(
-    state: &AppState,
-    scope: WorkspaceStorageScope,
-    share_id: i64,
-) -> Result<bool> {
-    Ok(load_share_in_scope(state, scope, share_id)
-        .await?
-        .password
-        .is_some())
-}
-
 pub(crate) async fn delete_share_in_scope(
     state: &AppState,
     scope: WorkspaceStorageScope,
     share_id: i64,
 ) -> Result<()> {
+    tracing::debug!(scope = ?scope, share_id, "deleting share");
     load_share_in_scope(state, scope, share_id).await?;
-    share_repo::delete(&state.db, share_id).await
+    share_repo::delete(&state.db, share_id).await?;
+    tracing::debug!(scope = ?scope, share_id, "deleted share");
+    Ok(())
 }
 
 pub(crate) async fn update_share_in_scope(
@@ -544,10 +587,22 @@ pub(crate) async fn update_share_in_scope(
     password: Option<String>,
     expires_at: Option<chrono::DateTime<Utc>>,
     max_downloads: i64,
-) -> Result<ShareInfo> {
+) -> Result<ShareUpdateOutcome> {
+    tracing::debug!(
+        scope = ?scope,
+        share_id,
+        update_password = password.is_some(),
+        has_expiry = expires_at.is_some(),
+        max_downloads,
+        "updating share"
+    );
     validate_max_downloads(max_downloads)?;
 
     let existing = load_share_in_scope(state, scope, share_id).await?;
+    let has_password = match password.as_deref() {
+        Some(value) => !value.is_empty(),
+        None => existing.password.is_some(),
+    };
     let mut active: share::ActiveModel = existing.into();
 
     if let Some(password) = password {
@@ -562,7 +617,20 @@ pub(crate) async fn update_share_in_scope(
     active.max_downloads = Set(max_downloads);
     active.updated_at = Set(Utc::now());
 
-    share_repo::update(&state.db, active).await.map(Into::into)
+    let updated: ShareInfo = share_repo::update(&state.db, active)
+        .await
+        .map(Into::into)?;
+    tracing::debug!(
+        scope = ?scope,
+        share_id = updated.id,
+        max_downloads = updated.max_downloads,
+        has_expiry = updated.expires_at.is_some(),
+        "updated share"
+    );
+    Ok(ShareUpdateOutcome {
+        share: updated,
+        has_password,
+    })
 }
 
 pub(crate) async fn batch_delete_shares_in_scope(
@@ -570,46 +638,60 @@ pub(crate) async fn batch_delete_shares_in_scope(
     scope: WorkspaceStorageScope,
     share_ids: &[i64],
 ) -> Result<batch_service::BatchResult> {
+    tracing::debug!(
+        scope = ?scope,
+        share_count = share_ids.len(),
+        "batch deleting shares"
+    );
+    workspace_storage_service::require_scope_access(state, scope).await?;
     let mut result = batch_service::BatchResult {
         succeeded: 0,
         failed: 0,
         errors: vec![],
     };
 
+    let scoped_shares = match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            share_repo::find_by_ids_in_personal_scope(&state.db, user_id, share_ids).await?
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            share_repo::find_by_ids_in_team_scope(&state.db, team_id, share_ids).await?
+        }
+    };
+    let share_map: HashMap<i64, share::Model> = scoped_shares
+        .into_iter()
+        .map(|share| (share.id, share))
+        .collect();
+    let mut ids_to_delete = Vec::new();
+    let mut deleted_once = std::collections::HashSet::new();
+
     for &id in share_ids {
-        match delete_share_in_scope(state, scope, id).await {
-            Ok(()) => result.succeeded += 1,
-            Err(e) => {
-                result.failed += 1;
-                result.errors.push(batch_service::BatchItemError {
-                    entity_type: "share".to_string(),
-                    entity_id: id,
-                    error: e.to_string(),
-                });
-            }
+        if share_map.contains_key(&id) && deleted_once.insert(id) {
+            result.succeeded += 1;
+            ids_to_delete.push(id);
+        } else {
+            result.failed += 1;
+            result.errors.push(batch_service::BatchItemError {
+                entity_type: "share".to_string(),
+                entity_id: id,
+                error: AsterError::share_not_found(format!("share #{id}")).to_string(),
+            });
         }
     }
 
+    if !ids_to_delete.is_empty() {
+        let txn = state.db.begin().await.map_err(AsterError::from)?;
+        share_repo::delete_many(&txn, &ids_to_delete).await?;
+        txn.commit().await.map_err(AsterError::from)?;
+    }
+
+    tracing::debug!(
+        scope = ?scope,
+        succeeded = result.succeeded,
+        failed = result.failed,
+        "batch deleted shares"
+    );
     Ok(result)
-}
-
-pub async fn list_my_shares(state: &AppState, user_id: i64) -> Result<Vec<MyShareInfo>> {
-    list_shares_in_scope(state, WorkspaceStorageScope::Personal { user_id }).await
-}
-
-pub async fn list_team_shares(
-    state: &AppState,
-    team_id: i64,
-    user_id: i64,
-) -> Result<Vec<MyShareInfo>> {
-    list_shares_in_scope(
-        state,
-        WorkspaceStorageScope::Team {
-            team_id,
-            actor_user_id: user_id,
-        },
-    )
-    .await
 }
 
 pub async fn list_my_shares_paginated(
@@ -684,6 +766,7 @@ pub async fn update_share(
         max_downloads,
     )
     .await
+    .map(|outcome| outcome.share)
 }
 
 pub async fn update_team_share(
@@ -707,6 +790,7 @@ pub async fn update_team_share(
         max_downloads,
     )
     .await
+    .map(|outcome| outcome.share)
 }
 
 pub fn validate_batch_share_ids(share_ids: &[i64]) -> Result<()> {
@@ -754,14 +838,6 @@ pub async fn batch_delete_team_shares(
         share_ids,
     )
     .await
-}
-
-pub async fn list_all(state: &AppState) -> Result<Vec<ShareInfo>> {
-    Ok(share_repo::find_all(&state.db)
-        .await?
-        .into_iter()
-        .map(Into::into)
-        .collect())
 }
 
 pub async fn list_paginated(
@@ -833,11 +909,18 @@ pub async fn get_shared_thumbnail(
     token: &str,
 ) -> Result<file_service::ThumbnailResult> {
     let share = load_valid_share(state, token).await?;
+    tracing::debug!(share_id = share.id, "loading shared thumbnail");
     let f = load_share_file_resource(state, &share).await?;
     crate::services::thumbnail_service::ensure_supported_mime(&f.mime_type)?;
 
     let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
     let data = crate::services::thumbnail_service::get_or_generate(state, &blob).await?;
+    tracing::debug!(
+        share_id = share.id,
+        file_id = f.id,
+        blob_id = blob.id,
+        "loaded shared thumbnail"
+    );
     Ok(file_service::ThumbnailResult {
         data,
         blob_hash: blob.hash,
@@ -851,11 +934,17 @@ pub async fn get_shared_folder_file_thumbnail(
     file_id: i64,
 ) -> Result<file_service::ThumbnailResult> {
     let (_, f) = load_shared_folder_file_target(state, token, file_id).await?;
+    tracing::debug!(file_id = f.id, "loading shared folder file thumbnail");
 
     crate::services::thumbnail_service::ensure_supported_mime(&f.mime_type)?;
 
     let blob = file_repo::find_blob_by_id(&state.db, f.blob_id).await?;
     let data = crate::services::thumbnail_service::get_or_generate(state, &blob).await?;
+    tracing::debug!(
+        file_id = f.id,
+        blob_id = blob.id,
+        "loaded shared folder file thumbnail"
+    );
     Ok(file_service::ThumbnailResult {
         data,
         blob_hash: blob.hash,
@@ -892,8 +981,18 @@ pub async fn list_shared_subfolder(
     sort_order: crate::api::pagination::SortOrder,
 ) -> Result<folder_service::FolderContents> {
     let (_, target) = load_shared_subfolder_target(state, token, folder_id).await?;
+    tracing::debug!(
+        folder_id = target.id,
+        folder_limit,
+        folder_offset,
+        file_limit,
+        has_file_cursor = file_cursor.is_some(),
+        sort_by = ?sort_by,
+        sort_order = ?sort_order,
+        "listing shared subfolder"
+    );
 
-    folder_service::list_shared(
+    let contents = folder_service::list_shared(
         state,
         target.id,
         folder_limit,
@@ -903,7 +1002,16 @@ pub async fn list_shared_subfolder(
         sort_by,
         sort_order,
     )
-    .await
+    .await?;
+    tracing::debug!(
+        folder_id = target.id,
+        folders_total = contents.folders_total,
+        files_total = contents.files_total,
+        returned_folders = contents.folders.len(),
+        returned_files = contents.files.len(),
+        "listed shared subfolder"
+    );
+    Ok(contents)
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -1047,11 +1155,23 @@ async fn download_share_resource_with_disposition(
     disposition: file_service::DownloadDisposition,
     if_none_match: Option<&str>,
 ) -> Result<actix_web::HttpResponse> {
+    tracing::debug!(
+        share_id = share.id,
+        file_id = file.id,
+        disposition = ?disposition,
+        has_if_none_match = if_none_match.is_some(),
+        "starting shared file download"
+    );
     let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
 
     if let Some(if_none_match) = if_none_match
         && file_service::if_none_match_matches(if_none_match, &blob.hash)
     {
+        tracing::debug!(
+            share_id = share.id,
+            file_id = file.id,
+            "shared file download satisfied by ETag"
+        );
         return file_service::build_stream_response_with_disposition(
             state,
             file,
@@ -1085,7 +1205,14 @@ async fn download_share_resource_with_disposition(
     )
     .await
     {
-        Ok(response) => Ok(response),
+        Ok(response) => {
+            tracing::debug!(
+                share_id = share.id,
+                file_id = file.id,
+                "completed shared file download"
+            );
+            Ok(response)
+        }
         Err(error) => {
             match share_repo::decrement_download_count(&state.db, share.id).await {
                 Ok(true) => {}

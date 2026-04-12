@@ -32,6 +32,49 @@ pub async fn find_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<share::Mo
         .ok_or_else(|| AsterError::share_not_found(format!("share #{id}")))
 }
 
+pub async fn find_by_ids<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<Vec<share::Model>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    Share::find()
+        .filter(share::Column::Id.is_in(ids.iter().copied()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+async fn find_by_ids_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: ShareScope,
+    ids: &[i64],
+) -> Result<Vec<share::Model>> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    Share::find()
+        .filter(scope_condition(scope))
+        .filter(share::Column::Id.is_in(ids.iter().copied()))
+        .all(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_by_ids_in_personal_scope<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    ids: &[i64],
+) -> Result<Vec<share::Model>> {
+    find_by_ids_in_scope(db, ShareScope::Personal { user_id }, ids).await
+}
+
+pub async fn find_by_ids_in_team_scope<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    ids: &[i64],
+) -> Result<Vec<share::Model>> {
+    find_by_ids_in_scope(db, ShareScope::Team { team_id }, ids).await
+}
+
 pub async fn find_by_token<C: ConnectionTrait>(
     db: &C,
     token: &str,
@@ -93,14 +136,6 @@ pub async fn find_by_team_paginated<C: ConnectionTrait>(
         offset,
     )
     .await
-}
-
-pub async fn find_all<C: ConnectionTrait>(db: &C) -> Result<Vec<share::Model>> {
-    Share::find()
-        .order_by_desc(share::Column::CreatedAt)
-        .all(db)
-        .await
-        .map_err(AsterError::from)
 }
 
 pub async fn find_paginated<C: ConnectionTrait>(
@@ -261,6 +296,18 @@ pub async fn update<C: ConnectionTrait>(db: &C, model: share::ActiveModel) -> Re
 
 pub async fn delete<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     Share::delete_by_id(id)
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+pub async fn delete_many<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    Share::delete_many()
+        .filter(share::Column::Id.is_in(ids.iter().copied()))
         .exec(db)
         .await
         .map_err(AsterError::from)?;

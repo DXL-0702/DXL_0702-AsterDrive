@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::{ActiveModelTrait, ConnectionTrait, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, Set, TransactionTrait};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -155,6 +155,12 @@ pub(crate) async fn create_in_scope(
     name: &str,
     parent_id: Option<i64>,
 ) -> Result<folder::Model> {
+    tracing::debug!(
+        scope = ?scope,
+        parent_id,
+        name = %name,
+        "creating folder"
+    );
     if let WorkspaceStorageScope::Team {
         team_id,
         actor_user_id,
@@ -214,6 +220,13 @@ pub(crate) async fn create_in_scope(
             vec![created.parent_id],
         ),
     );
+    tracing::debug!(
+        scope = ?scope,
+        folder_id = created.id,
+        parent_id = created.parent_id,
+        name = %created.name,
+        "created folder"
+    );
     Ok(created)
 }
 
@@ -231,45 +244,6 @@ pub async fn create(
     )
     .await
     .map(Into::into)
-}
-
-async fn ensure_folder_in_parent<C: ConnectionTrait>(
-    db: &C,
-    user_id: i64,
-    parent_id: Option<i64>,
-    name: &str,
-) -> Result<folder::Model> {
-    crate::utils::validate_name(name)?;
-
-    if let Some(existing) =
-        folder_repo::find_by_name_in_parent(db, user_id, parent_id, name).await?
-    {
-        return Ok(existing);
-    }
-
-    let now = Utc::now();
-    let model = folder::ActiveModel {
-        name: Set(name.to_string()),
-        parent_id: Set(parent_id),
-        user_id: Set(user_id),
-        policy_id: Set(None),
-        created_at: Set(now),
-        updated_at: Set(now),
-        ..Default::default()
-    };
-
-    match folder_repo::create(db, model).await {
-        Ok(created) => Ok(created),
-        Err(err) => {
-            if let Some(existing) =
-                folder_repo::find_by_name_in_parent(db, user_id, parent_id, name).await?
-            {
-                Ok(existing)
-            } else {
-                Err(err)
-            }
-        }
-    }
 }
 
 async fn load_folder_chain_map(
@@ -479,6 +453,7 @@ pub(crate) async fn delete_in_scope(
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<()> {
+    tracing::debug!(scope = ?scope, folder_id, "soft deleting folder tree");
     let folder = workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;
     if folder.is_locked {
         return Err(AsterError::resource_locked("folder is locked"));
@@ -486,6 +461,8 @@ pub(crate) async fn delete_in_scope(
 
     let (files, folder_ids) =
         collect_folder_tree_in_scope(&state.db, scope, folder_id, false).await?;
+    let file_count = files.len();
+    let folder_count = folder_ids.len();
     let file_ids: Vec<i64> = files.into_iter().map(|f| f.id).collect();
     let now = Utc::now();
 
@@ -502,6 +479,14 @@ pub(crate) async fn delete_in_scope(
             vec![folder.id],
             vec![folder.parent_id],
         ),
+    );
+    tracing::debug!(
+        scope = ?scope,
+        folder_id = folder.id,
+        parent_id = folder.parent_id,
+        file_count,
+        folder_count,
+        "soft deleted folder tree"
     );
     Ok(())
 }
@@ -523,6 +508,14 @@ pub(crate) async fn update_in_scope(
     policy_id: NullablePatch<i64>,
 ) -> Result<folder::Model> {
     let db = &state.db;
+    tracing::debug!(
+        scope = ?scope,
+        folder_id = id,
+        target_name = name.as_deref().unwrap_or(""),
+        parent_patch = ?parent_id,
+        policy_patch = ?policy_id,
+        "updating folder metadata"
+    );
     let f = workspace_storage_service::verify_folder_access(state, scope, id).await?;
     if f.is_locked {
         return Err(AsterError::resource_locked("folder is locked"));
@@ -602,6 +595,14 @@ pub(crate) async fn update_in_scope(
             vec![previous_parent_id, updated.parent_id],
         ),
     );
+    tracing::debug!(
+        scope = ?scope,
+        folder_id = updated.id,
+        parent_id = updated.parent_id,
+        name = %updated.name,
+        policy_id = updated.policy_id,
+        "updated folder metadata"
+    );
     Ok(updated)
 }
 
@@ -641,6 +642,12 @@ pub(crate) async fn set_lock_in_scope(
     use crate::services::lock_service;
     use crate::types::EntityType;
 
+    tracing::debug!(
+        scope = ?scope,
+        folder_id,
+        locked,
+        "setting folder lock state"
+    );
     workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;
 
     if locked {
@@ -657,46 +664,14 @@ pub(crate) async fn set_lock_in_scope(
         lock_service::unlock(state, EntityType::Folder, folder_id, scope.actor_user_id()).await?;
     }
 
-    workspace_storage_service::verify_folder_access(state, scope, folder_id).await
-}
-
-pub async fn resolve_upload_path(
-    state: &AppState,
-    user_id: i64,
-    base_folder_id: Option<i64>,
-    relative_path: &str,
-) -> Result<(Option<i64>, String)> {
-    // 校验 base_folder_id 归属
-    if let Some(fid) = base_folder_id {
-        verify_folder_access(state, user_id, fid).await?;
-    }
-
-    // Reject paths with empty segments (e.g. "docs//bad.txt")
-    if relative_path.split('/').any(|s| s.is_empty()) {
-        return Err(AsterError::validation_error(
-            "relative_path contains empty path segments",
-        ));
-    }
-    let segments: Vec<&str> = relative_path.split('/').collect();
-    let filename = segments
-        .last()
-        .ok_or_else(|| AsterError::validation_error("relative_path cannot be empty"))?;
-    crate::utils::validate_name(filename)?;
-
-    if segments.len() == 1 {
-        return Ok((base_folder_id, (*filename).to_string()));
-    }
-
-    let txn = state.db.begin().await.map_err(AsterError::from)?;
-    let mut current_parent = base_folder_id;
-
-    for segment in &segments[..segments.len() - 1] {
-        let folder = ensure_folder_in_parent(&txn, user_id, current_parent, segment).await?;
-        current_parent = Some(folder.id);
-    }
-
-    txn.commit().await.map_err(AsterError::from)?;
-    Ok((current_parent, (*filename).to_string()))
+    let folder = workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;
+    tracing::debug!(
+        scope = ?scope,
+        folder_id = folder.id,
+        locked = folder.is_locked,
+        "updated folder lock state"
+    );
+    Ok(folder)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -711,6 +686,17 @@ pub(crate) async fn list_in_scope(
     sort_by: crate::api::pagination::SortBy,
     sort_order: crate::api::pagination::SortOrder,
 ) -> Result<FolderContents> {
+    tracing::debug!(
+        scope = ?scope,
+        parent_id,
+        folder_limit,
+        folder_offset,
+        file_limit,
+        has_file_cursor = file_cursor.is_some(),
+        sort_by = ?sort_by,
+        sort_order = ?sort_order,
+        "listing folder contents"
+    );
     if let WorkspaceStorageScope::Team {
         team_id,
         actor_user_id,
@@ -820,7 +806,7 @@ pub(crate) async fn list_in_scope(
         }
     };
 
-    build_folder_contents(
+    let contents = build_folder_contents(
         state,
         scope,
         folders,
@@ -830,7 +816,18 @@ pub(crate) async fn list_in_scope(
         sort_by,
         file_limit,
     )
-    .await
+    .await?;
+    tracing::debug!(
+        scope = ?scope,
+        parent_id,
+        folders_total = contents.folders_total,
+        files_total = contents.files_total,
+        returned_folders = contents.folders.len(),
+        returned_files = contents.files.len(),
+        has_next_file_cursor = contents.next_file_cursor.is_some(),
+        "listed folder contents"
+    );
+    Ok(contents)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -984,6 +981,12 @@ pub(crate) async fn copy_folder_in_scope(
     dest_parent_id: Option<i64>,
 ) -> Result<folder::Model> {
     let db = &state.db;
+    tracing::debug!(
+        scope = ?scope,
+        src_folder_id = src_id,
+        dest_parent_id,
+        "copying folder tree"
+    );
     let src = workspace_storage_service::verify_folder_access(state, scope, src_id).await?;
 
     if let Some(parent_id) = dest_parent_id {
@@ -1035,6 +1038,14 @@ pub(crate) async fn copy_folder_in_scope(
             vec![copied.parent_id],
         ),
     );
+    tracing::debug!(
+        scope = ?scope,
+        src_folder_id = src_id,
+        copied_folder_id = copied.id,
+        parent_id = copied.parent_id,
+        name = %copied.name,
+        "copied folder tree"
+    );
     Ok(copied)
 }
 
@@ -1069,6 +1080,16 @@ pub async fn list_shared(
     sort_by: crate::api::pagination::SortBy,
     sort_order: crate::api::pagination::SortOrder,
 ) -> Result<FolderContents> {
+    tracing::debug!(
+        folder_id,
+        folder_limit,
+        folder_offset,
+        file_limit,
+        has_file_cursor = file_cursor.is_some(),
+        sort_by = ?sort_by,
+        sort_order = ?sort_order,
+        "listing shared folder contents"
+    );
     let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
     if let Some(team_id) = folder.team_id {
         let (folders, folders_total) = folder_repo::find_team_children_paginated(
@@ -1108,13 +1129,24 @@ pub async fn list_shared(
         let shared_folder_ids =
             share_repo::find_active_team_folder_ids(&state.db, team_id, &folder_ids).await?;
 
-        Ok(FolderContents {
+        let contents = FolderContents {
             folders: build_folder_list_items(folders, &shared_folder_ids),
             files: build_file_list_items(files, &shared_file_ids),
             folders_total,
             files_total,
             next_file_cursor,
-        })
+        };
+        tracing::debug!(
+            folder_id,
+            team_id,
+            folders_total = contents.folders_total,
+            files_total = contents.files_total,
+            returned_folders = contents.folders.len(),
+            returned_files = contents.files.len(),
+            has_next_file_cursor = contents.next_file_cursor.is_some(),
+            "listed shared folder contents"
+        );
+        Ok(contents)
     } else {
         ensure_personal_folder_scope(&folder)?;
         let (folders, folders_total) = folder_repo::find_children_paginated(
@@ -1138,7 +1170,7 @@ pub async fn list_shared(
         )
         .await?;
 
-        build_folder_contents(
+        let contents = build_folder_contents(
             state,
             WorkspaceStorageScope::Personal {
                 user_id: folder.user_id,
@@ -1150,7 +1182,18 @@ pub async fn list_shared(
             sort_by,
             file_limit,
         )
-        .await
+        .await?;
+        tracing::debug!(
+            folder_id,
+            user_id = folder.user_id,
+            folders_total = contents.folders_total,
+            files_total = contents.files_total,
+            returned_folders = contents.folders.len(),
+            returned_files = contents.files.len(),
+            has_next_file_cursor = contents.next_file_cursor.is_some(),
+            "listed shared folder contents"
+        );
+        Ok(contents)
     }
 }
 

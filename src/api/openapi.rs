@@ -334,8 +334,6 @@ use utoipa::{Modify, OpenApi};
             crate::services::config_service::PublicBranding,
             crate::services::preview_app_service::PublicPreviewAppConfig,
             crate::services::preview_app_service::PublicPreviewAppDefinition,
-            crate::services::preview_app_service::PublicPreviewAppMatch,
-            crate::services::preview_app_service::PublicPreviewAppRule,
             crate::services::preview_app_service::PublicPreviewAppsConfig,
             crate::services::policy_service::StoragePolicy,
             crate::services::policy_service::StoragePolicyGroupItemInfo,

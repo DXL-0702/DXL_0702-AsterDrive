@@ -52,6 +52,12 @@ pub(crate) async fn download_in_scope(
     id: i64,
     if_none_match: Option<&str>,
 ) -> Result<HttpResponse> {
+    tracing::debug!(
+        scope = ?scope,
+        file_id = id,
+        has_if_none_match = if_none_match.is_some(),
+        "starting file download"
+    );
     let file = get_info_in_scope(state, scope, id).await?;
     let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
     build_stream_response(state, &file, &blob, if_none_match).await
@@ -62,6 +68,7 @@ pub(crate) async fn delete_in_scope(
     scope: WorkspaceStorageScope,
     id: i64,
 ) -> Result<()> {
+    tracing::debug!(scope = ?scope, file_id = id, "soft deleting file");
     let file = get_info_in_scope(state, scope, id).await?;
     if file.is_locked {
         return Err(AsterError::resource_locked("file is locked"));
@@ -77,6 +84,12 @@ pub(crate) async fn delete_in_scope(
             vec![file.folder_id],
         ),
     );
+    tracing::debug!(
+        scope = ?scope,
+        file_id = file.id,
+        folder_id = file.folder_id,
+        "soft deleted file"
+    );
     Ok(())
 }
 
@@ -88,6 +101,13 @@ pub(crate) async fn update_in_scope(
     folder_id: NullablePatch<i64>,
 ) -> Result<file::Model> {
     let db = &state.db;
+    tracing::debug!(
+        scope = ?scope,
+        file_id = id,
+        target_name = name.as_deref().unwrap_or(""),
+        folder_patch = ?folder_id,
+        "updating file metadata"
+    );
     let f = get_info_in_scope(state, scope, id).await?;
     if f.is_locked {
         return Err(AsterError::resource_locked("file is locked"));
@@ -145,6 +165,13 @@ pub(crate) async fn update_in_scope(
             vec![],
             vec![previous_folder_id, updated.folder_id],
         ),
+    );
+    tracing::debug!(
+        scope = ?scope,
+        file_id = updated.id,
+        folder_id = updated.folder_id,
+        name = %updated.name,
+        "updated file metadata"
     );
     Ok(updated)
 }
@@ -300,6 +327,12 @@ pub(crate) async fn build_stream_response_with_disposition(
     if let Some(if_none_match) = if_none_match
         && if_none_match_matches(if_none_match, &blob.hash)
     {
+        tracing::debug!(
+            file_id = f.id,
+            blob_id = blob.id,
+            disposition = ?disposition,
+            "serving cached file response with 304"
+        );
         return Ok(HttpResponse::NotModified()
             .insert_header(("ETag", etag))
             .insert_header(("Cache-Control", "private, max-age=0, must-revalidate"))
@@ -312,6 +345,15 @@ pub(crate) async fn build_stream_response_with_disposition(
 
     // 64KB buffer — 比默认 4KB 减少系统调用和分配开销
     let reader_stream = tokio_util::io::ReaderStream::with_capacity(stream, 64 * 1024);
+
+    tracing::debug!(
+        file_id = f.id,
+        blob_id = blob.id,
+        policy_id = blob.policy_id,
+        size = blob.size,
+        disposition = ?disposition,
+        "building streaming file response"
+    );
 
     Ok(HttpResponse::Ok()
         .content_type(f.mime_type.clone())
@@ -510,6 +552,13 @@ pub(crate) async fn batch_purge_in_scope(
         return Ok(0);
     }
 
+    let input_count = files.len();
+    tracing::debug!(
+        scope = ?scope,
+        file_count = input_count,
+        "purging files permanently"
+    );
+
     for file in &files {
         workspace_storage_service::ensure_file_scope(file, scope)?;
     }
@@ -590,6 +639,13 @@ pub(crate) async fn batch_purge_in_scope(
         })
         .await;
 
+    tracing::debug!(
+        scope = ?scope,
+        file_count = input_count,
+        freed_bytes = total_freed_bytes,
+        cleanup_blob_count = blob_ids.len(),
+        "purged files permanently"
+    );
     Ok(count)
 }
 
@@ -648,6 +704,12 @@ pub(crate) async fn copy_file_in_scope(
     dest_folder_id: Option<i64>,
 ) -> Result<file::Model> {
     let db = &state.db;
+    tracing::debug!(
+        scope = ?scope,
+        src_file_id = src_id,
+        dest_folder_id,
+        "copying file"
+    );
     let src = get_info_in_scope(state, scope, src_id).await?;
 
     if let Some(folder_id) = dest_folder_id {
@@ -677,6 +739,13 @@ pub(crate) async fn copy_file_in_scope(
             vec![],
             vec![copied.folder_id],
         ),
+    );
+    tracing::debug!(
+        scope = ?scope,
+        src_file_id = src_id,
+        copied_file_id = copied.id,
+        dest_folder_id = copied.folder_id,
+        "copied file"
     );
     Ok(copied)
 }
@@ -920,6 +989,13 @@ pub(crate) async fn update_content_in_scope(
     if_match: Option<&str>,
 ) -> Result<(file::Model, String)> {
     let db = &state.db;
+    tracing::debug!(
+        scope = ?scope,
+        file_id,
+        content_size = body.len(),
+        has_if_match = if_match.is_some(),
+        "updating file content"
+    );
     let f = get_info_in_scope(state, scope, file_id).await?;
 
     if f.is_locked {
@@ -1014,6 +1090,13 @@ pub(crate) async fn update_content_in_scope(
 
     let updated = result?;
     let new_blob = file_repo::find_blob_by_id(db, updated.blob_id).await?;
+    tracing::debug!(
+        scope = ?scope,
+        file_id = updated.id,
+        blob_id = updated.blob_id,
+        size = updated.size,
+        "updated file content"
+    );
     Ok((updated, new_blob.hash.clone()))
 }
 
@@ -1073,6 +1156,12 @@ pub(crate) async fn set_lock_in_scope(
     use crate::services::lock_service;
     use crate::types::EntityType;
 
+    tracing::debug!(
+        scope = ?scope,
+        file_id,
+        locked,
+        "setting file lock state"
+    );
     get_info_in_scope(state, scope, file_id).await?;
 
     if locked {
@@ -1089,7 +1178,14 @@ pub(crate) async fn set_lock_in_scope(
         lock_service::unlock(state, EntityType::File, file_id, scope.actor_user_id()).await?;
     }
 
-    get_info_in_scope(state, scope, file_id).await
+    let file = get_info_in_scope(state, scope, file_id).await?;
+    tracing::debug!(
+        scope = ?scope,
+        file_id = file.id,
+        locked = file.is_locked,
+        "updated file lock state"
+    );
+    Ok(file)
 }
 
 /// 直接创建空文件（0 字节），不走 multipart upload 流程。

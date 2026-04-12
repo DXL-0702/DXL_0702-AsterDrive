@@ -675,3 +675,64 @@ async fn test_cleanup_expired_keeps_recently_deleted_items() {
     let trashed = file_repo::find_by_id(&state.db, file.id).await.unwrap();
     assert!(trashed.deleted_at.is_some());
 }
+
+#[actix_web::test]
+async fn test_purge_all_processes_multiple_file_batches() {
+    use aster_drive::services::{auth_service, file_service, trash_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "tbfiles", "trashbatchfiles@example.com", "pass123")
+        .await
+        .unwrap();
+
+    for idx in 0..120 {
+        let file = file_service::create_empty(&state, user.id, None, &format!("batch-{idx}.txt"))
+            .await
+            .unwrap();
+        file_service::delete(&state, file.id, user.id)
+            .await
+            .unwrap();
+    }
+
+    let purged = trash_service::purge_all(&state, user.id).await.unwrap();
+    assert_eq!(purged, 120);
+
+    let trash = trash_service::list_trash(&state, user.id, 50, 0, 50, None)
+        .await
+        .unwrap();
+    assert_eq!(trash.files_total, 0);
+    assert_eq!(trash.folders_total, 0);
+}
+
+#[actix_web::test]
+async fn test_purge_all_processes_multiple_folder_batches() {
+    use aster_drive::services::{auth_service, folder_service, trash_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "tbfolders",
+        "trashbatchfolders@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
+
+    for idx in 0..120 {
+        let folder = folder_service::create(&state, user.id, &format!("batch-folder-{idx}"), None)
+            .await
+            .unwrap();
+        folder_service::delete(&state, folder.id, user.id)
+            .await
+            .unwrap();
+    }
+
+    let purged = trash_service::purge_all(&state, user.id).await.unwrap();
+    assert_eq!(purged, 120);
+
+    let trash = trash_service::list_trash(&state, user.id, 50, 0, 50, None)
+        .await
+        .unwrap();
+    assert_eq!(trash.files_total, 0);
+    assert_eq!(trash.folders_total, 0);
+}

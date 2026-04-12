@@ -275,11 +275,7 @@ pub(crate) async fn update_share_response(
     share_id: i64,
     body: &UpdateShareReq,
 ) -> Result<HttpResponse> {
-    let has_password = match body.password.as_deref() {
-        Some(password) => !password.is_empty(),
-        None => share_service::share_has_password_in_scope(state, scope, share_id).await?,
-    };
-    let share = share_service::update_share_in_scope(
+    let outcome = share_service::update_share_in_scope(
         state,
         scope,
         share_id,
@@ -288,6 +284,7 @@ pub(crate) async fn update_share_response(
         body.max_downloads,
     )
     .await?;
+    let share = outcome.share;
     let ctx = AuditContext::from_request(req, claims);
     audit_service::log(
         state,
@@ -297,7 +294,7 @@ pub(crate) async fn update_share_response(
         Some(share.id),
         Some(&share.token),
         audit_service::details(audit_service::ShareUpdateDetails {
-            has_password,
+            has_password: outcome.has_password,
             expires_at: share.expires_at,
             max_downloads: share.max_downloads,
         }),

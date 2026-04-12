@@ -22,8 +22,9 @@ pub(crate) use crate::services::workspace_scope_service::{
 };
 pub(crate) use crate::services::workspace_storage_core::{
     check_quota, create_new_file_from_blob, create_nondedup_blob, create_s3_nondedup_blob,
-    finalize_upload_session_blob, finalize_upload_session_file, load_storage_limits,
-    local_content_dedup_enabled, resolve_policy_for_size, resolve_upload_path, update_storage_used,
+    ensure_upload_parent_path, finalize_upload_session_blob, finalize_upload_session_file,
+    load_storage_limits, local_content_dedup_enabled, parse_relative_upload_path,
+    resolve_policy_for_size, update_storage_used,
 };
 
 const HASH_BUF_SIZE: usize = 65536;
@@ -85,6 +86,18 @@ pub(crate) async fn store_from_temp_with_hints(
 ) -> Result<file::Model> {
     let db = &state.db;
 
+    tracing::debug!(
+        scope = ?scope,
+        folder_id,
+        filename = %filename,
+        size,
+        existing_file_id,
+        skip_lock_check,
+        policy_hint = resolved_policy.as_ref().map(|policy| policy.id),
+        has_precomputed_hash = precomputed_hash.is_some(),
+        "storing file from temp"
+    );
+
     crate::utils::validate_name(filename)?;
 
     let policy = match resolved_policy {
@@ -92,6 +105,14 @@ pub(crate) async fn store_from_temp_with_hints(
         None => resolve_policy_for_size(state, scope, folder_id, size).await?,
     };
     let should_dedup = local_content_dedup_enabled(&policy);
+
+    tracing::debug!(
+        scope = ?scope,
+        policy_id = policy.id,
+        driver_type = ?policy.driver_type,
+        should_dedup,
+        "resolved storage policy for temp file"
+    );
 
     if policy.max_file_size > 0 && size > policy.max_file_size {
         return Err(AsterError::file_too_large(format!(
@@ -229,6 +250,16 @@ pub(crate) async fn store_from_temp_with_hints(
     if let Some(existing_id) = existing_file_id {
         crate::services::version_service::cleanup_excess(state, existing_id).await?;
     }
+
+    tracing::debug!(
+        scope = ?scope,
+        file_id = result.id,
+        blob_id = result.blob_id,
+        folder_id = result.folder_id,
+        overwritten = existing_file_id.is_some(),
+        size = result.size,
+        "stored file from temp"
+    );
 
     Ok(result)
 }
@@ -477,6 +508,14 @@ pub(crate) async fn upload(
     relative_path: Option<&str>,
     declared_size: Option<i64>,
 ) -> Result<file::Model> {
+    tracing::debug!(
+        scope = ?scope,
+        folder_id,
+        relative_path = relative_path.unwrap_or(""),
+        declared_size,
+        "starting multipart upload"
+    );
+
     if let Some(declared_size) = declared_size
         && declared_size < 0
     {
@@ -486,7 +525,11 @@ pub(crate) async fn upload(
     }
 
     let (resolved_folder_id, resolved_filename) = match relative_path {
-        Some(path) => resolve_upload_path(state, scope, folder_id, path).await?,
+        Some(path) => {
+            let parsed = parse_relative_upload_path(state, scope, folder_id, path).await?;
+            let resolved_folder_id = ensure_upload_parent_path(state, scope, &parsed).await?;
+            (resolved_folder_id, parsed.filename)
+        }
         None => {
             if let Some(folder_id) = folder_id {
                 verify_folder_access(state, scope, folder_id).await?;
@@ -501,12 +544,30 @@ pub(crate) async fn upload(
         folder_id
     };
 
+    tracing::debug!(
+        scope = ?scope,
+        folder_id = effective_folder_id,
+        resolved_filename = %resolved_filename,
+        has_relative_path = relative_path.is_some(),
+        "resolved upload target"
+    );
+
     // relay_stream 的真正无暂存 fast path 需要先知道文件大小，避免在未解析策略前就开始写远端对象。
     if let Some(declared_size) = declared_size {
         let policy =
             resolve_policy_for_size(state, scope, effective_folder_id, declared_size).await?;
         if relay_stream_direct_upload_eligible(&policy, declared_size) {
-            return upload_s3_relay_direct(
+            tracing::debug!(
+                scope = ?scope,
+                folder_id = effective_folder_id,
+                resolved_filename = %resolved_filename,
+                policy_id = policy.id,
+                driver_type = ?policy.driver_type,
+                declared_size,
+                "using relay direct upload fast path"
+            );
+
+            let result = upload_s3_relay_direct(
                 state,
                 scope,
                 payload,
@@ -517,9 +578,29 @@ pub(crate) async fn upload(
                 declared_size,
             )
             .await;
+            if let Ok(file) = &result {
+                tracing::debug!(
+                    scope = ?scope,
+                    file_id = file.id,
+                    folder_id = file.folder_id,
+                    size = file.size,
+                    "completed relay direct upload"
+                );
+            }
+            return result;
         }
         if policy.driver_type == DriverType::Local {
-            return upload_local_direct(
+            tracing::debug!(
+                scope = ?scope,
+                folder_id = effective_folder_id,
+                resolved_filename = %resolved_filename,
+                policy_id = policy.id,
+                driver_type = ?policy.driver_type,
+                declared_size,
+                "using local direct upload fast path"
+            );
+
+            let result = upload_local_direct(
                 state,
                 scope,
                 payload,
@@ -530,6 +611,16 @@ pub(crate) async fn upload(
                 declared_size,
             )
             .await;
+            if let Ok(file) = &result {
+                tracing::debug!(
+                    scope = ?scope,
+                    file_id = file.id,
+                    folder_id = file.folder_id,
+                    size = file.size,
+                    "completed local direct upload"
+                );
+            }
+            return result;
         }
     }
 
@@ -595,6 +686,15 @@ pub(crate) async fn upload(
     .await;
 
     crate::utils::cleanup_temp_file(&temp_path).await;
+    if let Ok(file) = &result {
+        tracing::debug!(
+            scope = ?scope,
+            file_id = file.id,
+            folder_id = file.folder_id,
+            size = file.size,
+            "completed staged multipart upload"
+        );
+    }
     result
 }
 
@@ -604,6 +704,13 @@ pub(crate) async fn create_empty(
     folder_id: Option<i64>,
     filename: &str,
 ) -> Result<file::Model> {
+    tracing::debug!(
+        scope = ?scope,
+        folder_id,
+        filename = %filename,
+        "creating empty file"
+    );
+
     if let Some(folder_id) = folder_id {
         verify_folder_access(state, scope, folder_id).await?;
     }
@@ -654,6 +761,13 @@ pub(crate) async fn create_empty(
             vec![],
             vec![created.folder_id],
         ),
+    );
+    tracing::debug!(
+        scope = ?scope,
+        file_id = created.id,
+        blob_id = created.blob_id,
+        folder_id = created.folder_id,
+        "created empty file"
     );
     Ok(created)
 }

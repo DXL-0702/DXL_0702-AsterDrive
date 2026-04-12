@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
 use actix_web::HttpResponse;
@@ -11,8 +11,8 @@ use utoipa::ToSchema;
 
 use crate::api::pagination::OffsetPage;
 use crate::config::operations;
-use crate::db::repository::{background_task_repo, file_repo};
-use crate::entities::{background_task, file};
+use crate::db::repository::{background_task_repo, file_repo, folder_repo};
+use crate::entities::{background_task, file, folder};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{
@@ -484,6 +484,8 @@ async fn resolve_archive_download_in_scope(
     scope: WorkspaceStorageScope,
     params: &CreateArchiveTaskParams,
 ) -> Result<ResolvedArchiveDownload> {
+    ensure_archive_selection_request_in_scope(state, scope, &params.file_ids, &params.folder_ids)
+        .await?;
     let selection = batch_service::load_normalized_selection_in_scope(
         state,
         scope,
@@ -498,6 +500,42 @@ async fn resolve_archive_download_in_scope(
         selection,
         archive_name,
     })
+}
+
+async fn ensure_archive_selection_request_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_ids: &[i64],
+    folder_ids: &[i64],
+) -> Result<()> {
+    workspace_storage_service::require_scope_access(state, scope).await?;
+    batch_service::validate_batch_ids(file_ids, folder_ids)?;
+
+    let file_map: HashMap<i64, file::Model> = file_repo::find_by_ids(&state.db, file_ids)
+        .await?
+        .into_iter()
+        .map(|file| (file.id, file))
+        .collect();
+    for &file_id in file_ids {
+        let file = file_map
+            .get(&file_id)
+            .ok_or_else(|| AsterError::file_not_found(format!("file #{file_id}")))?;
+        workspace_storage_service::ensure_active_file_scope(file, scope)?;
+    }
+
+    let folder_map: HashMap<i64, folder::Model> = folder_repo::find_by_ids(&state.db, folder_ids)
+        .await?
+        .into_iter()
+        .map(|folder| (folder.id, folder))
+        .collect();
+    for &folder_id in folder_ids {
+        let folder = folder_map
+            .get(&folder_id)
+            .ok_or_else(|| AsterError::folder_not_found(format!("folder #{folder_id}")))?;
+        workspace_storage_service::ensure_active_folder_scope(folder, scope)?;
+    }
+
+    Ok(())
 }
 
 fn ensure_archive_selection_active(
