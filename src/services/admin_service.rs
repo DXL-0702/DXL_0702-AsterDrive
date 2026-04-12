@@ -96,7 +96,7 @@ pub struct AdminOverview {
     pub days: u32,
     pub stats: AdminOverviewStats,
     pub daily_reports: Vec<AdminOverviewDailyReport>,
-    pub recent_events: Vec<audit_log::Model>,
+    pub recent_events: Vec<audit_service::AuditLogEntry>,
 }
 
 pub async fn get_overview(

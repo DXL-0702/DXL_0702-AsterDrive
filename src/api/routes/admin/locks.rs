@@ -14,7 +14,7 @@ use actix_web::{HttpResponse, web};
     operation_id = "list_locks",
     params(LimitOffsetQuery),
     responses(
-        (status = 200, description = "All WebDAV locks", body = inline(ApiResponse<OffsetPage<crate::entities::resource_lock::Model>>)),
+        (status = 200, description = "All WebDAV locks", body = inline(ApiResponse<OffsetPage<lock_service::ResourceLock>>)),
         (status = 403, description = "Admin required"),
     ),
     security(("bearer" = [])),

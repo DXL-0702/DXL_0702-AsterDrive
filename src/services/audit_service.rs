@@ -4,7 +4,7 @@ use sea_orm::Set;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 #[cfg(all(debug_assertions, feature = "openapi"))]
-use utoipa::IntoParams;
+use utoipa::{IntoParams, ToSchema};
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{audit_log_repo, user_repo};
@@ -192,6 +192,39 @@ impl AuditLogFilters {
                 .as_deref()
                 .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
                 .map(|dt| dt.with_timezone(&Utc)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct AuditLogEntry {
+    pub id: i64,
+    pub user_id: i64,
+    pub action: String,
+    pub entity_type: Option<String>,
+    pub entity_id: Option<i64>,
+    pub entity_name: Option<String>,
+    pub details: Option<String>,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: DateTime<Utc>,
+}
+
+impl From<audit_log::Model> for AuditLogEntry {
+    fn from(model: audit_log::Model) -> Self {
+        Self {
+            id: model.id,
+            user_id: model.user_id,
+            action: model.action,
+            entity_type: model.entity_type,
+            entity_id: model.entity_id,
+            entity_name: model.entity_name,
+            details: model.details,
+            ip_address: model.ip_address,
+            user_agent: model.user_agent,
+            created_at: model.created_at,
         }
     }
 }
@@ -415,7 +448,7 @@ pub async fn log(
     }
 }
 
-pub async fn query(
+async fn query_models(
     state: &AppState,
     filters: AuditLogFilters,
     limit: u64,
@@ -436,6 +469,17 @@ pub async fn query(
         .await
     })
     .await
+}
+
+pub async fn query(
+    state: &AppState,
+    filters: AuditLogFilters,
+    limit: u64,
+    offset: u64,
+) -> Result<OffsetPage<AuditLogEntry>> {
+    let page = query_models(state, filters, limit, offset).await?;
+    let items = page.items.into_iter().map(Into::into).collect();
+    Ok(OffsetPage::new(items, page.total, page.limit, page.offset))
 }
 
 fn parse_team_member_role(value: Option<&serde_json::Value>) -> Option<TeamMemberRole> {
@@ -495,7 +539,7 @@ pub async fn query_team_entries(
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<TeamAuditEntryInfo>> {
-    let page = query(state, filters, limit, offset).await?;
+    let page = query_models(state, filters, limit, offset).await?;
     let user_ids: Vec<i64> = page
         .items
         .iter()

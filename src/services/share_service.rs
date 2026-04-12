@@ -32,6 +32,45 @@ pub enum ShareStatus {
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ShareInfo {
+    pub id: i64,
+    pub token: String,
+    pub user_id: i64,
+    pub team_id: Option<i64>,
+    pub file_id: Option<i64>,
+    pub folder_id: Option<i64>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub expires_at: Option<chrono::DateTime<Utc>>,
+    pub max_downloads: i64,
+    pub download_count: i64,
+    pub view_count: i64,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: chrono::DateTime<Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub updated_at: chrono::DateTime<Utc>,
+}
+
+impl From<share::Model> for ShareInfo {
+    fn from(model: share::Model) -> Self {
+        Self {
+            id: model.id,
+            token: model.token,
+            user_id: model.user_id,
+            team_id: model.team_id,
+            file_id: model.file_id,
+            folder_id: model.folder_id,
+            expires_at: model.expires_at,
+            max_downloads: model.max_downloads,
+            download_count: model.download_count,
+            view_count: model.view_count,
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct MyShareInfo {
     pub id: i64,
     pub token: String,
@@ -137,7 +176,7 @@ pub(crate) async fn create_share_in_scope(
     password: Option<String>,
     expires_at: Option<chrono::DateTime<Utc>>,
     max_downloads: i64,
-) -> Result<share::Model> {
+) -> Result<ShareInfo> {
     let db = &state.db;
     workspace_storage_service::require_scope_access(state, scope).await?;
 
@@ -199,7 +238,7 @@ pub(crate) async fn create_share_in_scope(
     };
     let created = share_repo::create(&txn, model).await?;
     txn.commit().await.map_err(AsterError::from)?;
-    Ok(created)
+    Ok(created.into())
 }
 
 pub async fn create_share(
@@ -210,7 +249,7 @@ pub async fn create_share(
     password: Option<String>,
     expires_at: Option<chrono::DateTime<Utc>>,
     max_downloads: i64,
-) -> Result<share::Model> {
+) -> Result<ShareInfo> {
     create_share_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -478,6 +517,17 @@ async fn load_share_in_scope(
     Ok(share)
 }
 
+pub(crate) async fn share_has_password_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    share_id: i64,
+) -> Result<bool> {
+    Ok(load_share_in_scope(state, scope, share_id)
+        .await?
+        .password
+        .is_some())
+}
+
 pub(crate) async fn delete_share_in_scope(
     state: &AppState,
     scope: WorkspaceStorageScope,
@@ -494,7 +544,7 @@ pub(crate) async fn update_share_in_scope(
     password: Option<String>,
     expires_at: Option<chrono::DateTime<Utc>>,
     max_downloads: i64,
-) -> Result<share::Model> {
+) -> Result<ShareInfo> {
     validate_max_downloads(max_downloads)?;
 
     let existing = load_share_in_scope(state, scope, share_id).await?;
@@ -512,7 +562,7 @@ pub(crate) async fn update_share_in_scope(
     active.max_downloads = Set(max_downloads);
     active.updated_at = Set(Utc::now());
 
-    share_repo::update(&state.db, active).await
+    share_repo::update(&state.db, active).await.map(Into::into)
 }
 
 pub(crate) async fn batch_delete_shares_in_scope(
@@ -624,7 +674,7 @@ pub async fn update_share(
     password: Option<String>,
     expires_at: Option<chrono::DateTime<Utc>>,
     max_downloads: i64,
-) -> Result<share::Model> {
+) -> Result<ShareInfo> {
     update_share_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -644,7 +694,7 @@ pub async fn update_team_share(
     password: Option<String>,
     expires_at: Option<chrono::DateTime<Utc>>,
     max_downloads: i64,
-) -> Result<share::Model> {
+) -> Result<ShareInfo> {
     update_share_in_scope(
         state,
         WorkspaceStorageScope::Team {
@@ -706,17 +756,22 @@ pub async fn batch_delete_team_shares(
     .await
 }
 
-pub async fn list_all(state: &AppState) -> Result<Vec<share::Model>> {
-    share_repo::find_all(&state.db).await
+pub async fn list_all(state: &AppState) -> Result<Vec<ShareInfo>> {
+    Ok(share_repo::find_all(&state.db)
+        .await?
+        .into_iter()
+        .map(Into::into)
+        .collect())
 }
 
 pub async fn list_paginated(
     state: &AppState,
     limit: u64,
     offset: u64,
-) -> Result<OffsetPage<share::Model>> {
+) -> Result<OffsetPage<ShareInfo>> {
     load_offset_page(limit, offset, 100, |limit, offset| async move {
-        share_repo::find_paginated(&state.db, limit, offset).await
+        let (items, total) = share_repo::find_paginated(&state.db, limit, offset).await?;
+        Ok((items.into_iter().map(Into::into).collect(), total))
     })
     .await
 }

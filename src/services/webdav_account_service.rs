@@ -38,6 +38,34 @@ pub struct WebdavAccountInfo {
     pub updated_at: chrono::DateTime<Utc>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct WebdavAccount {
+    pub id: i64,
+    pub user_id: i64,
+    pub username: String,
+    pub root_folder_id: Option<i64>,
+    pub is_active: bool,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: chrono::DateTime<Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub updated_at: chrono::DateTime<Utc>,
+}
+
+impl From<webdav_account::Model> for WebdavAccount {
+    fn from(model: webdav_account::Model) -> Self {
+        Self {
+            id: model.id,
+            user_id: model.user_id,
+            username: model.username,
+            root_folder_id: model.root_folder_id,
+            is_active: model.is_active,
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+        }
+    }
+}
+
 /// 创建 WebDAV 账号
 ///
 /// password 为 None 时自动生成 16 位随机密码
@@ -156,18 +184,16 @@ pub async fn delete(state: &AppState, id: i64, user_id: i64) -> Result<()> {
 }
 
 /// 切换启用/禁用
-pub async fn toggle_active(
-    state: &AppState,
-    id: i64,
-    user_id: i64,
-) -> Result<webdav_account::Model> {
+pub async fn toggle_active(state: &AppState, id: i64, user_id: i64) -> Result<WebdavAccount> {
     let account = webdav_account_repo::find_by_id(&state.db, id).await?;
     crate::utils::verify_owner(account.user_id, user_id, "account")?;
     let new_is_active = !account.is_active;
     let mut active: webdav_account::ActiveModel = account.into();
     active.is_active = Set(new_is_active);
     active.updated_at = Set(Utc::now());
-    webdav_account_repo::update(&state.db, active).await
+    webdav_account_repo::update(&state.db, active)
+        .await
+        .map(Into::into)
 }
 
 /// 测试 WebDAV 凭据是否正确

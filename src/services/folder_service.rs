@@ -11,6 +11,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{
     storage_change_service,
+    workspace_models::FolderInfo,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 use crate::types::NullablePatch;
@@ -221,7 +222,7 @@ pub async fn create(
     user_id: i64,
     name: &str,
     parent_id: Option<i64>,
-) -> Result<folder::Model> {
+) -> Result<FolderInfo> {
     create_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -229,6 +230,7 @@ pub async fn create(
         parent_id,
     )
     .await
+    .map(Into::into)
 }
 
 async fn ensure_folder_in_parent<C: ConnectionTrait>(
@@ -869,7 +871,7 @@ pub async fn update(
     name: Option<String>,
     parent_id: NullablePatch<i64>,
     policy_id: NullablePatch<i64>,
-) -> Result<folder::Model> {
+) -> Result<FolderInfo> {
     update_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -879,6 +881,7 @@ pub async fn update(
         policy_id,
     )
     .await
+    .map(Into::into)
 }
 
 /// 移动文件夹到指定父文件夹（None = 根目录）
@@ -891,7 +894,7 @@ pub async fn move_folder(
     id: i64,
     user_id: i64,
     target_parent_id: Option<i64>,
-) -> Result<folder::Model> {
+) -> Result<FolderInfo> {
     update_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -904,6 +907,7 @@ pub async fn move_folder(
         NullablePatch::Absent,
     )
     .await
+    .map(Into::into)
 }
 
 pub(crate) fn recursive_copy_folder_in_scope<'a>(
@@ -1042,7 +1046,7 @@ pub async fn copy_folder(
     src_id: i64,
     user_id: i64,
     dest_parent_id: Option<i64>,
-) -> Result<folder::Model> {
+) -> Result<FolderInfo> {
     copy_folder_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -1050,6 +1054,7 @@ pub async fn copy_folder(
         dest_parent_id,
     )
     .await
+    .map(Into::into)
 }
 
 /// 列出文件夹内容（无用户校验，用于分享链接）
@@ -1171,7 +1176,7 @@ pub async fn set_lock(
     folder_id: i64,
     user_id: i64,
     locked: bool,
-) -> Result<folder::Model> {
+) -> Result<FolderInfo> {
     set_lock_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -1179,4 +1184,5 @@ pub async fn set_lock(
         locked,
     )
     .await
+    .map(Into::into)
 }

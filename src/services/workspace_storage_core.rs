@@ -1,0 +1,386 @@
+use chrono::Utc;
+use sea_orm::{ConnectionTrait, Set, TransactionTrait};
+
+use crate::db::repository::{file_repo, folder_repo, team_repo, upload_session_repo, user_repo};
+use crate::entities::{file, file_blob, folder, team, upload_session};
+use crate::errors::{AsterError, Result};
+use crate::runtime::AppState;
+use crate::services::{
+    storage_change_service,
+    workspace_scope_service::{WorkspaceStorageScope, require_team_access, verify_folder_access},
+};
+use crate::types::{DriverType, parse_storage_policy_options};
+
+pub(crate) async fn load_storage_limits(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+) -> Result<(i64, i64)> {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            let user = user_repo::find_by_id(&state.db, user_id).await?;
+            Ok((user.storage_used, user.storage_quota))
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            let team = team_repo::find_active_by_id(&state.db, team_id).await?;
+            Ok((team.storage_used, team.storage_quota))
+        }
+    }
+}
+
+pub(crate) fn local_content_dedup_enabled(policy: &crate::entities::storage_policy::Model) -> bool {
+    policy.driver_type == DriverType::Local
+        && parse_storage_policy_options(&policy.options)
+            .content_dedup
+            .unwrap_or(false)
+}
+
+pub(crate) async fn create_nondedup_blob<C: ConnectionTrait>(
+    db: &C,
+    size: i64,
+    policy_id: i64,
+) -> Result<file_blob::Model> {
+    let blob_key = crate::utils::id::new_short_token();
+    let storage_path = crate::utils::storage_path_from_blob_key(&blob_key);
+    let now = Utc::now();
+
+    file_repo::create_blob(
+        db,
+        file_blob::ActiveModel {
+            hash: Set(blob_key),
+            size: Set(size),
+            policy_id: Set(policy_id),
+            storage_path: Set(storage_path),
+            ref_count: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+pub(crate) async fn create_s3_nondedup_blob<C: ConnectionTrait>(
+    db: &C,
+    size: i64,
+    policy_id: i64,
+    upload_id: &str,
+) -> Result<file_blob::Model> {
+    let now = Utc::now();
+    let file_hash = format!("s3-{upload_id}");
+    let storage_path = format!("files/{upload_id}");
+
+    file_repo::create_blob(
+        db,
+        file_blob::ActiveModel {
+            hash: Set(file_hash),
+            size: Set(size),
+            policy_id: Set(policy_id),
+            storage_path: Set(storage_path),
+            ref_count: Set(1),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+pub(crate) async fn mark_upload_session_completed<C: ConnectionTrait>(
+    db: &C,
+    session_id: &str,
+    file_id: i64,
+) -> Result<()> {
+    let session_fresh = upload_session_repo::find_by_id(db, session_id).await?;
+    let mut active: upload_session::ActiveModel = session_fresh.into();
+    active.status = Set(crate::types::UploadSessionStatus::Completed);
+    active.file_id = Set(Some(file_id));
+    active.updated_at = Set(Utc::now());
+    upload_session_repo::update(db, active).await?;
+    Ok(())
+}
+
+fn resolve_team_policy_group_id(team: &team::Model) -> Result<i64> {
+    team.policy_group_id.ok_or_else(|| {
+        AsterError::storage_policy_not_found(format!(
+            "no storage policy group assigned to team #{}",
+            team.id
+        ))
+    })
+}
+
+pub(crate) async fn resolve_policy_for_size(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    file_size: i64,
+) -> Result<crate::entities::storage_policy::Model> {
+    if let Some(folder_id) = folder_id {
+        let folder = verify_folder_access(state, scope, folder_id).await?;
+
+        if let Some(policy_id) = folder.policy_id {
+            return state.policy_snapshot.get_policy_or_err(policy_id);
+        }
+    }
+
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => state
+            .policy_snapshot
+            .resolve_user_policy_for_size(user_id, file_size),
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id,
+        } => {
+            let team = require_team_access(state, team_id, actor_user_id).await?;
+            state
+                .policy_snapshot
+                .resolve_policy_in_group(resolve_team_policy_group_id(&team)?, file_size)
+        }
+    }
+}
+
+async fn ensure_folder_in_parent<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    parent_id: Option<i64>,
+    name: &str,
+) -> Result<folder::Model> {
+    crate::utils::validate_name(name)?;
+
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            if let Some(existing) =
+                folder_repo::find_by_name_in_parent(db, user_id, parent_id, name).await?
+            {
+                return Ok(existing);
+            }
+
+            let now = Utc::now();
+            let model = folder::ActiveModel {
+                name: Set(name.to_string()),
+                parent_id: Set(parent_id),
+                user_id: Set(user_id),
+                policy_id: Set(None),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            };
+
+            match folder_repo::create(db, model).await {
+                Ok(created) => Ok(created),
+                Err(err) => {
+                    if let Some(existing) =
+                        folder_repo::find_by_name_in_parent(db, user_id, parent_id, name).await?
+                    {
+                        Ok(existing)
+                    } else {
+                        Err(err)
+                    }
+                }
+            }
+        }
+        WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id,
+        } => {
+            if let Some(existing) =
+                folder_repo::find_by_name_in_team_parent(db, team_id, parent_id, name).await?
+            {
+                return Ok(existing);
+            }
+
+            let now = Utc::now();
+            let model = folder::ActiveModel {
+                name: Set(name.to_string()),
+                parent_id: Set(parent_id),
+                team_id: Set(Some(team_id)),
+                user_id: Set(actor_user_id),
+                policy_id: Set(None),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            };
+
+            match folder_repo::create(db, model).await {
+                Ok(created) => Ok(created),
+                Err(err) => {
+                    if let Some(existing) =
+                        folder_repo::find_by_name_in_team_parent(db, team_id, parent_id, name)
+                            .await?
+                    {
+                        Ok(existing)
+                    } else {
+                        Err(err)
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub(crate) async fn resolve_upload_path(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    base_folder_id: Option<i64>,
+    relative_path: &str,
+) -> Result<(Option<i64>, String)> {
+    if let Some(folder_id) = base_folder_id {
+        verify_folder_access(state, scope, folder_id).await?;
+    }
+
+    if relative_path.split('/').any(|segment| segment.is_empty()) {
+        return Err(AsterError::validation_error(
+            "relative_path contains empty path segments",
+        ));
+    }
+
+    let segments: Vec<&str> = relative_path.split('/').collect();
+    let filename = segments
+        .last()
+        .ok_or_else(|| AsterError::validation_error("relative_path cannot be empty"))?;
+    crate::utils::validate_name(filename)?;
+
+    if segments.len() == 1 {
+        return Ok((base_folder_id, (*filename).to_string()));
+    }
+
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let mut current_parent = base_folder_id;
+
+    for segment in &segments[..segments.len() - 1] {
+        let folder = ensure_folder_in_parent(&txn, scope, current_parent, segment).await?;
+        current_parent = Some(folder.id);
+    }
+
+    txn.commit().await.map_err(AsterError::from)?;
+    Ok((current_parent, (*filename).to_string()))
+}
+
+pub(crate) async fn create_new_file_from_blob<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &str,
+    blob: &file_blob::Model,
+    now: chrono::DateTime<Utc>,
+) -> Result<file::Model> {
+    let (final_name, team_id) = match scope {
+        WorkspaceStorageScope::Personal { user_id } => (
+            file_repo::resolve_unique_filename(db, user_id, folder_id, filename).await?,
+            None,
+        ),
+        WorkspaceStorageScope::Team { team_id, .. } => (
+            file_repo::resolve_unique_team_filename(db, team_id, folder_id, filename).await?,
+            Some(team_id),
+        ),
+    };
+    let mime = mime_guess::from_path(&final_name)
+        .first_or_octet_stream()
+        .to_string();
+
+    file_repo::create(
+        db,
+        file::ActiveModel {
+            name: Set(final_name),
+            folder_id: Set(folder_id),
+            team_id: Set(team_id),
+            blob_id: Set(blob.id),
+            size: Set(blob.size),
+            user_id: Set(scope.actor_user_id()),
+            mime_type: Set(mime),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+}
+
+pub(crate) async fn check_quota<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    size: i64,
+) -> Result<()> {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            user_repo::check_quota(db, user_id, size).await
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            team_repo::check_quota(db, team_id, size).await
+        }
+    }
+}
+
+pub(crate) async fn update_storage_used<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    delta: i64,
+) -> Result<()> {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            user_repo::update_storage_used(db, user_id, delta).await
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            team_repo::update_storage_used(db, team_id, delta).await
+        }
+    }
+}
+
+fn scope_from_session(session: &upload_session::Model) -> WorkspaceStorageScope {
+    match session.team_id {
+        Some(team_id) => WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: session.user_id,
+        },
+        None => WorkspaceStorageScope::Personal {
+            user_id: session.user_id,
+        },
+    }
+}
+
+pub(crate) async fn finalize_upload_session_blob<C: ConnectionTrait>(
+    db: &C,
+    session: &upload_session::Model,
+    blob: &file_blob::Model,
+    now: chrono::DateTime<Utc>,
+) -> Result<file::Model> {
+    let scope = scope_from_session(session);
+    let created =
+        create_new_file_from_blob(db, scope, session.folder_id, &session.filename, blob, now)
+            .await?;
+
+    update_storage_used(db, scope, blob.size).await?;
+    mark_upload_session_completed(db, &session.id, created.id).await?;
+    Ok(created)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn finalize_upload_session_file(
+    state: &AppState,
+    session: &upload_session::Model,
+    file_hash: &str,
+    size: i64,
+    policy_id: i64,
+    storage_path: &str,
+    now: chrono::DateTime<Utc>,
+) -> Result<file::Model> {
+    let scope = scope_from_session(session);
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    check_quota(&txn, scope, size).await?;
+
+    let blob =
+        file_repo::find_or_create_blob(&txn, file_hash, size, policy_id, storage_path).await?;
+    let created = finalize_upload_session_blob(&txn, session, &blob.model, now).await?;
+
+    txn.commit().await.map_err(AsterError::from)?;
+    storage_change_service::publish(
+        state,
+        storage_change_service::StorageChangeEvent::new(
+            storage_change_service::StorageChangeKind::FileCreated,
+            scope,
+            vec![created.id],
+            vec![],
+            vec![created.folder_id],
+        ),
+    );
+    Ok(created)
+}

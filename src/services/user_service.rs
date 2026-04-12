@@ -273,8 +273,14 @@ pub async fn get_me(
     })
 }
 
-pub async fn list_all(state: &AppState) -> Result<Vec<user::Model>> {
-    user_repo::find_all(&state.db).await
+pub async fn get_self_info(state: &AppState, user_id: i64) -> Result<UserInfo> {
+    let user = user_repo::find_by_id(&state.db, user_id).await?;
+    to_user_info(state, &user, profile_service::AvatarAudience::SelfUser).await
+}
+
+pub async fn list_all(state: &AppState) -> Result<Vec<UserInfo>> {
+    let users = user_repo::find_all(&state.db).await?;
+    to_user_infos(state, users, profile_service::AvatarAudience::AdminUser).await
 }
 
 pub async fn list_paginated(
@@ -315,7 +321,7 @@ pub async fn create(
     password: &str,
 ) -> Result<UserInfo> {
     let user = auth_service::create_user_by_admin(state, username, email, password).await?;
-    to_user_info(state, &user, profile_service::AvatarAudience::AdminUser).await
+    get(state, user.id).await
 }
 
 pub async fn update(

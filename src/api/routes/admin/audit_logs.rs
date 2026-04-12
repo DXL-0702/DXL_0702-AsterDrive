@@ -14,7 +14,7 @@ use actix_web::{HttpResponse, web};
     operation_id = "list_audit_logs",
     params(LimitOffsetQuery, audit_service::AuditLogFilterQuery),
     responses(
-        (status = 200, description = "Audit log entries", body = inline(ApiResponse<OffsetPage<crate::entities::audit_log::Model>>)),
+        (status = 200, description = "Audit log entries", body = inline(ApiResponse<OffsetPage<audit_service::AuditLogEntry>>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),

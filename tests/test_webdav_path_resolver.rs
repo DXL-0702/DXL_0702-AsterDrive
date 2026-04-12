@@ -46,10 +46,10 @@ async fn seed_nested_file(
     user_id: i64,
     root_parent_id: Option<i64>,
 ) -> (
-    aster_drive::entities::folder::Model,
-    aster_drive::entities::folder::Model,
-    aster_drive::entities::folder::Model,
-    aster_drive::entities::file::Model,
+    aster_drive::services::workspace_models::FolderInfo,
+    aster_drive::services::workspace_models::FolderInfo,
+    aster_drive::services::workspace_models::FolderInfo,
+    aster_drive::services::workspace_models::FileInfo,
     String,
 ) {
     use aster_drive::services::{file_service, folder_service};
@@ -353,7 +353,10 @@ async fn test_path_resolver_hides_deleted_intermediate_folders() {
     let (_projects, docs, _reports, _file, _contents) =
         seed_nested_file(&state, user.id, None).await;
 
-    let mut deleted_docs: aster_drive::entities::folder::ActiveModel = docs.into();
+    let docs_model = aster_drive::db::repository::folder_repo::find_by_id(&state.db, docs.id)
+        .await
+        .unwrap();
+    let mut deleted_docs: aster_drive::entities::folder::ActiveModel = docs_model.into();
     deleted_docs.deleted_at = Set(Some(chrono::Utc::now()));
     deleted_docs.updated_at = Set(chrono::Utc::now());
     deleted_docs.update(&state.db).await.unwrap();

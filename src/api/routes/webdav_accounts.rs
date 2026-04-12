@@ -160,7 +160,7 @@ pub async fn delete_account(
     operation_id = "toggle_webdav_account",
     params(("id" = i64, Path, description = "Account ID")),
     responses(
-        (status = 200, description = "Account toggled", body = inline(ApiResponse<crate::entities::webdav_account::Model>)),
+        (status = 200, description = "Account toggled", body = inline(ApiResponse<webdav_account_service::WebdavAccount>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Not found"),
     ),

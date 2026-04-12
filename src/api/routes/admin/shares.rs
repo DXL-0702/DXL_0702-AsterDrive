@@ -14,7 +14,7 @@ use actix_web::{HttpResponse, web};
     operation_id = "list_all_shares",
     params(LimitOffsetQuery),
     responses(
-        (status = 200, description = "All shares", body = inline(ApiResponse<OffsetPage<crate::entities::share::Model>>)),
+        (status = 200, description = "All shares", body = inline(ApiResponse<OffsetPage<share_service::ShareInfo>>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),

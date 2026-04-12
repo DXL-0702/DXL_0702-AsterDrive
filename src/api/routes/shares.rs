@@ -71,7 +71,7 @@ pub struct BatchDeleteSharesReq {
     operation_id = "create_share",
     request_body = CreateShareReq,
     responses(
-        (status = 201, description = "Share created", body = inline(ApiResponse<crate::entities::share::Model>)),
+        (status = 201, description = "Share created", body = inline(ApiResponse<crate::services::share_service::ShareInfo>)),
         (status = 401, description = "Unauthorized"),
     ),
     security(("bearer" = [])),
@@ -130,7 +130,7 @@ pub async fn list_shares(
     params(("id" = i64, Path, description = "Share ID")),
     request_body = UpdateShareReq,
     responses(
-        (status = 200, description = "Share updated", body = inline(ApiResponse<crate::entities::share::Model>)),
+        (status = 200, description = "Share updated", body = inline(ApiResponse<crate::services::share_service::ShareInfo>)),
         (status = 400, description = "Invalid request"),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Share not found"),
@@ -275,6 +275,10 @@ pub(crate) async fn update_share_response(
     share_id: i64,
     body: &UpdateShareReq,
 ) -> Result<HttpResponse> {
+    let has_password = match body.password.as_deref() {
+        Some(password) => !password.is_empty(),
+        None => share_service::share_has_password_in_scope(state, scope, share_id).await?,
+    };
     let share = share_service::update_share_in_scope(
         state,
         scope,
@@ -293,7 +297,7 @@ pub(crate) async fn update_share_response(
         Some(share.id),
         Some(&share.token),
         audit_service::details(audit_service::ShareUpdateDetails {
-            has_password: share.password.is_some(),
+            has_password,
             expires_at: share.expires_at,
             max_downloads: share.max_downloads,
         }),

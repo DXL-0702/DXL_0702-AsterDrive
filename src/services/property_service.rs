@@ -4,6 +4,33 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{file_service, folder_service};
 use crate::types::EntityType;
+use serde::Serialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
+use utoipa::ToSchema;
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct EntityProperty {
+    pub id: i64,
+    pub entity_type: EntityType,
+    pub entity_id: i64,
+    pub namespace: String,
+    pub name: String,
+    pub value: Option<String>,
+}
+
+impl From<entity_property::Model> for EntityProperty {
+    fn from(model: entity_property::Model) -> Self {
+        Self {
+            id: model.id,
+            entity_type: model.entity_type,
+            entity_id: model.entity_id,
+            namespace: model.namespace,
+            name: model.name,
+            value: model.value,
+        }
+    }
+}
 
 /// 验证实体归属并返回
 async fn verify_ownership(
@@ -37,9 +64,15 @@ pub async fn list(
     entity_type: EntityType,
     entity_id: i64,
     user_id: i64,
-) -> Result<Vec<entity_property::Model>> {
+) -> Result<Vec<EntityProperty>> {
     verify_ownership(state, entity_type, entity_id, user_id).await?;
-    property_repo::find_by_entity(&state.db, entity_type, entity_id).await
+    Ok(
+        property_repo::find_by_entity(&state.db, entity_type, entity_id)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect(),
+    )
 }
 
 /// 设置（新增/更新）属性
@@ -51,7 +84,7 @@ pub async fn set(
     namespace: &str,
     name: &str,
     value: Option<&str>,
-) -> Result<entity_property::Model> {
+) -> Result<EntityProperty> {
     verify_ownership(state, entity_type, entity_id, user_id).await?;
 
     if namespace == "DAV:" {
@@ -75,7 +108,9 @@ pub async fn set(
         ));
     }
 
-    property_repo::upsert(&state.db, entity_type, entity_id, namespace, name, value).await
+    property_repo::upsert(&state.db, entity_type, entity_id, namespace, name, value)
+        .await
+        .map(Into::into)
 }
 
 /// 删除单个属性

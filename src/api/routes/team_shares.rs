@@ -35,7 +35,7 @@ fn team_scope(team_id: i64, user_id: i64) -> WorkspaceStorageScope {
     params(("team_id" = i64, Path, description = "Team ID")),
     request_body = crate::api::routes::shares::CreateShareReq,
     responses(
-        (status = 201, description = "Team share created", body = inline(ApiResponse<crate::entities::share::Model>)),
+        (status = 201, description = "Team share created", body = inline(ApiResponse<crate::services::share_service::ShareInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -96,7 +96,7 @@ pub async fn list_shares(
     ),
     request_body = crate::api::routes::shares::UpdateShareReq,
     responses(
-        (status = 200, description = "Team share updated", body = inline(ApiResponse<crate::entities::share::Model>)),
+        (status = 200, description = "Team share updated", body = inline(ApiResponse<crate::services::share_service::ShareInfo>)),
         (status = 400, description = "Invalid request"),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),

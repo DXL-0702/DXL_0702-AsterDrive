@@ -31,7 +31,7 @@ pub struct ExecuteConfigActionReq {
     operation_id = "list_config",
     params(LimitOffsetQuery),
     responses(
-        (status = 200, description = "List config entries", body = inline(ApiResponse<OffsetPage<crate::entities::system_config::Model>>)),
+        (status = 200, description = "List config entries", body = inline(ApiResponse<OffsetPage<config_service::SystemConfig>>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -87,7 +87,7 @@ pub async fn config_template_variables() -> Result<HttpResponse> {
     operation_id = "get_config",
     params(("key" = String, Path, description = "Config key")),
     responses(
-        (status = 200, description = "Config entry", body = inline(ApiResponse<crate::entities::system_config::Model>)),
+        (status = 200, description = "Config entry", body = inline(ApiResponse<config_service::SystemConfig>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Config key not found"),
@@ -110,7 +110,7 @@ pub async fn get_config(
     params(("key" = String, Path, description = "Config key")),
     request_body = SetConfigReq,
     responses(
-        (status = 200, description = "Config value set", body = inline(ApiResponse<crate::entities::system_config::Model>)),
+        (status = 200, description = "Config value set", body = inline(ApiResponse<config_service::SystemConfig>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),

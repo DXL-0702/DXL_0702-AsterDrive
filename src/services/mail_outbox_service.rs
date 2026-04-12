@@ -38,7 +38,7 @@ impl DispatchStats {
     }
 }
 
-pub async fn enqueue<C: ConnectionTrait>(
+pub(crate) async fn enqueue<C: ConnectionTrait>(
     db: &C,
     to_address: &str,
     to_name: Option<&str>,

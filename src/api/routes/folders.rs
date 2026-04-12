@@ -9,6 +9,7 @@ use crate::services::{
     audit_service::{self, AuditContext},
     auth_service::Claims,
     folder_service,
+    workspace_models::FolderInfo,
     workspace_storage_service::WorkspaceStorageScope,
 };
 use crate::types::NullablePatch;
@@ -50,7 +51,7 @@ pub struct CreateFolderReq {
     operation_id = "create_folder",
     request_body = CreateFolderReq,
     responses(
-        (status = 201, description = "Folder created", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 201, description = "Folder created", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
         (status = 401, description = "Unauthorized"),
     ),
     security(("bearer" = [])),
@@ -138,7 +139,7 @@ pub async fn list_folder(
     operation_id = "get_folder_info",
     params(("id" = i64, Path, description = "Folder ID")),
     responses(
-        (status = 200, description = "Folder info", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 200, description = "Folder info", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Folder not found"),
     ),
@@ -238,7 +239,7 @@ pub struct PatchFolderReq {
     params(("id" = i64, Path, description = "Folder ID")),
     request_body = PatchFolderReq,
     responses(
-        (status = 200, description = "Folder updated", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 200, description = "Folder updated", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Folder not found"),
     ),
@@ -280,7 +281,7 @@ pub struct SetLockReq {
     params(("id" = i64, Path, description = "Folder ID")),
     request_body = SetLockReq,
     responses(
-        (status = 200, description = "Lock state updated", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 200, description = "Lock state updated", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Folder not found"),
     ),
@@ -320,7 +321,7 @@ pub struct CopyFolderReq {
     params(("id" = i64, Path, description = "Source folder ID")),
     request_body = CopyFolderReq,
     responses(
-        (status = 201, description = "Folder copied", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 201, description = "Folder copied", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Folder not found"),
     ),
@@ -365,7 +366,7 @@ pub(crate) async fn create_folder_response(
         None,
     )
     .await;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(folder)))
+    Ok(HttpResponse::Created().json(ApiResponse::ok(FolderInfo::from(folder))))
 }
 
 pub(crate) async fn list_folder_response(
@@ -404,7 +405,7 @@ pub(crate) async fn get_folder_info_response(
     folder_id: i64,
 ) -> Result<HttpResponse> {
     let folder = folder_service::get_info_in_scope(state, scope, folder_id).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(FolderInfo::from(folder))))
 }
 
 pub(crate) async fn delete_folder_response(
@@ -464,7 +465,7 @@ pub(crate) async fn patch_folder_response(
         None,
     )
     .await;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(FolderInfo::from(folder))))
 }
 
 pub(crate) async fn set_lock_response(
@@ -474,7 +475,7 @@ pub(crate) async fn set_lock_response(
     locked: bool,
 ) -> Result<HttpResponse> {
     let folder = folder_service::set_lock_in_scope(state, scope, folder_id, locked).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(folder)))
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(FolderInfo::from(folder))))
 }
 
 pub(crate) async fn copy_folder_response(
@@ -498,5 +499,5 @@ pub(crate) async fn copy_folder_response(
         None,
     )
     .await;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(folder)))
+    Ok(HttpResponse::Created().json(ApiResponse::ok(FolderInfo::from(folder))))
 }

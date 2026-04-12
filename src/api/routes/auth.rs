@@ -366,9 +366,7 @@ pub async fn setup(
     body: web::Json<SetupReq>,
 ) -> Result<HttpResponse> {
     let user = auth_service::setup(&state, &body.username, &body.email, &body.password).await?;
-    let user_info =
-        user_service::to_user_info(&state, &user, profile_service::AvatarAudience::SelfUser)
-            .await?;
+    let user_info = user_service::get_self_info(&state, user.id).await?;
     let ctx = audit_service::AuditContext {
         user_id: user.id,
         ip_address: req
@@ -467,9 +465,7 @@ pub async fn register(
     body: web::Json<RegisterReq>,
 ) -> Result<HttpResponse> {
     let user = auth_service::register(&state, &body.username, &body.email, &body.password).await?;
-    let user_info =
-        user_service::to_user_info(&state, &user, profile_service::AvatarAudience::SelfUser)
-            .await?;
+    let user_info = user_service::get_self_info(&state, user.id).await?;
     let ctx = audit_service::AuditContext {
         user_id: user.id,
         ip_address: req
@@ -965,7 +961,8 @@ pub async fn put_password(
     )
     .await?;
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
-    let (access_token, refresh_token) = auth_service::issue_tokens_for_user(&state, &user)?;
+    let (access_token, refresh_token) =
+        auth_service::issue_tokens_for_session(&state, user.id, user.session_version)?;
 
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log(
@@ -1016,9 +1013,7 @@ pub async fn request_email_change(
     body: web::Json<RequestEmailChangeReq>,
 ) -> Result<HttpResponse> {
     let user = auth_service::request_email_change(&state, claims.user_id, &body.new_email).await?;
-    let user_info =
-        user_service::to_user_info(&state, &user, profile_service::AvatarAudience::SelfUser)
-            .await?;
+    let user_info = user_service::get_self_info(&state, user.id).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
     audit_service::log(
         &state,

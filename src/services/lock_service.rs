@@ -1,5 +1,8 @@
 use chrono::{Duration, Utc};
 use sea_orm::Set;
+use serde::Serialize;
+#[cfg(all(debug_assertions, feature = "openapi"))]
+use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{file_repo, folder_repo, lock_repo};
@@ -8,6 +11,42 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::folder_service;
 use crate::types::EntityType;
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ResourceLock {
+    pub id: i64,
+    pub token: String,
+    pub entity_type: EntityType,
+    pub entity_id: i64,
+    pub path: String,
+    pub owner_id: Option<i64>,
+    pub owner_info: Option<String>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub timeout_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub shared: bool,
+    pub deep: bool,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<resource_lock::Model> for ResourceLock {
+    fn from(model: resource_lock::Model) -> Self {
+        Self {
+            id: model.id,
+            token: model.token,
+            entity_type: model.entity_type,
+            entity_id: model.entity_id,
+            path: model.path,
+            owner_id: model.owner_id,
+            owner_info: model.owner_info,
+            timeout_at: model.timeout_at,
+            shared: model.shared,
+            deep: model.deep,
+            created_at: model.created_at,
+        }
+    }
+}
 
 /// 锁定资源（REST/WebDAV/Web Editor 统一入口）
 pub async fn lock(
@@ -98,9 +137,11 @@ pub async fn list_paginated(
     state: &AppState,
     limit: u64,
     offset: u64,
-) -> Result<OffsetPage<resource_lock::Model>> {
+) -> Result<OffsetPage<ResourceLock>> {
     load_offset_page(limit, offset, 100, |limit, offset| async move {
-        crate::db::repository::lock_repo::find_paginated(&state.db, limit, offset).await
+        let (items, total) =
+            crate::db::repository::lock_repo::find_paginated(&state.db, limit, offset).await?;
+        Ok((items.into_iter().map(Into::into).collect(), total))
     })
     .await
 }

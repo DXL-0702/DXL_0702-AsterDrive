@@ -89,6 +89,46 @@ pub struct StoragePolicyGroupItemInput {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct StoragePolicy {
+    pub id: i64,
+    pub name: String,
+    pub driver_type: DriverType,
+    pub endpoint: String,
+    pub bucket: String,
+    pub base_path: String,
+    pub max_file_size: i64,
+    pub allowed_types: String,
+    pub options: String,
+    pub is_default: bool,
+    pub chunk_size: i64,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<storage_policy::Model> for StoragePolicy {
+    fn from(model: storage_policy::Model) -> Self {
+        Self {
+            id: model.id,
+            name: model.name,
+            driver_type: model.driver_type,
+            endpoint: model.endpoint,
+            bucket: model.bucket,
+            base_path: model.base_path,
+            max_file_size: model.max_file_size,
+            allowed_types: model.allowed_types,
+            options: model.options,
+            is_default: model.is_default,
+            chunk_size: model.chunk_size,
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct PolicyGroupUserMigrationResult {
     pub source_group_id: i64,
     pub target_group_id: i64,
@@ -148,29 +188,31 @@ pub struct UpdateStoragePolicyGroupInput {
     pub items: Option<Vec<StoragePolicyGroupItemInput>>,
 }
 
-pub async fn list_all(state: &AppState) -> Result<Vec<storage_policy::Model>> {
-    policy_repo::find_all(&state.db).await
+pub async fn list_all(state: &AppState) -> Result<Vec<StoragePolicy>> {
+    Ok(policy_repo::find_all(&state.db)
+        .await?
+        .into_iter()
+        .map(Into::into)
+        .collect())
 }
 
 pub async fn list_paginated(
     state: &AppState,
     limit: u64,
     offset: u64,
-) -> Result<OffsetPage<storage_policy::Model>> {
+) -> Result<OffsetPage<StoragePolicy>> {
     load_offset_page(limit, offset, 100, |limit, offset| async move {
-        policy_repo::find_paginated(&state.db, limit, offset).await
+        let (items, total) = policy_repo::find_paginated(&state.db, limit, offset).await?;
+        Ok((items.into_iter().map(Into::into).collect(), total))
     })
     .await
 }
 
-pub async fn get(state: &AppState, id: i64) -> Result<storage_policy::Model> {
-    policy_repo::find_by_id(&state.db, id).await
+pub async fn get(state: &AppState, id: i64) -> Result<StoragePolicy> {
+    policy_repo::find_by_id(&state.db, id).await.map(Into::into)
 }
 
-pub async fn create(
-    state: &AppState,
-    input: CreateStoragePolicyInput,
-) -> Result<storage_policy::Model> {
+pub async fn create(state: &AppState, input: CreateStoragePolicyInput) -> Result<StoragePolicy> {
     let CreateStoragePolicyInput {
         name,
         connection,
@@ -217,7 +259,9 @@ pub async fn create(
     }
     txn.commit().await.map_err(AsterError::from)?;
     state.policy_snapshot.reload(&state.db).await?;
-    policy_repo::find_by_id(&state.db, result.id).await
+    policy_repo::find_by_id(&state.db, result.id)
+        .await
+        .map(Into::into)
 }
 
 pub async fn delete(state: &AppState, id: i64) -> Result<()> {
@@ -276,7 +320,7 @@ pub async fn update(
     state: &AppState,
     id: i64,
     input: UpdateStoragePolicyInput,
-) -> Result<storage_policy::Model> {
+) -> Result<StoragePolicy> {
     let UpdateStoragePolicyInput {
         name,
         endpoint,
@@ -360,7 +404,9 @@ pub async fn update(
     state.policy_snapshot.reload(&state.db).await?;
     state.driver_registry.invalidate(id);
 
-    policy_repo::find_by_id(&state.db, result.id).await
+    policy_repo::find_by_id(&state.db, result.id)
+        .await
+        .map(Into::into)
 }
 
 /// 测试存储策略连接是否正常

@@ -9,6 +9,7 @@ use crate::services::{
     auth_service::Claims,
     direct_link_service, file_service, preview_link_service, thumbnail_service, upload_service,
     version_service, wopi_service,
+    workspace_models::FileInfo,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 use crate::types::NullablePatch;
@@ -83,7 +84,7 @@ pub struct FileQuery {
     params(FileQuery),
     request_body(content = String, content_type = "multipart/form-data", description = "File to upload"),
     responses(
-        (status = 201, description = "File uploaded", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 201, description = "File uploaded", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
     ),
     security(("bearer" = [])),
@@ -124,7 +125,7 @@ pub struct CreateEmptyRequest {
     operation_id = "create_empty_file",
     request_body(content = CreateEmptyRequest, content_type = "application/json"),
     responses(
-        (status = 201, description = "Empty file created", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 201, description = "Empty file created", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 400, description = "Invalid name"),
         (status = 401, description = "Unauthorized"),
     ),
@@ -152,7 +153,7 @@ pub async fn create_empty(
     operation_id = "get_file",
     params(("id" = i64, Path, description = "File ID")),
     responses(
-        (status = 200, description = "File info", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 200, description = "File info", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "File not found"),
     ),
@@ -379,7 +380,7 @@ pub struct PatchFileReq {
     params(("id" = i64, Path, description = "File ID")),
     request_body = PatchFileReq,
     responses(
-        (status = 200, description = "File updated", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 200, description = "File updated", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "File not found"),
     ),
@@ -511,7 +512,7 @@ pub struct CompletedPartReq {
     params(("upload_id" = String, Path, description = "Upload session ID")),
     request_body(content = CompleteUploadReq, description = "Multipart completion data (optional, only for presigned_multipart mode)", content_type = "application/json"),
     responses(
-        (status = 201, description = "File created", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 201, description = "File created", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Session not found"),
     ),
@@ -623,7 +624,7 @@ pub async fn presign_parts(
     params(("id" = i64, Path, description = "File ID")),
     request_body(content = Vec<u8>, content_type = "application/octet-stream"),
     responses(
-        (status = 200, description = "Content updated", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 200, description = "Content updated", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "File not found"),
         (status = 412, description = "Precondition failed (ETag mismatch)"),
@@ -667,7 +668,7 @@ pub struct SetLockReq {
     params(("id" = i64, Path, description = "File ID")),
     request_body = SetLockReq,
     responses(
-        (status = 200, description = "Lock state updated", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 200, description = "Lock state updated", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "File not found"),
     ),
@@ -707,7 +708,7 @@ pub struct CopyFileReq {
     params(("id" = i64, Path, description = "Source file ID")),
     request_body = CopyFileReq,
     responses(
-        (status = 201, description = "File copied", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 201, description = "File copied", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "File not found"),
     ),
@@ -764,7 +765,7 @@ pub(crate) async fn upload_response(
         None,
     )
     .await;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
+    Ok(HttpResponse::Created().json(ApiResponse::ok(FileInfo::from(file))))
 }
 
 pub(crate) async fn create_empty_response(
@@ -774,7 +775,7 @@ pub(crate) async fn create_empty_response(
 ) -> Result<HttpResponse> {
     let file =
         workspace_storage_service::create_empty(state, scope, body.folder_id, &body.name).await?;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
+    Ok(HttpResponse::Created().json(ApiResponse::ok(FileInfo::from(file))))
 }
 
 pub(crate) async fn get_file_response(
@@ -783,7 +784,7 @@ pub(crate) async fn get_file_response(
     file_id: i64,
 ) -> Result<HttpResponse> {
     let file = file_service::get_info_in_scope(state, scope, file_id).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(FileInfo::from(file))))
 }
 
 pub(crate) async fn direct_link_response(
@@ -936,7 +937,7 @@ pub(crate) async fn patch_file_response(
         None,
     )
     .await;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(FileInfo::from(file))))
 }
 
 pub(crate) async fn update_content_response(
@@ -965,7 +966,7 @@ pub(crate) async fn update_content_response(
 
     Ok(HttpResponse::Ok()
         .insert_header(("ETag", format!("\"{new_hash}\"")))
-        .json(ApiResponse::ok(file)))
+        .json(ApiResponse::ok(FileInfo::from(file))))
 }
 
 pub(crate) async fn set_lock_response(
@@ -975,7 +976,7 @@ pub(crate) async fn set_lock_response(
     locked: bool,
 ) -> Result<HttpResponse> {
     let file = file_service::set_lock_in_scope(state, scope, file_id, locked).await?;
-    Ok(HttpResponse::Ok().json(ApiResponse::ok(file)))
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(FileInfo::from(file))))
 }
 
 pub(crate) async fn copy_file_response(
@@ -998,7 +999,7 @@ pub(crate) async fn copy_file_response(
         None,
     )
     .await;
-    Ok(HttpResponse::Created().json(ApiResponse::ok(file)))
+    Ok(HttpResponse::Created().json(ApiResponse::ok(FileInfo::from(file))))
 }
 
 // ── Versions ───────────────────────────────────────────────────────
@@ -1016,7 +1017,7 @@ pub struct VersionPath {
     operation_id = "list_versions",
     params(("id" = i64, Path, description = "File ID")),
     responses(
-        (status = 200, description = "File versions", body = inline(ApiResponse<Vec<crate::entities::file_version::Model>>)),
+        (status = 200, description = "File versions", body = inline(ApiResponse<Vec<crate::services::workspace_models::FileVersion>>)),
         (status = 401, description = "Unauthorized"),
     ),
     security(("bearer" = [])),
@@ -1040,7 +1041,7 @@ pub async fn list_versions(
         ("version_id" = i64, Path, description = "Version ID"),
     ),
     responses(
-        (status = 200, description = "Version restored", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 200, description = "Version restored", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Version not found"),
     ),

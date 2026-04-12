@@ -43,11 +43,49 @@ pub struct ConfigActionResult {
     pub target_email: Option<String>,
 }
 
-pub async fn list_all(state: &AppState) -> Result<Vec<system_config::Model>> {
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct SystemConfig {
+    pub id: i64,
+    pub key: String,
+    pub value: String,
+    pub value_type: String,
+    pub requires_restart: bool,
+    pub is_sensitive: bool,
+    pub source: String,
+    pub namespace: String,
+    pub category: String,
+    pub description: String,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub updated_by: Option<i64>,
+}
+
+impl From<system_config::Model> for SystemConfig {
+    fn from(model: system_config::Model) -> Self {
+        Self {
+            id: model.id,
+            key: model.key,
+            value: model.value,
+            value_type: model.value_type,
+            requires_restart: model.requires_restart,
+            is_sensitive: model.is_sensitive,
+            source: model.source,
+            namespace: model.namespace,
+            category: model.category,
+            description: model.description,
+            updated_at: model.updated_at,
+            updated_by: model.updated_by,
+        }
+    }
+}
+
+pub async fn list_all(state: &AppState) -> Result<Vec<SystemConfig>> {
     Ok(config_repo::find_all(&state.db)
         .await?
         .into_iter()
         .map(apply_system_config_definition)
+        .map(Into::into)
         .collect())
 }
 
@@ -55,23 +93,25 @@ pub async fn list_paginated(
     state: &AppState,
     limit: u64,
     offset: u64,
-) -> Result<OffsetPage<system_config::Model>> {
-    let mut page = load_offset_page(limit, offset, 100, |limit, offset| async move {
+) -> Result<OffsetPage<SystemConfig>> {
+    let page = load_offset_page(limit, offset, 100, |limit, offset| async move {
         config_repo::find_paginated(&state.db, limit, offset).await
     })
     .await?;
-    page.items = page
+    let items = page
         .items
         .into_iter()
         .map(apply_system_config_definition)
+        .map(Into::into)
         .collect();
-    Ok(page)
+    Ok(OffsetPage::new(items, page.total, page.limit, page.offset))
 }
 
-pub async fn get_by_key(state: &AppState, key: &str) -> Result<system_config::Model> {
+pub async fn get_by_key(state: &AppState, key: &str) -> Result<SystemConfig> {
     config_repo::find_by_key(&state.db, key)
         .await?
         .map(apply_system_config_definition)
+        .map(Into::into)
         .ok_or_else(|| AsterError::record_not_found(format!("config key '{key}'")))
 }
 
@@ -80,7 +120,7 @@ pub async fn set(
     key: &str,
     value: &str,
     updated_by: i64,
-) -> Result<system_config::Model> {
+) -> Result<SystemConfig> {
     let mut normalized_value = value.to_string();
 
     // 系统配置做值类型校验
@@ -93,7 +133,7 @@ pub async fn set(
         config_repo::upsert(&state.db, key, &normalized_value, updated_by).await?,
     );
     state.runtime_config.apply(config.clone());
-    Ok(config)
+    Ok(config.into())
 }
 
 pub async fn delete(state: &AppState, key: &str) -> Result<()> {
@@ -108,7 +148,7 @@ pub async fn set_with_audit(
     value: &str,
     updated_by: i64,
     audit_ctx: &AuditContext,
-) -> Result<system_config::Model> {
+) -> Result<SystemConfig> {
     let config = set(state, key, value, updated_by).await?;
     audit_service::log(
         state,

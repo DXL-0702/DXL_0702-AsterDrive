@@ -61,7 +61,7 @@ pub struct SetPropReq {
         ("entity_id" = i64, Path, description = "Entity ID"),
     ),
     responses(
-        (status = 200, description = "Properties list", body = inline(ApiResponse<Vec<crate::entities::entity_property::Model>>)),
+        (status = 200, description = "Properties list", body = inline(ApiResponse<Vec<property_service::EntityProperty>>)),
         (status = 401, description = "Unauthorized"),
         (status = 404, description = "Entity not found"),
     ),
@@ -88,7 +88,7 @@ pub async fn list_props(
     ),
     request_body = SetPropReq,
     responses(
-        (status = 200, description = "Property set", body = inline(ApiResponse<crate::entities::entity_property::Model>)),
+        (status = 200, description = "Property set", body = inline(ApiResponse<property_service::EntityProperty>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "DAV: namespace is read-only"),
         (status = 404, description = "Entity not found"),

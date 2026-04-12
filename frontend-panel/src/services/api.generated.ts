@@ -3322,27 +3322,20 @@ export interface components {
         };
         OffsetPage_SystemConfig: {
             items: {
-                /** @description 分类（前端分组用） */
-                category?: string;
-                /** @description 描述 */
-                description?: string;
+                category: string;
+                description: string;
                 /** Format: int64 */
                 id: number;
-                /** @description 是否敏感值（前端脱敏显示） */
-                is_sensitive?: boolean;
+                is_sensitive: boolean;
                 key: string;
-                /** @description 自定义配置的命名空间，系统配置为 "" */
-                namespace?: string;
-                /** @description 修改后是否需要重启才生效 */
-                requires_restart?: boolean;
-                /** @description 来源：system（代码定义）/ custom（用户创建） */
-                source?: string;
+                namespace: string;
+                requires_restart: boolean;
+                source: string;
                 updated_at: string;
                 /** Format: int64 */
                 updated_by?: number | null;
                 value: string;
-                /** @description 值类型：string / multiline / number / boolean */
-                value_type?: string;
+                value_type: string;
             }[];
             /** Format: int64 */
             limit: number;
@@ -3859,27 +3852,20 @@ export interface components {
             token: string;
         };
         SystemConfig: {
-            /** @description 分类（前端分组用） */
-            category?: string;
-            /** @description 描述 */
-            description?: string;
+            category: string;
+            description: string;
             /** Format: int64 */
             id: number;
-            /** @description 是否敏感值（前端脱敏显示） */
-            is_sensitive?: boolean;
+            is_sensitive: boolean;
             key: string;
-            /** @description 自定义配置的命名空间，系统配置为 "" */
-            namespace?: string;
-            /** @description 修改后是否需要重启才生效 */
-            requires_restart?: boolean;
-            /** @description 来源：system（代码定义）/ custom（用户创建） */
-            source?: string;
+            namespace: string;
+            requires_restart: boolean;
+            source: string;
             updated_at: string;
             /** Format: int64 */
             updated_by?: number | null;
             value: string;
-            /** @description 值类型：string / multiline / number / boolean */
-            value_type?: string;
+            value_type: string;
         };
         TaskInfo: {
             /** Format: int32 */
@@ -4349,27 +4335,20 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             items: {
-                                /** @description 分类（前端分组用） */
-                                category?: string;
-                                /** @description 描述 */
-                                description?: string;
+                                category: string;
+                                description: string;
                                 /** Format: int64 */
                                 id: number;
-                                /** @description 是否敏感值（前端脱敏显示） */
-                                is_sensitive?: boolean;
+                                is_sensitive: boolean;
                                 key: string;
-                                /** @description 自定义配置的命名空间，系统配置为 "" */
-                                namespace?: string;
-                                /** @description 修改后是否需要重启才生效 */
-                                requires_restart?: boolean;
-                                /** @description 来源：system（代码定义）/ custom（用户创建） */
-                                source?: string;
+                                namespace: string;
+                                requires_restart: boolean;
+                                source: string;
                                 updated_at: string;
                                 /** Format: int64 */
                                 updated_by?: number | null;
                                 value: string;
-                                /** @description 值类型：string / multiline / number / boolean */
-                                value_type?: string;
+                                value_type: string;
                             }[];
                             /** Format: int64 */
                             limit: number;
@@ -4487,27 +4466,20 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            /** @description 分类（前端分组用） */
-                            category?: string;
-                            /** @description 描述 */
-                            description?: string;
+                            category: string;
+                            description: string;
                             /** Format: int64 */
                             id: number;
-                            /** @description 是否敏感值（前端脱敏显示） */
-                            is_sensitive?: boolean;
+                            is_sensitive: boolean;
                             key: string;
-                            /** @description 自定义配置的命名空间，系统配置为 "" */
-                            namespace?: string;
-                            /** @description 修改后是否需要重启才生效 */
-                            requires_restart?: boolean;
-                            /** @description 来源：system（代码定义）/ custom（用户创建） */
-                            source?: string;
+                            namespace: string;
+                            requires_restart: boolean;
+                            source: string;
                             updated_at: string;
                             /** Format: int64 */
                             updated_by?: number | null;
                             value: string;
-                            /** @description 值类型：string / multiline / number / boolean */
-                            value_type?: string;
+                            value_type: string;
                         };
                         msg: string;
                     };
@@ -4561,27 +4533,20 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            /** @description 分类（前端分组用） */
-                            category?: string;
-                            /** @description 描述 */
-                            description?: string;
+                            category: string;
+                            description: string;
                             /** Format: int64 */
                             id: number;
-                            /** @description 是否敏感值（前端脱敏显示） */
-                            is_sensitive?: boolean;
+                            is_sensitive: boolean;
                             key: string;
-                            /** @description 自定义配置的命名空间，系统配置为 "" */
-                            namespace?: string;
-                            /** @description 修改后是否需要重启才生效 */
-                            requires_restart?: boolean;
-                            /** @description 来源：system（代码定义）/ custom（用户创建） */
-                            source?: string;
+                            namespace: string;
+                            requires_restart: boolean;
+                            source: string;
                             updated_at: string;
                             /** Format: int64 */
                             updated_by?: number | null;
                             value: string;
-                            /** @description 值类型：string / multiline / number / boolean */
-                            value_type?: string;
+                            value_type: string;
                         };
                         msg: string;
                     };
@@ -7941,7 +7906,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -8007,7 +7972,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -8181,7 +8146,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -8340,7 +8305,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -8439,7 +8404,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -8503,7 +8468,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -8581,7 +8546,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -8723,7 +8688,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -8977,7 +8942,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -9142,7 +9107,7 @@ export interface operations {
                             deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             name: string;
                             /** Format: int64 */
                             parent_id?: number | null;
@@ -9295,7 +9260,7 @@ export interface operations {
                             deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             name: string;
                             /** Format: int64 */
                             parent_id?: number | null;
@@ -9401,7 +9366,7 @@ export interface operations {
                             deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             name: string;
                             /** Format: int64 */
                             parent_id?: number | null;
@@ -9458,7 +9423,7 @@ export interface operations {
                             deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             name: string;
                             /** Format: int64 */
                             parent_id?: number | null;
@@ -9519,7 +9484,7 @@ export interface operations {
                             deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             name: string;
                             /** Format: int64 */
                             parent_id?: number | null;
@@ -11871,7 +11836,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -11940,7 +11905,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -12166,7 +12131,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -12352,7 +12317,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -12469,7 +12434,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -12542,7 +12507,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -12629,7 +12594,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -12798,7 +12763,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -13097,7 +13062,7 @@ export interface operations {
                             folder_id?: number | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             mime_type: string;
                             name: string;
                             /** Format: int64 */
@@ -13291,7 +13256,7 @@ export interface operations {
                             deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             name: string;
                             /** Format: int64 */
                             parent_id?: number | null;
@@ -13471,7 +13436,7 @@ export interface operations {
                             deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             name: string;
                             /** Format: int64 */
                             parent_id?: number | null;
@@ -13595,7 +13560,7 @@ export interface operations {
                             deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             name: string;
                             /** Format: int64 */
                             parent_id?: number | null;
@@ -13661,7 +13626,7 @@ export interface operations {
                             deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             name: string;
                             /** Format: int64 */
                             parent_id?: number | null;
@@ -13731,7 +13696,7 @@ export interface operations {
                             deleted_at?: string | null;
                             /** Format: int64 */
                             id: number;
-                            is_locked?: boolean;
+                            is_locked: boolean;
                             name: string;
                             /** Format: int64 */
                             parent_id?: number | null;

@@ -2,8 +2,15 @@
 mod common;
 
 use aster_drive::db::repository::config_repo;
+use aster_drive::db::repository::user_repo;
+use aster_drive::entities::user;
+use aster_drive::runtime::AppState;
 use aster_drive::services::profile_service;
 use aster_drive::types::AvatarSource;
+
+async fn load_user_model(state: &AppState, user_id: i64) -> user::Model {
+    user_repo::find_by_id(&state.db, user_id).await.unwrap()
+}
 
 #[actix_web::test]
 async fn test_gravatar_default_url() {
@@ -22,10 +29,14 @@ async fn test_gravatar_default_url() {
         .await
         .unwrap();
 
-    let info =
-        profile_service::get_profile_info(&state, &user, profile_service::AvatarAudience::SelfUser)
-            .await
-            .unwrap();
+    let user_model = load_user_model(&state, user.id).await;
+    let info = profile_service::get_profile_info(
+        &state,
+        &user_model,
+        profile_service::AvatarAudience::SelfUser,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(info.avatar.source, AvatarSource::Gravatar);
     let url = info.avatar.url_512.unwrap();
@@ -65,10 +76,14 @@ async fn test_gravatar_custom_base_url() {
         .await
         .unwrap();
 
-    let info =
-        profile_service::get_profile_info(&state, &user, profile_service::AvatarAudience::SelfUser)
-            .await
-            .unwrap();
+    let user_model = load_user_model(&state, user.id).await;
+    let info = profile_service::get_profile_info(
+        &state,
+        &user_model,
+        profile_service::AvatarAudience::SelfUser,
+    )
+    .await
+    .unwrap();
 
     let url = info.avatar.url_512.unwrap();
     assert!(
@@ -100,10 +115,14 @@ async fn test_gravatar_empty_config_fallback() {
         .await
         .unwrap();
 
-    let info =
-        profile_service::get_profile_info(&state, &user, profile_service::AvatarAudience::SelfUser)
-            .await
-            .unwrap();
+    let user_model = load_user_model(&state, user.id).await;
+    let info = profile_service::get_profile_info(
+        &state,
+        &user_model,
+        profile_service::AvatarAudience::SelfUser,
+    )
+    .await
+    .unwrap();
 
     let url = info.avatar.url_512.unwrap();
     assert!(
@@ -139,10 +158,14 @@ async fn test_gravatar_trailing_slash_normalization() {
         .await
         .unwrap();
 
-    let info =
-        profile_service::get_profile_info(&state, &user, profile_service::AvatarAudience::SelfUser)
-            .await
-            .unwrap();
+    let user_model = load_user_model(&state, user.id).await;
+    let info = profile_service::get_profile_info(
+        &state,
+        &user_model,
+        profile_service::AvatarAudience::SelfUser,
+    )
+    .await
+    .unwrap();
 
     let url = info.avatar.url_512.unwrap();
     assert!(
@@ -179,10 +202,14 @@ async fn test_gravatar_whitespace_only_config_fallback() {
         .await
         .unwrap();
 
-    let info =
-        profile_service::get_profile_info(&state, &user, profile_service::AvatarAudience::SelfUser)
-            .await
-            .unwrap();
+    let user_model = load_user_model(&state, user.id).await;
+    let info = profile_service::get_profile_info(
+        &state,
+        &user_model,
+        profile_service::AvatarAudience::SelfUser,
+    )
+    .await
+    .unwrap();
 
     let url = info.avatar.url_512.unwrap();
     assert!(

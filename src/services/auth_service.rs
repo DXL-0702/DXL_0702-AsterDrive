@@ -1,6 +1,8 @@
 use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use sea_orm::{ActiveModelTrait, ConnectionTrait, IntoActiveModel, Set, TransactionTrait};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ConnectionTrait, IntoActiveModel, Set, TransactionTrait,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::cache::CacheExt;
@@ -40,9 +42,76 @@ pub struct ContactVerificationConfirmResult {
     pub target: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserAuditInfo {
+    pub id: i64,
+    pub username: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthUserInfo {
+    pub id: i64,
+    pub username: String,
+    pub email: String,
+    pub role: UserRole,
+    pub status: UserStatus,
+    pub session_version: i64,
+    pub email_verified_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub pending_email: Option<String>,
+    pub storage_used: i64,
+    pub storage_quota: i64,
+    pub policy_group_id: Option<i64>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub config: Option<String>,
+}
+
+impl From<user::Model> for AuthUserInfo {
+    fn from(model: user::Model) -> Self {
+        Self {
+            id: model.id,
+            username: model.username,
+            email: model.email,
+            role: model.role,
+            status: model.status,
+            session_version: model.session_version,
+            email_verified_at: model.email_verified_at,
+            pending_email: model.pending_email,
+            storage_used: model.storage_used,
+            storage_quota: model.storage_quota,
+            policy_group_id: model.policy_group_id,
+            created_at: model.created_at,
+            updated_at: model.updated_at,
+            config: model.config,
+        }
+    }
+}
+
+impl From<AuthUserInfo> for user::ActiveModel {
+    fn from(info: AuthUserInfo) -> Self {
+        Self {
+            id: Set(info.id),
+            username: Set(info.username),
+            email: Set(info.email),
+            password_hash: ActiveValue::NotSet,
+            role: Set(info.role),
+            status: Set(info.status),
+            session_version: Set(info.session_version),
+            email_verified_at: Set(info.email_verified_at),
+            pending_email: Set(info.pending_email),
+            storage_used: Set(info.storage_used),
+            storage_quota: Set(info.storage_quota),
+            policy_group_id: Set(info.policy_group_id),
+            created_at: Set(info.created_at),
+            updated_at: Set(info.updated_at),
+            config: Set(info.config),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct PasswordResetRequestResult {
-    pub user: Option<user::Model>,
+    pub user: Option<UserAuditInfo>,
 }
 
 impl AuthSnapshot {
@@ -57,6 +126,13 @@ impl AuthSnapshot {
 
 fn default_session_version() -> i64 {
     0
+}
+
+fn user_audit_info(user: &user::Model) -> UserAuditInfo {
+    UserAuditInfo {
+        id: user.id,
+        username: user.username.clone(),
+    }
 }
 
 fn auth_snapshot_cache_key(user_id: i64) -> String {
@@ -136,7 +212,7 @@ pub async fn authenticate_refresh_token(
     authenticate_token(state, token, TokenType::Refresh).await
 }
 
-pub async fn revoke_user_sessions(state: &AppState, user_id: i64) -> Result<user::Model> {
+pub async fn revoke_user_sessions(state: &AppState, user_id: i64) -> Result<UserAuditInfo> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let next_session_version = user.session_version.saturating_add(1);
     let mut active = user.into_active_model();
@@ -144,7 +220,7 @@ pub async fn revoke_user_sessions(state: &AppState, user_id: i64) -> Result<user
     active.updated_at = Set(Utc::now());
     let updated = active.update(&state.db).await.map_err(AsterError::from)?;
     invalidate_auth_snapshot_cache(state, updated.id).await;
-    Ok(updated)
+    Ok(user_audit_info(&updated))
 }
 
 // ── 输入校验 ──────────────────────────────────────────────────
@@ -440,7 +516,7 @@ pub async fn create_user_by_admin(
     username: &str,
     email: &str,
     password: &str,
-) -> Result<user::Model> {
+) -> Result<AuthUserInfo> {
     create_user_with_role(
         &state.db,
         state,
@@ -452,6 +528,7 @@ pub async fn create_user_by_admin(
         Some(Utc::now()),
     )
     .await
+    .map(AuthUserInfo::from)
 }
 
 /// 注册用户，返回用户信息（不含密码）
@@ -460,7 +537,7 @@ pub async fn register(
     username: &str,
     email: &str,
     password: &str,
-) -> Result<user::Model> {
+) -> Result<AuthUserInfo> {
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     if !auth_policy.allow_user_registration {
         return Err(AsterError::auth_forbidden(
@@ -469,7 +546,9 @@ pub async fn register(
     }
 
     if user_repo::count_all(&state.db).await? == 0 {
-        return create_first_admin(state, username, email, password).await;
+        return create_first_admin(state, username, email, password)
+            .await
+            .map(AuthUserInfo::from);
     }
 
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
@@ -505,13 +584,13 @@ pub async fn register(
     }
     txn.commit().await.map_err(AsterError::from)?;
 
-    Ok(user)
+    Ok(AuthUserInfo::from(user))
 }
 
 pub async fn resend_register_activation(
     state: &AppState,
     identifier: &str,
-) -> Result<Option<user::Model>> {
+) -> Result<Option<UserAuditInfo>> {
     let Some(user) = find_user_by_identifier(&state.db, identifier).await? else {
         return Ok(None);
     };
@@ -554,14 +633,14 @@ pub async fn resend_register_activation(
     .await?;
     txn.commit().await.map_err(AsterError::from)?;
 
-    Ok(Some(user))
+    Ok(Some(user_audit_info(&user)))
 }
 
 pub async fn request_email_change(
     state: &AppState,
     user_id: i64,
     new_email: &str,
-) -> Result<user::Model> {
+) -> Result<AuthUserInfo> {
     let normalized_email = normalize_email(new_email)?;
     let existing = user_repo::find_by_id(&state.db, user_id).await?;
 
@@ -613,10 +692,10 @@ pub async fn request_email_change(
     .await?;
     txn.commit().await.map_err(AsterError::from)?;
 
-    Ok(updated)
+    Ok(AuthUserInfo::from(updated))
 }
 
-pub async fn resend_email_change(state: &AppState, user_id: i64) -> Result<Option<user::Model>> {
+pub async fn resend_email_change(state: &AppState, user_id: i64) -> Result<Option<UserAuditInfo>> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let pending_email = user
         .pending_email
@@ -667,7 +746,7 @@ pub async fn resend_email_change(state: &AppState, user_id: i64) -> Result<Optio
     .await?;
     txn.commit().await.map_err(AsterError::from)?;
 
-    Ok(Some(user))
+    Ok(Some(user_audit_info(&user)))
 }
 
 pub async fn request_password_reset(
@@ -688,7 +767,9 @@ pub async fn request_password_reset(
             user_id = user.id,
             "password reset request skipped due to cooldown"
         );
-        return Ok(PasswordResetRequestResult { user: Some(user) });
+        return Ok(PasswordResetRequestResult {
+            user: Some(user_audit_info(&user)),
+        });
     }
 
     let policy = RuntimeContactVerificationPolicy::from_runtime_config(&state.runtime_config);
@@ -710,14 +791,16 @@ pub async fn request_password_reset(
     .await?;
     txn.commit().await.map_err(AsterError::from)?;
 
-    Ok(PasswordResetRequestResult { user: Some(user) })
+    Ok(PasswordResetRequestResult {
+        user: Some(user_audit_info(&user)),
+    })
 }
 
 pub async fn confirm_password_reset(
     state: &AppState,
     token: &str,
     new_password: &str,
-) -> Result<user::Model> {
+) -> Result<AuthUserInfo> {
     validate_password(new_password)?;
 
     let token_hash = hash::sha256_hex(token.as_bytes());
@@ -772,7 +855,7 @@ pub async fn confirm_password_reset(
     .await?;
     txn.commit().await.map_err(AsterError::from)?;
     invalidate_auth_snapshot_cache(state, updated.id).await;
-    Ok(updated)
+    Ok(AuthUserInfo::from(updated))
 }
 
 pub async fn confirm_contact_verification(
@@ -908,12 +991,14 @@ pub async fn setup(
     username: &str,
     email: &str,
     password: &str,
-) -> Result<crate::entities::user::Model> {
+) -> Result<AuthUserInfo> {
     let db = &state.db;
     if user_repo::count_all(db).await? > 0 {
         return Err(AsterError::validation_error("system already initialized"));
     }
-    create_first_admin(state, username, email, password).await
+    create_first_admin(state, username, email, password)
+        .await
+        .map(AuthUserInfo::from)
 }
 
 /// 登录结果：access/refresh tokens + user_id（用于审计）
@@ -946,14 +1031,22 @@ fn issue_tokens(
     Ok((access, refresh))
 }
 
-pub fn issue_tokens_for_user(state: &AppState, user: &user::Model) -> Result<(String, String)> {
+pub fn issue_tokens_for_session(
+    state: &AppState,
+    user_id: i64,
+    session_version: i64,
+) -> Result<(String, String)> {
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     issue_tokens(
-        user.id,
-        user.session_version,
+        user_id,
+        session_version,
         &state.config.auth.jwt_secret,
         auth_policy,
     )
+}
+
+pub fn issue_tokens_for_user(state: &AppState, user: &user::Model) -> Result<(String, String)> {
+    issue_tokens_for_session(state, user.id, user.session_version)
 }
 
 /// 登录，返回 tokens + user_id
@@ -998,7 +1091,7 @@ pub async fn change_password(
     user_id: i64,
     current_password: &str,
     new_password: &str,
-) -> Result<user::Model> {
+) -> Result<AuthUserInfo> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
 
     if !user.status.is_active() {
@@ -1016,11 +1109,11 @@ pub async fn set_password(
     state: &AppState,
     user_id: i64,
     new_password: &str,
-) -> Result<user::Model> {
+) -> Result<AuthUserInfo> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let updated = update_password_in_connection(&state.db, user, new_password).await?;
     invalidate_auth_snapshot_cache(state, updated.id).await;
-    Ok(updated)
+    Ok(AuthUserInfo::from(updated))
 }
 
 pub async fn cleanup_expired_contact_verification_tokens(state: &AppState) -> Result<u64> {

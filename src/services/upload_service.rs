@@ -9,7 +9,10 @@ use crate::db::repository::{file_repo, upload_session_part_repo, upload_session_
 use crate::entities::{file, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
-use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
+use crate::services::{
+    workspace_models::FileInfo,
+    workspace_storage_service::{self, WorkspaceStorageScope},
+};
 use crate::storage::driver::StorageDriver;
 use crate::types::{
     DriverType, S3UploadStrategy, UploadMode, UploadSessionStatus,
@@ -796,14 +799,16 @@ pub async fn complete_upload(
     upload_id: &str,
     user_id: i64,
     parts: Option<Vec<(i32, String)>>,
-) -> Result<file::Model> {
+) -> Result<FileInfo> {
     let session = load_upload_session(
         state,
         WorkspaceStorageScope::Personal { user_id },
         upload_id,
     )
     .await?;
-    complete_upload_impl(state, session, parts).await
+    complete_upload_impl(state, session, parts)
+        .await
+        .map(FileInfo::from)
 }
 
 pub async fn complete_upload_for_team(
@@ -812,7 +817,7 @@ pub async fn complete_upload_for_team(
     upload_id: &str,
     user_id: i64,
     parts: Option<Vec<(i32, String)>>,
-) -> Result<file::Model> {
+) -> Result<FileInfo> {
     let session = load_upload_session(
         state,
         WorkspaceStorageScope::Team {
@@ -822,7 +827,9 @@ pub async fn complete_upload_for_team(
         upload_id,
     )
     .await?;
-    complete_upload_impl(state, session, parts).await
+    complete_upload_impl(state, session, parts)
+        .await
+        .map(FileInfo::from)
 }
 
 fn upload_session_status_label(status: UploadSessionStatus) -> &'static str {

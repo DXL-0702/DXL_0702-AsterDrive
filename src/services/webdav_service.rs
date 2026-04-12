@@ -9,7 +9,7 @@ use crate::entities::folder;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{
-    file_service, folder_service, storage_change_service,
+    file_service, folder_service, storage_change_service, workspace_models::FileInfo,
     workspace_storage_service::WorkspaceStorageScope,
 };
 
@@ -17,7 +17,7 @@ use crate::services::{
 ///
 /// - `include_deleted = true`：收集全部（含已软删除），用于 purge
 /// - `include_deleted = false`：只收集未删除项，用于 soft_delete
-pub async fn collect_folder_tree(
+async fn collect_folder_tree_models(
     db: &sea_orm::DatabaseConnection,
     user_id: i64,
     folder_id: i64,
@@ -32,13 +32,25 @@ pub async fn collect_folder_tree(
     .await
 }
 
+pub async fn collect_folder_tree(
+    db: &sea_orm::DatabaseConnection,
+    user_id: i64,
+    folder_id: i64,
+    include_deleted: bool,
+) -> Result<(Vec<FileInfo>, Vec<i64>)> {
+    collect_folder_tree_models(db, user_id, folder_id, include_deleted)
+        .await
+        .map(|(files, folder_ids)| (files.into_iter().map(FileInfo::from).collect(), folder_ids))
+}
+
 /// 递归软删除文件夹及其所有内容（→ 回收站）
 ///
 /// 先收集所有未删除的文件和文件夹 ID，再一次事务内批量 soft_delete。
 pub async fn recursive_soft_delete(state: &AppState, user_id: i64, folder_id: i64) -> Result<()> {
     let scope = WorkspaceStorageScope::Personal { user_id };
     let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
-    let (files, folder_ids) = collect_folder_tree(&state.db, user_id, folder_id, false).await?;
+    let (files, folder_ids) =
+        collect_folder_tree_models(&state.db, user_id, folder_id, false).await?;
 
     let file_ids: Vec<i64> = files.into_iter().map(|f| f.id).collect();
     let now = Utc::now();
@@ -67,7 +79,7 @@ pub async fn recursive_soft_delete(state: &AppState, user_id: i64, folder_id: i6
 /// 再批量删除文件夹记录和属性。比逐个 purge 快得多。
 pub async fn recursive_purge_folder(state: &AppState, user_id: i64, folder_id: i64) -> Result<()> {
     let (all_files, all_folder_ids) =
-        collect_folder_tree(&state.db, user_id, folder_id, true).await?;
+        collect_folder_tree_models(&state.db, user_id, folder_id, true).await?;
 
     file_service::batch_purge_in_scope(
         state,

@@ -102,7 +102,7 @@ pub async fn list_root(
     params(("team_id" = i64, Path, description = "Team ID")),
     request_body = crate::api::routes::folders::CreateFolderReq,
     responses(
-        (status = 201, description = "Team folder created", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 201, description = "Team folder created", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -169,7 +169,7 @@ pub async fn list_folder(
         ("id" = i64, Path, description = "Folder ID")
     ),
     responses(
-        (status = 200, description = "Team folder info", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 200, description = "Team folder info", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Folder not found"),
@@ -256,7 +256,7 @@ pub async fn delete_folder(
     ),
     request_body = crate::api::routes::folders::PatchFolderReq,
     responses(
-        (status = 200, description = "Team folder updated", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 200, description = "Team folder updated", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Folder not found"),
@@ -293,7 +293,7 @@ pub async fn patch_folder(
     ),
     request_body = crate::api::routes::folders::CopyFolderReq,
     responses(
-        (status = 201, description = "Team folder copied", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 201, description = "Team folder copied", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Folder not found"),
@@ -330,7 +330,7 @@ pub async fn copy_folder(
     ),
     request_body = crate::api::routes::folders::SetLockReq,
     responses(
-        (status = 200, description = "Lock state updated", body = inline(ApiResponse<crate::entities::folder::Model>)),
+        (status = 200, description = "Lock state updated", body = inline(ApiResponse<crate::services::workspace_models::FolderInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Folder not found"),
@@ -364,7 +364,7 @@ pub async fn set_folder_lock(
     ),
     request_body(content = String, content_type = "multipart/form-data", description = "File to upload"),
     responses(
-        (status = 201, description = "Team file uploaded", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 201, description = "Team file uploaded", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -473,7 +473,7 @@ pub async fn upload_chunk(
     ),
     request_body(content = crate::api::routes::files::CompleteUploadReq, description = "Multipart completion data (optional, only for presigned_multipart mode)", content_type = "application/json"),
     responses(
-        (status = 201, description = "Team file created", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 201, description = "Team file created", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Session not found"),
@@ -611,7 +611,7 @@ pub async fn presign_parts(
     params(("team_id" = i64, Path, description = "Team ID")),
     request_body = crate::api::routes::files::CreateEmptyRequest,
     responses(
-        (status = 201, description = "Empty team file created", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 201, description = "Empty team file created", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -636,7 +636,7 @@ pub async fn create_empty(
         ("id" = i64, Path, description = "File ID")
     ),
     responses(
-        (status = 200, description = "Team file info", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 200, description = "Team file info", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
@@ -780,7 +780,7 @@ pub async fn get_thumbnail(
     ),
     request_body(content = Vec<u8>, content_type = "application/octet-stream"),
     responses(
-        (status = 200, description = "Content updated", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 200, description = "Content updated", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
@@ -819,7 +819,7 @@ pub async fn update_content(
     ),
     request_body = crate::api::routes::files::SetLockReq,
     responses(
-        (status = 200, description = "Lock state updated", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 200, description = "Lock state updated", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
@@ -853,7 +853,7 @@ pub async fn set_file_lock(
     ),
     request_body = crate::api::routes::files::PatchFileReq,
     responses(
-        (status = 200, description = "Team file updated", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 200, description = "Team file updated", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
@@ -890,7 +890,7 @@ pub async fn patch_file(
     ),
     request_body = crate::api::routes::files::CopyFileReq,
     responses(
-        (status = 201, description = "Team file copied", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 201, description = "Team file copied", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "File not found"),
@@ -926,7 +926,7 @@ pub async fn copy_file(
         ("id" = i64, Path, description = "File ID")
     ),
     responses(
-        (status = 200, description = "File versions", body = inline(ApiResponse<Vec<crate::entities::file_version::Model>>)),
+        (status = 200, description = "File versions", body = inline(ApiResponse<Vec<crate::services::workspace_models::FileVersion>>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -959,7 +959,7 @@ pub async fn list_versions(
         ("version_id" = i64, Path, description = "Version ID"),
     ),
     responses(
-        (status = 200, description = "Version restored", body = inline(ApiResponse<crate::entities::file::Model>)),
+        (status = 200, description = "Version restored", body = inline(ApiResponse<crate::services::workspace_models::FileInfo>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Version not found"),

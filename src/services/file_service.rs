@@ -8,7 +8,9 @@ use crate::entities::{file, file_blob};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{
+    policy_service::StoragePolicy,
     storage_change_service, thumbnail_service,
+    workspace_models::FileInfo,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 use crate::types::NullablePatch;
@@ -169,7 +171,7 @@ pub async fn store_from_temp(
     size: i64,
     existing_file_id: Option<i64>,
     skip_lock_check: bool,
-) -> Result<file::Model> {
+) -> Result<FileInfo> {
     workspace_storage_service::store_from_temp(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -181,6 +183,7 @@ pub async fn store_from_temp(
         skip_lock_check,
     )
     .await
+    .map(Into::into)
 }
 
 /// 上传文件（REST API，multipart）
@@ -191,7 +194,7 @@ pub async fn upload(
     folder_id: Option<i64>,
     relative_path: Option<&str>,
     declared_size: Option<i64>,
-) -> Result<file::Model> {
+) -> Result<FileInfo> {
     workspace_storage_service::upload(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -201,11 +204,14 @@ pub async fn upload(
         declared_size,
     )
     .await
+    .map(Into::into)
 }
 
 /// 获取文件信息
-pub async fn get_info(state: &AppState, id: i64, user_id: i64) -> Result<file::Model> {
-    get_info_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id).await
+pub async fn get_info(state: &AppState, id: i64, user_id: i64) -> Result<FileInfo> {
+    get_info_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id)
+        .await
+        .map(Into::into)
 }
 
 /// 下载文件（流式，不全量缓冲）
@@ -598,7 +604,7 @@ pub async fn update(
     user_id: i64,
     name: Option<String>,
     folder_id: NullablePatch<i64>,
-) -> Result<file::Model> {
+) -> Result<FileInfo> {
     update_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -607,6 +613,7 @@ pub async fn update(
         folder_id,
     )
     .await
+    .map(Into::into)
 }
 
 /// 移动文件到指定文件夹（None = 根目录）
@@ -619,7 +626,7 @@ pub async fn move_file(
     id: i64,
     user_id: i64,
     target_folder_id: Option<i64>,
-) -> Result<file::Model> {
+) -> Result<FileInfo> {
     update_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -631,6 +638,7 @@ pub async fn move_file(
         },
     )
     .await
+    .map(Into::into)
 }
 
 pub(crate) async fn copy_file_in_scope(
@@ -681,7 +689,7 @@ pub async fn copy_file(
     src_id: i64,
     user_id: i64,
     dest_folder_id: Option<i64>,
-) -> Result<file::Model> {
+) -> Result<FileInfo> {
     copy_file_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -689,6 +697,7 @@ pub async fn copy_file(
         dest_folder_id,
     )
     .await
+    .map(Into::into)
 }
 
 #[derive(Clone)]
@@ -823,7 +832,7 @@ pub async fn duplicate_file_record(
     src: &file::Model,
     dest_folder_id: Option<i64>,
     dest_name: &str,
-) -> Result<file::Model> {
+) -> Result<FileInfo> {
     let copied = duplicate_file_record_in_scope(
         state,
         WorkspaceStorageScope::Personal {
@@ -846,7 +855,7 @@ pub async fn duplicate_file_record(
             vec![copied.folder_id],
         ),
     );
-    Ok(copied)
+    Ok(copied.into())
 }
 
 pub(crate) async fn batch_duplicate_file_records_in_scope(
@@ -886,7 +895,7 @@ pub async fn batch_duplicate_file_records(
     state: &AppState,
     src_files: &[file::Model],
     dest_folder_id: Option<i64>,
-) -> Result<Vec<file::Model>> {
+) -> Result<Vec<FileInfo>> {
     if src_files.is_empty() {
         return Ok(vec![]);
     }
@@ -900,6 +909,7 @@ pub async fn batch_duplicate_file_records(
         dest_folder_id,
     )
     .await
+    .map(|files| files.into_iter().map(Into::into).collect())
 }
 
 pub(crate) async fn update_content_in_scope(
@@ -1017,7 +1027,7 @@ pub async fn update_content(
     user_id: i64,
     body: actix_web::web::Bytes,
     if_match: Option<&str>,
-) -> Result<(file::Model, String)> {
+) -> Result<(FileInfo, String)> {
     update_content_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -1026,6 +1036,7 @@ pub async fn update_content(
         if_match,
     )
     .await
+    .map(|(file, hash)| (file.into(), hash))
 }
 
 /// 根据优先级链解析存储策略：文件夹覆盖 → 用户绑定策略组
@@ -1033,7 +1044,7 @@ pub async fn resolve_policy(
     state: &AppState,
     user_id: i64,
     folder_id: Option<i64>,
-) -> Result<crate::entities::storage_policy::Model> {
+) -> Result<StoragePolicy> {
     resolve_policy_for_size(state, user_id, folder_id, 0).await
 }
 
@@ -1042,7 +1053,7 @@ pub async fn resolve_policy_for_size(
     user_id: i64,
     folder_id: Option<i64>,
     file_size: i64,
-) -> Result<crate::entities::storage_policy::Model> {
+) -> Result<StoragePolicy> {
     workspace_storage_service::resolve_policy_for_size(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -1050,6 +1061,7 @@ pub async fn resolve_policy_for_size(
         file_size,
     )
     .await
+    .map(StoragePolicy::from)
 }
 
 pub(crate) async fn set_lock_in_scope(
@@ -1092,7 +1104,7 @@ pub async fn create_empty(
     user_id: i64,
     folder_id: Option<i64>,
     filename: &str,
-) -> Result<file::Model> {
+) -> Result<FileInfo> {
     workspace_storage_service::create_empty(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -1100,6 +1112,7 @@ pub async fn create_empty(
         filename,
     )
     .await
+    .map(Into::into)
 }
 
 // ── Lock ─────────────────────────────────────────────────────────────
@@ -1110,7 +1123,7 @@ pub async fn set_lock(
     file_id: i64,
     user_id: i64,
     locked: bool,
-) -> Result<file::Model> {
+) -> Result<FileInfo> {
     set_lock_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -1118,6 +1131,7 @@ pub async fn set_lock(
         locked,
     )
     .await
+    .map(Into::into)
 }
 
 // ── Thumbnail ────────────────────────────────────────────────────────

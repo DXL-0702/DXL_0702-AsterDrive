@@ -212,7 +212,7 @@ impl From<PatchPolicyGroupReq> for policy_service::UpdateStoragePolicyGroupInput
     operation_id = "list_policies",
     params(LimitOffsetQuery),
     responses(
-        (status = 200, description = "List storage policies", body = inline(ApiResponse<OffsetPage<crate::entities::storage_policy::Model>>)),
+        (status = 200, description = "List storage policies", body = inline(ApiResponse<OffsetPage<policy_service::StoragePolicy>>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -234,7 +234,7 @@ pub async fn list_policies(
     operation_id = "create_policy",
     request_body = CreatePolicyReq,
     responses(
-        (status = 201, description = "Policy created", body = inline(ApiResponse<crate::entities::storage_policy::Model>)),
+        (status = 201, description = "Policy created", body = inline(ApiResponse<policy_service::StoragePolicy>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
     ),
@@ -255,7 +255,7 @@ pub async fn create_policy(
     operation_id = "get_policy",
     params(("id" = i64, Path, description = "Policy ID")),
     responses(
-        (status = 200, description = "Policy details", body = inline(ApiResponse<crate::entities::storage_policy::Model>)),
+        (status = 200, description = "Policy details", body = inline(ApiResponse<policy_service::StoragePolicy>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Policy not found"),
@@ -275,7 +275,7 @@ pub async fn get_policy(state: web::Data<AppState>, path: web::Path<i64>) -> Res
     params(("id" = i64, Path, description = "Policy ID")),
     request_body = PatchPolicyReq,
     responses(
-        (status = 200, description = "Policy updated", body = inline(ApiResponse<crate::entities::storage_policy::Model>)),
+        (status = 200, description = "Policy updated", body = inline(ApiResponse<policy_service::StoragePolicy>)),
         (status = 401, description = "Unauthorized"),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Policy not found"),

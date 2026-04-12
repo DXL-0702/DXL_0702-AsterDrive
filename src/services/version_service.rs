@@ -7,6 +7,7 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{
     storage_change_service,
+    workspace_models::{FileInfo, FileVersion},
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 
@@ -159,8 +160,10 @@ pub async fn list_versions(
     state: &AppState,
     file_id: i64,
     user_id: i64,
-) -> Result<Vec<file_version::Model>> {
-    list_versions_in_scope(state, WorkspaceStorageScope::Personal { user_id }, file_id).await
+) -> Result<Vec<FileVersion>> {
+    list_versions_in_scope(state, WorkspaceStorageScope::Personal { user_id }, file_id)
+        .await
+        .map(|versions| versions.into_iter().map(FileVersion::from).collect())
 }
 
 pub async fn list_versions_for_team(
@@ -168,7 +171,7 @@ pub async fn list_versions_for_team(
     team_id: i64,
     file_id: i64,
     user_id: i64,
-) -> Result<Vec<file_version::Model>> {
+) -> Result<Vec<FileVersion>> {
     list_versions_in_scope(
         state,
         WorkspaceStorageScope::Team {
@@ -178,6 +181,7 @@ pub async fn list_versions_for_team(
         file_id,
     )
     .await
+    .map(|versions| versions.into_iter().map(FileVersion::from).collect())
 }
 
 /// 恢复到指定版本，并截断该版本及之后的历史版本
@@ -186,7 +190,7 @@ pub async fn restore_version(
     file_id: i64,
     version_id: i64,
     user_id: i64,
-) -> Result<crate::entities::file::Model> {
+) -> Result<FileInfo> {
     restore_version_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
@@ -194,6 +198,7 @@ pub async fn restore_version(
         version_id,
     )
     .await
+    .map(FileInfo::from)
 }
 
 pub async fn restore_version_for_team(
@@ -202,7 +207,7 @@ pub async fn restore_version_for_team(
     file_id: i64,
     version_id: i64,
     user_id: i64,
-) -> Result<crate::entities::file::Model> {
+) -> Result<FileInfo> {
     restore_version_in_scope(
         state,
         WorkspaceStorageScope::Team {
@@ -213,6 +218,7 @@ pub async fn restore_version_for_team(
         version_id,
     )
     .await
+    .map(FileInfo::from)
 }
 
 /// 删除指定版本（减 blob ref_count）
