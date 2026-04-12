@@ -2066,69 +2066,6 @@ async fn test_avatar_switch_to_none_deletes_uploaded_objects() {
     assert_eq!(resp.status(), 404);
 }
 
-#[actix_web::test]
-async fn test_legacy_policy_avatar_remains_readable_and_cleanupable() {
-    let state = common::setup().await;
-    let default_policy = aster_drive::db::repository::policy_repo::find_default(&state.db)
-        .await
-        .unwrap()
-        .expect("default policy should exist");
-    let db = state.db.clone();
-    let app = create_test_app!(state);
-    let (token, _) = register_and_login!(app);
-
-    let req = test::TestRequest::get()
-        .uri("/api/v1/auth/me")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-    let body: Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["id"].as_i64().unwrap();
-
-    let legacy_prefix = format!("profile/avatar/{user_id}/v1");
-    let legacy_dir = std::path::PathBuf::from(&default_policy.base_path).join(&legacy_prefix);
-    std::fs::create_dir_all(&legacy_dir).unwrap();
-    std::fs::write(legacy_dir.join("512.webp"), b"legacy-avatar-512").unwrap();
-    std::fs::write(legacy_dir.join("1024.webp"), b"legacy-avatar-1024").unwrap();
-
-    let now = chrono::Utc::now();
-    aster_drive::db::repository::user_profile_repo::create(
-        &db,
-        aster_drive::entities::user_profile::ActiveModel {
-            user_id: sea_orm::Set(user_id),
-            display_name: sea_orm::Set(None),
-            avatar_source: sea_orm::Set(aster_drive::types::AvatarSource::Upload),
-            avatar_policy_id: sea_orm::Set(Some(default_policy.id)),
-            avatar_key: sea_orm::Set(Some(legacy_prefix.clone())),
-            avatar_version: sea_orm::Set(1),
-            created_at: sea_orm::Set(now),
-            updated_at: sea_orm::Set(now),
-        },
-    )
-    .await
-    .unwrap();
-
-    let req = test::TestRequest::get()
-        .uri("/api/v1/auth/profile/avatar/512")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-    assert_eq!(test::read_body(resp).await.as_ref(), b"legacy-avatar-512");
-
-    let req = test::TestRequest::put()
-        .uri("/api/v1/auth/profile/avatar/source")
-        .insert_header(("Cookie", format!("aster_access={token}")))
-        .set_json(serde_json::json!({ "source": "none" }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-
-    assert!(!legacy_dir.join("512.webp").exists());
-    assert!(!legacy_dir.join("1024.webp").exists());
-}
-
 /// Unauthenticated requests to PATCH /preferences should be rejected.
 #[actix_web::test]
 async fn test_patch_preferences_unauthenticated() {

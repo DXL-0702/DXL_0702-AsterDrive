@@ -263,7 +263,6 @@ fn snapshot_temp_roots(
     Ok(snapshots)
 }
 
-#[allow(deprecated)]
 async fn create_s3_default_policy(
     state: &aster_drive::runtime::AppState,
     user_id: i64,
@@ -273,12 +272,11 @@ async fn create_s3_default_policy(
     options: &str,
     chunk_size: i64,
 ) -> aster_drive::entities::storage_policy::Model {
-    use aster_drive::db::repository::policy_repo;
     use chrono::Utc;
     use sea_orm::Set;
 
     let now = Utc::now();
-    let policy = policy_repo::create(
+    let policy = aster_drive::db::repository::policy_repo::create(
         &state.db,
         aster_drive::entities::storage_policy::ActiveModel {
             name: Set(name.to_string()),
@@ -301,11 +299,37 @@ async fn create_s3_default_policy(
     .await
     .unwrap();
 
-    // Keep the legacy per-user policy assignment path centralized here so
-    // tests can switch to a policy-group helper in one place later.
-    aster_drive::services::policy_service::assign_user_policy(state, user_id, policy.id, true, 0)
-        .await
-        .unwrap();
+    let group = aster_drive::services::policy_service::create_group(
+        state,
+        aster_drive::services::policy_service::CreateStoragePolicyGroupInput {
+            name: format!("S3 Test Group · {}", policy.id),
+            description: Some(format!("Single-policy S3 group for policy #{}", policy.id)),
+            is_enabled: true,
+            is_default: false,
+            items: vec![
+                aster_drive::services::policy_service::StoragePolicyGroupItemInput {
+                    policy_id: policy.id,
+                    priority: 1,
+                    min_file_size: 0,
+                    max_file_size: 0,
+                },
+            ],
+        },
+    )
+    .await
+    .unwrap();
+
+    aster_drive::services::user_service::update(
+        state,
+        user_id,
+        None,
+        None,
+        None,
+        None,
+        Some(group.id),
+    )
+    .await
+    .unwrap();
 
     policy
 }

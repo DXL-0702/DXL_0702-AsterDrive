@@ -34,21 +34,12 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {
-    /// Legacy compatibility relation to the deprecated `user_storage_policies` table.
-    #[sea_orm(has_many = "super::user_storage_policy::Entity")]
-    UserStoragePolicies,
     #[sea_orm(has_many = "super::storage_policy_group_item::Entity")]
     StoragePolicyGroupItems,
     #[sea_orm(has_many = "super::file_blob::Entity")]
     FileBlobs,
     #[sea_orm(has_many = "super::folder::Entity")]
     Folders,
-}
-
-impl Related<super::user_storage_policy::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::UserStoragePolicies.def()
-    }
 }
 
 impl Related<super::storage_policy_group_item::Entity> for Entity {

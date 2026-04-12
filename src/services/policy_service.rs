@@ -4,17 +4,12 @@ use sea_orm::{
     TransactionTrait,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
-use crate::db::repository::{
-    policy_group_repo, policy_repo, team_repo, user_profile_repo, user_repo,
-};
-use crate::entities::{
-    storage_policy, storage_policy_group, storage_policy_group_item, user, user_storage_policy,
-};
+use crate::db::repository::{policy_group_repo, policy_repo, team_repo, user_repo};
+use crate::entities::{storage_policy, storage_policy_group, storage_policy_group_item, user};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::storage::s3_config::normalize_s3_endpoint_and_bucket;
@@ -215,7 +210,7 @@ pub async fn create(
     };
     let result = policy_repo::create(&txn, model).await?;
     if is_default {
-        lock_default_policy_assignment(&txn).await?;
+        lock_default_group_assignment(&txn).await?;
         policy_repo::set_only_default(&txn, result.id).await?;
         let default_group_id = ensure_singleton_group_for_policy(&txn, result.id).await?;
         policy_group_repo::set_only_default_group(&txn, default_group_id).await?;
@@ -257,13 +252,6 @@ pub async fn delete(state: &AppState, id: i64) -> Result<()> {
     if group_ref_count > 0 {
         return Err(AsterError::validation_error(format!(
             "cannot delete policy: {group_ref_count} policy group item(s) still reference it"
-        )));
-    }
-
-    let avatar_ref_count = user_profile_repo::count_by_avatar_policy(&state.db, id).await?;
-    if avatar_ref_count > 0 {
-        return Err(AsterError::validation_error(format!(
-            "cannot delete policy: {avatar_ref_count} uploaded avatar(s) still reference it"
         )));
     }
 
@@ -361,7 +349,7 @@ pub async fn update(
     let result = active.update(&txn).await.map_err(AsterError::from)?;
 
     if is_default == Some(true) {
-        lock_default_policy_assignment(&txn).await?;
+        lock_default_group_assignment(&txn).await?;
         policy_repo::set_only_default(&txn, result.id).await?;
         let default_group_id = ensure_singleton_group_for_policy(&txn, result.id).await?;
         policy_group_repo::set_only_default_group(&txn, default_group_id).await?;
@@ -499,49 +487,6 @@ fn build_group_info(
     }
 }
 
-fn migrated_group_name(policy_name: &str) -> String {
-    format!("Migrated · {policy_name}")
-}
-
-fn migrated_group_description(policy_id: i64) -> String {
-    format!("Automatically migrated singleton group for storage policy #{policy_id}")
-}
-
-async fn find_existing_migrated_group_id<C: sea_orm::ConnectionTrait>(
-    db: &C,
-    policy: &storage_policy::Model,
-) -> Result<Option<i64>> {
-    let groups = policy_group_repo::find_all_groups(db).await?;
-    let items = policy_group_repo::find_all_group_items(db).await?;
-    let mut items_by_group_id =
-        std::collections::HashMap::<i64, Vec<storage_policy_group_item::Model>>::new();
-    for item in items {
-        items_by_group_id
-            .entry(item.group_id)
-            .or_default()
-            .push(item);
-    }
-
-    let expected_name = migrated_group_name(&policy.name);
-    let expected_description = migrated_group_description(policy.id);
-    for group in groups {
-        if !group.is_enabled
-            || (group.name != expected_name && group.description != expected_description)
-        {
-            continue;
-        }
-
-        let Some(group_items) = items_by_group_id.get(&group.id) else {
-            continue;
-        };
-        if group_items.len() == 1 && group_items[0].policy_id == policy.id {
-            return Ok(Some(group.id));
-        }
-    }
-
-    Ok(None)
-}
-
 async fn validate_group_items<C: sea_orm::ConnectionTrait>(
     db: &C,
     items: &[StoragePolicyGroupItemInput],
@@ -637,10 +582,6 @@ async fn lock_default_group_assignment<C: sea_orm::ConnectionTrait>(db: &C) -> R
     Ok(())
 }
 
-async fn lock_default_policy_assignment<C: sea_orm::ConnectionTrait>(db: &C) -> Result<()> {
-    lock_default_group_assignment(db).await
-}
-
 pub async fn ensure_policy_groups_seeded<C>(db: &C) -> Result<()>
 where
     C: sea_orm::ConnectionTrait + TransactionTrait,
@@ -717,94 +658,9 @@ where
             return Ok(());
         }
 
-        let users_without_group_ids = users_without_group
-            .iter()
-            .map(|user| user.id)
-            .collect::<std::collections::HashSet<_>>();
-        let legacy_assignments = user_storage_policy::Entity::find().all(&txn).await?;
-        let legacy_assignments = legacy_assignments
-            .into_iter()
-            .filter(|assignment| users_without_group_ids.contains(&assignment.user_id))
-            .collect::<Vec<_>>();
-
-        let mut singleton_group_by_policy_id =
-            std::collections::HashMap::from([(default_policy.id, default_group.id)]);
-
-        if !legacy_assignments.is_empty() {
-            let policies = policy_repo::find_all(&txn).await?;
-            let policy_by_id = policies
-                .into_iter()
-                .map(|policy| (policy.id, policy))
-                .collect::<std::collections::HashMap<_, _>>();
-
-            for assignment in &legacy_assignments {
-                if singleton_group_by_policy_id.contains_key(&assignment.policy_id) {
-                    continue;
-                }
-                let Some(policy) = policy_by_id.get(&assignment.policy_id) else {
-                    continue;
-                };
-                if let Some(existing_group_id) =
-                    find_existing_migrated_group_id(&txn, policy).await?
-                {
-                    singleton_group_by_policy_id.insert(policy.id, existing_group_id);
-                    continue;
-                }
-
-                let now = Utc::now();
-                let group = policy_group_repo::create_group(
-                    &txn,
-                    storage_policy_group::ActiveModel {
-                        name: Set(migrated_group_name(&policy.name)),
-                        description: Set(migrated_group_description(policy.id)),
-                        is_enabled: Set(true),
-                        is_default: Set(false),
-                        created_at: Set(now),
-                        updated_at: Set(now),
-                        ..Default::default()
-                    },
-                )
-                .await?;
-                policy_group_repo::create_group_item(
-                    &txn,
-                    storage_policy_group_item::ActiveModel {
-                        group_id: Set(group.id),
-                        policy_id: Set(policy.id),
-                        priority: Set(1),
-                        min_file_size: Set(0),
-                        max_file_size: Set(0),
-                        created_at: Set(now),
-                        ..Default::default()
-                    },
-                )
-                .await?;
-                singleton_group_by_policy_id.insert(policy.id, group.id);
-            }
-        }
-
-        let mut selected_assignment_by_user_id = HashMap::new();
-        for assignment in legacy_assignments {
-            selected_assignment_by_user_id
-                .entry(assignment.user_id)
-                .and_modify(|current: &mut user_storage_policy::Model| {
-                    let should_replace = assignment.is_default && !current.is_default
-                        || (assignment.is_default == current.is_default
-                            && assignment.id < current.id);
-                    if should_replace {
-                        *current = assignment.clone();
-                    }
-                })
-                .or_insert(assignment);
-        }
-
         for user_model in users_without_group {
-            let group_id = selected_assignment_by_user_id
-                .get(&user_model.id)
-                .and_then(|assignment| singleton_group_by_policy_id.get(&assignment.policy_id))
-                .copied()
-                .unwrap_or(default_group.id);
             let mut active: user::ActiveModel = user_model.into();
-            active.policy_group_id = Set(Some(group_id));
+            active.policy_group_id = Set(Some(default_group.id));
             active.updated_at = Set(Utc::now());
             active.update(&txn).await.map_err(AsterError::from)?;
         }
@@ -1129,32 +985,4 @@ async fn ensure_singleton_group_for_policy<C: sea_orm::ConnectionTrait>(
     )
     .await?;
     Ok(group.id)
-}
-
-/// Legacy compatibility shim for callers that still assign a single policy per user.
-///
-/// Deprecated since 0.1.0 in favor of assigning `users.policy_group_id`
-/// and managing storage policy groups directly.
-#[deprecated(
-    since = "0.1.0",
-    note = "legacy single-policy assignment compatibility API; use users.policy_group_id and storage policy groups instead"
-)]
-pub async fn assign_user_policy(
-    state: &AppState,
-    user_id: i64,
-    policy_id: i64,
-    _is_default: bool,
-    _quota_bytes: i64,
-) -> Result<()> {
-    let existing_user = user_repo::find_by_id(&state.db, user_id).await?;
-    let group_id = ensure_singleton_group_for_policy(&state.db, policy_id).await?;
-    let mut active: user::ActiveModel = existing_user.into();
-    active.policy_group_id = Set(Some(group_id));
-    active.updated_at = Set(Utc::now());
-    let updated = active.update(&state.db).await.map_err(AsterError::from)?;
-    state.policy_snapshot.reload(&state.db).await?;
-    state
-        .policy_snapshot
-        .set_user_policy_group(updated.id, group_id);
-    Ok(())
 }

@@ -42,9 +42,6 @@ pub enum Relation {
     Files,
     #[sea_orm(has_many = "super::folder::Entity")]
     Folders,
-    /// Legacy compatibility relation to the deprecated `user_storage_policies` table.
-    #[sea_orm(has_many = "super::user_storage_policy::Entity")]
-    UserStoragePolicies,
     #[sea_orm(has_many = "super::contact_verification_token::Entity")]
     ContactVerificationTokens,
     #[sea_orm(
@@ -64,12 +61,6 @@ impl Related<super::file::Entity> for Entity {
 impl Related<super::folder::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Folders.def()
-    }
-}
-
-impl Related<super::user_storage_policy::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::UserStoragePolicies.def()
     }
 }
 

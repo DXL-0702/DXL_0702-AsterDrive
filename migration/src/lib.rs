@@ -35,6 +35,8 @@ mod m20260408_000001_add_contact_verification_tokens;
 mod m20260409_000001_create_mail_outbox;
 mod m20260410_000001_create_background_tasks;
 mod m20260412_000001_create_wopi_sessions;
+mod m20260412_000002_drop_legacy_avatar_policy_id;
+mod m20260412_000003_drop_legacy_user_storage_policies;
 
 pub struct Migrator;
 
@@ -77,6 +79,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260409_000001_create_mail_outbox::Migration),
             Box::new(m20260410_000001_create_background_tasks::Migration),
             Box::new(m20260412_000001_create_wopi_sessions::Migration),
+            Box::new(m20260412_000002_drop_legacy_avatar_policy_id::Migration),
+            Box::new(m20260412_000003_drop_legacy_user_storage_policies::Migration),
         ]
     }
 }

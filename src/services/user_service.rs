@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, SortBy, SortOrder, load_offset_page};
 use crate::db::repository::{
-    file_repo, folder_repo, lock_repo, policy_repo, share_repo, upload_session_repo, user_repo,
+    file_repo, folder_repo, lock_repo, share_repo, upload_session_repo, user_repo,
     webdav_account_repo,
 };
 use crate::entities::user;
@@ -478,16 +478,10 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
         tracing::warn!("cleanup avatar upload for user #{target_user_id} failed: {e}");
     }
 
-    // 6. 删除用户存储策略分配
-    #[allow(deprecated)]
-    {
-        policy_repo::delete_user_policies_by_user(db, target_user_id).await?;
-    }
-
-    // 7. 清理上传 session
+    // 6. 清理上传 session
     upload_session_repo::delete_all_by_user(db, target_user_id).await?;
 
-    // 8. 清理用户持有的资源锁
+    // 7. 清理用户持有的资源锁
     let locks = lock_repo::find_by_owner(db, target_user_id).await?;
     for lock in &locks {
         if let Err(e) = crate::services::lock_service::set_entity_locked(
@@ -506,7 +500,7 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     }
     lock_repo::delete_all_by_owner(db, target_user_id).await?;
 
-    // 9. 删除用户记录
+    // 8. 删除用户记录
     user::Entity::delete_by_id(target_user_id)
         .exec(db)
         .await
