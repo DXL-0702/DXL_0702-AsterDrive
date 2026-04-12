@@ -120,8 +120,6 @@ export default function TasksPage() {
 
 	const formatTaskKind = (kind: BackgroundTaskKind) => {
 		switch (kind) {
-			case "archive_download":
-				return t("tasks:kind_archive_download");
 			case "archive_extract":
 				return t("tasks:kind_archive_extract");
 			case "archive_compress":

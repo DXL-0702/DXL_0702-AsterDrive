@@ -391,15 +391,10 @@ async fn build_task_info(_state: &AppState, task: background_task::Model) -> Res
 }
 
 async fn process_task(_state: &AppState, task: &background_task::Model) -> Result<()> {
-    match task.kind {
-        BackgroundTaskKind::ArchiveDownload => Err(AsterError::validation_error(
-            "archive download tasks have been removed; use direct archive streaming instead",
-        )),
-        other => Err(AsterError::internal_error(format!(
-            "task kind '{}' is not implemented",
-            other.to_value()
-        ))),
-    }
+    Err(AsterError::internal_error(format!(
+        "task kind '{}' is not implemented",
+        task.kind.to_value()
+    )))
 }
 
 #[allow(clippy::too_many_arguments)]

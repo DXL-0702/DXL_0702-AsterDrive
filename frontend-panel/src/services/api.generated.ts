@@ -2737,7 +2737,7 @@ export interface components {
          * @description 后台任务类型
          * @enum {string}
          */
-        BackgroundTaskKind: "archive_download" | "archive_extract" | "archive_compress";
+        BackgroundTaskKind: "archive_extract" | "archive_compress";
         /**
          * @description 后台任务状态
          * @enum {string}

@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **WOPI 协议支持** — 完整实现 WOPI (Web Application Open Platform Interface) 协议，可与 Collabora Online、OnlyOffice 等 WOPI 兼容办公套件集成，实现文档在线编辑。包含 CheckFileInfo、GetFile/PutFile、完整锁机制、Discovery 缓存、Access Token 管理
 - **预览应用系统重构** — 将硬编码的文件预览逻辑重构为基于规则引擎的可配置"预览应用"系统。支持三种 Provider（Builtin/UrlTemplate/Wopi），管理后台提供可视化配置编辑器，内置 12 个默认预览应用
-- **后台任务系统与打包下载** — 新增通用后台任务框架（状态机、自动重试、指数退避、过期清理），首个任务类型为打包下载——支持多文件/文件夹递归打包为 ZIP 流式下载
+- **后台任务系统与打包下载** — 新增通用后台任务框架（状态机、自动重试、指数退避、过期清理），并新增基于 stream ticket 的多文件/文件夹 ZIP 流式下载
 - **缩略图系统优化** — 引入缩略图版本控制（v2）、源文件大小限制、视口懒加载、并发 worker 优化，降低内存峰值并提升加载体验
 - **运行与调度配置** — 新增 operations 配置分类，邮件发送间隔、任务调度间隔、维护清理周期等均可在管理后台热改。设置页新增时间/大小单位选择器
 
@@ -39,11 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 任务 API：`GET /api/v1/tasks`（分页列表）、`GET /api/v1/tasks/{id}`（详情）、`POST /api/v1/tasks/{id}/retry`（手动重试）
   - 团队空间任务 API（同结构）
 - **打包下载**
-  - `archive_download` 任务类型：递归收集目录树文件，流式写入 ZIP
   - `stream_ticket_service`：一次性下载凭证（5 分钟有效），支持 moka 缓存
   - `POST /api/v1/batch/archive-download` + `GET /api/v1/batch/archive-download/{token}` 端点
   - 团队空间打包下载路由
-  - 前端任务页面（分页列表、状态徽章、进度条、自动轮询、重试按钮）
   - 文件右键菜单/批量操作栏新增"打包下载"选项
 - **运行与调度配置**
   - `operations` 配置分类：`mail_outbox_dispatch_interval_secs`、`background_task_dispatch_interval_secs`、`maintenance_cleanup_interval_secs`、`blob_reconcile_interval_secs`、`team_member_list_max_limit`、`task_list_max_limit`、`avatar_max_upload_size_bytes`、`thumbnail_max_source_bytes`

@@ -114,11 +114,11 @@ function createTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
 		can_retry: false,
 		created_at: "2026-04-10T00:00:00Z",
 		creator_user_id: 1,
-		display_name: "Archive task",
+		display_name: "Extract archive",
 		expires_at: "2026-04-11T00:00:00Z",
 		finished_at: null,
 		id: 1,
-		kind: "archive_download",
+		kind: "archive_extract",
 		last_error: null,
 		max_attempts: 3,
 		payload_json: "{}",
@@ -192,7 +192,7 @@ describe("TasksPage", () => {
 
 		render(<TasksPage />);
 
-		expect(await screen.findByText("Archive task")).toBeInTheDocument();
+		expect(await screen.findByText("Extract archive")).toBeInTheDocument();
 
 		fireEvent.click(screen.getByText("tasks:retry_task"));
 

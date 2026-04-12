@@ -167,8 +167,6 @@ impl MailOutboxStatus {
 #[sea_orm(rs_type = "String", db_type = "String(StringLen::N(32))")]
 #[serde(rename_all = "snake_case")]
 pub enum BackgroundTaskKind {
-    #[sea_orm(string_value = "archive_download")]
-    ArchiveDownload,
     #[sea_orm(string_value = "archive_extract")]
     ArchiveExtract,
     #[sea_orm(string_value = "archive_compress")]
