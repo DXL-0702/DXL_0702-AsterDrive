@@ -134,7 +134,7 @@ fn reject_legacy_root_layout(
     }
 
     let config_db_url_hint = if config_path.exists() {
-        read_config_database_url_hint(&config_path)?
+        read_config_database_url_hint(config_path)?
     } else {
         None
     };
