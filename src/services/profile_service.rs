@@ -503,6 +503,7 @@ pub async fn upload_avatar(
                 user_profile::ActiveModel {
                     user_id: Set(user_id),
                     display_name: Set(None),
+                    wopi_user_info: Set(None),
                     avatar_source: Set(AvatarSource::Upload),
                     avatar_key: Set(Some(prefix_value.clone())),
                     avatar_version: Set(version),
@@ -576,6 +577,7 @@ pub async fn set_avatar_source(
                 user_profile::ActiveModel {
                     user_id: Set(user_id),
                     display_name: Set(None),
+                    wopi_user_info: Set(None),
                     avatar_source: Set(source),
                     avatar_key: Set(None),
                     avatar_version: Set(0),
@@ -646,6 +648,7 @@ pub async fn update_profile(
                 user_profile::ActiveModel {
                     user_id: Set(user_id),
                     display_name: Set(normalized),
+                    wopi_user_info: Set(None),
                     avatar_source: Set(AvatarSource::None),
                     avatar_key: Set(None),
                     avatar_version: Set(0),
@@ -663,6 +666,53 @@ pub async fn update_profile(
         AvatarAudience::SelfUser,
         &gravatar_base_url,
     ))
+}
+
+pub async fn get_wopi_user_info(state: &AppState, user_id: i64) -> Result<Option<String>> {
+    Ok(user_profile_repo::find_by_user_id(&state.db, user_id)
+        .await?
+        .and_then(|profile| profile.wopi_user_info))
+}
+
+pub async fn update_wopi_user_info(
+    state: &AppState,
+    user_id: i64,
+    wopi_user_info: String,
+) -> Result<()> {
+    user_repo::find_by_id(&state.db, user_id).await?;
+    let existing = user_profile_repo::find_by_user_id(&state.db, user_id).await?;
+    let now = Utc::now();
+
+    match existing {
+        Some(current) => {
+            if current.wopi_user_info == Some(wopi_user_info.clone()) {
+                return Ok(());
+            }
+
+            let mut active: user_profile::ActiveModel = current.into();
+            active.wopi_user_info = Set(Some(wopi_user_info));
+            active.updated_at = Set(now);
+            user_profile_repo::update(&state.db, active).await?;
+        }
+        None => {
+            user_profile_repo::create(
+                &state.db,
+                user_profile::ActiveModel {
+                    user_id: Set(user_id),
+                    display_name: Set(None),
+                    wopi_user_info: Set(Some(wopi_user_info)),
+                    avatar_source: Set(AvatarSource::None),
+                    avatar_key: Set(None),
+                    avatar_version: Set(0),
+                    created_at: Set(now),
+                    updated_at: Set(now),
+                },
+            )
+            .await?;
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_avatar_size(size: u32) -> Result<u32> {

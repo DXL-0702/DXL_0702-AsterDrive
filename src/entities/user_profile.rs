@@ -13,6 +13,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub user_id: i64,
     pub display_name: Option<String>,
+    pub wopi_user_info: Option<String>,
     pub avatar_source: AvatarSource,
     pub avatar_key: Option<String>,
     pub avatar_version: i32,

@@ -233,15 +233,17 @@ async fn test_open_wopi_session_persists_token_and_check_file_info_succeeds() {
 
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["BaseFileName"], "report 1.docx");
+    assert_eq!(body["FileNameMaxLength"], 255);
     assert_eq!(body["OwnerId"], user.id.to_string());
     assert_eq!(body["UserId"], user.id.to_string());
     assert_eq!(body["UserCanNotWriteRelative"], false);
-    assert_eq!(body["UserCanRename"], false);
+    assert_eq!(body["UserCanRename"], true);
+    assert_eq!(body["SupportsUserInfo"], true);
     assert_eq!(body["UserCanWrite"], true);
     assert_eq!(body["ReadOnly"], false);
-    assert_eq!(body["SupportsGetLock"], false);
+    assert_eq!(body["SupportsGetLock"], true);
     assert_eq!(body["SupportsLocks"], true);
-    assert_eq!(body["SupportsRename"], false);
+    assert_eq!(body["SupportsRename"], true);
     assert_eq!(body["SupportsUpdate"], true);
     assert!(
         body["Version"]
@@ -450,6 +452,169 @@ async fn test_wopi_lock_put_get_and_unlock_lifecycle() {
 }
 
 #[actix_web::test]
+async fn test_wopi_get_lock_returns_empty_string_for_unlocked_file() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "GET_LOCK"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get("X-WOPI-Lock")
+            .and_then(|value| value.to_str().ok()),
+        Some("")
+    );
+}
+
+#[actix_web::test]
+async fn test_wopi_get_lock_returns_active_lock_value() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "LOCK"))
+        .insert_header(("X-WOPI-Lock", "lock-a"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "GET_LOCK"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get("X-WOPI-Lock")
+            .and_then(|value| value.to_str().ok()),
+        Some("lock-a")
+    );
+}
+
+#[actix_web::test]
+async fn test_wopi_unlock_and_relock_replaces_active_lock() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "LOCK"))
+        .insert_header(("X-WOPI-Lock", "lock-a"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "LOCK"))
+        .insert_header(("X-WOPI-Lock", "lock-b"))
+        .insert_header(("X-WOPI-OldLock", "lock-a"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "GET_LOCK"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get("X-WOPI-Lock")
+            .and_then(|value| value.to_str().ok()),
+        Some("lock-b")
+    );
+}
+
+#[actix_web::test]
+async fn test_wopi_unlock_and_relock_returns_conflict_for_wrong_old_lock() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "LOCK"))
+        .insert_header(("X-WOPI-Lock", "lock-a"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "LOCK"))
+        .insert_header(("X-WOPI-Lock", "lock-b"))
+        .insert_header(("X-WOPI-OldLock", "wrong-lock"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 409);
+    assert_eq!(
+        resp.headers()
+            .get("X-WOPI-Lock")
+            .and_then(|value| value.to_str().ok()),
+        Some("lock-a")
+    );
+}
+
+#[actix_web::test]
 async fn test_wopi_lock_returns_conflict_for_another_wopi_session() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
@@ -529,7 +694,12 @@ async fn test_wopi_lock_returns_conflict_when_file_is_locked_outside_wopi() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 409);
-    assert!(resp.headers().get("X-WOPI-Lock").is_none());
+    assert_eq!(
+        resp.headers()
+            .get("X-WOPI-Lock")
+            .and_then(|value| value.to_str().ok()),
+        Some("")
+    );
     assert!(
         resp.headers()
             .get("X-WOPI-LockFailureReason")
@@ -681,7 +851,12 @@ async fn test_wopi_unlock_without_active_lock_returns_conflict() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 409);
-    assert!(resp.headers().get("X-WOPI-Lock").is_none());
+    assert_eq!(
+        resp.headers()
+            .get("X-WOPI-Lock")
+            .and_then(|value| value.to_str().ok()),
+        Some("")
+    );
     assert!(
         resp.headers()
             .get("X-WOPI-LockFailureReason")
@@ -958,6 +1133,176 @@ async fn test_wopi_put_relative_overwrite_returns_conflict_when_target_is_locked
             .and_then(|value| value.to_str().ok())
             .is_some_and(|value| value.contains("locked"))
     );
+}
+
+#[actix_web::test]
+async fn test_wopi_put_relative_rejects_invalid_relative_target_name() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "PUT_RELATIVE"))
+        .insert_header(("X-WOPI-RelativeTarget", "bad/name.docx"))
+        .set_payload("should fail")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+
+    let body: Value = test::read_body_json(resp).await;
+    assert!(
+        body["msg"]
+            .as_str()
+            .is_some_and(|message| message.contains("forbidden character"))
+    );
+}
+
+#[actix_web::test]
+async fn test_wopi_rename_file_renames_and_returns_name_without_extension() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "RENAME_FILE"))
+        .insert_header(("X-WOPI-RequestedName", "meeting notes"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["Name"], "meeting notes");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", format!("aster_access={access_cookie}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["name"], "meeting notes.docx");
+}
+
+#[actix_web::test]
+async fn test_wopi_rename_file_generates_available_name_on_conflict() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let _existing = upload_test_file_named!(app, access_cookie, "copy.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "RENAME_FILE"))
+        .insert_header(("X-WOPI-RequestedName", "copy"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["Name"], "copy (1)");
+}
+
+#[actix_web::test]
+async fn test_wopi_rename_file_returns_invalid_file_name_error_when_name_cannot_be_sanitized() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "RENAME_FILE"))
+        .insert_header(("X-WOPI-RequestedName", "/"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    assert_eq!(
+        resp.headers()
+            .get("X-WOPI-InvalidFileNameError")
+            .and_then(|value| value.to_str().ok()),
+        Some("invalid requested file name")
+    );
+}
+
+#[actix_web::test]
+async fn test_wopi_put_user_info_round_trips_into_check_file_info() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "PUT_USER_INFO"))
+        .set_payload("pane=comments")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["UserInfo"], "pane=comments");
 }
 
 #[actix_web::test]
@@ -1317,7 +1662,12 @@ async fn test_wopi_put_file_returns_conflict_when_file_is_locked_outside_wopi() 
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 409);
-    assert!(resp.headers().get("X-WOPI-Lock").is_none());
+    assert_eq!(
+        resp.headers()
+            .get("X-WOPI-Lock")
+            .and_then(|value| value.to_str().ok()),
+        Some("")
+    );
     assert!(
         resp.headers()
             .get("X-WOPI-LockFailureReason")
@@ -1540,6 +1890,86 @@ async fn test_team_wopi_access_token_is_rejected_after_member_removal() {
     let req = test::TestRequest::get()
         .uri(&wopi_file_query(file_id, &wopi_access_token))
         .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 403);
+}
+
+#[actix_web::test]
+async fn test_team_wopi_put_relative_is_rejected_after_member_removal() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let db = state.db.clone();
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+
+    let (_, owner_token) = register_named_user_and_login!(
+        app,
+        db,
+        mail_sender,
+        "wopiowner4",
+        "wopiowner4@example.com",
+        "password123"
+    );
+    let (member_id, member_token) = register_named_user_and_login!(
+        app,
+        db,
+        mail_sender,
+        "wopimember4",
+        "wopimember4@example.com",
+        "password123"
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .set_json(json!({ "name": "WOPI Team 4" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/teams/{team_id}/members"))
+        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .set_json(json!({ "user_id": member_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = team_multipart_request!(
+        &format!("/api/v1/teams/{team_id}/files/upload"),
+        &owner_token,
+        "team-report.docx",
+        "team content",
+    );
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+
+    let launch = open_wopi_session!(
+        app,
+        member_token,
+        &format!("/api/v1/teams/{team_id}/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap().to_string();
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/teams/{team_id}/members/{member_id}"))
+        .insert_header(("Cookie", format!("aster_access={owner_token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, &wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "PUT_RELATIVE"))
+        .insert_header(("X-WOPI-SuggestedTarget", ".docx"))
+        .set_payload("denied")
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);

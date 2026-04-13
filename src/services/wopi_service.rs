@@ -22,10 +22,10 @@ use crate::entities::{file, resource_lock, wopi_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{
-    auth_service, file_service, lock_service, preview_app_service,
+    auth_service, file_service, lock_service, preview_app_service, profile_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
-use crate::types::EntityType;
+use crate::types::{EntityType, NullablePatch};
 
 static DISCOVERY_CACHE: LazyLock<Cache<String, CachedWopiDiscovery>> =
     LazyLock::new(|| Cache::builder().max_capacity(128).build());
@@ -36,6 +36,10 @@ static DISCOVERY_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .build()
         .expect("wopi discovery client should initialize")
 });
+
+const MAX_WOPI_LOCK_LEN: usize = 1024;
+const MAX_WOPI_USER_INFO_LEN: usize = 1024;
+const WOPI_FILE_NAME_MAX_LEN: i32 = 255;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -55,16 +59,22 @@ pub struct WopiLaunchSession {
 #[serde(rename_all = "PascalCase")]
 pub struct WopiCheckFileInfo {
     pub base_file_name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_name_max_length: Option<i32>,
     pub owner_id: String,
     pub size: i64,
     pub user_id: String,
     pub user_can_not_write_relative: bool,
     pub user_can_rename: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_info: Option<String>,
     pub user_can_write: bool,
     pub read_only: bool,
     pub supports_get_lock: bool,
     pub supports_locks: bool,
     pub supports_rename: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_user_info: Option<bool>,
     pub supports_update: bool,
     pub version: String,
 }
@@ -80,6 +90,12 @@ pub struct WopiConflict {
 pub struct WopiPutRelativeResponse {
     pub name: String,
     pub url: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct WopiRenameFileResponse {
+    pub name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -102,9 +118,22 @@ pub enum WopiPutRelativeResult {
 }
 
 #[derive(Debug, Clone)]
+pub enum WopiGetLockResult {
+    Success { current_lock: String },
+    Conflict(WopiConflict),
+}
+
+#[derive(Debug, Clone)]
 pub enum WopiLockOperationResult {
     Success,
     Conflict(WopiConflict),
+}
+
+#[derive(Debug, Clone)]
+pub enum WopiRenameFileResult {
+    Success(WopiRenameFileResponse),
+    Conflict(WopiConflict),
+    InvalidName { reason: String },
 }
 
 #[derive(Debug, Clone)]
@@ -180,6 +209,15 @@ struct CachedWopiDiscovery {
     cached_at: DateTime<Utc>,
 }
 
+const DISCOVERY_ACTION_PRIORITY: &[&str] = &[
+    "embededit",
+    "edit",
+    "mobileedit",
+    "embedview",
+    "view",
+    "mobileview",
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredWopiPreviewApp {
     pub action: String,
@@ -244,19 +282,24 @@ pub async fn check_file_info(
 ) -> Result<WopiCheckFileInfo> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
     let blob = file_repo::find_blob_by_id(&state.db, resolved.file.blob_id).await?;
+    let user_info =
+        profile_service::get_wopi_user_info(state, resolved.payload.actor_user_id).await?;
 
     Ok(WopiCheckFileInfo {
         base_file_name: resolved.file.name.clone(),
+        file_name_max_length: Some(WOPI_FILE_NAME_MAX_LEN),
         owner_id: resolved.file.user_id.to_string(),
         size: resolved.file.size,
         user_id: resolved.payload.actor_user_id.to_string(),
         user_can_not_write_relative: false,
-        user_can_rename: false,
+        user_can_rename: true,
+        user_info,
         user_can_write: true,
         read_only: false,
-        supports_get_lock: false,
+        supports_get_lock: true,
         supports_locks: true,
-        supports_rename: false,
+        supports_rename: true,
+        supports_user_info: Some(true),
         supports_update: true,
         version: blob.hash,
     })
@@ -419,6 +462,107 @@ pub async fn put_relative_file(
     Ok(WopiPutRelativeResult::Success(response))
 }
 
+pub async fn get_lock(
+    state: &AppState,
+    file_id: i64,
+    access_token: &str,
+    request_source: WopiRequestSource<'_>,
+) -> Result<WopiGetLockResult> {
+    let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
+    let Some(active_lock) = load_active_lock(state, resolved.file.id).await? else {
+        return Ok(WopiGetLockResult::Success {
+            current_lock: String::new(),
+        });
+    };
+
+    match active_lock.payload {
+        Some(payload) => Ok(WopiGetLockResult::Success {
+            current_lock: payload.lock,
+        }),
+        None => Ok(WopiGetLockResult::Conflict(WopiConflict {
+            current_lock: Some(String::new()),
+            reason: "file is locked outside WOPI".to_string(),
+        })),
+    }
+}
+
+pub async fn rename_file(
+    state: &AppState,
+    file_id: i64,
+    access_token: &str,
+    requested_name: Option<&str>,
+    requested_lock: Option<&str>,
+    request_source: WopiRequestSource<'_>,
+) -> Result<WopiRenameFileResult> {
+    let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
+    if let Some(conflict) =
+        ensure_wopi_lock_matches(state, &resolved.payload, resolved.file.id, requested_lock).await?
+    {
+        return Ok(WopiRenameFileResult::Conflict(conflict));
+    }
+
+    let requested_name =
+        match normalize_requested_rename_target(&resolved.file.name, requested_name) {
+            Ok(name) => name,
+            Err(reason) => return Ok(WopiRenameFileResult::InvalidName { reason }),
+        };
+    let scope = scope_from_payload(&resolved.payload);
+    let mut final_name = resolve_available_rename_target(
+        state,
+        scope,
+        resolved.file.folder_id,
+        resolved.file.id,
+        &requested_name,
+    )
+    .await?;
+
+    let updated = match file_service::update_in_scope(
+        state,
+        scope,
+        resolved.file.id,
+        Some(final_name.clone()),
+        NullablePatch::Absent,
+    )
+    .await
+    {
+        Ok(updated) => updated,
+        Err(err) if file_repo::is_duplicate_name_error(&err, &final_name) => {
+            final_name = suggest_available_relative_target(
+                state,
+                scope,
+                resolved.file.folder_id,
+                &final_name,
+            )
+            .await?;
+            file_service::update_in_scope(
+                state,
+                scope,
+                resolved.file.id,
+                Some(final_name),
+                NullablePatch::Absent,
+            )
+            .await?
+        }
+        Err(err) => return Err(err),
+    };
+
+    Ok(WopiRenameFileResult::Success(WopiRenameFileResponse {
+        name: response_name_for_rename(&resolved.file.name, &updated.name).to_string(),
+    }))
+}
+
+pub async fn put_user_info(
+    state: &AppState,
+    file_id: i64,
+    access_token: &str,
+    body: actix_web::web::Bytes,
+    request_source: WopiRequestSource<'_>,
+) -> Result<()> {
+    let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
+    let user_info = normalize_wopi_user_info(&body)?;
+    profile_service::update_wopi_user_info(state, resolved.payload.actor_user_id, user_info).await
+}
+
 pub async fn lock_file(
     state: &AppState,
     file_id: i64,
@@ -427,7 +571,7 @@ pub async fn lock_file(
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiLockOperationResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
-    let lock_value = normalize_wopi_lock_value(requested_lock)?;
+    let lock_value = normalize_wopi_lock_header("X-WOPI-Lock", requested_lock)?;
     let active_lock = load_active_lock(state, resolved.file.id).await?;
 
     if let Some(active_lock) = active_lock {
@@ -444,13 +588,49 @@ pub async fn lock_file(
         }
 
         return Ok(WopiLockOperationResult::Conflict(WopiConflict {
-            current_lock: None,
+            current_lock: Some(String::new()),
             reason: "file is locked outside WOPI".to_string(),
         }));
     }
 
     create_wopi_lock(state, &resolved.payload, &resolved.file, &lock_value).await?;
     Ok(WopiLockOperationResult::Success)
+}
+
+pub async fn unlock_and_relock_file(
+    state: &AppState,
+    file_id: i64,
+    access_token: &str,
+    requested_lock: &str,
+    old_lock: &str,
+    request_source: WopiRequestSource<'_>,
+) -> Result<WopiLockOperationResult> {
+    let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
+    let new_lock = normalize_wopi_lock_header("X-WOPI-Lock", requested_lock)?;
+    let old_lock = normalize_wopi_lock_header("X-WOPI-OldLock", old_lock)?;
+    let Some(active_lock) = load_active_lock(state, resolved.file.id).await? else {
+        return Ok(WopiLockOperationResult::Conflict(WopiConflict {
+            current_lock: Some(String::new()),
+            reason: "file is not locked".to_string(),
+        }));
+    };
+
+    match active_lock.payload {
+        Some(payload)
+            if payload.app_key == resolved.payload.app_key && payload.lock == old_lock =>
+        {
+            replace_wopi_lock_model(state, active_lock.lock, &resolved.payload, &new_lock).await?;
+            Ok(WopiLockOperationResult::Success)
+        }
+        Some(payload) => Ok(WopiLockOperationResult::Conflict(WopiConflict {
+            current_lock: Some(payload.lock),
+            reason: "WOPI lock mismatch".to_string(),
+        })),
+        None => Ok(WopiLockOperationResult::Conflict(WopiConflict {
+            current_lock: Some(String::new()),
+            reason: "file is locked outside WOPI".to_string(),
+        })),
+    }
 }
 
 pub async fn refresh_lock(
@@ -461,10 +641,10 @@ pub async fn refresh_lock(
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiLockOperationResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
-    let lock_value = normalize_wopi_lock_value(requested_lock)?;
+    let lock_value = normalize_wopi_lock_header("X-WOPI-Lock", requested_lock)?;
     let Some(active_lock) = load_active_lock(state, resolved.file.id).await? else {
         return Ok(WopiLockOperationResult::Conflict(WopiConflict {
-            current_lock: None,
+            current_lock: Some(String::new()),
             reason: "file is not locked".to_string(),
         }));
     };
@@ -481,7 +661,7 @@ pub async fn refresh_lock(
             reason: "WOPI lock mismatch".to_string(),
         })),
         None => Ok(WopiLockOperationResult::Conflict(WopiConflict {
-            current_lock: None,
+            current_lock: Some(String::new()),
             reason: "file is locked outside WOPI".to_string(),
         })),
     }
@@ -495,10 +675,10 @@ pub async fn unlock_file(
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiLockOperationResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
-    let lock_value = normalize_wopi_lock_value(requested_lock)?;
+    let lock_value = normalize_wopi_lock_header("X-WOPI-Lock", requested_lock)?;
     let Some(active_lock) = load_active_lock(state, resolved.file.id).await? else {
         return Ok(WopiLockOperationResult::Conflict(WopiConflict {
-            current_lock: None,
+            current_lock: Some(String::new()),
             reason: "file is not locked".to_string(),
         }));
     };
@@ -517,7 +697,7 @@ pub async fn unlock_file(
             reason: "WOPI lock mismatch".to_string(),
         })),
         None => Ok(WopiLockOperationResult::Conflict(WopiConflict {
-            current_lock: None,
+            current_lock: Some(String::new()),
             reason: "file is locked outside WOPI".to_string(),
         })),
     }
@@ -540,6 +720,22 @@ pub fn allowed_origins(state: &AppState) -> Vec<String> {
 
 fn item_version_if_present(_file_id: i64, item_version: String) -> String {
     item_version
+}
+
+fn normalize_wopi_user_info(body: &actix_web::web::Bytes) -> Result<String> {
+    let user_info = std::str::from_utf8(body)
+        .map_err(|_| AsterError::validation_error("PUT_USER_INFO body must be valid UTF-8"))?;
+    if !user_info.is_ascii() {
+        return Err(AsterError::validation_error(
+            "PUT_USER_INFO body must contain ASCII characters only",
+        ));
+    }
+    if user_info.len() > MAX_WOPI_USER_INFO_LEN {
+        return Err(AsterError::validation_error(format!(
+            "PUT_USER_INFO body must be {MAX_WOPI_USER_INFO_LEN} bytes or fewer"
+        )));
+    }
+    Ok(user_info.to_string())
 }
 
 fn parse_put_relative_request(
@@ -609,6 +805,86 @@ fn normalize_relative_target_name(value: &str) -> Result<String> {
     Ok(value.to_string())
 }
 
+fn normalize_requested_rename_target(
+    source_file_name: &str,
+    requested_name: Option<&str>,
+) -> std::result::Result<String, String> {
+    let Some(requested_name) = requested_name else {
+        return Err("X-WOPI-RequestedName header is required".to_string());
+    };
+
+    let decoded = decode_wopi_filename(requested_name).map_err(|err| err.message().to_string())?;
+    match build_requested_rename_filename(source_file_name, &decoded) {
+        Ok(name) => Ok(name),
+        Err(_) => sanitize_requested_rename_name(source_file_name, &decoded)
+            .ok_or_else(|| "invalid requested file name".to_string()),
+    }
+}
+
+fn build_requested_rename_filename(source_file_name: &str, requested_name: &str) -> Result<String> {
+    let requested_name = requested_name.trim();
+    if requested_name.is_empty() {
+        return Err(AsterError::validation_error(
+            "requested file name cannot be empty",
+        ));
+    }
+
+    let full_name = rename_target_name(source_file_name, requested_name);
+    crate::utils::validate_name(&full_name)?;
+    Ok(full_name)
+}
+
+fn sanitize_requested_rename_name(source_file_name: &str, requested_name: &str) -> Option<String> {
+    let mut sanitized: String = requested_name
+        .chars()
+        .filter(|ch| !is_forbidden_file_name_char(*ch))
+        .collect();
+    sanitized = sanitized.trim().trim_end_matches('.').to_string();
+    truncate_utf8_to_len(&mut sanitized, max_requested_rename_len(source_file_name));
+    sanitized = sanitized.trim().trim_end_matches('.').to_string();
+
+    (!sanitized.is_empty())
+        .then(|| build_requested_rename_filename(source_file_name, &sanitized).ok())
+        .flatten()
+}
+
+fn rename_target_name(source_file_name: &str, requested_name: &str) -> String {
+    match file_extension(source_file_name) {
+        Some(ext) => format!("{requested_name}.{ext}"),
+        None => requested_name.to_string(),
+    }
+}
+
+fn max_requested_rename_len(source_file_name: &str) -> usize {
+    usize::try_from(WOPI_FILE_NAME_MAX_LEN).unwrap_or(255)
+        - file_extension(source_file_name).map_or(0, |ext| ext.len() + 1)
+}
+
+fn response_name_for_rename<'a>(source_file_name: &str, renamed_file_name: &'a str) -> &'a str {
+    if file_extension(source_file_name).is_some() {
+        source_file_stem(renamed_file_name)
+    } else {
+        renamed_file_name
+    }
+}
+
+fn truncate_utf8_to_len(value: &mut String, max_len: usize) {
+    if value.len() <= max_len {
+        return;
+    }
+
+    let mut truncate_at = 0;
+    for (index, ch) in value.char_indices() {
+        let next = index + ch.len_utf8();
+        if next > max_len {
+            break;
+        }
+        truncate_at = next;
+    }
+
+    value.truncate(truncate_at);
+}
+
 fn normalize_suggested_target_name(source_file_name: &str, value: &str) -> String {
     let candidate = if value.starts_with('.') {
         format!("{}{}", source_file_stem(source_file_name), value)
@@ -631,7 +907,7 @@ fn sanitize_suggested_target_name(candidate: &str, fallback: &str) -> String {
     }
 
     if sanitized.len() > 255 {
-        sanitized.truncate(255);
+        truncate_utf8_to_len(&mut sanitized, 255);
         sanitized = sanitized.trim().trim_end_matches('.').to_string();
     }
 
@@ -688,6 +964,24 @@ async fn suggest_available_relative_target(
     }
 }
 
+async fn resolve_available_rename_target(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    current_file_id: i64,
+    requested_name: &str,
+) -> Result<String> {
+    let existing = find_file_by_name_in_scope(&state.db, scope, folder_id, requested_name).await?;
+    if match existing.as_ref() {
+        None => true,
+        Some(file) => file.id == current_file_id,
+    } {
+        return Ok(requested_name.to_string());
+    }
+
+    suggest_available_relative_target(state, scope, folder_id, requested_name).await
+}
+
 async fn store_relative_target_from_bytes(
     state: &AppState,
     scope: WorkspaceStorageScope,
@@ -702,7 +996,7 @@ async fn store_relative_target_from_bytes(
     let resolved_policy =
         workspace_storage_service::resolve_policy_for_size(state, scope, folder_id, size).await?;
 
-    let result = if resolved_policy.driver_type == crate::types::DriverType::Local {
+    if resolved_policy.driver_type == crate::types::DriverType::Local {
         let should_dedup = workspace_storage_service::local_content_dedup_enabled(&resolved_policy);
         let staging_token = format!("{}.upload", uuid::Uuid::new_v4());
         let staging_path =
@@ -795,9 +1089,7 @@ async fn store_relative_target_from_bytes(
         };
         crate::utils::cleanup_temp_file(&temp_path).await;
         result
-    };
-
-    result
+    }
 }
 
 async fn build_put_relative_response(
@@ -883,7 +1175,7 @@ fn decode_wopi_filename(value: &str) -> Result<String> {
         }
 
         let mut padded = shifted.clone();
-        while padded.len() % 4 != 0 {
+        while !padded.len().is_multiple_of(4) {
             padded.push('=');
         }
         let bytes = STANDARD.decode(padded.as_bytes()).map_err(|_| {
@@ -1009,14 +1301,18 @@ async fn resolve_action_url(
         .ok_or_else(|| AsterError::validation_error("missing WOPI discovery URL"))?;
     let discovery = load_discovery(state, discovery_url).await?;
     let extension = file_extension(&file.name);
-    let urlsrc = discovery
-        .find_action_url(&app_config.action, extension.as_deref(), &file.mime_type)
-        .ok_or_else(|| {
-            AsterError::validation_error(format!(
-                "WOPI discovery has no '{}' action for '{}'",
-                app_config.action, file.name
-            ))
-        })?;
+    let urlsrc = resolve_discovery_action_url(
+        &discovery,
+        &app_config.action,
+        extension.as_deref(),
+        &file.mime_type,
+    )
+    .ok_or_else(|| {
+        AsterError::validation_error(format!(
+            "WOPI discovery has no compatible action for '{}' (preferred action '{}')",
+            file.name, app_config.action
+        ))
+    })?;
     append_wopi_src(&urlsrc, wopi_src)
 }
 
@@ -1158,6 +1454,41 @@ impl WopiDiscovery {
     }
 }
 
+fn resolve_discovery_action_url(
+    discovery: &WopiDiscovery,
+    requested_action: &str,
+    extension: Option<&str>,
+    mime_type: &str,
+) -> Option<String> {
+    let preferred_actions = preferred_discovery_actions(requested_action);
+
+    preferred_actions
+        .iter()
+        .find_map(|action| discovery.find_action_url(action, extension, mime_type))
+}
+
+fn preferred_discovery_actions(requested_action: &str) -> Vec<String> {
+    let normalized = requested_action.trim().to_ascii_lowercase();
+    let mut actions = Vec::new();
+
+    if !normalized.is_empty() && !is_known_discovery_action(&normalized) {
+        actions.push(normalized);
+    }
+
+    for candidate in DISCOVERY_ACTION_PRIORITY {
+        if actions.iter().any(|existing| existing == candidate) {
+            continue;
+        }
+        actions.push((*candidate).to_string());
+    }
+
+    actions
+}
+
+fn is_known_discovery_action(action: &str) -> bool {
+    DISCOVERY_ACTION_PRIORITY.contains(&action)
+}
+
 pub async fn discover_preview_apps(
     state: &AppState,
     discovery_url: &str,
@@ -1173,15 +1504,6 @@ pub async fn discover_preview_apps(
 }
 
 fn build_discovered_preview_apps(discovery: &WopiDiscovery) -> Vec<DiscoveredWopiPreviewApp> {
-    const ACTION_PRIORITY: &[&str] = &[
-        "view",
-        "embedview",
-        "mobileview",
-        "edit",
-        "embededit",
-        "mobileedit",
-    ];
-
     #[derive(Debug, Clone)]
     struct DiscoveryGroup {
         icon_url: Option<String>,
@@ -1217,7 +1539,7 @@ fn build_discovered_preview_apps(discovery: &WopiDiscovery) -> Vec<DiscoveredWop
     let mut used_suffixes = std::collections::HashSet::new();
 
     for group in groups {
-        let action_name = ACTION_PRIORITY
+        let action_name = DISCOVERY_ACTION_PRIORITY
             .iter()
             .find_map(|candidate| {
                 let has_extensions = group.actions.iter().any(|action| {
@@ -1245,7 +1567,13 @@ fn build_discovered_preview_apps(discovery: &WopiDiscovery) -> Vec<DiscoveredWop
 
         let mut extensions = Vec::new();
         for action in &group.actions {
-            if action.action != action_name {
+            let should_collect_extension = if is_known_discovery_action(&action_name) {
+                is_known_discovery_action(&action.action)
+            } else {
+                action.action == action_name
+            };
+
+            if !should_collect_extension {
                 continue;
             }
             if let Some(ext) = action.ext.as_deref()
@@ -1486,7 +1814,7 @@ async fn ensure_wopi_lock_matches(
 
     let Some(lock_payload) = active_lock.payload else {
         return Ok(Some(WopiConflict {
-            current_lock: None,
+            current_lock: Some(String::new()),
             reason: "file is locked outside WOPI".to_string(),
         }));
     };
@@ -1534,12 +1862,7 @@ async fn create_wopi_lock(
     let path = lock_service::resolve_entity_path(&state.db, EntityType::File, file.id).await?;
     let now = Utc::now();
     let timeout_at = now + Duration::seconds(wopi::lock_ttl_secs(&state.runtime_config));
-    let owner_info = serde_json::to_string(&WopiLockPayload {
-        kind: "wopi".to_string(),
-        app_key: payload.app_key.clone(),
-        lock: requested_lock.to_string(),
-    })
-    .map_err(|_| AsterError::internal_error("failed to encode WOPI lock payload"))?;
+    let owner_info = encode_wopi_lock_payload(payload, requested_lock)?;
 
     let model = resource_lock::ActiveModel {
         token: Set(format!("wopi:{}", uuid::Uuid::new_v4())),
@@ -1567,6 +1890,33 @@ async fn refresh_lock_model(state: &AppState, lock: resource_lock::Model) -> Res
     ));
     active.update(&state.db).await.map_err(AsterError::from)?;
     Ok(())
+}
+
+async fn replace_wopi_lock_model(
+    state: &AppState,
+    lock: resource_lock::Model,
+    payload: &WopiAccessTokenPayload,
+    requested_lock: &str,
+) -> Result<()> {
+    let mut active: resource_lock::ActiveModel = lock.into();
+    active.owner_info = Set(Some(encode_wopi_lock_payload(payload, requested_lock)?));
+    active.timeout_at = Set(Some(
+        Utc::now() + Duration::seconds(wopi::lock_ttl_secs(&state.runtime_config)),
+    ));
+    active.update(&state.db).await.map_err(AsterError::from)?;
+    Ok(())
+}
+
+fn encode_wopi_lock_payload(
+    payload: &WopiAccessTokenPayload,
+    requested_lock: &str,
+) -> Result<String> {
+    serde_json::to_string(&WopiLockPayload {
+        kind: "wopi".to_string(),
+        app_key: payload.app_key.clone(),
+        lock: requested_lock.to_string(),
+    })
+    .map_err(|_| AsterError::internal_error("failed to encode WOPI lock payload"))
 }
 
 fn discovery_cache_ttl(runtime_config: &crate::config::RuntimeConfig) -> Duration {
@@ -1645,12 +1995,22 @@ fn file_extension(file_name: &str) -> Option<String> {
         .filter(|ext| !ext.is_empty())
 }
 
-fn normalize_wopi_lock_value(value: &str) -> Result<String> {
+fn normalize_wopi_lock_header(header_name: &str, value: &str) -> Result<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
-        return Err(AsterError::validation_error(
-            "X-WOPI-Lock header must not be empty",
-        ));
+        return Err(AsterError::validation_error(format!(
+            "{header_name} header must not be empty"
+        )));
+    }
+    if !trimmed.is_ascii() {
+        return Err(AsterError::validation_error(format!(
+            "{header_name} header must contain ASCII characters only"
+        )));
+    }
+    if trimmed.len() > MAX_WOPI_LOCK_LEN {
+        return Err(AsterError::validation_error(format!(
+            "{header_name} header must be {MAX_WOPI_LOCK_LEN} bytes or fewer"
+        )));
     }
     Ok(trimmed.to_string())
 }
@@ -1743,7 +2103,7 @@ mod tests {
         PutRelativeTargetMode, WopiCheckFileInfo, WopiRequestSource, access_token_hash,
         append_wopi_src, build_discovered_preview_apps, decode_wopi_filename, encode_wopi_filename,
         ensure_request_source_allowed, expand_action_url, parse_discovery_xml,
-        parse_put_relative_request, trusted_origins_for_app,
+        parse_put_relative_request, resolve_discovery_action_url, trusted_origins_for_app,
     };
     use crate::services::preview_app_service::{
         PreviewAppProvider, PreviewOpenMode, PublicPreviewAppConfig, PublicPreviewAppDefinition,
@@ -1859,7 +2219,7 @@ mod tests {
         assert_eq!(
             apps[0],
             super::DiscoveredWopiPreviewApp {
-                action: "view".to_string(),
+                action: "edit".to_string(),
                 extensions: vec!["doc".to_string(), "docx".to_string()],
                 icon_url: Some("https://office.example.com/word.ico".to_string()),
                 key_suffix: "word".to_string(),
@@ -1885,6 +2245,40 @@ mod tests {
                 key_suffix: "pdf".to_string(),
                 label: "Pdf".to_string(),
             }
+        );
+    }
+
+    #[test]
+    fn resolve_discovery_action_url_prefers_editable_actions_for_legacy_view_configs() {
+        let discovery = parse_discovery_xml(
+            r#"
+            <wopi-discovery>
+              <net-zone name="external-http">
+                <app name="Word">
+                  <action name="view" ext="doc" urlsrc="https://office.example.com/word/view?" />
+                  <action name="view" ext="docx" urlsrc="https://office.example.com/word/view?" />
+                  <action name="edit" ext="docx" urlsrc="https://office.example.com/word/edit?" />
+                </app>
+              </net-zone>
+            </wopi-discovery>
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            resolve_discovery_action_url(
+                &discovery,
+                "view",
+                Some("docx"),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+            .as_deref(),
+            Some("https://office.example.com/word/edit?")
+        );
+        assert_eq!(
+            resolve_discovery_action_url(&discovery, "edit", Some("doc"), "application/msword",)
+                .as_deref(),
+            Some("https://office.example.com/word/view?")
         );
     }
 
@@ -1959,18 +2353,23 @@ mod tests {
 
     #[test]
     fn check_file_info_serializes_user_can_not_write_relative() {
+        use crate::services::wopi_service::WOPI_FILE_NAME_MAX_LEN;
+
         let info = WopiCheckFileInfo {
             base_file_name: "doc.docx".to_string(),
+            file_name_max_length: Some(WOPI_FILE_NAME_MAX_LEN),
             owner_id: "1".to_string(),
             size: 123,
             user_id: "2".to_string(),
             user_can_not_write_relative: false,
-            user_can_rename: false,
+            user_can_rename: true,
+            user_info: Some("pane-state".to_string()),
             user_can_write: true,
             read_only: false,
-            supports_get_lock: false,
+            supports_get_lock: true,
             supports_locks: true,
-            supports_rename: false,
+            supports_rename: true,
+            supports_user_info: Some(true),
             supports_update: true,
             version: "hash".to_string(),
         };

@@ -104,6 +104,7 @@ pub async fn file_operation(
 ) -> HttpResponse {
     let override_value = header_value(&req, "X-WOPI-Override");
     let requested_lock = optional_header_value(&req, "X-WOPI-Lock").unwrap_or_default();
+    let old_lock = optional_header_value(&req, "X-WOPI-OldLock").unwrap_or_default();
 
     if override_value.eq_ignore_ascii_case("PUT_RELATIVE") {
         return match wopi_service::put_relative_file(
@@ -129,7 +130,73 @@ pub async fn file_operation(
         };
     }
 
-    let result = if override_value.eq_ignore_ascii_case("LOCK") {
+    if override_value.eq_ignore_ascii_case("GET_LOCK") {
+        return match wopi_service::get_lock(
+            &state,
+            *path,
+            &query.access_token,
+            request_source(&req),
+        )
+        .await
+        {
+            Ok(wopi_service::WopiGetLockResult::Success { current_lock }) => HttpResponse::Ok()
+                .insert_header(("X-WOPI-Lock", current_lock))
+                .finish(),
+            Ok(wopi_service::WopiGetLockResult::Conflict(conflict)) => conflict_response(&conflict),
+            Err(error) => protocol_error_response(error),
+        };
+    }
+
+    if override_value.eq_ignore_ascii_case("RENAME_FILE") {
+        return match wopi_service::rename_file(
+            &state,
+            *path,
+            &query.access_token,
+            optional_header_value(&req, "X-WOPI-RequestedName"),
+            optional_header_value(&req, "X-WOPI-Lock"),
+            request_source(&req),
+        )
+        .await
+        {
+            Ok(wopi_service::WopiRenameFileResult::Success(response)) => {
+                HttpResponse::Ok().json(response)
+            }
+            Ok(wopi_service::WopiRenameFileResult::Conflict(conflict)) => {
+                conflict_response(&conflict)
+            }
+            Ok(wopi_service::WopiRenameFileResult::InvalidName { reason }) => {
+                invalid_file_name_response(&reason)
+            }
+            Err(error) => protocol_error_response(error),
+        };
+    }
+
+    if override_value.eq_ignore_ascii_case("PUT_USER_INFO") {
+        return match wopi_service::put_user_info(
+            &state,
+            *path,
+            &query.access_token,
+            body,
+            request_source(&req),
+        )
+        .await
+        {
+            Ok(()) => HttpResponse::Ok().finish(),
+            Err(error) => protocol_error_response(error),
+        };
+    }
+
+    let result = if override_value.eq_ignore_ascii_case("LOCK") && !old_lock.is_empty() {
+        wopi_service::unlock_and_relock_file(
+            &state,
+            *path,
+            &query.access_token,
+            requested_lock,
+            old_lock,
+            request_source(&req),
+        )
+        .await
+    } else if override_value.eq_ignore_ascii_case("LOCK") {
         wopi_service::lock_file(
             &state,
             *path,
@@ -192,6 +259,12 @@ fn put_relative_conflict_response(
     }
     response
         .insert_header(("X-WOPI-LockFailureReason", conflict.reason.as_str()))
+        .finish()
+}
+
+fn invalid_file_name_response(reason: &str) -> HttpResponse {
+    HttpResponse::BadRequest()
+        .insert_header(("X-WOPI-InvalidFileNameError", reason))
         .finish()
 }
 

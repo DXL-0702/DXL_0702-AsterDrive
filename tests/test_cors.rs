@@ -4,8 +4,8 @@ mod common;
 use actix_web::{App, body::to_bytes, http::header, test, web};
 use serde_json::Value;
 
-const EXPECTED_ALLOW_HEADERS: &str = "authorization, accept, content-type, depth, destination, if, lock-token, overwrite, timeout, x-wopi-lock, x-wopi-oldlock, x-wopi-override, x-wopi-overwriterelativetarget, x-wopi-relativetarget, x-wopi-size, x-wopi-suggestedtarget";
-const EXPECTED_EXPOSE_HEADERS: &str = "dav, lock-token, x-wopi-itemversion, x-wopi-lock, x-wopi-lockfailurereason, x-wopi-validrelativetarget";
+const EXPECTED_ALLOW_HEADERS: &str = "authorization, accept, content-type, depth, destination, if, lock-token, overwrite, timeout, x-wopi-lock, x-wopi-oldlock, x-wopi-override, x-wopi-overwriterelativetarget, x-wopi-requestedname, x-wopi-relativetarget, x-wopi-size, x-wopi-suggestedtarget";
+const EXPECTED_EXPOSE_HEADERS: &str = "dav, lock-token, x-wopi-itemversion, x-wopi-invalidfilenameerror, x-wopi-lock, x-wopi-lockfailurereason, x-wopi-validrelativetarget";
 
 macro_rules! create_test_app_with_cors {
     ($state:expr) => {{
