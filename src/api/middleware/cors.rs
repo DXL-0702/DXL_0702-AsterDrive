@@ -45,7 +45,10 @@ const ALLOWED_HEADERS: &[&str] = &[
     "x-wopi-lock",
     "x-wopi-oldlock",
     "x-wopi-override",
-    "x-wopi-validatetarget",
+    "x-wopi-overwriterelativetarget",
+    "x-wopi-relativetarget",
+    "x-wopi-size",
+    "x-wopi-suggestedtarget",
 ];
 
 const EXPOSE_HEADERS: &[&str] = &[
@@ -54,6 +57,7 @@ const EXPOSE_HEADERS: &[&str] = &[
     "x-wopi-itemversion",
     "x-wopi-lock",
     "x-wopi-lockfailurereason",
+    "x-wopi-validrelativetarget",
 ];
 
 pub struct RuntimeCors;

@@ -21,13 +21,19 @@ pub(crate) use crate::services::workspace_scope_service::{
     verify_folder_access,
 };
 pub(crate) use crate::services::workspace_storage_core::{
-    check_quota, create_new_file_from_blob, create_nondedup_blob, create_s3_nondedup_blob,
-    ensure_upload_parent_path, finalize_upload_session_blob, finalize_upload_session_file,
-    load_storage_limits, local_content_dedup_enabled, parse_relative_upload_path,
-    resolve_policy_for_size, update_storage_used,
+    check_quota, create_exact_file_from_blob, create_new_file_from_blob, create_nondedup_blob,
+    create_s3_nondedup_blob, ensure_upload_parent_path, finalize_upload_session_blob,
+    finalize_upload_session_file, load_storage_limits, local_content_dedup_enabled,
+    parse_relative_upload_path, resolve_policy_for_size, update_storage_used,
 };
 
 const HASH_BUF_SIZE: usize = 65536;
+
+#[derive(Clone, Copy)]
+enum NewFileMode {
+    ResolveUnique,
+    Exact,
+}
 
 fn relay_stream_direct_upload_eligible(
     policy: &crate::entities::storage_policy::Model,
@@ -56,7 +62,7 @@ pub(crate) async fn store_from_temp(
     existing_file_id: Option<i64>,
     skip_lock_check: bool,
 ) -> Result<file::Model> {
-    store_from_temp_with_hints(
+    store_from_temp_internal(
         state,
         scope,
         folder_id,
@@ -67,6 +73,7 @@ pub(crate) async fn store_from_temp(
         skip_lock_check,
         None,
         None,
+        NewFileMode::ResolveUnique,
     )
     .await
 }
@@ -83,6 +90,65 @@ pub(crate) async fn store_from_temp_with_hints(
     skip_lock_check: bool,
     resolved_policy: Option<crate::entities::storage_policy::Model>,
     precomputed_hash: Option<&str>,
+) -> Result<file::Model> {
+    store_from_temp_internal(
+        state,
+        scope,
+        folder_id,
+        filename,
+        temp_path,
+        size,
+        existing_file_id,
+        skip_lock_check,
+        resolved_policy,
+        precomputed_hash,
+        NewFileMode::ResolveUnique,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn store_from_temp_exact_name_with_hints(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &str,
+    temp_path: &str,
+    size: i64,
+    existing_file_id: Option<i64>,
+    skip_lock_check: bool,
+    resolved_policy: Option<crate::entities::storage_policy::Model>,
+    precomputed_hash: Option<&str>,
+) -> Result<file::Model> {
+    store_from_temp_internal(
+        state,
+        scope,
+        folder_id,
+        filename,
+        temp_path,
+        size,
+        existing_file_id,
+        skip_lock_check,
+        resolved_policy,
+        precomputed_hash,
+        NewFileMode::Exact,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn store_from_temp_internal(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &str,
+    temp_path: &str,
+    size: i64,
+    existing_file_id: Option<i64>,
+    skip_lock_check: bool,
+    resolved_policy: Option<crate::entities::storage_policy::Model>,
+    precomputed_hash: Option<&str>,
+    new_file_mode: NewFileMode,
 ) -> Result<file::Model> {
     let db = &state.db;
 
@@ -120,8 +186,6 @@ pub(crate) async fn store_from_temp_with_hints(
             size, policy.max_file_size
         )));
     }
-
-    check_quota(db, scope, size).await?;
 
     let now = Utc::now();
     let driver = state.driver_registry.get_driver(&policy)?;
@@ -171,13 +235,22 @@ pub(crate) async fn store_from_temp_with_hints(
     } else {
         None
     };
+    let storage_delta = overwrite_ctx
+        .as_ref()
+        .map_or(size, |(old_file, _)| size - old_file.size);
+
+    if storage_delta > 0 {
+        check_quota(db, scope, storage_delta).await?;
+    }
 
     let mime = mime_guess::from_path(filename)
         .first_or_octet_stream()
         .to_string();
 
     let txn = state.db.begin().await.map_err(AsterError::from)?;
-    check_quota(&txn, scope, size).await?;
+    if storage_delta > 0 {
+        check_quota(&txn, scope, storage_delta).await?;
+    }
 
     let blob = if let Some((file_hash, storage_path)) = dedup_target.as_ref() {
         let blob =
@@ -220,12 +293,22 @@ pub(crate) async fn store_from_temp_with_hints(
         )
         .await?;
 
-        update_storage_used(&txn, scope, size).await?;
+        if storage_delta != 0 {
+            update_storage_used(&txn, scope, storage_delta).await?;
+        }
         updated
     } else {
-        let created =
-            create_new_file_from_blob(&txn, scope, folder_id, filename, &blob, now).await?;
-        update_storage_used(&txn, scope, size).await?;
+        let created = match new_file_mode {
+            NewFileMode::ResolveUnique => {
+                create_new_file_from_blob(&txn, scope, folder_id, filename, &blob, now).await?
+            }
+            NewFileMode::Exact => {
+                create_exact_file_from_blob(&txn, scope, folder_id, filename, &blob, now).await?
+            }
+        };
+        if storage_delta != 0 {
+            update_storage_used(&txn, scope, storage_delta).await?;
+        }
         created
     };
 

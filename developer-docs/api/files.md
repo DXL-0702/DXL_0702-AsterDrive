@@ -201,7 +201,7 @@
 
 - `app_key` 必须指向 `/public/preview-apps` 里当前启用、且 `provider = "wopi"` 的预览器
 - `action_url` 会带上实际回调入口 `WOPISrc`
-- 当前实现里的 `access_token_ttl` 实际返回的是“过期时间的 Unix 毫秒时间戳”，不是“剩余多少秒”
+- 当前实现里的 `access_token_ttl` 按 WOPI 规范返回“过期时间的 Unix 毫秒时间戳”，不是“剩余多少秒”
 - 生成 WOPI 启动会话时要求系统已配置 `public_site_url`
 - 真实 WOPI 回调不走这条路径，而是走 `/api/v1/wopi/files/{id}` 及其 `/contents` 变体，详细见 [WOPI](/api/wopi)
 

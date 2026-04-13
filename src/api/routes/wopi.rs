@@ -1,6 +1,6 @@
 use crate::runtime::AppState;
 use crate::services::wopi_service;
-use actix_web::{HttpRequest, HttpResponse, http::StatusCode, web};
+use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -100,9 +100,34 @@ pub async fn file_operation(
     req: HttpRequest,
     path: web::Path<i64>,
     query: web::Query<WopiAccessQuery>,
+    body: web::Bytes,
 ) -> HttpResponse {
     let override_value = header_value(&req, "X-WOPI-Override");
     let requested_lock = optional_header_value(&req, "X-WOPI-Lock").unwrap_or_default();
+
+    if override_value.eq_ignore_ascii_case("PUT_RELATIVE") {
+        return match wopi_service::put_relative_file(
+            &state,
+            *path,
+            &query.access_token,
+            body,
+            optional_header_value(&req, "X-WOPI-SuggestedTarget"),
+            optional_header_value(&req, "X-WOPI-RelativeTarget"),
+            optional_header_value(&req, "X-WOPI-OverwriteRelativeTarget"),
+            optional_header_value(&req, "X-WOPI-Size"),
+            request_source(&req),
+        )
+        .await
+        {
+            Ok(wopi_service::WopiPutRelativeResult::Success(response)) => {
+                HttpResponse::Ok().json(response)
+            }
+            Ok(wopi_service::WopiPutRelativeResult::Conflict(conflict)) => {
+                put_relative_conflict_response(&conflict)
+            }
+            Err(error) => protocol_error_response(error),
+        };
+    }
 
     let result = if override_value.eq_ignore_ascii_case("LOCK") {
         wopi_service::lock_file(
@@ -154,14 +179,24 @@ fn conflict_response(conflict: &wopi_service::WopiConflict) -> HttpResponse {
         .finish()
 }
 
+fn put_relative_conflict_response(
+    conflict: &wopi_service::WopiPutRelativeConflict,
+) -> HttpResponse {
+    let mut response = HttpResponse::Conflict();
+    response.insert_header((
+        "X-WOPI-Lock",
+        conflict.current_lock.as_deref().unwrap_or_default(),
+    ));
+    if let Some(valid_target) = &conflict.valid_target {
+        response.insert_header(("X-WOPI-ValidRelativeTarget", valid_target.as_str()));
+    }
+    response
+        .insert_header(("X-WOPI-LockFailureReason", conflict.reason.as_str()))
+        .finish()
+}
+
 fn protocol_error_response(error: crate::errors::AsterError) -> HttpResponse {
-    let status = match error.http_status() {
-        StatusCode::FORBIDDEN => StatusCode::UNAUTHORIZED,
-        other => other,
-    };
-    HttpResponse::build(status)
-        .content_type("text/plain; charset=utf-8")
-        .body(error.message().to_string())
+    actix_web::ResponseError::error_response(&error)
 }
 
 fn header_value(req: &HttpRequest, name: &str) -> String {

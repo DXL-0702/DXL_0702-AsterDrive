@@ -44,12 +44,14 @@ WOPI 相关能力分成两层：
 - 系统必须配置 `public_site_url`，因为服务端要生成绝对的 `WOPISrc`
 - 如果预览器配置了 `config.action_url`，会直接展开 / 追加 `WOPISrc`
 - 如果没配 `action_url` 但配了 `config.discovery_url`，服务端会拉取 discovery XML，并按“扩展名 -> MIME -> 通配”顺序解析可用 action URL
-- `access_token_ttl` 当前实现返回的是“过期时间的 Unix 毫秒时间戳”，不是“TTL 秒数”
+- `access_token_ttl` 按 WOPI 规范返回“过期时间的 Unix 毫秒时间戳”，不是“TTL 秒数”
 - 团队文件虽然走 `/teams/{team_id}/files/{id}/wopi/open` 启动，但后续回调仍统一打到 `/api/v1/wopi/files/{id}`；团队作用域保存在 access token 里
 
 ## 协议回调接口
 
 以下路径也都相对于 `/api/v1`，但它们不是普通前端 JSON 接口，而是给 WOPI 宿主调用的协议入口。
+
+成功时返回原始 WOPI JSON / 文件流；失败时仍复用统一的 `ApiResponse` JSON 错误格式。
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |

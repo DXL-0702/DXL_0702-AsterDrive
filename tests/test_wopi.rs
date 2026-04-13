@@ -153,6 +153,20 @@ fn wopi_contents_query(file_id: i64, access_token: &str) -> String {
     )
 }
 
+fn parse_wopi_result_url(url: &str) -> (i64, String) {
+    let parsed = reqwest::Url::parse(url).expect("put-relative url should be valid");
+    let file_id = parsed
+        .path_segments()
+        .and_then(|segments| segments.last())
+        .and_then(|segment| segment.parse::<i64>().ok())
+        .expect("put-relative url should end with file id");
+    let access_token = parsed
+        .query_pairs()
+        .find_map(|(key, value)| (key == "access_token").then(|| value.into_owned()))
+        .expect("put-relative url should carry access_token");
+    (file_id, access_token)
+}
+
 #[actix_web::test]
 async fn test_open_wopi_session_persists_token_and_check_file_info_succeeds() {
     let state = common::setup().await;
@@ -194,7 +208,7 @@ async fn test_open_wopi_session_persists_token_and_check_file_info_succeeds() {
     assert!(
         launch["access_token_ttl"]
             .as_i64()
-            .is_some_and(|value| value > 0)
+            .is_some_and(|value| value > Utc::now().timestamp_millis())
     );
 
     let token_hash = aster_drive::utils::hash::sha256_hex(wopi_access_token.as_bytes());
@@ -221,7 +235,7 @@ async fn test_open_wopi_session_persists_token_and_check_file_info_succeeds() {
     assert_eq!(body["BaseFileName"], "report 1.docx");
     assert_eq!(body["OwnerId"], user.id.to_string());
     assert_eq!(body["UserId"], user.id.to_string());
-    assert_eq!(body["UserCanNotWriteRelative"], true);
+    assert_eq!(body["UserCanNotWriteRelative"], false);
     assert_eq!(body["UserCanRename"], false);
     assert_eq!(body["UserCanWrite"], true);
     assert_eq!(body["ReadOnly"], false);
@@ -342,8 +356,8 @@ async fn test_wopi_check_file_info_rejects_token_for_another_file() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
 
-    let body = test::read_body(resp).await;
-    let message = String::from_utf8(body.to_vec()).unwrap();
+    let body: Value = test::read_body_json(resp).await;
+    let message = body["msg"].as_str().unwrap();
     assert!(message.contains("does not match file"));
 }
 
@@ -606,8 +620,8 @@ async fn test_wopi_put_file_requires_lock_header_when_wopi_lock_exists() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
 
-    let body = test::read_body(resp).await;
-    let message = String::from_utf8(body.to_vec()).unwrap();
+    let body: Value = test::read_body_json(resp).await;
+    let message = body["msg"].as_str().unwrap();
     assert!(message.contains("X-WOPI-Lock header is required"));
 }
 
@@ -750,12 +764,17 @@ async fn test_wopi_put_file_contents_rejects_non_put_override() {
 }
 
 #[actix_web::test]
-async fn test_wopi_put_relative_is_not_implemented_yet() {
+async fn test_wopi_put_relative_creates_copy_for_suggested_target() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
+    let db = state.db.clone();
     let app = create_test_app!(state);
 
     let (access_cookie, _) = register_and_login!(app);
+    let user = user_repo::find_by_username(&db, "testuser")
+        .await
+        .unwrap()
+        .expect("registered user should exist");
     let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
     let launch = open_wopi_session!(
         app,
@@ -769,9 +788,176 @@ async fn test_wopi_put_relative_is_not_implemented_yet() {
         .uri(&wopi_file_query(file_id, wopi_access_token))
         .insert_header(("Origin", TEST_WOPI_ORIGIN))
         .insert_header(("X-WOPI-Override", "PUT_RELATIVE"))
+        .insert_header(("X-WOPI-SuggestedTarget", ".docx"))
+        .set_payload("copied via put relative")
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 501);
+    assert_eq!(resp.status(), 200);
+
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["Name"], "report 1 (1).docx");
+    let url = body["Url"].as_str().unwrap();
+    let (target_file_id, target_access_token) = parse_wopi_result_url(url);
+    let created = aster_drive::db::repository::file_repo::find_by_name_in_folder(
+        &db,
+        user.id,
+        None,
+        "report 1 (1).docx",
+    )
+    .await
+    .unwrap()
+    .expect("put-relative target should be created");
+    assert_eq!(created.id, target_file_id);
+
+    let req = test::TestRequest::get()
+        .uri(&wopi_contents_query(target_file_id, &target_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body = test::read_body(resp).await;
+    assert_eq!(&body[..], b"copied via put relative");
+}
+
+#[actix_web::test]
+async fn test_wopi_put_relative_returns_valid_relative_target_for_name_conflict() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let _existing_target = upload_test_file_named!(app, access_cookie, "copy.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "PUT_RELATIVE"))
+        .insert_header(("X-WOPI-RelativeTarget", "copy.docx"))
+        .set_payload("should conflict")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 409);
+    assert_eq!(
+        resp.headers()
+            .get("X-WOPI-ValidRelativeTarget")
+            .and_then(|value| value.to_str().ok()),
+        Some("copy (1).docx")
+    );
+    assert_eq!(
+        resp.headers()
+            .get("X-WOPI-Lock")
+            .and_then(|value| value.to_str().ok()),
+        Some("")
+    );
+}
+
+#[actix_web::test]
+async fn test_wopi_put_relative_overwrite_updates_existing_target() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let target_file_id = upload_test_file_named!(app, access_cookie, "copy.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "PUT_RELATIVE"))
+        .insert_header(("X-WOPI-RelativeTarget", "copy.docx"))
+        .insert_header(("X-WOPI-OverwriteRelativeTarget", "true"))
+        .set_payload("replaced via put relative")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["Name"], "copy.docx");
+    let url = body["Url"].as_str().unwrap();
+    let (returned_file_id, target_access_token) = parse_wopi_result_url(url);
+    assert_eq!(returned_file_id, target_file_id);
+
+    let req = test::TestRequest::get()
+        .uri(&wopi_contents_query(target_file_id, &target_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body = test::read_body(resp).await;
+    assert_eq!(&body[..], b"replaced via put relative");
+}
+
+#[actix_web::test]
+async fn test_wopi_put_relative_overwrite_returns_conflict_when_target_is_locked() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let target_file_id = upload_test_file_named!(app, access_cookie, "copy.docx");
+    let source_launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let target_launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{target_file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let source_token = source_launch["data"]["access_token"].as_str().unwrap();
+    let target_token = target_launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(target_file_id, target_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "LOCK"))
+        .insert_header(("X-WOPI-Lock", "target-lock"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, source_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "PUT_RELATIVE"))
+        .insert_header(("X-WOPI-RelativeTarget", "copy.docx"))
+        .insert_header(("X-WOPI-OverwriteRelativeTarget", "true"))
+        .set_payload("should conflict")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 409);
+    assert_eq!(
+        resp.headers()
+            .get("X-WOPI-Lock")
+            .and_then(|value| value.to_str().ok()),
+        Some("target-lock")
+    );
+    assert!(
+        resp.headers()
+            .get("X-WOPI-LockFailureReason")
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.contains("locked"))
+    );
 }
 
 #[actix_web::test]
@@ -828,10 +1014,10 @@ async fn test_wopi_check_file_info_rejects_untrusted_origin() {
         .insert_header(("Origin", "https://evil.example.com"))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 401);
+    assert_eq!(resp.status(), 403);
 
-    let body = test::read_body(resp).await;
-    let message = String::from_utf8(body.to_vec()).unwrap();
+    let body: Value = test::read_body_json(resp).await;
+    let message = body["msg"].as_str().unwrap();
     assert!(message.contains("untrusted WOPI request origin"));
 }
 
@@ -858,8 +1044,8 @@ async fn test_wopi_check_file_info_rejects_invalid_origin_header() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
 
-    let body = test::read_body(resp).await;
-    let message = String::from_utf8(body.to_vec()).unwrap();
+    let body: Value = test::read_body_json(resp).await;
+    let message = body["msg"].as_str().unwrap();
     assert!(message.contains("invalid Origin header"));
 }
 
@@ -886,8 +1072,8 @@ async fn test_wopi_check_file_info_rejects_invalid_referer_header() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
 
-    let body = test::read_body(resp).await;
-    let message = String::from_utf8(body.to_vec()).unwrap();
+    let body: Value = test::read_body_json(resp).await;
+    let message = body["msg"].as_str().unwrap();
     assert!(message.contains("invalid Referer header"));
 }
 
@@ -912,10 +1098,10 @@ async fn test_wopi_check_file_info_rejects_untrusted_referer() {
         .insert_header(("Referer", "https://evil.example.com/editor?x=1"))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 401);
+    assert_eq!(resp.status(), 403);
 
-    let body = test::read_body(resp).await;
-    let message = String::from_utf8(body.to_vec()).unwrap();
+    let body: Value = test::read_body_json(resp).await;
+    let message = body["msg"].as_str().unwrap();
     assert!(message.contains("untrusted WOPI request referer"));
 }
 
@@ -952,10 +1138,10 @@ async fn test_disabled_wopi_app_invalidates_existing_access_token() {
         .insert_header(("Origin", TEST_WOPI_ORIGIN))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 401);
+    assert_eq!(resp.status(), 403);
 
-    let body = test::read_body(resp).await;
-    let message = String::from_utf8(body.to_vec()).unwrap();
+    let body: Value = test::read_body_json(resp).await;
+    let message = body["msg"].as_str().unwrap();
     assert!(
         message.contains("WOPI app is disabled")
             || message.contains("WOPI app is no longer available")
@@ -1009,10 +1195,10 @@ async fn test_disabled_user_invalidates_wopi_access_token() {
         .insert_header(("Origin", TEST_WOPI_ORIGIN))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 401);
+    assert_eq!(resp.status(), 403);
 
-    let body = test::read_body(resp).await;
-    let message = String::from_utf8(body.to_vec()).unwrap();
+    let body: Value = test::read_body_json(resp).await;
+    let message = body["msg"].as_str().unwrap();
     assert!(message.contains("account is disabled"));
     assert!(
         wopi_session_repo::find_by_token_hash(&db, &token_hash)
@@ -1056,8 +1242,8 @@ async fn test_expired_wopi_access_token_is_rejected_and_removed() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 401);
 
-    let body = test::read_body(resp).await;
-    let message = String::from_utf8(body.to_vec()).unwrap();
+    let body: Value = test::read_body_json(resp).await;
+    let message = body["msg"].as_str().unwrap();
     assert!(message.contains("WOPI access token expired"));
     assert!(
         wopi_session_repo::find_by_token_hash(&db, &token_hash)
@@ -1093,8 +1279,8 @@ async fn test_wopi_lock_rejects_empty_lock_header() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
 
-    let body = test::read_body(resp).await;
-    let message = String::from_utf8(body.to_vec()).unwrap();
+    let body: Value = test::read_body_json(resp).await;
+    let message = body["msg"].as_str().unwrap();
     assert!(message.contains("X-WOPI-Lock header must not be empty"));
 }
 
@@ -1185,8 +1371,8 @@ async fn test_revoked_user_sessions_invalidate_wopi_access_token() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 401);
 
-    let body = test::read_body(resp).await;
-    let message = String::from_utf8(body.to_vec()).unwrap();
+    let body: Value = test::read_body_json(resp).await;
+    let message = body["msg"].as_str().unwrap();
     assert!(message.contains("WOPI session revoked"));
     assert!(
         wopi_session_repo::find_by_token_hash(&db, &token_hash)
@@ -1356,7 +1542,7 @@ async fn test_team_wopi_access_token_is_rejected_after_member_removal() {
         .insert_header(("Origin", TEST_WOPI_ORIGIN))
         .to_request();
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 401);
+    assert_eq!(resp.status(), 403);
 }
 
 #[actix_web::test]

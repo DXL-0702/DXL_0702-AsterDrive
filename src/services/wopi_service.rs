@@ -2,11 +2,16 @@ use std::collections::BTreeMap;
 use std::sync::LazyLock;
 use std::time::Duration as StdDuration;
 
+use base64::{
+    Engine as _,
+    engine::general_purpose::{STANDARD, STANDARD_NO_PAD},
+};
 use chrono::{DateTime, Duration, Utc};
 use moka::future::Cache;
 use reqwest::Url;
-use sea_orm::{ActiveModelTrait, Set};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, Set};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 use xmltree::{Element, XMLNode};
@@ -14,7 +19,7 @@ use xmltree::{Element, XMLNode};
 use crate::config::{cors, site_url, wopi};
 use crate::db::repository::{file_repo, lock_repo, wopi_session_repo};
 use crate::entities::{file, resource_lock, wopi_session};
-use crate::errors::{AsterError, Result};
+use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{
     auth_service, file_service, lock_service, preview_app_service,
@@ -37,6 +42,7 @@ static DISCOVERY_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct WopiLaunchSession {
     pub access_token: String,
+    /// WOPI access token expiry time as a Unix timestamp in milliseconds.
     pub access_token_ttl: i64,
     pub action_url: String,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -69,10 +75,30 @@ pub struct WopiConflict {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct WopiPutRelativeResponse {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct WopiPutRelativeConflict {
+    pub current_lock: Option<String>,
+    pub reason: String,
+    pub valid_target: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub enum WopiPutFileResult {
     Success { item_version: String },
     Conflict(WopiConflict),
+}
+
+#[derive(Debug, Clone)]
+pub enum WopiPutRelativeResult {
+    Success(WopiPutRelativeResponse),
+    Conflict(WopiPutRelativeConflict),
 }
 
 #[derive(Debug, Clone)]
@@ -117,6 +143,20 @@ struct ResolvedWopiAccess {
 struct ActiveWopiLock {
     lock: resource_lock::Model,
     payload: Option<WopiLockPayload>,
+}
+
+#[derive(Debug, Clone)]
+enum PutRelativeTargetMode {
+    Suggested(String),
+    Relative {
+        target_name: String,
+        overwrite: bool,
+    },
+}
+
+#[derive(Debug, Clone)]
+struct PutRelativeRequest {
+    target_mode: PutRelativeTargetMode,
 }
 
 #[derive(Debug, Clone)]
@@ -210,7 +250,7 @@ pub async fn check_file_info(
         owner_id: resolved.file.user_id.to_string(),
         size: resolved.file.size,
         user_id: resolved.payload.actor_user_id.to_string(),
-        user_can_not_write_relative: true,
+        user_can_not_write_relative: false,
         user_can_rename: false,
         user_can_write: true,
         read_only: false,
@@ -268,6 +308,115 @@ pub async fn put_file_contents(
     Ok(WopiPutFileResult::Success {
         item_version: item_version_if_present(updated.id, item_version),
     })
+}
+
+pub async fn put_relative_file(
+    state: &AppState,
+    file_id: i64,
+    access_token: &str,
+    body: actix_web::web::Bytes,
+    suggested_target: Option<&str>,
+    relative_target: Option<&str>,
+    overwrite_relative_target: Option<&str>,
+    size_header: Option<&str>,
+    request_source: WopiRequestSource<'_>,
+) -> Result<WopiPutRelativeResult> {
+    let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
+    let request = parse_put_relative_request(
+        &resolved.file.name,
+        suggested_target,
+        relative_target,
+        overwrite_relative_target,
+        size_header,
+        body.len(),
+    )?;
+    let scope = scope_from_payload(&resolved.payload);
+
+    let target_file = match request.target_mode {
+        PutRelativeTargetMode::Suggested(target_name) => {
+            store_relative_target_from_bytes(
+                state,
+                scope,
+                resolved.file.folder_id,
+                &target_name,
+                None,
+                &body,
+                false,
+            )
+            .await?
+        }
+        PutRelativeTargetMode::Relative {
+            target_name,
+            overwrite,
+        } => {
+            let existing =
+                find_file_by_name_in_scope(&state.db, scope, resolved.file.folder_id, &target_name)
+                    .await?;
+
+            let existing = match existing {
+                Some(existing) => existing,
+                None => {
+                    store_relative_target_from_bytes(
+                        state,
+                        scope,
+                        resolved.file.folder_id,
+                        &target_name,
+                        None,
+                        &body,
+                        true,
+                    )
+                    .await?
+                }
+            };
+
+            if existing.id == resolved.file.id {
+                return Err(AsterError::validation_error(
+                    "PUT_RELATIVE target must differ from source file",
+                ));
+            }
+
+            if !overwrite {
+                let valid_target = encode_wopi_filename(
+                    &suggest_available_relative_target(
+                        state,
+                        scope,
+                        resolved.file.folder_id,
+                        &target_name,
+                    )
+                    .await?,
+                );
+                return Ok(WopiPutRelativeResult::Conflict(WopiPutRelativeConflict {
+                    current_lock: Some(String::new()),
+                    reason: "target file already exists".to_string(),
+                    valid_target: Some(valid_target),
+                }));
+            }
+
+            if let Some(active_lock) = load_active_lock(state, existing.id).await? {
+                return Ok(WopiPutRelativeResult::Conflict(WopiPutRelativeConflict {
+                    current_lock: Some(active_wopi_lock_value(&active_lock).unwrap_or_default()),
+                    reason: "target file is locked".to_string(),
+                    valid_target: None,
+                }));
+            }
+
+            store_relative_target_from_bytes(
+                state,
+                scope,
+                resolved.file.folder_id,
+                &target_name,
+                Some(existing.id),
+                &body,
+                true,
+            )
+            .await?
+        }
+    };
+
+    let response =
+        build_put_relative_response(state, &resolved.payload, &target_file.name, target_file.id)
+            .await?;
+    Ok(WopiPutRelativeResult::Success(response))
 }
 
 pub async fn lock_file(
@@ -391,6 +540,411 @@ pub fn allowed_origins(state: &AppState) -> Vec<String> {
 
 fn item_version_if_present(_file_id: i64, item_version: String) -> String {
     item_version
+}
+
+fn parse_put_relative_request(
+    source_file_name: &str,
+    suggested_target: Option<&str>,
+    relative_target: Option<&str>,
+    overwrite_relative_target: Option<&str>,
+    size_header: Option<&str>,
+    body_len: usize,
+) -> Result<PutRelativeRequest> {
+    if let Some(size_header) = size_header {
+        let declared_size = size_header.parse::<usize>().map_err(|_| {
+            AsterError::validation_error("X-WOPI-Size header must be a non-negative integer")
+        })?;
+        if declared_size != body_len {
+            return Err(AsterError::validation_error(
+                "X-WOPI-Size header does not match request body length",
+            ));
+        }
+    }
+
+    match (suggested_target, relative_target) {
+        (Some(_), Some(_)) => Err(AsterError::validation_error(
+            "PUT_RELATIVE requires exactly one of X-WOPI-SuggestedTarget or X-WOPI-RelativeTarget",
+        )),
+        (None, None) => Err(AsterError::validation_error(
+            "PUT_RELATIVE requires X-WOPI-SuggestedTarget or X-WOPI-RelativeTarget",
+        )),
+        (Some(suggested_target), None) => {
+            let decoded = decode_wopi_filename(suggested_target)?;
+            let target_name = normalize_suggested_target_name(source_file_name, &decoded);
+            Ok(PutRelativeRequest {
+                target_mode: PutRelativeTargetMode::Suggested(target_name),
+            })
+        }
+        (None, Some(relative_target)) => {
+            let decoded = decode_wopi_filename(relative_target)?;
+            let overwrite = parse_overwrite_relative_target(overwrite_relative_target)?;
+            Ok(PutRelativeRequest {
+                target_mode: PutRelativeTargetMode::Relative {
+                    target_name: normalize_relative_target_name(&decoded)?,
+                    overwrite,
+                },
+            })
+        }
+    }
+}
+
+fn parse_overwrite_relative_target(raw: Option<&str>) -> Result<bool> {
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(false);
+    };
+
+    if raw.eq_ignore_ascii_case("true") {
+        Ok(true)
+    } else if raw.eq_ignore_ascii_case("false") {
+        Ok(false)
+    } else {
+        Err(AsterError::validation_error(
+            "X-WOPI-OverwriteRelativeTarget must be true or false",
+        ))
+    }
+}
+
+fn normalize_relative_target_name(value: &str) -> Result<String> {
+    crate::utils::validate_name(value)?;
+    Ok(value.to_string())
+}
+
+fn normalize_suggested_target_name(source_file_name: &str, value: &str) -> String {
+    let candidate = if value.starts_with('.') {
+        format!("{}{}", source_file_stem(source_file_name), value)
+    } else {
+        value.to_string()
+    };
+
+    sanitize_suggested_target_name(&candidate, source_file_name)
+}
+
+fn sanitize_suggested_target_name(candidate: &str, fallback: &str) -> String {
+    let mut sanitized: String = candidate
+        .chars()
+        .filter(|ch| !is_forbidden_file_name_char(*ch))
+        .collect();
+    sanitized = sanitized.trim().trim_end_matches('.').to_string();
+
+    if sanitized.is_empty() || sanitized == "." || sanitized == ".." {
+        return fallback.to_string();
+    }
+
+    if sanitized.len() > 255 {
+        sanitized.truncate(255);
+        sanitized = sanitized.trim().trim_end_matches('.').to_string();
+    }
+
+    if crate::utils::validate_name(&sanitized).is_ok() {
+        sanitized
+    } else {
+        fallback.to_string()
+    }
+}
+
+fn source_file_stem(value: &str) -> &str {
+    match value.rfind('.') {
+        Some(dot) if dot > 0 => &value[..dot],
+        _ => value,
+    }
+}
+
+fn is_forbidden_file_name_char(ch: char) -> bool {
+    matches!(
+        ch,
+        '/' | '\\' | '\0' | ':' | '*' | '?' | '"' | '<' | '>' | '|'
+    ) || ch.is_ascii_control()
+}
+
+async fn find_file_by_name_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    name: &str,
+) -> Result<Option<file::Model>> {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            file_repo::find_by_name_in_folder(db, user_id, folder_id, name).await
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            file_repo::find_by_name_in_team_folder(db, team_id, folder_id, name).await
+        }
+    }
+}
+
+async fn suggest_available_relative_target(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    name: &str,
+) -> Result<String> {
+    match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            file_repo::resolve_unique_filename(&state.db, user_id, folder_id, name).await
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            file_repo::resolve_unique_team_filename(&state.db, team_id, folder_id, name).await
+        }
+    }
+}
+
+async fn store_relative_target_from_bytes(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &str,
+    existing_file_id: Option<i64>,
+    body: &actix_web::web::Bytes,
+    exact_name: bool,
+) -> Result<file::Model> {
+    let size = i64::try_from(body.len())
+        .map_err(|_| AsterError::validation_error("PUT_RELATIVE body is too large"))?;
+    let resolved_policy =
+        workspace_storage_service::resolve_policy_for_size(state, scope, folder_id, size).await?;
+
+    let result = if resolved_policy.driver_type == crate::types::DriverType::Local {
+        let should_dedup = workspace_storage_service::local_content_dedup_enabled(&resolved_policy);
+        let staging_token = format!("{}.upload", uuid::Uuid::new_v4());
+        let staging_path =
+            crate::storage::local::upload_staging_path(&resolved_policy, &staging_token);
+        if let Some(parent) = staging_path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_aster_err(AsterError::storage_driver_error)?;
+        }
+        tokio::fs::write(&staging_path, body)
+            .await
+            .map_aster_err(AsterError::storage_driver_error)?;
+
+        let precomputed_hash = should_dedup.then(|| {
+            let mut hasher = Sha256::new();
+            hasher.update(body);
+            crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
+        });
+        let staging_path = staging_path.to_string_lossy().into_owned();
+        let result = if exact_name {
+            workspace_storage_service::store_from_temp_exact_name_with_hints(
+                state,
+                scope,
+                folder_id,
+                filename,
+                &staging_path,
+                size,
+                existing_file_id,
+                existing_file_id.is_some(),
+                Some(resolved_policy),
+                precomputed_hash.as_deref(),
+            )
+            .await
+        } else {
+            workspace_storage_service::store_from_temp_with_hints(
+                state,
+                scope,
+                folder_id,
+                filename,
+                &staging_path,
+                size,
+                existing_file_id,
+                existing_file_id.is_some(),
+                Some(resolved_policy),
+                precomputed_hash.as_deref(),
+            )
+            .await
+        };
+        crate::utils::cleanup_temp_file(&staging_path).await;
+        result
+    } else {
+        let temp_dir = &state.config.server.temp_dir;
+        let temp_path =
+            crate::utils::paths::temp_file_path(temp_dir, &uuid::Uuid::new_v4().to_string());
+        tokio::fs::create_dir_all(temp_dir)
+            .await
+            .map_aster_err(AsterError::storage_driver_error)?;
+        tokio::fs::write(&temp_path, body)
+            .await
+            .map_aster_err(AsterError::storage_driver_error)?;
+
+        let result = if exact_name {
+            workspace_storage_service::store_from_temp_exact_name_with_hints(
+                state,
+                scope,
+                folder_id,
+                filename,
+                &temp_path,
+                size,
+                existing_file_id,
+                existing_file_id.is_some(),
+                Some(resolved_policy),
+                None,
+            )
+            .await
+        } else {
+            workspace_storage_service::store_from_temp_with_hints(
+                state,
+                scope,
+                folder_id,
+                filename,
+                &temp_path,
+                size,
+                existing_file_id,
+                existing_file_id.is_some(),
+                Some(resolved_policy),
+                None,
+            )
+            .await
+        };
+        crate::utils::cleanup_temp_file(&temp_path).await;
+        result
+    };
+
+    result
+}
+
+async fn build_put_relative_response(
+    state: &AppState,
+    payload: &WopiAccessTokenPayload,
+    target_name: &str,
+    target_file_id: i64,
+) -> Result<WopiPutRelativeResponse> {
+    let access_token = create_access_token_for_file(state, payload, target_file_id).await?;
+    let url = format!(
+        "{}?access_token={}",
+        build_public_wopi_src(state, target_file_id)?,
+        urlencoding::encode(&access_token)
+    );
+
+    Ok(WopiPutRelativeResponse {
+        name: target_name.to_string(),
+        url,
+    })
+}
+
+async fn create_access_token_for_file(
+    state: &AppState,
+    payload: &WopiAccessTokenPayload,
+    file_id: i64,
+) -> Result<String> {
+    let expires_at =
+        Utc::now() + Duration::seconds(wopi::access_token_ttl_secs(&state.runtime_config));
+    create_access_token_session(
+        state,
+        &WopiAccessTokenPayload {
+            file_id,
+            exp: expires_at.timestamp(),
+            ..payload.clone()
+        },
+    )
+    .await
+}
+
+fn active_wopi_lock_value(active_lock: &ActiveWopiLock) -> Option<String> {
+    active_lock
+        .payload
+        .as_ref()
+        .map(|payload| payload.lock.clone())
+}
+
+fn decode_wopi_filename(value: &str) -> Result<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        return Err(AsterError::validation_error(
+            "WOPI target header must not be empty",
+        ));
+    }
+
+    let mut decoded = String::new();
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '+' {
+            decoded.push(ch);
+            continue;
+        }
+
+        if matches!(chars.peek(), Some('-')) {
+            chars.next();
+            decoded.push('+');
+            continue;
+        }
+
+        let mut shifted = String::new();
+        while let Some(&next) = chars.peek() {
+            if next == '-' {
+                chars.next();
+                break;
+            }
+            shifted.push(next);
+            chars.next();
+        }
+
+        if shifted.is_empty() {
+            return Err(AsterError::validation_error(
+                "invalid UTF-7 sequence in WOPI target header",
+            ));
+        }
+
+        let mut padded = shifted.clone();
+        while padded.len() % 4 != 0 {
+            padded.push('=');
+        }
+        let bytes = STANDARD.decode(padded.as_bytes()).map_err(|_| {
+            AsterError::validation_error("invalid UTF-7 base64 payload in WOPI target header")
+        })?;
+        if bytes.len() % 2 != 0 {
+            return Err(AsterError::validation_error(
+                "invalid UTF-7 payload length in WOPI target header",
+            ));
+        }
+
+        let utf16 = bytes
+            .chunks_exact(2)
+            .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]));
+        for ch in char::decode_utf16(utf16) {
+            decoded.push(ch.map_err(|_| {
+                AsterError::validation_error("invalid UTF-16 sequence in WOPI target header")
+            })?);
+        }
+    }
+
+    Ok(decoded)
+}
+
+fn encode_wopi_filename(value: &str) -> String {
+    let mut encoded = String::new();
+    let mut shifted = String::new();
+
+    let flush_shifted = |encoded: &mut String, shifted: &mut String| {
+        if shifted.is_empty() {
+            return;
+        }
+
+        let mut utf16 = Vec::with_capacity(shifted.len() * 2);
+        for unit in shifted.encode_utf16() {
+            utf16.extend_from_slice(&unit.to_be_bytes());
+        }
+        encoded.push('+');
+        encoded.push_str(&STANDARD_NO_PAD.encode(utf16));
+        encoded.push('-');
+        shifted.clear();
+    };
+
+    for ch in value.chars() {
+        if ch == '+' {
+            flush_shifted(&mut encoded, &mut shifted);
+            encoded.push_str("+-");
+        } else if is_direct_utf7_char(ch) {
+            flush_shifted(&mut encoded, &mut shifted);
+            encoded.push(ch);
+        } else {
+            shifted.push(ch);
+        }
+    }
+
+    flush_shifted(&mut encoded, &mut shifted);
+    encoded
+}
+
+fn is_direct_utf7_char(ch: char) -> bool {
+    ch.is_ascii() && !ch.is_ascii_control()
 }
 
 fn parse_wopi_app_config(
@@ -1186,9 +1740,10 @@ fn push_unique(values: &mut Vec<String>, value: String) {
 #[cfg(test)]
 mod tests {
     use super::{
-        WopiCheckFileInfo, WopiRequestSource, access_token_hash, append_wopi_src,
-        build_discovered_preview_apps, ensure_request_source_allowed, expand_action_url,
-        parse_discovery_xml, trusted_origins_for_app,
+        PutRelativeTargetMode, WopiCheckFileInfo, WopiRequestSource, access_token_hash,
+        append_wopi_src, build_discovered_preview_apps, decode_wopi_filename, encode_wopi_filename,
+        ensure_request_source_allowed, expand_action_url, parse_discovery_xml,
+        parse_put_relative_request, trusted_origins_for_app,
     };
     use crate::services::preview_app_service::{
         PreviewAppProvider, PreviewOpenMode, PublicPreviewAppConfig, PublicPreviewAppDefinition,
@@ -1409,7 +1964,7 @@ mod tests {
             owner_id: "1".to_string(),
             size: 123,
             user_id: "2".to_string(),
-            user_can_not_write_relative: true,
+            user_can_not_write_relative: false,
             user_can_rename: false,
             user_can_write: true,
             read_only: false,
@@ -1421,6 +1976,25 @@ mod tests {
         };
 
         let payload = serde_json::to_value(info).unwrap();
-        assert_eq!(payload["UserCanNotWriteRelative"], json!(true));
+        assert_eq!(payload["UserCanNotWriteRelative"], json!(false));
+    }
+
+    #[test]
+    fn utf7_roundtrip_handles_non_ascii_targets() {
+        let encoded = encode_wopi_filename("副本 文档.docx");
+        let decoded = decode_wopi_filename(&encoded).unwrap();
+        assert_eq!(decoded, "副本 文档.docx");
+    }
+
+    #[test]
+    fn parse_put_relative_request_allows_extension_only_suggested_target() {
+        let request =
+            parse_put_relative_request("report 1.docx", Some(".docx"), None, None, Some("4"), 4)
+                .unwrap();
+
+        match request.target_mode {
+            PutRelativeTargetMode::Suggested(name) => assert_eq!(name, "report 1.docx"),
+            PutRelativeTargetMode::Relative { .. } => panic!("expected suggested target"),
+        }
     }
 }

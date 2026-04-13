@@ -1230,9 +1230,11 @@ describe("AdminPoliciesPage", () => {
 		});
 		expect(mockState.create).not.toHaveBeenCalled();
 		expect(mockState.handleApiError).not.toHaveBeenCalled();
-		expect(screen.getByText("connection_test_failed")).toBeInTheDocument();
 		expect(
-			screen.getByText("policy_test_failed_confirm_desc"),
+			await screen.findByText("connection_test_failed"),
+		).toBeInTheDocument();
+		expect(
+			await screen.findByText("policy_test_failed_confirm_desc"),
 		).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: "save_anyway" }));

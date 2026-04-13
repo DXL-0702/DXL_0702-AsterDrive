@@ -223,6 +223,12 @@ pub(crate) struct ParsedUploadPath {
     pub filename: String,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum NewFileNameMode {
+    ResolveUnique,
+    Exact,
+}
+
 pub(crate) async fn parse_relative_upload_path(
     state: &AppState,
     scope: WorkspaceStorageScope,
@@ -281,23 +287,37 @@ pub(crate) async fn ensure_upload_parent_path(
     Ok(current_parent)
 }
 
-pub(crate) async fn create_new_file_from_blob<C: ConnectionTrait>(
+async fn create_file_from_blob_with_name_mode<C: ConnectionTrait>(
     db: &C,
     scope: WorkspaceStorageScope,
     folder_id: Option<i64>,
     filename: &str,
     blob: &file_blob::Model,
     now: chrono::DateTime<Utc>,
+    name_mode: NewFileNameMode,
 ) -> Result<file::Model> {
+    crate::utils::validate_name(filename)?;
+
     let (final_name, team_id) = match scope {
-        WorkspaceStorageScope::Personal { user_id } => (
-            file_repo::resolve_unique_filename(db, user_id, folder_id, filename).await?,
-            None,
-        ),
-        WorkspaceStorageScope::Team { team_id, .. } => (
-            file_repo::resolve_unique_team_filename(db, team_id, folder_id, filename).await?,
-            Some(team_id),
-        ),
+        WorkspaceStorageScope::Personal { user_id } => {
+            let final_name = match name_mode {
+                NewFileNameMode::ResolveUnique => {
+                    file_repo::resolve_unique_filename(db, user_id, folder_id, filename).await?
+                }
+                NewFileNameMode::Exact => filename.to_string(),
+            };
+            (final_name, None)
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            let final_name = match name_mode {
+                NewFileNameMode::ResolveUnique => {
+                    file_repo::resolve_unique_team_filename(db, team_id, folder_id, filename)
+                        .await?
+                }
+                NewFileNameMode::Exact => filename.to_string(),
+            };
+            (final_name, Some(team_id))
+        }
     };
     let mime = mime_guess::from_path(&final_name)
         .first_or_octet_stream()
@@ -317,6 +337,46 @@ pub(crate) async fn create_new_file_from_blob<C: ConnectionTrait>(
             updated_at: Set(now),
             ..Default::default()
         },
+    )
+    .await
+}
+
+pub(crate) async fn create_new_file_from_blob<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &str,
+    blob: &file_blob::Model,
+    now: chrono::DateTime<Utc>,
+) -> Result<file::Model> {
+    create_file_from_blob_with_name_mode(
+        db,
+        scope,
+        folder_id,
+        filename,
+        blob,
+        now,
+        NewFileNameMode::ResolveUnique,
+    )
+    .await
+}
+
+pub(crate) async fn create_exact_file_from_blob<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    filename: &str,
+    blob: &file_blob::Model,
+    now: chrono::DateTime<Utc>,
+) -> Result<file::Model> {
+    create_file_from_blob_with_name_mode(
+        db,
+        scope,
+        folder_id,
+        filename,
+        blob,
+        now,
+        NewFileNameMode::Exact,
     )
     .await
 }
