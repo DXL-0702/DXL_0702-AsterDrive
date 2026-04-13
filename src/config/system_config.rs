@@ -1,0 +1,260 @@
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
+
+use crate::config::RuntimeConfig;
+use crate::config::auth_runtime;
+use crate::config::avatar;
+use crate::config::branding;
+use crate::config::cors;
+use crate::config::definitions::{ALL_CONFIGS, ConfigDef};
+use crate::config::mail;
+use crate::config::operations;
+use crate::config::site_url;
+use crate::config::wopi;
+use crate::entities::system_config;
+use crate::errors::{AsterError, Result};
+use crate::services::preview_app_service;
+
+pub trait SystemConfigValueLookup {
+    fn get_config_value(&self, key: &str) -> Option<String>;
+}
+
+impl SystemConfigValueLookup for RuntimeConfig {
+    fn get_config_value(&self, key: &str) -> Option<String> {
+        self.get(key)
+    }
+}
+
+impl<T> SystemConfigValueLookup for Arc<T>
+where
+    T: SystemConfigValueLookup + ?Sized,
+{
+    fn get_config_value(&self, key: &str) -> Option<String> {
+        self.as_ref().get_config_value(key)
+    }
+}
+
+impl SystemConfigValueLookup for HashMap<String, String> {
+    fn get_config_value(&self, key: &str) -> Option<String> {
+        self.get(key).cloned()
+    }
+}
+
+impl SystemConfigValueLookup for BTreeMap<String, String> {
+    fn get_config_value(&self, key: &str) -> Option<String> {
+        self.get(key).cloned()
+    }
+}
+
+pub fn get_definition(key: &str) -> Option<&'static ConfigDef> {
+    ALL_CONFIGS.iter().find(|def| def.key == key)
+}
+
+pub fn validate_value_type(value_type: &str, value: &str) -> Result<()> {
+    let trimmed = value.trim();
+    match value_type {
+        "boolean" => {
+            if trimmed != "true" && trimmed != "false" {
+                return Err(AsterError::validation_error(
+                    "boolean config must be 'true' or 'false'",
+                ));
+            }
+        }
+        "number" => {
+            if trimmed.parse::<f64>().is_err() {
+                return Err(AsterError::validation_error(
+                    "number config must be a valid number",
+                ));
+            }
+        }
+        "string" | "multiline" => {}
+        _ => {}
+    }
+    Ok(())
+}
+
+pub fn normalize_system_value<L>(lookup: &L, key: &str, value: &str) -> Result<String>
+where
+    L: SystemConfigValueLookup + ?Sized,
+{
+    match key {
+        avatar::AVATAR_DIR_KEY => avatar::normalize_avatar_dir_config_value(value),
+        auth_runtime::AUTH_COOKIE_SECURE_KEY => {
+            auth_runtime::normalize_cookie_secure_config_value(value)
+        }
+        auth_runtime::AUTH_ALLOW_USER_REGISTRATION_KEY => {
+            auth_runtime::normalize_allow_user_registration_config_value(value)
+        }
+        auth_runtime::AUTH_REGISTER_ACTIVATION_ENABLED_KEY => {
+            auth_runtime::normalize_register_activation_enabled_config_value(value)
+        }
+        auth_runtime::AUTH_ACCESS_TOKEN_TTL_SECS_KEY
+        | auth_runtime::AUTH_REFRESH_TOKEN_TTL_SECS_KEY
+        | auth_runtime::AUTH_REGISTER_ACTIVATION_TTL_SECS_KEY
+        | auth_runtime::AUTH_CONTACT_CHANGE_TTL_SECS_KEY
+        | auth_runtime::AUTH_PASSWORD_RESET_TTL_SECS_KEY
+        | auth_runtime::AUTH_PASSWORD_RESET_REQUEST_COOLDOWN_SECS_KEY
+        | auth_runtime::AUTH_CONTACT_VERIFICATION_RESEND_COOLDOWN_SECS_KEY => {
+            auth_runtime::normalize_token_ttl_config_value(key, value)
+        }
+        cors::CORS_ENABLED_KEY => cors::normalize_enabled_config_value(value),
+        cors::CORS_ALLOWED_ORIGINS_KEY => {
+            let normalized = cors::normalize_allowed_origins_config_value(value)?;
+            let parsed = cors::parse_allowed_origins_value(&normalized)?;
+            let allow_credentials = lookup
+                .get_config_value(cors::CORS_ALLOW_CREDENTIALS_KEY)
+                .and_then(|raw| parse_bool_like(&raw))
+                .unwrap_or(cors::DEFAULT_CORS_ALLOW_CREDENTIALS);
+            cors::validate_runtime_cors_combination(&parsed, allow_credentials)?;
+            Ok(normalized)
+        }
+        cors::CORS_ALLOW_CREDENTIALS_KEY => {
+            let normalized = cors::normalize_allow_credentials_config_value(value)?;
+            let allow_credentials = normalized == "true";
+            let current_origins = lookup
+                .get_config_value(cors::CORS_ALLOWED_ORIGINS_KEY)
+                .unwrap_or_default();
+            let parsed = cors::parse_allowed_origins_value(&current_origins)?;
+            cors::validate_runtime_cors_combination(&parsed, allow_credentials)?;
+            Ok(normalized)
+        }
+        cors::CORS_MAX_AGE_SECS_KEY => cors::normalize_max_age_config_value(value),
+        operations::MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY
+        | operations::BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY
+        | operations::MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY
+        | operations::BLOB_RECONCILE_INTERVAL_SECS_KEY => {
+            operations::normalize_interval_config_value(key, value)
+        }
+        operations::TEAM_MEMBER_LIST_MAX_LIMIT_KEY | operations::TASK_LIST_MAX_LIMIT_KEY => {
+            operations::normalize_list_max_limit_config_value(key, value)
+        }
+        operations::AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY
+        | operations::THUMBNAIL_MAX_SOURCE_BYTES_KEY => {
+            operations::normalize_bytes_config_value(key, value)
+        }
+        mail::MAIL_SMTP_HOST_KEY => mail::normalize_smtp_host_config_value(value),
+        mail::MAIL_SMTP_PORT_KEY => mail::normalize_smtp_port_config_value(value),
+        mail::MAIL_FROM_ADDRESS_KEY => mail::normalize_mail_address_config_value(value),
+        mail::MAIL_FROM_NAME_KEY => mail::normalize_mail_name_config_value(value),
+        mail::MAIL_SECURITY_KEY => mail::normalize_mail_security_config_value(value),
+        mail::MAIL_TEMPLATE_REGISTER_ACTIVATION_SUBJECT_KEY
+        | mail::MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_SUBJECT_KEY
+        | mail::MAIL_TEMPLATE_PASSWORD_RESET_SUBJECT_KEY
+        | mail::MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_SUBJECT_KEY
+        | mail::MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_SUBJECT_KEY => {
+            mail::normalize_mail_template_subject_config_value(key, value)
+        }
+        mail::MAIL_TEMPLATE_REGISTER_ACTIVATION_HTML_KEY
+        | mail::MAIL_TEMPLATE_CONTACT_CHANGE_CONFIRMATION_HTML_KEY
+        | mail::MAIL_TEMPLATE_PASSWORD_RESET_HTML_KEY
+        | mail::MAIL_TEMPLATE_PASSWORD_RESET_NOTICE_HTML_KEY
+        | mail::MAIL_TEMPLATE_CONTACT_CHANGE_NOTICE_HTML_KEY => {
+            mail::normalize_mail_template_body_config_value(key, value)
+        }
+        site_url::PUBLIC_SITE_URL_KEY => site_url::normalize_public_site_url_config_value(value),
+        branding::BRANDING_TITLE_KEY => branding::normalize_title_config_value(value),
+        branding::BRANDING_DESCRIPTION_KEY => branding::normalize_description_config_value(value),
+        branding::BRANDING_FAVICON_URL_KEY => branding::normalize_favicon_url_config_value(value),
+        branding::BRANDING_WORDMARK_DARK_URL_KEY => {
+            branding::normalize_wordmark_dark_url_config_value(value)
+        }
+        branding::BRANDING_WORDMARK_LIGHT_URL_KEY => {
+            branding::normalize_wordmark_light_url_config_value(value)
+        }
+        preview_app_service::PREVIEW_APPS_CONFIG_KEY => {
+            preview_app_service::normalize_public_preview_apps_config_value(value)
+        }
+        wopi::WOPI_ACCESS_TOKEN_TTL_SECS_KEY
+        | wopi::WOPI_LOCK_TTL_SECS_KEY
+        | wopi::WOPI_DISCOVERY_CACHE_TTL_SECS_KEY => wopi::normalize_ttl_config_value(key, value),
+        _ => Ok(value.to_string()),
+    }
+}
+
+pub fn apply_definition(mut config: system_config::Model) -> system_config::Model {
+    if config.source != "system" {
+        return config;
+    }
+
+    let Some(def) = get_definition(&config.key) else {
+        return config;
+    };
+
+    config.value_type = def.value_type.to_string();
+    config.requires_restart = def.requires_restart;
+    config.is_sensitive = def.is_sensitive;
+    config.category = def.category.to_string();
+    config.description = def.description.to_string();
+    config
+}
+
+fn parse_bool_like(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" | "yes" | "on" => Some(true),
+        "false" | "0" | "no" | "off" => Some(false),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{apply_definition, normalize_system_value, validate_value_type};
+    use crate::entities::system_config;
+    use chrono::Utc;
+    use std::collections::HashMap;
+
+    fn model(key: &str, value: &str, source: &str) -> system_config::Model {
+        system_config::Model {
+            id: 1,
+            key: key.to_string(),
+            value: value.to_string(),
+            value_type: "string".to_string(),
+            requires_restart: false,
+            is_sensitive: false,
+            source: source.to_string(),
+            namespace: String::new(),
+            category: String::new(),
+            description: String::new(),
+            updated_at: Utc::now(),
+            updated_by: None,
+        }
+    }
+
+    #[test]
+    fn validate_value_type_enforces_declared_types() {
+        assert!(validate_value_type("boolean", "true").is_ok());
+        assert!(validate_value_type("boolean", " yes ").is_err());
+        assert!(validate_value_type("number", "42").is_ok());
+        assert!(validate_value_type("number", "nope").is_err());
+    }
+
+    #[test]
+    fn normalize_system_value_uses_lookup_for_cross_field_validation() {
+        let lookup = HashMap::from([("cors_allow_credentials".to_string(), "true".to_string())]);
+
+        let err = normalize_system_value(&lookup, "cors_allowed_origins", "*").unwrap_err();
+        assert!(
+            err.message()
+                .contains("cors_allow_credentials cannot be true when cors_allowed_origins is '*'")
+        );
+    }
+
+    #[test]
+    fn apply_definition_overlays_schema_metadata_for_system_rows() {
+        let config = apply_definition(model(
+            "public_site_url",
+            "https://drive.example.com",
+            "system",
+        ));
+        assert_eq!(config.value_type, "string");
+        assert_eq!(config.category, "general");
+        assert!(
+            config
+                .description
+                .contains("share, preview, and callback URLs")
+        );
+
+        let custom = apply_definition(model("custom.demo", "value", "custom"));
+        assert_eq!(custom.category, "");
+    }
+}

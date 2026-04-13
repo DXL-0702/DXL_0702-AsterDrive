@@ -1,3 +1,15 @@
+use std::path::{Component, Path, PathBuf};
+
+pub const DEFAULT_DATA_DIR: &str = "data";
+pub const LEGACY_CONFIG_PATH: &str = "config.toml";
+pub const DEFAULT_CONFIG_PATH: &str = "data/config.toml";
+pub const LEGACY_SQLITE_DATABASE_PATH: &str = "asterdrive.db";
+pub const DEFAULT_SQLITE_DATABASE_PATH: &str = "data/asterdrive.db";
+pub const DEFAULT_CONFIG_SQLITE_DATABASE_URL: &str = "sqlite://asterdrive.db?mode=rwc";
+pub const DEFAULT_SQLITE_DATABASE_URL: &str = "sqlite://data/asterdrive.db?mode=rwc";
+pub const LEGACY_SQLITE_DATABASE_URL: &str = DEFAULT_CONFIG_SQLITE_DATABASE_URL;
+pub const DEFAULT_CONFIG_TEMP_DIR: &str = ".tmp";
+pub const DEFAULT_CONFIG_UPLOAD_TEMP_DIR: &str = ".uploads";
 pub const DEFAULT_TEMP_DIR: &str = "data/.tmp";
 pub const DEFAULT_UPLOAD_TEMP_DIR: &str = "data/.uploads";
 
@@ -27,6 +39,108 @@ fn join_path(root: &str, leaf: &str) -> String {
     format!("{root}/{leaf}")
 }
 
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => match normalized.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    normalized.pop();
+                }
+                Some(Component::RootDir) | Some(Component::Prefix(_)) => {}
+                _ => normalized.push(component.as_os_str()),
+            },
+            Component::RootDir | Component::Prefix(_) | Component::Normal(_) => {
+                normalized.push(component.as_os_str());
+            }
+        }
+    }
+
+    if normalized.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        normalized
+    }
+}
+
+fn render_runtime_relative_path(base_dir: &Path, resolved: &Path) -> String {
+    let normalized_base_dir = normalize_path(base_dir);
+    let normalized_resolved = normalize_path(resolved);
+
+    match normalized_resolved.strip_prefix(&normalized_base_dir) {
+        Ok(stripped) if stripped.as_os_str().is_empty() => ".".to_string(),
+        Ok(stripped) => stripped.to_string_lossy().to_string(),
+        Err(_) => normalized_resolved.to_string_lossy().to_string(),
+    }
+}
+
+fn is_legacy_root_relative_path(path: &Path) -> bool {
+    matches!(
+        path.components().next(),
+        Some(Component::Normal(component)) if component == DEFAULT_DATA_DIR
+    )
+}
+
+pub fn resolve_config_relative_path(base_dir: &Path, config_dir: &Path, value: &str) -> String {
+    if value.is_empty() {
+        return value.to_string();
+    }
+
+    let configured_path = Path::new(value);
+    if configured_path.is_absolute() {
+        return normalize_path(configured_path)
+            .to_string_lossy()
+            .to_string();
+    }
+
+    let anchor_dir = if is_legacy_root_relative_path(configured_path) {
+        base_dir
+    } else {
+        config_dir
+    };
+    let resolved = normalize_path(&anchor_dir.join(configured_path));
+
+    render_runtime_relative_path(base_dir, &resolved)
+}
+
+pub fn resolve_config_relative_sqlite_url(
+    base_dir: &Path,
+    config_dir: &Path,
+    value: &str,
+) -> String {
+    if value == "sqlite::memory:" {
+        return value.to_string();
+    }
+
+    let Some(path_and_query) = value.strip_prefix("sqlite://") else {
+        return value.to_string();
+    };
+    let (raw_path, raw_query) = match path_and_query.split_once('?') {
+        Some((path, query)) => (path, Some(query)),
+        None => (path_and_query, None),
+    };
+
+    if raw_path.is_empty() || raw_path == ":memory:" {
+        return value.to_string();
+    }
+
+    let configured_path = Path::new(raw_path);
+    let resolved_path = if configured_path.is_absolute() {
+        normalize_path(configured_path)
+            .to_string_lossy()
+            .to_string()
+    } else {
+        resolve_config_relative_path(base_dir, config_dir, raw_path)
+    };
+
+    match raw_query {
+        Some(query) => format!("sqlite://{resolved_path}?{query}"),
+        None => format!("sqlite://{resolved_path}"),
+    }
+}
+
 pub fn temp_file_path(temp_dir: &str, name: &str) -> String {
     join_path(temp_dir, name)
 }
@@ -53,9 +167,11 @@ pub fn task_temp_dir(temp_dir: &str, task_id: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        DEFAULT_TEMP_DIR, DEFAULT_UPLOAD_TEMP_DIR, task_temp_dir, temp_file_path,
-        upload_assembled_path, upload_chunk_path, upload_temp_dir,
+        DEFAULT_CONFIG_SQLITE_DATABASE_URL, DEFAULT_TEMP_DIR, DEFAULT_UPLOAD_TEMP_DIR,
+        resolve_config_relative_path, resolve_config_relative_sqlite_url, task_temp_dir,
+        temp_file_path, upload_assembled_path, upload_chunk_path, upload_temp_dir,
     };
+    use std::path::Path;
 
     fn assert_no_double_slash(path: &str) {
         assert!(
@@ -132,5 +248,55 @@ mod tests {
         let dir = task_temp_dir("data/.tmp///", 42);
         assert_eq!(dir, "data/.tmp/tasks/42");
         assert_no_double_slash(&dir);
+    }
+
+    #[test]
+    fn resolve_config_relative_path_accepts_new_and_legacy_relative_values() {
+        let base_dir = Path::new("/srv/asterdrive");
+        let config_dir = Path::new("/srv/asterdrive/data");
+
+        assert_eq!(
+            resolve_config_relative_path(base_dir, config_dir, ".tmp"),
+            "data/.tmp"
+        );
+        assert_eq!(
+            resolve_config_relative_path(base_dir, config_dir, "data/.tmp"),
+            "data/.tmp"
+        );
+        assert_eq!(
+            resolve_config_relative_path(base_dir, config_dir, "../shared"),
+            "shared"
+        );
+    }
+
+    #[test]
+    fn resolve_config_relative_sqlite_url_accepts_new_and_legacy_relative_values() {
+        let base_dir = Path::new("/srv/asterdrive");
+        let config_dir = Path::new("/srv/asterdrive/data");
+
+        assert_eq!(
+            resolve_config_relative_sqlite_url(
+                base_dir,
+                config_dir,
+                DEFAULT_CONFIG_SQLITE_DATABASE_URL
+            ),
+            "sqlite://data/asterdrive.db?mode=rwc"
+        );
+        assert_eq!(
+            resolve_config_relative_sqlite_url(
+                base_dir,
+                config_dir,
+                "sqlite://data/asterdrive.db?mode=rwc"
+            ),
+            "sqlite://data/asterdrive.db?mode=rwc"
+        );
+        assert_eq!(
+            resolve_config_relative_sqlite_url(
+                base_dir,
+                config_dir,
+                "sqlite:///var/lib/asterdrive/custom.db?mode=rwc"
+            ),
+            "sqlite:///var/lib/asterdrive/custom.db?mode=rwc"
+        );
     }
 }

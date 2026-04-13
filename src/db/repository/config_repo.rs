@@ -46,12 +46,21 @@ pub async fn upsert<C: ConnectionTrait>(
     value: &str,
     updated_by: i64,
 ) -> Result<system_config::Model> {
+    upsert_with_actor(db, key, value, Some(updated_by)).await
+}
+
+pub async fn upsert_with_actor<C: ConnectionTrait>(
+    db: &C,
+    key: &str,
+    value: &str,
+    updated_by: Option<i64>,
+) -> Result<system_config::Model> {
     let now = Utc::now();
     if let Some(existing) = find_by_key(db, key).await? {
         let mut active: system_config::ActiveModel = existing.into();
         active.value = Set(value.to_string());
         active.updated_at = Set(now);
-        active.updated_by = Set(Some(updated_by));
+        active.updated_by = Set(updated_by);
         active.update(db).await.map_err(AsterError::from)
     } else {
         // 新建的配置默认为 custom
@@ -60,7 +69,7 @@ pub async fn upsert<C: ConnectionTrait>(
             value: Set(value.to_string()),
             source: Set("custom".to_string()),
             updated_at: Set(now),
-            updated_by: Set(Some(updated_by)),
+            updated_by: Set(updated_by),
             ..Default::default()
         };
         model.insert(db).await.map_err(AsterError::from)

@@ -24,7 +24,7 @@ docker run -d \
 
 首次成功启动后，AsterDrive 会自动完成下面这些准备：
 
-- 在当前工作目录生成 `config.toml`
+- 在当前工作目录的 `data/` 下生成 `config.toml`
 - 创建或连接数据库，并自动更新数据库结构
 - 创建默认本地存储策略 `Local Default`
 - 创建默认策略组 `Default Policy Group`
@@ -35,7 +35,7 @@ docker run -d \
 如果你使用官方 Docker 镜像并保持默认相对路径：
 
 - 数据库和上传目录会落到容器里的 `/data`
-- `config.toml` 会生成在容器根目录 `/config.toml`
+- `config.toml` 会生成在容器里的 `/data/config.toml`
 
 打开地址：
 

@@ -1,8 +1,40 @@
 use actix_web::{App, HttpServer, web};
+#[cfg(feature = "cli")]
+use clap::{Parser, Subcommand};
 
 #[cfg(debug_assertions)]
 #[global_allocator]
 static GLOBAL: aster_drive::alloc::TrackingAlloc = aster_drive::alloc::TrackingAlloc;
+
+#[cfg(feature = "cli")]
+#[derive(Debug, Parser)]
+#[command(
+    name = "aster_drive",
+    version,
+    about = "AsterDrive server and operations CLI",
+    long_about = "AsterDrive server and operations CLI.\n\nRun without a subcommand to start the server, or use 'serve' explicitly. Use 'config' for offline runtime configuration operations.",
+    styles = aster_drive::cli::cli_styles()
+)]
+struct RootCli {
+    #[command(subcommand)]
+    command: Option<RootCommand>,
+}
+
+#[cfg(feature = "cli")]
+#[derive(Debug, Clone, Subcommand)]
+enum RootCommand {
+    /// Start the AsterDrive server
+    Serve,
+    /// Manage runtime configuration stored in system_config
+    Config {
+        #[arg(long, env = "ASTER_CLI_DATABASE_URL")]
+        database_url: String,
+        #[arg(long, env = "ASTER_CLI_OUTPUT_FORMAT", default_value = "json")]
+        output_format: aster_drive::cli::OutputFormat,
+        #[command(subcommand)]
+        action: aster_drive::cli::ConfigCommand,
+    },
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -11,7 +43,29 @@ async fn main() -> std::io::Result<()> {
 
     dotenvy::dotenv().ok();
 
-    // 1. 加载配置（会自动创建 config.toml）
+    #[cfg(feature = "cli")]
+    {
+        let cli = RootCli::parse();
+        match cli.command {
+            Some(RootCommand::Config {
+                database_url,
+                output_format,
+                action,
+            }) => match aster_drive::cli::execute_config_command(&database_url, &action).await {
+                Ok(data) => {
+                    println!("{}", aster_drive::cli::render_success(output_format, &data));
+                    return Ok(());
+                }
+                Err(error) => {
+                    eprintln!("{}", aster_drive::cli::render_error(output_format, &error));
+                    std::process::exit(1);
+                }
+            },
+            Some(RootCommand::Serve) | None => {}
+        }
+    }
+
+    // 1. 加载配置（会自动创建 data/config.toml）
     aster_drive::config::init_config().expect("failed to load config");
     let cfg = aster_drive::config::get_config();
 

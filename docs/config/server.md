@@ -7,8 +7,8 @@
 host = "127.0.0.1"
 port = 3000
 workers = 0
-temp_dir = "data/.tmp"
-upload_temp_dir = "data/.uploads"
+temp_dir = ".tmp"
+upload_temp_dir = ".uploads"
 ```
 
 ## 什么时候需要改这组配置
@@ -25,8 +25,8 @@ upload_temp_dir = "data/.uploads"
 | `host` | `"127.0.0.1"` | 监听地址；容器部署通常改成 `0.0.0.0` |
 | `port` | `3000` | HTTP 监听端口 |
 | `workers` | `0` | 工作线程数；`0` 表示自动按 CPU 数量决定 |
-| `temp_dir` | `"data/.tmp"` | 服务端通用临时文件目录 |
-| `upload_temp_dir` | `"data/.uploads"` | 分片上传和上传恢复使用的临时目录 |
+| `temp_dir` | `".tmp"` | 服务端通用临时文件目录，相对于 `data/config.toml` 所在目录 |
+| `upload_temp_dir` | `".uploads"` | 分片上传和上传恢复使用的临时目录，相对于 `data/config.toml` 所在目录 |
 
 ## `temp_dir` 和 `upload_temp_dir` 有什么影响
 
@@ -40,6 +40,8 @@ upload_temp_dir = "data/.uploads"
 
 如果你经常上传大文件，建议把这两个目录放到容量更充足的本地磁盘。
 
+默认情况下，`.tmp` 和 `.uploads` 会分别落到 `data/.tmp` 和 `data/.uploads`。
+
 ## 常见写法
 
 ### 本机测试
@@ -49,8 +51,8 @@ upload_temp_dir = "data/.uploads"
 host = "127.0.0.1"
 port = 3000
 workers = 0
-temp_dir = "data/.tmp"
-upload_temp_dir = "data/.uploads"
+temp_dir = ".tmp"
+upload_temp_dir = ".uploads"
 ```
 
 ### Docker 或容器

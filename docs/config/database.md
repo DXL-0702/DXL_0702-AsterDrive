@@ -63,12 +63,12 @@ url = "mysql://user:password@localhost:3306/asterdrive"
 
 ## SQLite 的路径语义
 
-默认 SQLite 使用相对路径，所以数据库文件会落在当前工作目录。
+默认 SQLite 使用相对路径时，会相对于 `data/config.toml` 所在目录解析。
 
 例如：
 
-- 本地直接运行：落在你执行命令的目录
-- systemd：落在 `WorkingDirectory`
+- 本地直接运行：默认落在 `./data/asterdrive.db`
+- systemd：默认落在 `WorkingDirectory/data/asterdrive.db`
 - Docker：如果你写成 `sqlite:///data/asterdrive.db?mode=rwc`，数据库会落在 `/data`
 
 长期部署时，建议把 SQLite 放到固定目录或持久化卷里。

@@ -5,7 +5,7 @@ AsterDrive 第一次成功启动后，会自动完成一批基础准备工作。
 
 ## 首次成功启动后会自动完成什么
 
-- 如果当前工作目录没有 `config.toml`，自动生成一份默认配置
+- 如果当前工作目录没有 `data/config.toml`，自动生成一份默认配置
 - 连接数据库并自动更新数据库结构
 - 如果系统里还没有存储策略，自动创建默认本地策略 `Local Default`
 - 自动创建默认策略组 `Default Policy Group`
@@ -68,8 +68,8 @@ AsterDrive 第一次成功启动后，会自动完成一批基础准备工作。
 
 如果你使用默认相对路径，首次启动后通常会看到：
 
-- `config.toml`
-- `asterdrive.db`
+- `data/config.toml`
+- `data/asterdrive.db`
 - `data/uploads`
 - `data/.tmp`
 - `data/.uploads`
@@ -80,7 +80,7 @@ AsterDrive 第一次成功启动后，会自动完成一批基础准备工作。
 
 1. `/health` 是否返回 200
 2. `/health/ready` 是否返回 200
-3. `config.toml` 是否在预期目录生成
+3. `data/config.toml` 是否在预期目录生成
 4. 数据库是否在预期位置创建并完成更新
 5. 默认存储策略是否已经存在
 6. 默认策略组是否已经存在
@@ -91,6 +91,6 @@ AsterDrive 第一次成功启动后，会自动完成一批基础准备工作。
 ## 如果检查结果不对，优先回头看这几处
 
 - 当前工作目录是不是你以为的那个目录
-- `config.toml` 是否真的被服务读到了
+- `data/config.toml` 是否真的被服务读到了
 - 数据库、上传目录和临时目录是否有写权限
 - 容器卷、systemd `WorkingDirectory` 或宿主机路径是不是挂错了

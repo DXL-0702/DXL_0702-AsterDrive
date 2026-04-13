@@ -21,17 +21,18 @@ sudo install -m 0755 ./aster_drive /usr/local/bin/aster_drive
 
 ## 3. 准备配置文件
 
-把 `config.toml` 放进工作目录：
+把 `config.toml` 放进 `data/` 目录：
 
 ```bash
-sudo cp config.toml /var/lib/asterdrive/config.toml
-sudo chown asterdrive:asterdrive /var/lib/asterdrive/config.toml
+sudo mkdir -p /var/lib/asterdrive/data
+sudo cp config.toml /var/lib/asterdrive/data/config.toml
+sudo chown -R asterdrive:asterdrive /var/lib/asterdrive/data
 ```
 
 如果继续使用默认相对路径，工作目录下通常会出现：
 
-- `config.toml`
-- `asterdrive.db`
+- `data/config.toml`
+- `data/asterdrive.db`
 - `data/uploads`
 - `data/.tmp`
 - `data/.uploads`

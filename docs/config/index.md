@@ -25,7 +25,7 @@
 
 ## `config.toml` 在哪里
 
-首次启动时，如果当前工作目录里还没有 `config.toml`，AsterDrive 会自动生成一份默认配置。
+首次启动时，如果当前工作目录里还没有 `data/config.toml`，AsterDrive 会自动生成一份默认配置。
 
 只想改少数几项时，不需要把整份默认配置全部抄出来。  
 `config.toml` 里只写你要覆盖的项目即可。
@@ -95,17 +95,16 @@ ASTER__WEBDAV__PREFIX=/dav
 
 ## 路径一定要想清楚
 
-如果你使用相对路径，当前工作目录会影响：
+如果你使用相对路径，先分清两种语义：
 
-- `config.toml` 的位置
-- SQLite 数据库文件的位置
-- 本地上传目录的位置
-- 临时目录 `data/.tmp` 和 `data/.uploads` 的位置
+- `data/config.toml` 的位置，取决于当前工作目录
+- `[database]` 和 `[server]` 里的相对路径，默认相对于 `data/config.toml` 所在目录，也就是 `./data/`
+- 默认本地存储策略 `data/uploads` 仍然相对于当前工作目录
 
 例如：
 
-- 本地直接运行：跟你执行命令的目录有关
-- systemd：跟 `WorkingDirectory` 有关
-- Docker 官方镜像：默认相对路径会落到容器里的 `/`
+- 本地直接运行：通常会落到项目目录下的 `data/`
+- systemd：通常会落到 `WorkingDirectory/data/`
+- Docker 官方镜像：默认会落到容器里的 `/data`
 
 长期部署时，如果你不想以后被工作目录影响，数据库路径、本地存储路径和临时目录最好都写成绝对路径。

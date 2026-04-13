@@ -45,7 +45,7 @@ strip = true
 members = [".", "migration", "api-docs-macros"]
 
 [features]
-default = ["server"]
+default = ["server", "cli"]
 server = []
 cli = ["server", "dep:clap"]
 metrics = ["server", "dep:prometheus", "dep:sysinfo"]
@@ -66,7 +66,7 @@ aws-credential-types = { version = "1.2.14", features = ["hardcoded-credentials"
 aws-sdk-s3 = { version = "1.129.0", default-features = false, features = ["sigv4a", "http-1x", "default-https-client", "rt-tokio"] }
 chrono = { version = "0.4.44", default-features = false, features = ["clock", "serde"] }
 chrono-tz = "0.10"
-clap = { version = "4", features = ["derive"], optional = true }
+clap = { version = "4", features = ["derive", "env"], optional = true }
 config = { version = "0.15", default-features = false, features = ["toml"] }
 dashmap = "6"
 dav-server = { version = "0.11", features = ["actix-compat"] }

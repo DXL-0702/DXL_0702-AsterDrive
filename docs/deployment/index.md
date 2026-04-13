@@ -28,7 +28,7 @@ AsterDrive 是单服务交付：
 
 重启或升级后必须保留下来的内容：
 
-- `config.toml`
+- `data/config.toml`
 - 数据库
 - 本地上传目录
 
@@ -73,7 +73,7 @@ bootstrap_insecure_cookies = false
 
 只要服务成功启动，就会自动完成这些准备：
 
-- 生成默认 `config.toml`
+- 生成默认 `data/config.toml`
 - 连接数据库并自动更新数据库结构
 - 自动创建默认本地存储策略 `Local Default`
 - 自动创建默认策略组 `Default Policy Group`

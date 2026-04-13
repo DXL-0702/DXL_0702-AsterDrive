@@ -53,10 +53,10 @@ impl ServerConfig {
         3000
     }
     fn default_temp_dir() -> String {
-        crate::utils::paths::DEFAULT_TEMP_DIR.to_string()
+        crate::utils::paths::DEFAULT_CONFIG_TEMP_DIR.to_string()
     }
     fn default_upload_temp_dir() -> String {
-        crate::utils::paths::DEFAULT_UPLOAD_TEMP_DIR.to_string()
+        crate::utils::paths::DEFAULT_CONFIG_UPLOAD_TEMP_DIR.to_string()
     }
 }
 
@@ -82,7 +82,7 @@ impl Default for DatabaseConfig {
 
 impl DatabaseConfig {
     fn default_url() -> String {
-        "sqlite://asterdrive.db?mode=rwc".to_string()
+        crate::utils::paths::DEFAULT_CONFIG_SQLITE_DATABASE_URL.to_string()
     }
     fn default_pool_size() -> u32 {
         10

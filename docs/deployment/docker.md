@@ -58,11 +58,11 @@ docker run -d \
   -e ASTER__SERVER__HOST=0.0.0.0 \
   -e ASTER__DATABASE__URL="sqlite:///data/asterdrive.db?mode=rwc" \
   -v asterdrive-data:/data \
-  -v "$(pwd)/config.toml:/config.toml:ro" \
+  -v "$(pwd)/config.toml:/data/config.toml:ro" \
   ghcr.io/apts-1547/asterdrive:latest
 ```
 
-如果不挂载 `config.toml`，容器第一次启动时也会自动生成一份默认配置，但它会留在容器内部，不适合长期正式部署。
+如果不挂载 `config.toml`，容器第一次启动时也会自动生成一份默认配置到 `/data/config.toml`，但你还是应该把它纳入卷管理，不适合长期完全放任在容器层里。
 
 ## Compose 示例
 
@@ -77,7 +77,7 @@ services:
       ASTER__DATABASE__URL: sqlite:///data/asterdrive.db?mode=rwc
     volumes:
       - asterdrive-data:/data
-      - ./config.toml:/config.toml:ro
+      - ./config.toml:/data/config.toml:ro
     restart: unless-stopped
 
 volumes:

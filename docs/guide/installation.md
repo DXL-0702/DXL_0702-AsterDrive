@@ -25,7 +25,7 @@ AsterDrive 的部署重点很简单：
 
 重启和升级后必须保留的内容至少包括：
 
-- `config.toml`
+- `data/config.toml`
 - 数据库文件，或者外部数据库的连接信息
 - 本地上传目录
 
@@ -140,7 +140,7 @@ ASTER__AUTH__BOOTSTRAP_INSECURE_COOKIES=true ./aster_drive
 
 第一次成功启动后，AsterDrive 会自动完成：
 
-- 生成默认 `config.toml`
+- 生成默认 `data/config.toml`
 - 连接数据库并自动更新数据库结构
 - 创建默认本地存储策略 `Local Default`
 - 创建默认策略组 `Default Policy Group`
