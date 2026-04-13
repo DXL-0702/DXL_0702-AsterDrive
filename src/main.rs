@@ -34,6 +34,13 @@ enum RootCommand {
         #[command(subcommand)]
         action: aster_drive::cli::ConfigCommand,
     },
+    /// Run an offline database backend migration for a maintenance window
+    DatabaseMigrate {
+        #[arg(long, env = "ASTER_CLI_OUTPUT_FORMAT", default_value = "json")]
+        output_format: aster_drive::cli::OutputFormat,
+        #[command(flatten)]
+        args: aster_drive::cli::DatabaseMigrateArgs,
+    },
 }
 
 #[actix_web::main]
@@ -52,6 +59,19 @@ async fn main() -> std::io::Result<()> {
                 output_format,
                 action,
             }) => match aster_drive::cli::execute_config_command(&database_url, &action).await {
+                Ok(data) => {
+                    println!("{}", aster_drive::cli::render_success(output_format, &data));
+                    return Ok(());
+                }
+                Err(error) => {
+                    eprintln!("{}", aster_drive::cli::render_error(output_format, &error));
+                    std::process::exit(1);
+                }
+            },
+            Some(RootCommand::DatabaseMigrate {
+                output_format,
+                args,
+            }) => match aster_drive::cli::execute_database_migration(&args).await {
                 Ok(data) => {
                     println!("{}", aster_drive::cli::render_success(output_format, &data));
                     return Ok(());

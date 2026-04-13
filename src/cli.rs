@@ -1,3 +1,5 @@
+mod database_migration;
+
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -12,6 +14,8 @@ use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Args, Subcommand, ValueEnum};
 use sea_orm::TransactionTrait;
 use serde::{Deserialize, Serialize};
+
+pub use database_migration::{DatabaseMigrateArgs, execute_database_migration};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
