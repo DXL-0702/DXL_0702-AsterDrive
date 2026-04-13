@@ -1,13 +1,10 @@
 use std::path::{Component, Path, PathBuf};
 
 pub const DEFAULT_DATA_DIR: &str = "data";
-pub const LEGACY_CONFIG_PATH: &str = "config.toml";
 pub const DEFAULT_CONFIG_PATH: &str = "data/config.toml";
-pub const LEGACY_SQLITE_DATABASE_PATH: &str = "asterdrive.db";
 pub const DEFAULT_SQLITE_DATABASE_PATH: &str = "data/asterdrive.db";
 pub const DEFAULT_CONFIG_SQLITE_DATABASE_URL: &str = "sqlite://asterdrive.db?mode=rwc";
 pub const DEFAULT_SQLITE_DATABASE_URL: &str = "sqlite://data/asterdrive.db?mode=rwc";
-pub const LEGACY_SQLITE_DATABASE_URL: &str = DEFAULT_CONFIG_SQLITE_DATABASE_URL;
 pub const DEFAULT_CONFIG_TEMP_DIR: &str = ".tmp";
 pub const DEFAULT_CONFIG_UPLOAD_TEMP_DIR: &str = ".uploads";
 pub const DEFAULT_TEMP_DIR: &str = "data/.tmp";
@@ -76,7 +73,7 @@ fn render_runtime_relative_path(base_dir: &Path, resolved: &Path) -> String {
     }
 }
 
-fn is_legacy_root_relative_path(path: &Path) -> bool {
+fn is_data_prefixed_relative_path(path: &Path) -> bool {
     matches!(
         path.components().next(),
         Some(Component::Normal(component)) if component == DEFAULT_DATA_DIR
@@ -95,7 +92,7 @@ pub fn resolve_config_relative_path(base_dir: &Path, config_dir: &Path, value: &
             .to_string();
     }
 
-    let anchor_dir = if is_legacy_root_relative_path(configured_path) {
+    let anchor_dir = if is_data_prefixed_relative_path(configured_path) {
         base_dir
     } else {
         config_dir
@@ -251,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_config_relative_path_accepts_new_and_legacy_relative_values() {
+    fn resolve_config_relative_path_accepts_plain_and_data_prefixed_relative_values() {
         let base_dir = Path::new("/srv/asterdrive");
         let config_dir = Path::new("/srv/asterdrive/data");
 
@@ -270,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_config_relative_sqlite_url_accepts_new_and_legacy_relative_values() {
+    fn resolve_config_relative_sqlite_url_accepts_plain_and_data_prefixed_relative_values() {
         let base_dir = Path::new("/srv/asterdrive");
         let config_dir = Path::new("/srv/asterdrive/data");
 
