@@ -14,7 +14,7 @@ async fn test_file_upload_download_delete() {
     // 上传文件（multipart）
     let boundary = "----TestBoundary123";
     let file_content = b"Hello AsterDrive!";
-    let body = format!(
+    let upload_payload = format!(
         "------TestBoundary123\r\n\
          Content-Disposition: form-data; name=\"file\"; filename=\"hello.txt\"\r\n\
          Content-Type: text/plain\r\n\r\n\
@@ -30,7 +30,7 @@ async fn test_file_upload_download_delete() {
             "Content-Type",
             format!("multipart/form-data; boundary={boundary}"),
         ))
-        .set_payload(body)
+        .set_payload(upload_payload.clone())
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201, "upload should return 201 Created");
@@ -88,6 +88,21 @@ async fn test_file_upload_download_delete() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 404);
+
+    // 删除后应能再次创建同名文件
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(upload_payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let upload_body: Value = test::read_body_json(resp).await;
+    assert_eq!(upload_body["data"]["name"], "hello.txt");
 }
 
 #[actix_web::test]
@@ -326,6 +341,26 @@ async fn test_file_rename_move() {
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 0);
+
+    // 文件移走后，原位置应能重新创建同名文件
+    let reused_root_id = upload_test_file_named!(app, token, "renamed.txt");
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let root_files = body["data"]["files"].as_array().unwrap();
+    assert_eq!(root_files.len(), 1);
+    assert_eq!(root_files[0]["id"].as_i64().unwrap(), reused_root_id);
+    assert_eq!(root_files[0]["name"], "renamed.txt");
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/files/{reused_root_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
 
     // 再通过 patch + null 移回根目录
     let req = test::TestRequest::patch()

@@ -56,6 +56,22 @@ async fn test_batch_delete_files() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["code"], 0);
     assert_eq!(body["data"]["succeeded"], 2);
+
+    // 批量删除后应能重新创建同名文件
+    for name in ["file1.txt", "file2.txt"] {
+        let payload = upload_named_file(name, &format!("recreated {name}"), "text/plain", boundary);
+        let req = test::TestRequest::post()
+            .uri("/api/v1/files/upload")
+            .insert_header(("Cookie", format!("aster_access={}", token)))
+            .insert_header((
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            ))
+            .set_payload(payload)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201, "recreating {name} should succeed");
+    }
     assert_eq!(body["data"]["failed"], 0);
 
     // Third file should still be accessible
@@ -202,6 +218,20 @@ async fn test_batch_move_files() {
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["files"].as_array().unwrap().len(), 0);
+
+    // 批量移动后，原目录应能重新创建同名文件
+    let payload = upload_named_file("move1.txt", "recreated move1", "text/plain", boundary);
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/files/upload?folder_id={source_id}"))
+        .insert_header(("Cookie", format!("aster_access={}", token)))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
 
     // Batch move both files back to root (null = root)
     let req = test::TestRequest::post()

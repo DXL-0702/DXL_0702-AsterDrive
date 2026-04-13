@@ -17,6 +17,7 @@ use crate::types::NullablePatch;
 use sha2::{Digest, Sha256};
 
 const BLOB_CLEANUP_CONCURRENCY: usize = 8;
+const MAX_COPY_NAME_RETRIES: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DownloadDisposition {
@@ -126,22 +127,19 @@ pub(crate) async fn update_in_scope(
         crate::utils::validate_name(n)?;
     }
 
-    let final_name = name.as_deref().unwrap_or(&f.name);
+    let final_name = name.clone().unwrap_or_else(|| f.name.clone());
     let existing = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            file_repo::find_by_name_in_folder(db, user_id, target_folder, final_name).await?
+            file_repo::find_by_name_in_folder(db, user_id, target_folder, &final_name).await?
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            file_repo::find_by_name_in_team_folder(db, team_id, target_folder, final_name).await?
+            file_repo::find_by_name_in_team_folder(db, team_id, target_folder, &final_name).await?
         }
     };
     if let Some(existing) = existing
         && existing.id != id
     {
-        return Err(AsterError::validation_error(format!(
-            "file '{}' already exists in this folder",
-            final_name
-        )));
+        return Err(file_repo::duplicate_name_error(&final_name));
     }
 
     let previous_folder_id = f.folder_id;
@@ -155,7 +153,10 @@ pub(crate) async fn update_in_scope(
         NullablePatch::Value(fid) => active.folder_id = Set(Some(fid)),
     }
     active.updated_at = Set(Utc::now());
-    let updated = active.update(db).await.map_err(AsterError::from)?;
+    let updated = active
+        .update(db)
+        .await
+        .map_err(|err| file_repo::map_name_db_err(err, &final_name))?;
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(
@@ -728,8 +729,28 @@ pub(crate) async fn copy_file_in_scope(
         }
     };
 
-    let copied =
-        duplicate_file_record_in_scope(state, scope, &src, dest_folder_id, &copy_name).await?;
+    let mut copied = None;
+    let mut candidate_name = copy_name;
+    for _ in 0..MAX_COPY_NAME_RETRIES {
+        match duplicate_file_record_in_scope(state, scope, &src, dest_folder_id, &candidate_name)
+            .await
+        {
+            Ok(file) => {
+                copied = Some(file);
+                break;
+            }
+            Err(err) if file_repo::is_duplicate_name_error(&err, &candidate_name) => {
+                candidate_name = crate::utils::next_copy_name(&candidate_name);
+            }
+            Err(err) => return Err(err),
+        }
+    }
+    let copied = copied.ok_or_else(|| {
+        AsterError::validation_error(format!(
+            "failed to allocate a unique copy name for '{}'",
+            src.name
+        ))
+    })?;
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(
@@ -869,22 +890,21 @@ pub(crate) async fn duplicate_file_record_in_scope(
 
     file_repo::increment_blob_ref_count(&txn, blob.id).await?;
 
-    let new_file = file_repo::create(
-        &txn,
-        file::ActiveModel {
-            name: Set(dest_name.to_string()),
-            folder_id: Set(dest_folder_id),
-            team_id: Set(scope.team_id()),
-            blob_id: Set(src.blob_id),
-            size: Set(src.size),
-            user_id: Set(scope.actor_user_id()),
-            mime_type: Set(src.mime_type.clone()),
-            created_at: Set(now),
-            updated_at: Set(now),
-            ..Default::default()
-        },
-    )
-    .await?;
+    let new_file = file::ActiveModel {
+        name: Set(dest_name.to_string()),
+        folder_id: Set(dest_folder_id),
+        team_id: Set(scope.team_id()),
+        blob_id: Set(src.blob_id),
+        size: Set(src.size),
+        user_id: Set(scope.actor_user_id()),
+        mime_type: Set(src.mime_type.clone()),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(&txn)
+    .await
+    .map_err(|err| file_repo::map_name_db_err(err, dest_name))?;
 
     workspace_storage_service::update_storage_used(&txn, scope, blob_size).await?;
 

@@ -1,5 +1,5 @@
 use chrono::Utc;
-use sea_orm::{ConnectionTrait, Set, TransactionTrait};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, Set, TransactionTrait};
 
 use crate::db::repository::{file_repo, folder_repo, team_repo, upload_session_repo, user_repo};
 use crate::entities::{file, file_blob, folder, team, upload_session};
@@ -10,6 +10,8 @@ use crate::services::{
     workspace_scope_service::{WorkspaceStorageScope, require_team_access, verify_folder_access},
 };
 use crate::types::{DriverType, parse_storage_policy_options};
+
+const MAX_AUTO_NAME_RETRIES: usize = 32;
 
 pub(crate) async fn load_storage_limits(
     state: &AppState,
@@ -298,7 +300,7 @@ async fn create_file_from_blob_with_name_mode<C: ConnectionTrait>(
 ) -> Result<file::Model> {
     crate::utils::validate_name(filename)?;
 
-    let (final_name, team_id) = match scope {
+    let (mut final_name, team_id) = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
             let final_name = match name_mode {
                 NewFileNameMode::ResolveUnique => {
@@ -322,23 +324,49 @@ async fn create_file_from_blob_with_name_mode<C: ConnectionTrait>(
     let mime = mime_guess::from_path(&final_name)
         .first_or_octet_stream()
         .to_string();
+    let max_attempts = match name_mode {
+        NewFileNameMode::ResolveUnique => MAX_AUTO_NAME_RETRIES,
+        NewFileNameMode::Exact => 1,
+    };
 
-    file_repo::create(
-        db,
-        file::ActiveModel {
-            name: Set(final_name),
+    for attempt in 0..max_attempts {
+        let created = file::ActiveModel {
+            name: Set(final_name.clone()),
             folder_id: Set(folder_id),
             team_id: Set(team_id),
             blob_id: Set(blob.id),
             size: Set(blob.size),
             user_id: Set(scope.actor_user_id()),
-            mime_type: Set(mime),
+            mime_type: Set(mime.clone()),
             created_at: Set(now),
             updated_at: Set(now),
             ..Default::default()
-        },
-    )
-    .await
+        }
+        .insert(db)
+        .await;
+
+        match created {
+            Ok(created) => return Ok(created),
+            Err(err) if file_repo::is_name_conflict_db_err(&err) => {
+                if matches!(name_mode, NewFileNameMode::Exact) {
+                    return Err(file_repo::map_name_db_err(err, &final_name));
+                }
+                if attempt + 1 == max_attempts {
+                    return Err(AsterError::validation_error(format!(
+                        "failed to allocate a unique file name for '{}'",
+                        filename
+                    )));
+                }
+                final_name = crate::utils::next_copy_name(&final_name);
+            }
+            Err(err) => return Err(AsterError::from(err)),
+        }
+    }
+
+    Err(AsterError::validation_error(format!(
+        "failed to allocate a unique file name for '{}'",
+        filename
+    )))
 }
 
 pub(crate) async fn create_new_file_from_blob<C: ConnectionTrait>(

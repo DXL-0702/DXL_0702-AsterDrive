@@ -321,27 +321,6 @@ async fn verify_folder_in_trash_in_scope(
     Ok(folder)
 }
 
-async fn recursive_restore_deleted_tree_in_scope(
-    db: &sea_orm::DatabaseConnection,
-    scope: WorkspaceStorageScope,
-    folder_id: i64,
-) -> Result<()> {
-    let (files, folder_ids) =
-        folder_service::collect_folder_tree_in_scope(db, scope, folder_id, true).await?;
-    let child_folder_ids: Vec<i64> = folder_ids
-        .into_iter()
-        .filter(|&id| id != folder_id)
-        .collect();
-    let file_ids: Vec<i64> = files.into_iter().map(|file| file.id).collect();
-
-    let txn = db.begin().await.map_err(AsterError::from)?;
-    file_repo::restore_many(&txn, &file_ids).await?;
-    folder_repo::restore_many(&txn, &child_folder_ids).await?;
-    txn.commit().await.map_err(AsterError::from)?;
-
-    Ok(())
-}
-
 async fn recursive_purge_folder_in_scope(
     state: &AppState,
     scope: WorkspaceStorageScope,
@@ -370,38 +349,31 @@ async fn restore_file_in_scope(
     tracing::debug!(scope = ?scope, file_id = id, "restoring file from trash");
     let file = verify_file_in_trash_in_scope(state, scope, id).await?;
     let mut restored_parent_id = file.folder_id;
+    let mut restore_to_root = false;
 
     if let Some(folder_id) = file.folder_id {
         let parent = folder_repo::find_by_id(&state.db, folder_id).await;
         if parent_restore_target_unavailable(&parent, scope)? {
-            let mut active: file::ActiveModel = file.into();
-            active.folder_id = sea_orm::Set(None);
-            active.deleted_at = sea_orm::Set(None);
-            use sea_orm::ActiveModelTrait;
-            active.update(&state.db).await.map_err(AsterError::from)?;
             restored_parent_id = None;
-            storage_change_service::publish(
-                state,
-                storage_change_service::StorageChangeEvent::new(
-                    storage_change_service::StorageChangeKind::FileRestored,
-                    scope,
-                    vec![id],
-                    vec![],
-                    vec![restored_parent_id],
-                ),
-            );
-            tracing::debug!(
-                scope = ?scope,
-                file_id = id,
-                restored_parent_id,
-                restored_to_root = restored_parent_id.is_none(),
-                "restored file from trash"
-            );
-            return Ok(());
+            restore_to_root = true;
         }
     }
 
-    file_repo::restore(&state.db, id).await?;
+    if restore_to_root {
+        let txn = state.db.begin().await.map_err(AsterError::from)?;
+        let file_name = file.name.clone();
+        let mut active: file::ActiveModel = file.into();
+        active.folder_id = sea_orm::Set(None);
+        active.deleted_at = sea_orm::Set(None);
+        use sea_orm::ActiveModelTrait;
+        active
+            .update(&txn)
+            .await
+            .map_err(|err| file_repo::map_name_db_err(err, &file_name))?;
+        txn.commit().await.map_err(AsterError::from)?;
+    } else {
+        file_repo::restore(&state.db, id).await?;
+    }
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(
@@ -430,40 +402,31 @@ async fn restore_folder_in_scope(
     tracing::debug!(scope = ?scope, folder_id = id, "restoring folder from trash");
     let folder = verify_folder_in_trash_in_scope(state, scope, id).await?;
     let mut restored_parent_id = folder.parent_id;
+    let mut restore_to_root = false;
+    let (files, folder_ids) =
+        folder_service::collect_folder_tree_in_scope(&state.db, scope, id, true).await?;
+    let child_folder_ids: Vec<i64> = folder_ids.into_iter().filter(|&fid| fid != id).collect();
 
     if let Some(parent_id) = folder.parent_id {
         let parent = folder_repo::find_by_id(&state.db, parent_id).await;
         if parent_restore_target_unavailable(&parent, scope)? {
-            let mut active: folder::ActiveModel = folder.into();
-            active.parent_id = sea_orm::Set(None);
-            active.deleted_at = sea_orm::Set(None);
-            use sea_orm::ActiveModelTrait;
-            active.update(&state.db).await.map_err(AsterError::from)?;
-            recursive_restore_deleted_tree_in_scope(&state.db, scope, id).await?;
+            restore_to_root = true;
             restored_parent_id = None;
-            storage_change_service::publish(
-                state,
-                storage_change_service::StorageChangeEvent::new(
-                    storage_change_service::StorageChangeKind::FolderRestored,
-                    scope,
-                    vec![],
-                    vec![id],
-                    vec![restored_parent_id],
-                ),
-            );
-            tracing::debug!(
-                scope = ?scope,
-                folder_id = id,
-                restored_parent_id,
-                restored_to_root = restored_parent_id.is_none(),
-                "restored folder from trash"
-            );
-            return Ok(());
         }
     }
 
-    folder_repo::restore(&state.db, id).await?;
-    recursive_restore_deleted_tree_in_scope(&state.db, scope, id).await?;
+    let txn = state.db.begin().await.map_err(AsterError::from)?;
+    let mut active: folder::ActiveModel = folder.into();
+    if restore_to_root {
+        active.parent_id = sea_orm::Set(None);
+    }
+    active.deleted_at = sea_orm::Set(None);
+    use sea_orm::ActiveModelTrait;
+    active.update(&txn).await.map_err(AsterError::from)?;
+    let file_ids: Vec<i64> = files.iter().map(|file| file.id).collect();
+    file_repo::restore_many(&txn, &file_ids).await?;
+    folder_repo::restore_many(&txn, &child_folder_ids).await?;
+    txn.commit().await.map_err(AsterError::from)?;
     storage_change_service::publish(
         state,
         storage_change_service::StorageChangeEvent::new(

@@ -79,6 +79,53 @@ async fn test_trash_restore_purge() {
 }
 
 #[actix_web::test]
+async fn test_restore_file_rejects_active_name_conflict() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, token, "restore-conflict.txt");
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let replacement_id = upload_test_file_named!(app, token, "restore-conflict.txt");
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/trash/file/{file_id}/restore"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["msg"],
+        "file 'restore-conflict.txt' already exists in this folder"
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/trash")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"]["files"][0]["id"].as_i64().unwrap(), file_id);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{replacement_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
 async fn test_trash_purge_all() {
     let state = common::setup().await;
     let app = create_test_app!(state);

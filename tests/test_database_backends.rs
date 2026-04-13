@@ -126,6 +126,7 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
     assert_eq!(register_resp.status(), 201);
 
     let boundary = "----BackendBoundary123";
+    let mut report_file_id = None;
     for (name, mime, content) in [
         ("report.pdf", "application/pdf", "pdf content"),
         ("notes.txt", "text/plain", "notes content"),
@@ -149,6 +150,43 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
                 String::from_utf8_lossy(&body)
             );
         }
+        let body: Value = test::read_body_json(resp).await;
+        if name == "report.pdf" {
+            report_file_id = body["data"]["id"].as_i64();
+        }
+    }
+
+    let report_file_id = report_file_id.expect("report upload should return file id");
+    let delete_req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/files/{report_file_id}"))
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .to_request();
+    let delete_resp = test::call_service(&app, delete_req).await;
+    assert_eq!(delete_resp.status(), 200);
+
+    let payload = upload_named_file(
+        "report.pdf",
+        "pdf content again",
+        "application/pdf",
+        boundary,
+    );
+    let recreate_req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", format!("aster_access={token}")))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let recreate_resp = test::call_service(&app, recreate_req).await;
+    let recreate_status = recreate_resp.status();
+    if recreate_status != 201 {
+        let body = test::read_body(recreate_resp).await;
+        panic!(
+            "recreate report.pdf returned {recreate_status}: {}",
+            String::from_utf8_lossy(&body)
+        );
     }
 
     for folder_name in ["Documents", "Photos"] {
@@ -232,7 +270,7 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
     assert_eq!(overview_body["data"]["days"], 3);
     assert_eq!(overview_body["data"]["stats"]["total_users"], 2);
     assert_eq!(overview_body["data"]["stats"]["total_files"], 2);
-    assert_eq!(overview_body["data"]["stats"]["uploads_today"], 2);
+    assert_eq!(overview_body["data"]["stats"]["uploads_today"], 3);
 }
 
 #[actix_web::test]

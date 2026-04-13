@@ -1,7 +1,8 @@
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, TryInsertResult, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, DbErr, EntityTrait,
+    ExprTrait, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Set, SqlErr, TryInsertResult,
+    sea_query::Expr,
 };
 
 use crate::entities::{
@@ -25,6 +26,38 @@ pub struct FindOrCreateBlobResult {
 const FIND_OR_CREATE_BLOB_MAX_ATTEMPTS: usize = 7;
 const FIND_OR_CREATE_BLOB_INITIAL_DELAY_MS: u64 = 5;
 const FIND_OR_CREATE_BLOB_MAX_DELAY_MS: u64 = 80;
+
+pub fn duplicate_name_message(name: &str) -> String {
+    format!("file '{name}' already exists in this folder")
+}
+
+pub fn duplicate_name_error(name: &str) -> AsterError {
+    AsterError::validation_error(duplicate_name_message(name))
+}
+
+pub fn is_name_conflict_db_err(err: &DbErr) -> bool {
+    matches!(err.sql_err(), Some(SqlErr::UniqueConstraintViolation(_)))
+}
+
+pub fn map_name_db_err(err: DbErr, name: &str) -> AsterError {
+    if is_name_conflict_db_err(&err) {
+        duplicate_name_error(name)
+    } else {
+        AsterError::from(err)
+    }
+}
+
+pub fn map_bulk_name_db_err(err: DbErr, message: &str) -> AsterError {
+    if is_name_conflict_db_err(&err) {
+        AsterError::validation_error(message)
+    } else {
+        AsterError::from(err)
+    }
+}
+
+pub fn is_duplicate_name_error(err: &AsterError, name: &str) -> bool {
+    matches!(err, AsterError::ValidationError(message) if message == &duplicate_name_message(name))
+}
 
 #[derive(Clone, Copy)]
 enum FileScope {
@@ -819,10 +852,9 @@ pub async fn create_many<C: ConnectionTrait>(db: &C, models: Vec<file::ActiveMod
     if models.is_empty() {
         return Ok(());
     }
-    File::insert_many(models)
-        .exec(db)
-        .await
-        .map_err(AsterError::from)?;
+    File::insert_many(models).exec(db).await.map_err(|err| {
+        map_bulk_name_db_err(err, "one or more files already exist in this folder")
+    })?;
     Ok(())
 }
 
@@ -842,7 +874,9 @@ pub async fn move_many_to_folder<C: ConnectionTrait>(
         .filter(file::Column::Id.is_in(ids.to_vec()))
         .exec(db)
         .await
-        .map_err(AsterError::from)?;
+        .map_err(|err| {
+            map_bulk_name_db_err(err, "one or more files already exist in target folder")
+        })?;
     Ok(())
 }
 
@@ -999,9 +1033,13 @@ pub async fn soft_delete_many<C: ConnectionTrait>(
 /// 恢复：清除 deleted_at
 pub async fn restore<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     let f = find_by_id(db, id).await?;
+    let name = f.name.clone();
     let mut active: file::ActiveModel = f.into();
     active.deleted_at = Set(None);
-    active.update(db).await.map_err(AsterError::from)?;
+    active
+        .update(db)
+        .await
+        .map_err(|err| map_name_db_err(err, &name))?;
     Ok(())
 }
 
@@ -1018,7 +1056,12 @@ pub async fn restore_many<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()>
         .filter(file::Column::Id.is_in(ids.to_vec()))
         .exec(db)
         .await
-        .map_err(AsterError::from)?;
+        .map_err(|err| {
+            map_bulk_name_db_err(
+                err,
+                "one or more files already exist in their original folders",
+            )
+        })?;
     Ok(())
 }
 
