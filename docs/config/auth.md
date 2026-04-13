@@ -49,8 +49,6 @@ bootstrap_insecure_cookies = false
 
 ## 公开注册开关现在在哪里
 
-文档里以前写“没有关闭注册的开关”，这已经过时了。
-
 当前实际入口：
 
 ```text

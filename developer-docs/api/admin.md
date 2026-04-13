@@ -48,7 +48,7 @@
 当前实现注意点：
 
 - 创建和更新都会采用请求里的 `chunk_size`
-- `options` 当前主要承载 S3 上传策略，例如 `{"s3_upload_strategy":"proxy_tempfile"}`、`{"s3_upload_strategy":"relay_stream"}`、`{"s3_upload_strategy":"presigned"}`
+- `options` 当前主要承载 S3 上传策略，例如 `{"s3_upload_strategy":"relay_stream"}`、`{"s3_upload_strategy":"presigned"}`
 - 旧配置 `{"presigned_upload":true}` 仍兼容
 - REST 仍然不能管理 `allowed_types`
 - 当前 `PATCH` 不能修改 `driver_type`
@@ -236,6 +236,7 @@
 
 ### 当前常用 key
 
+- 具体定义以 `/admin/config/schema` 和 `src/config/definitions.rs` 为准；下面只列一批当前高频项
 - `default_storage_quota`
 - `webdav_enabled`
 - `trash_retention_days`
@@ -243,11 +244,17 @@
 - `max_versions_per_file`
 - `audit_log_enabled`
 - `audit_log_retention_days`
+- `public_site_url`
+- `auth_cookie_secure`
 - `cors_enabled`
 - `cors_allowed_origins`
 - `cors_allow_credentials`
 - `cors_max_age_secs`
 - `gravatar_base_url`
+- `mail_outbox_dispatch_interval_secs`
+- `background_task_dispatch_interval_secs`
+- `maintenance_cleanup_interval_secs`
+- `blob_reconcile_interval_secs`
 - `task_list_max_limit`
 - `task_retention_hours`
 - `wopi_access_token_ttl_secs`
@@ -287,7 +294,12 @@
 
 ### 执行配置动作
 
-当前只有 `POST /admin/config/mail/action` 这一类动作目标已经落地，请求体例如：
+当前已经落地两类动作目标：
+
+- `POST /admin/config/mail/action`
+- `POST /admin/config/frontend_preview_apps_json/action`
+
+邮件测试示例：
 
 ```json
 {
@@ -302,6 +314,23 @@
 - `action = send_test_email` 会立即走运行时邮件发送链路
 - 成功响应里会返回一段可直接展示给前端的 `message`
 - 这条调用也会写管理员审计日志
+
+预览应用 WOPI discovery 导入示例：
+
+```json
+{
+  "action": "build_wopi_discovery_preview_config",
+  "discovery_url": "https://office.example.com/hosting/discovery"
+}
+```
+
+这条动作的当前语义：
+
+- 目标 key 必须是 `frontend_preview_apps_json`
+- `discovery_url` 必填，用来拉取并解析远端 WOPI discovery XML
+- `value` 可选；传了就把它当“预览应用草稿 JSON”来导入并返回结果，不直接落库
+- `value` 不传时，会基于当前线上配置或默认配置生成并直接写回 `frontend_preview_apps_json`
+- 成功响应除了 `message`，还可能带一份新的 `value`，也就是归一化后的预览应用 JSON 草稿
 
 ## 分享审计
 

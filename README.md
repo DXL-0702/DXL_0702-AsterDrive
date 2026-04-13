@@ -49,11 +49,11 @@ cargo run
 
 On first startup, AsterDrive will automatically:
 
-- generate `config.toml` in the current working directory if it does not exist
+- generate `data/config.toml` under the current working directory if it does not exist
 - create the default SQLite database when using the default database URL
 - run all database migrations
 - create the default local storage policy
-- initialize built-in runtime configuration items
+- initialize built-in runtime configuration items in `system_config`
 
 Default address:
 
@@ -116,12 +116,12 @@ See [`docker-compose.yml`](docker-compose.yml) and [`docs/deployment/docker.md`]
 
 ### Operations
 
-- health endpoints: `/health`, `/health/ready`, optional `/health/memory`, `/health/metrics`
+- health endpoints: `/health`, `/health/ready`, optional `/health/memory` (`debug_assertions + openapi`), `/health/metrics` (`metrics` feature)
 - runtime config stored in `system_config`
 - admin overview, config schema, and policy connection testing endpoints
 - audit logs for key actions
-- Swagger UI in debug builds and static OpenAPI export via `cargo test --features openapi --test generate_openapi`
-- hourly cleanup tasks for uploads, completed upload sessions, trash, locks, and audit log retention, plus 6-hour blob reconciliation
+- Swagger UI in debug builds with the `openapi` feature, plus static OpenAPI export via `cargo test --features openapi --test generate_openapi`
+- 5-second mail/background-task dispatch, hourly maintenance cleanup, and 6-hour blob reconciliation
 
 ## Documentation map
 
@@ -170,7 +170,7 @@ bun run check
 Static configuration is loaded with this priority:
 
 ```text
-Environment variables > config.toml > built-in defaults
+Environment variables > data/config.toml > built-in defaults
 ```
 
 Examples:

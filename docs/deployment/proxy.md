@@ -6,6 +6,7 @@
 - 域名
 - 大文件上传
 - WebDAV 客户端接入
+- 在线预览 / WOPI 打开方式的公网访问
 
 ## 先记住两件事
 
@@ -49,6 +50,20 @@ client_max_body_size 0;
 - WebDAV：`webdav.payload_limit`
 - 存储策略：`max_file_size`
 - 反向代理：请求体大小和超时
+
+## 如果你接了外部 WOPI / Office 服务
+
+最常见的额外检查项有三件：
+
+1. `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 已经填成用户真实访问 AsterDrive 的地址
+2. 外部 Office 服务可以从公网或你的内网部署路径访问到 AsterDrive 的 WOPI 地址
+3. 如果 Office 服务和 AsterDrive 不在同一个来源，`管理 -> 系统设置 -> 网络访问` 已经放行对应域名
+
+如果这些没配对，常见现象就是：
+
+- 打开方式能显示，但点开后加载失败
+- Office 页面能打开，但不能读取文件
+- 可以打开，却保存不回 AsterDrive
 
 ## Caddy
 

@@ -87,6 +87,7 @@ journalctl -u asterdrive -f
 - 管理后台里能看到默认策略组
 - 浏览器可以正常登录
 - 如果启用了 WebDAV，实际挂载路径与 `[webdav].prefix` 一致
+- 如果启用了外部 Office / WOPI 打开方式，至少用一个真实 Office 文件试开并保存一次
 - 如果把数据库、上传目录或临时目录放到其他磁盘，确认路径和权限没有写错
 
 ## 8. 常见环境变量写法
@@ -112,4 +113,4 @@ Environment=ASTER__AUTH__JWT_SECRET=replace-with-your-own-secret
 ## 9. HTTPS 与域名
 
 systemd 只负责把服务拉起来。  
-如果你要提供 HTTPS、域名和 WebDAV 客户端访问，还需要在前面加一层反向代理，见 [反向代理部署](/deployment/proxy)。
+如果你要提供 HTTPS、域名、WebDAV 客户端访问，或者外部 Office / WOPI 打开方式，还需要在前面加一层反向代理，见 [反向代理部署](/deployment/proxy)。

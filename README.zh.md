@@ -49,11 +49,11 @@ cargo run
 
 首次启动时，AsterDrive 会自动：
 
-- 在当前工作目录生成 `config.toml`（如果不存在）
+- 在当前工作目录下生成 `data/config.toml`（如果不存在）
 - 使用默认数据库地址时创建 SQLite 数据库
 - 执行全部数据库迁移
 - 创建默认本地存储策略
-- 初始化内置运行时配置项
+- 初始化写入 `system_config` 的内置运行时配置项
 
 默认访问地址：
 
@@ -116,12 +116,12 @@ docker compose up -d
 
 ### 运维能力
 
-- 健康检查接口：`/health`、`/health/ready`，可选 `/health/memory`、`/health/metrics`
+- 健康检查接口：`/health`、`/health/ready`，可选 `/health/memory`（`debug_assertions + openapi`）、`/health/metrics`（`metrics` feature）
 - 存储在 `system_config` 中的运行时配置
 - 管理总览、配置 schema 和存储策略连通性测试接口
 - 关键操作审计日志
-- `debug` 构建下提供 Swagger UI，并可通过 `cargo test --features openapi --test generate_openapi` 导出静态 OpenAPI
-- 每小时自动清理上传残留、已完成上传会话、回收站、锁和过期审计日志，并每 6 小时做一次 Blob 对账
+- 带 `openapi` feature 的 debug 构建下提供 Swagger UI，并可通过 `cargo test --features openapi --test generate_openapi` 导出静态 OpenAPI
+- 每 5 秒派发邮件和后台任务、每小时跑一次维护清理、每 6 小时做一次 Blob 对账
 
 ## 文档导航
 
@@ -170,7 +170,7 @@ bun run check
 静态配置加载优先级：
 
 ```text
-环境变量 > config.toml > 内置默认值
+环境变量 > data/config.toml > 内置默认值
 ```
 
 示例：

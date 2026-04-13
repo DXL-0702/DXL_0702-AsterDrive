@@ -3,7 +3,7 @@ layout: home
 
 hero:
   name: AsterDrive
-  text: 自托管文件、团队空间与 WebDAV
+  text: 自托管文件、团队空间、WebDAV 与 WOPI
   tagline: 给部署者、管理员和普通用户使用的在线手册，按当前版本实际页面、入口和默认行为编写
   actions:
     - theme: brand
@@ -29,6 +29,8 @@ features:
     details: 上传、分享、回收站、WebDAV、团队协作这些操作会明确区分“我的云盘”和团队空间，避免第一次用就走错地方
   - title: 本地盘和 S3 都能落地
     details: 默认本地存储开箱即用；如果你要接 MinIO、AWS S3 或其他 S3 兼容对象存储，也有对应配置和排查说明
+  - title: Office 文件也能接外部打开方式
+    details: 可以继续只用内置文本编辑，也可以在系统设置里启用外部预览器或 WOPI，把 Office 文件交给兼容服务打开
   - title: 管理后台按日常维护来组织
     details: 用户、团队、存储策略、策略组、分享、锁、系统设置、审计日志和版本信息都按管理员日常动作编排
 ---

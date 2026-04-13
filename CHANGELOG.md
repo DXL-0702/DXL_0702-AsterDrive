@@ -5,6 +5,97 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.18] - 2026-04-13
+
+> **⚠️ 升级必读**：本版本将配置文件和数据库文件迁移至 `data/` 目录。升级前需手动迁移：
+> ```bash
+> mkdir -p data
+> mv config.toml data/
+> mv asterdrive.db data/        # SQLite 用户
+> ```
+> 未迁移的旧实例将拒绝启动并提示操作步骤。
+
+### Release Highlights
+
+- **运维 CLI** — 新增 `aster-drive cli` 子命令系统，支持离线查看、修改、导入/导出运行时配置，脱离 Web 管理后台即可完成运维操作
+- **配置文件迁移至 data/ 目录** — `config.toml` 和 SQLite 数据库文件统一迁移到 `data/` 目录，规范化数据布局。旧布局自动检测并提示迁移
+- **预览应用配置 v2** — 预览应用配置从规则匹配模式重构为扩展名直接绑定模式，简化配置逻辑。新增 WOPI Discovery 自动导入功能，可一键从 Collabora/OnlyOffice 生成预览应用配置
+- **服务层 DTO 重构** — 所有 API 响应从直接暴露数据库实体模型改为返回专用 DTO，增强 API 契约稳定性与安全性
+- **多项安全与性能改进** — 批量操作权限校验统一化、回收站清理游标分批处理、团队成员数据库侧分页、Redis 日志凭据脱敏
+
+
+### Added
+
+- **运维 CLI**
+  - 新增 `cli config` 子命令：`list`/`get`/`set`/`delete`/`validate`/`export`/`import`
+  - 支持环境变量传参：`ASTER_CLI_DATABASE_URL`、`ASTER_CLI_CONFIG_KEY` 等
+  - 输出格式：JSON / Pretty JSON，标准 envelope 结构
+  - 无用户身份写入：配置写入支持 CLI 场景（`upsert_with_actor`）
+- **WOPI Discovery 自动导入**
+  - `execute_config_action` 新增 `build_wopi_discovery_preview_config` 动作
+  - 解析 WOPI Discovery XML 自动生成 WOPI 预览应用配置
+  - 智能去重：基于 discovery_url 识别已导入应用，保留用户手动禁用状态
+  - 前端新增 Discovery URL 输入弹窗
+- **管理控制台趋势图增强**
+  - 概览页趋势图从单线扩展为 4 线（总事件、上传量、分享创建、新用户），自定义 tooltip 展示
+- **全链路 debug 埋点**
+  - 认证、文件/文件夹操作、搜索、上传等核心路径新增 `tracing::debug` 日志
+- **API 文档**
+  - 新增 WOPI API、批量打包下载、后台任务 API 文档
+  - 配置文档重写（五层配置结构）、用户指南和部署文档更新
+
+
+### Changed
+
+- **预览应用配置 v2**
+  - 配置版本升至 v2：移除 `rules` 字段，扩展名列表直接声明在 app 上
+  - 合并 `builtin.formatted_json` 和 `builtin.formatted_xml` 为 `builtin.formatted`
+  - 前端编辑器改为弹窗模式，新增"新增应用"选择弹窗（Embed/URL 模板/WOPI Discovery）
+- **配置文件路径迁移**
+  - `config.toml` 迁移至 `data/config.toml`，SQLite 默认路径改为 `data/asterdrive.db`
+  - 旧布局自动检测，服务拒绝启动并提示迁移步骤
+- **服务层 DTO 重构**
+  - 新增 `workspace_models`（FileInfo/FolderInfo/FileVersion）及各服务 DTO
+  - 新增 `workspace_scope_service` 集中管理作用域校验
+  - 所有服务层公开函数返回类型从实体模型替换为 DTO
+- **批量操作权限校验**
+  - `load_normalized_selection_in_scope` 统一接管 delete/move/copy 权限校验
+  - 新增 `find_by_ids_in_scope` 系列 repo 方法，防止跨作用域越权
+- **回收站清理**
+  - `purge_all` 改为游标分批处理（每批 100 条），降低大数据量场景内存压力
+- **团队成员列表**
+  - 从内存全量加载改为数据库侧过滤/排序/分页
+- **上传路径解析**
+  - 拆分为 `parse_relative_upload_path`（校验）+ `ensure_upload_parent_path`（创建），解耦校验与创建逻辑
+- **遗留存储策略清理**
+  - 删除 `user_storage_policies` 表和 `user_profiles.avatar_policy_id` 字段
+  - 清理 `policy_repo` 中废弃的用户策略 CRUD 方法
+- **后台任务类型精简**
+  - 移除 `BackgroundTaskKind::ArchiveDownload`（已改为 stream ticket 直接流式下载）
+
+
+### Fixed
+
+- **分享密码状态误判** — 更新分享时不传 password 字段会错误清除已有密码，现在保持原密码状态
+- **团队归档删除原子性** — 引入事务锁保证并发安全，清理失败时容忍目标缺失
+- **Redis 日志凭据泄露** — 连接日志自动剥离 URL 中的用户名/密码
+
+
+### Breaking Changes
+
+- **配置文件路径**：`config.toml` 和 SQLite 数据库文件需手动迁移至 `data/` 目录，旧布局启动将报错并提示迁移步骤
+- **预览应用配置 v2**：配置格式从 v1 升至 v2（移除 `rules`，扩展名直接声明在 app 上），自定义预览应用配置需重新设置
+- **数据库 Schema**：删除 `user_storage_policies` 表和 `avatar_policy_id` 字段，需运行数据库迁移
+- **ArchiveDownload 任务类型移除**：`BackgroundTaskKind::ArchiveDownload` 已删除，打包下载改为 stream ticket 直接流式下载
+
+
+---
+
+**统计数据**：
+- 143 files changed, 7,850 insertions(+), 5,115 deletions(-)
+- 7 commits
+
+
 ## [v0.0.1-alpha.17] - 2026-04-12
 
 ### Release Highlights
@@ -1422,7 +1513,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.17...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.18...HEAD
+[v0.0.1-alpha.18]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.17...v0.0.1-alpha.18
 [v0.0.1-alpha.17]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.16...v0.0.1-alpha.17
 [v0.0.1-alpha.16]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.15...v0.0.1-alpha.16
 [v0.0.1-alpha.15]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.14...v0.0.1-alpha.15

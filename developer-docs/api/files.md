@@ -53,11 +53,10 @@
 前端仍然只会看到这四种模式，不会额外出现一个 `relay_stream` 模式。S3 传输策略由存储策略
 `options.s3_upload_strategy` 控制：
 
-- `proxy_tempfile`：`init` 仍返回 `direct` / `chunked`，但服务端会先写本地临时文件或分片目录，再写入 S3
 - `relay_stream`：`init` 仍返回 `direct` / `chunked`，但服务端直接把字节流中继到 S3，不落本地临时文件
 - `presigned`：`init` 才会返回 `presigned` / `presigned_multipart`
 
-旧配置 `{"presigned_upload":true}` 仍兼容，等价于 `{"s3_upload_strategy":"presigned"}`；`{"presigned_upload":false}` 或缺省时，默认等价于 `{"s3_upload_strategy":"proxy_tempfile"}`。使用预签名模式时，对象存储侧还必须配置好 CORS。
+旧配置 `{"presigned_upload":true}` 仍兼容，等价于 `{"s3_upload_strategy":"presigned"}`；缺省或旧的 `{"s3_upload_strategy":"proxy_tempfile"}` 会回退为 `relay_stream`。使用预签名模式时，对象存储侧还必须配置好 CORS。
 
 ### 直传、分片和完成阶段
 
@@ -71,7 +70,7 @@
 完成阶段的服务端行为分两类：
 
 - 本地路径：会校验大小和配额；若 local 策略开启了 `content_dedup`，还会计算 SHA-256 并做 Blob 去重，否则直接创建独立 Blob
-- 所有 S3 路径（`proxy_tempfile` / `relay_stream` / `presigned` / `presigned_multipart`）：都会校验大小和配额，但不会做 Blob 去重；最终会使用 `s3-{upload_id}` 风格的占位 hash 和 `files/{upload_id}` 风格的对象路径为每次上传创建独立 Blob。其中 `proxy_tempfile` 会先写服务端临时文件，`relay_stream` / `presigned*` 则不会回读对象计算 SHA-256
+- 所有 S3 路径（`relay_stream` / `presigned` / `presigned_multipart`）：都会校验大小和配额，但不会做 Blob 去重；最终会使用 `s3-{upload_id}` 风格的占位 hash 和 `files/{upload_id}` 风格的对象路径为每次上传创建独立 Blob；这些路径都不会回读对象计算 SHA-256
 
 `POST /files/new` 创建空文件时也遵循同样规则：只有 local 显式开启 `content_dedup` 才会复用 0 字节 Blob，S3 始终创建独立 Blob。
 

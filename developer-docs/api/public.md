@@ -48,26 +48,18 @@
   "code": 0,
   "msg": "",
   "data": {
-    "version": 1,
+    "version": 2,
     "apps": [
       {
-        "key": "builtin.code",
+        "key": "builtin.formatted",
         "provider": "builtin",
-        "icon": "/static/preview-apps/code.svg",
+        "icon": "/static/preview-apps/json.svg",
         "enabled": true,
         "labels": {
-          "en": "Source view",
-          "zh": "源码视图"
-        }
-      }
-    ],
-    "rules": [
-      {
-        "matches": {
-          "categories": ["text"]
+          "en": "Formatted view",
+          "zh": "格式化视图"
         },
-        "apps": ["builtin.code"],
-        "default_app": "builtin.code"
+        "extensions": ["json", "xml"]
       }
     ]
   }
@@ -77,7 +69,10 @@
 要点：
 
 - `apps` 是当前匿名页面可见的预览器定义；`provider` 目前有 `builtin`、`url_template`、`wopi`
-- `rules` 定义了按扩展名、MIME 或类别选择预览器的顺序
-- 返回结果已经过滤掉被禁用的 app；规则里指向无效 / 已禁用 app 的条目也会被清理
+- 当前是 v2 结构，不再返回顶层 `rules`；匹配信息直接挂在每个 app 自己的 `extensions` 与 `config` 上
+- 返回结果已经过滤掉被禁用的 app
+- `config` 是 provider 相关配置：
+  - `url_template` 预览器常见字段有 `mode`、`url_template`、`allowed_origins`
+  - `wopi` 预览器常见字段有 `mode`、`action` / `action_url` / `action_url_template`、`discovery_url`
 - 前端文件预览、公开分享预览和 WOPI 集成入口都会依赖这份注册表，而不是把预览器信息硬编码在前端里
 - 管理员当前可以通过 `/admin/config/frontend_preview_apps_json` 维护这份注册表
