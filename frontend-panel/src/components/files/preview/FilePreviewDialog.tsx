@@ -535,7 +535,10 @@ export function FilePreviewDialog({
 		<>
 			{showOpenMethodChooser ? (
 				<Dialog open onOpenChange={(open) => !open && onClose()}>
-					<DialogContent className="flex max-h-[min(90vh,calc(100vh-2rem))] w-[min(96vw,32rem)] max-w-[min(96vw,32rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,32rem)]">
+					<DialogContent
+						keepMounted
+						className="flex max-h-[min(90vh,calc(100vh-2rem))] w-[min(96vw,32rem)] max-w-[min(96vw,32rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,32rem)]"
+					>
 						<DialogHeader className="border-b px-5 py-4">
 							<div className="flex items-center gap-3">
 								<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-muted text-muted-foreground">
@@ -651,6 +654,7 @@ export function FilePreviewDialog({
 				<Dialog open onOpenChange={(open) => !open && closeWithGuard()}>
 					<DialogContent
 						animated={isDialogAnimationEnabled}
+						keepMounted
 						showCloseButton={false}
 						className={cn(
 							"flex max-h-[90vh] w-[min(96vw,1200px)] max-w-[min(96vw,1200px)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(96vw,1200px)]",

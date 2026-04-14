@@ -55,11 +55,13 @@ import {
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { loadAdminPolicyGroupLookup } from "@/lib/adminPolicyGroupLookup";
 import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
 	ADMIN_ICON_BUTTON_CLASS,
 } from "@/lib/constants";
 import { formatBytes } from "@/lib/format";
+import { runWhenIdle } from "@/lib/idleTask";
 import {
 	buildOffsetPaginationSearchParams,
 	parseOffsetSearchParam,
@@ -229,6 +231,12 @@ export default function AdminUsersPage() {
 		}, 300);
 		return () => window.clearTimeout(timer);
 	}, [keyword]);
+
+	useEffect(() => {
+		return runWhenIdle(() => {
+			void loadAdminPolicyGroupLookup().catch(() => undefined);
+		});
+	}, []);
 
 	useEffect(() => {
 		const managedSearch = getManagedUserSearchString(searchParams);
@@ -799,7 +807,7 @@ export default function AdminUsersPage() {
 					}
 				}}
 			>
-				<DialogContent className="sm:max-w-md">
+				<DialogContent keepMounted className="sm:max-w-md">
 					<form
 						onSubmit={handleCreateUser}
 						autoComplete="off"

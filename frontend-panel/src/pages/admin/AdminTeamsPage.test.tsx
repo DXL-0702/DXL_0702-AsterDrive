@@ -42,6 +42,11 @@ vi.mock("sonner", () => ({
 	},
 }));
 
+vi.mock("@/lib/adminPolicyGroupLookup", () => ({
+	readAdminPolicyGroupLookup: () => null,
+	loadAdminPolicyGroupLookup: () => mockState.listPolicyGroups(100),
+}));
+
 vi.mock("react-router-dom", () => ({
 	useNavigate: () => mockState.navigate,
 	useSearchParams: () => [
@@ -204,9 +209,6 @@ vi.mock("@/hooks/useApiList", () => ({
 }));
 
 vi.mock("@/services/adminService", () => ({
-	adminPolicyGroupService: {
-		listAll: (...args: unknown[]) => mockState.listPolicyGroups(...args),
-	},
 	adminTeamService: {
 		list: vi.fn(),
 	},

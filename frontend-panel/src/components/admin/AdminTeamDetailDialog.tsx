@@ -681,7 +681,10 @@ export function AdminTeamDetailDialog({
 					onOpenChange(nextOpen);
 				}}
 			>
-				<DialogContent className="flex max-h-[min(860px,calc(100vh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1180px,calc(100vw-2rem))]">
+				<DialogContent
+					keepMounted
+					className="flex max-h-[min(860px,calc(100vh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1180px,calc(100vw-2rem))]"
+				>
 					{children}
 				</DialogContent>
 			</Dialog>

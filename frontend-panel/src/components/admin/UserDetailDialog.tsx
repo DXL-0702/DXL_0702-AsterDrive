@@ -34,14 +34,15 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { handleApiError } from "@/hooks/useApiError";
+import {
+	loadAdminPolicyGroupLookup,
+	readAdminPolicyGroupLookup,
+} from "@/lib/adminPolicyGroupLookup";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { formatBytes, formatDateAbsolute } from "@/lib/format";
 import { getNormalizedDisplayName, getUserDisplayName } from "@/lib/user";
 import { passwordSchema } from "@/lib/validation";
-import {
-	adminPolicyGroupService,
-	adminUserService,
-} from "@/services/adminService";
+import { adminUserService } from "@/services/adminService";
 import type {
 	StoragePolicyGroup,
 	UpdateUserRequest,
@@ -49,8 +50,6 @@ import type {
 	UserRole,
 	UserStatus,
 } from "@/types/api";
-
-const POLICY_GROUP_PAGE_SIZE = 100;
 
 interface UserDetailDialogProps {
 	user: UserInfo | null;
@@ -100,6 +99,7 @@ export function UserDetailDialog({
 	onUpdate,
 }: UserDetailDialogProps) {
 	const { t } = useTranslation("admin");
+	const initialPolicyGroups = readAdminPolicyGroupLookup();
 	const [confirmPasswordValue, setConfirmPasswordValue] = useState("");
 	const [draftEmailVerified, setDraftEmailVerified] = useState(false);
 	const [quotaValue, setQuotaValue] = useState("");
@@ -113,8 +113,12 @@ export function UserDetailDialog({
 		confirm?: string;
 		password?: string;
 	}>({});
-	const [policyGroups, setPolicyGroups] = useState<StoragePolicyGroup[]>([]);
-	const [policyGroupsLoading, setPolicyGroupsLoading] = useState(true);
+	const [policyGroups, setPolicyGroups] = useState<StoragePolicyGroup[]>(
+		initialPolicyGroups ?? [],
+	);
+	const [policyGroupsLoading, setPolicyGroupsLoading] = useState(
+		initialPolicyGroups == null,
+	);
 	const [revokingSessions, setRevokingSessions] = useState(false);
 	const [savingPassword, setSavingPassword] = useState(false);
 	const [savingProfile, setSavingProfile] = useState(false);
@@ -128,8 +132,8 @@ export function UserDetailDialog({
 			setDraftStatus("active");
 			setPasswordValue("");
 			setPasswordErrors({});
-			setPolicyGroups([]);
-			setPolicyGroupsLoading(true);
+			setPolicyGroups(readAdminPolicyGroupLookup() ?? []);
+			setPolicyGroupsLoading(readAdminPolicyGroupLookup() == null);
 			setQuotaValue("");
 			setRevokingSessions(false);
 			setSavingPassword(false);
@@ -155,10 +159,14 @@ export function UserDetailDialog({
 	const loadPolicyGroups = useCallback(async () => {
 		if (!user) return;
 		try {
-			setPolicyGroupsLoading(true);
-			setPolicyGroups(
-				await adminPolicyGroupService.listAll(POLICY_GROUP_PAGE_SIZE),
-			);
+			const cachedPolicyGroups = readAdminPolicyGroupLookup();
+			if (cachedPolicyGroups != null) {
+				setPolicyGroups(cachedPolicyGroups);
+				setPolicyGroupsLoading(false);
+			} else {
+				setPolicyGroupsLoading(true);
+			}
+			setPolicyGroups(await loadAdminPolicyGroupLookup());
 		} catch (e) {
 			handleApiError(e);
 		} finally {
@@ -305,7 +313,10 @@ export function UserDetailDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="flex max-h-[min(860px,calc(100vh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1100px,calc(100vw-2rem))]">
+			<DialogContent
+				keepMounted
+				className="flex max-h-[min(860px,calc(100vh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1100px,calc(100vw-2rem))]"
+			>
 				<DialogHeader className="shrink-0 px-6 pt-5 pb-0 text-center max-lg:px-4 max-lg:pt-4">
 					<DialogTitle className="text-lg">{t("user_details")}</DialogTitle>
 				</DialogHeader>
@@ -610,7 +621,17 @@ export function UserDetailDialog({
 											variant="ghost"
 											size="sm"
 											className={ADMIN_CONTROL_HEIGHT_CLASS}
-											onClick={() => void loadPolicyGroups()}
+											onClick={() => {
+												setPolicyGroupsLoading(true);
+												void loadAdminPolicyGroupLookup({
+													force: true,
+												})
+													.then((groups) => {
+														setPolicyGroups(groups);
+														setPolicyGroupsLoading(false);
+													})
+													.catch(handleApiError);
+											}}
 											disabled={policyGroupsLoading}
 										>
 											<Icon

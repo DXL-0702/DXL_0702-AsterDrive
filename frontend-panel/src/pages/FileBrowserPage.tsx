@@ -1,6 +1,5 @@
 import {
 	Fragment,
-	lazy,
 	Suspense,
 	useCallback,
 	useEffect,
@@ -19,7 +18,10 @@ import { ToolbarBar } from "@/components/common/ToolbarBar";
 import { ViewToggle } from "@/components/common/ViewToggle";
 import { FileGrid } from "@/components/files/FileGrid";
 import { FileTable } from "@/components/files/FileTable";
-import type { UploadAreaHandle } from "@/components/files/UploadArea";
+import {
+	UploadArea,
+	type UploadAreaHandle,
+} from "@/components/files/UploadArea";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
 	Breadcrumb,
@@ -59,6 +61,8 @@ import {
 	readInternalDragData,
 } from "@/lib/dragDrop";
 import { formatBatchToast } from "@/lib/formatBatchToast";
+import { runWhenIdle } from "@/lib/idleTask";
+import { lazyWithPreload } from "@/lib/lazyWithPreload";
 import { cn } from "@/lib/utils";
 import { workspaceFolderPath } from "@/lib/workspace";
 import { batchService } from "@/services/batchService";
@@ -74,42 +78,49 @@ import type {
 	FolderListItem,
 } from "@/types/api";
 
-const BatchTargetFolderDialog = lazy(async () => {
+const BatchTargetFolderDialog = lazyWithPreload(async () => {
 	const module = await import("@/components/files/BatchTargetFolderDialog");
 	return { default: module.BatchTargetFolderDialog };
 });
-const CreateFileDialog = lazy(async () => {
+const CreateFileDialog = lazyWithPreload(async () => {
 	const module = await import("@/components/files/CreateFileDialog");
 	return { default: module.CreateFileDialog };
 });
-const CreateFolderDialog = lazy(async () => {
+const CreateFolderDialog = lazyWithPreload(async () => {
 	const module = await import("@/components/files/CreateFolderDialog");
 	return { default: module.CreateFolderDialog };
 });
-const FileInfoDialog = lazy(async () => {
+const FileInfoDialog = lazyWithPreload(async () => {
 	const module = await import("@/components/files/FileInfoDialog");
 	return { default: module.FileInfoDialog };
 });
-const FilePreview = lazy(async () => {
+const FilePreview = lazyWithPreload(async () => {
 	const module = await import("@/components/files/FilePreview");
 	return { default: module.FilePreview };
 });
-const RenameDialog = lazy(async () => {
+const RenameDialog = lazyWithPreload(async () => {
 	const module = await import("@/components/files/RenameDialog");
 	return { default: module.RenameDialog };
 });
-const ShareDialog = lazy(async () => {
+const ShareDialog = lazyWithPreload(async () => {
 	const module = await import("@/components/files/ShareDialog");
 	return { default: module.ShareDialog };
 });
-const VersionHistoryDialog = lazy(async () => {
+const VersionHistoryDialog = lazyWithPreload(async () => {
 	const module = await import("@/components/files/VersionHistoryDialog");
 	return { default: module.VersionHistoryDialog };
 });
-const UploadArea = lazy(async () => {
-	const module = await import("@/components/files/UploadArea");
-	return { default: module.UploadArea };
-});
+
+const FILE_BROWSER_LAZY_PRELOADERS = [
+	BatchTargetFolderDialog,
+	CreateFileDialog,
+	CreateFolderDialog,
+	FileInfoDialog,
+	FilePreview,
+	RenameDialog,
+	ShareDialog,
+	VersionHistoryDialog,
+] as const;
 
 function useMediaQuery(query: string) {
 	const getMatches = () =>
@@ -225,6 +236,14 @@ export default function FileBrowserPage() {
 		null,
 	);
 
+	useEffect(() => {
+		return runWhenIdle(() => {
+			for (const preloader of FILE_BROWSER_LAZY_PRELOADERS) {
+				void preloader.preload();
+			}
+		});
+	}, []);
+
 	// Infinite scroll: load more files when sentinel is visible
 	useEffect(() => {
 		if (isSearching || !hasMoreFiles || loadingMore) return;
@@ -328,6 +347,7 @@ export default function FileBrowserPage() {
 				id: number;
 				name: string;
 			};
+			void RenameDialog.preload();
 			setRenameTarget({ type, id, name });
 		}
 		document.addEventListener("rename-request", onRenameRequest);
@@ -343,6 +363,7 @@ export default function FileBrowserPage() {
 	}, []);
 
 	const handleCopy = useCallback((type: "file" | "folder", id: number) => {
+		void BatchTargetFolderDialog.preload();
 		setCopyTarget({ type, id });
 	}, []);
 
@@ -366,6 +387,7 @@ export default function FileBrowserPage() {
 	);
 
 	const handleMove = useCallback((type: "file" | "folder", id: number) => {
+		void BatchTargetFolderDialog.preload();
 		setMoveTarget(
 			type === "file"
 				? { fileIds: [id], folderIds: [] }
@@ -393,6 +415,7 @@ export default function FileBrowserPage() {
 		(fileId: number) => {
 			const targetFile = displayFiles.find((entry) => entry.id === fileId);
 			if (!targetFile) return;
+			void VersionHistoryDialog.preload();
 			setVersionTarget({
 				fileId,
 				fileName: targetFile.name,
@@ -400,6 +423,35 @@ export default function FileBrowserPage() {
 			});
 		},
 		[displayFiles],
+	);
+
+	const openPreview = useCallback(
+		(file: FileInfo | FileListItem, openMode: "auto" | "direct" | "picker") => {
+			void FilePreview.preload();
+			setPreviewState({ file, openMode });
+		},
+		[],
+	);
+
+	const openShareDialog = useCallback(
+		(target: {
+			fileId?: number;
+			folderId?: number;
+			name: string;
+			initialMode?: "page" | "direct";
+		}) => {
+			void ShareDialog.preload();
+			setShareTarget(target);
+		},
+		[],
+	);
+
+	const openRenameDialog = useCallback(
+		(type: "file" | "folder", id: number, name: string) => {
+			void RenameDialog.preload();
+			setRenameTarget({ type, id, name });
+		},
+		[],
 	);
 
 	const handleDelete = useCallback(
@@ -619,13 +671,10 @@ export default function FileBrowserPage() {
 		breadcrumbPathIds,
 		onFolderOpen: (id: number, name: string) =>
 			navigate(workspaceFolderPath(workspace, id, name)),
-		onFileClick: (file: FileListItem) =>
-			setPreviewState({ file, openMode: "auto" }),
-		onFileOpen: (file: FileListItem) =>
-			setPreviewState({ file, openMode: "direct" }),
-		onFileChooseOpenMethod: (file: FileListItem) =>
-			setPreviewState({ file, openMode: "picker" }),
-		onShare: setShareTarget,
+		onFileClick: (file: FileListItem) => openPreview(file, "auto"),
+		onFileOpen: (file: FileListItem) => openPreview(file, "direct"),
+		onFileChooseOpenMethod: (file: FileListItem) => openPreview(file, "picker"),
+		onShare: openShareDialog,
 		onDownload: handleDownload,
 		onArchiveDownload: (folderId: number) => {
 			void startArchiveDownload([], [folderId]).catch(handleApiError);
@@ -634,10 +683,10 @@ export default function FileBrowserPage() {
 		onMove: handleMove,
 		onToggleLock: handleToggleLock,
 		onDelete: handleDelete,
-		onRename: (type: "file" | "folder", id: number, name: string) =>
-			setRenameTarget({ type, id, name }),
+		onRename: openRenameDialog,
 		onVersions: handleVersions,
 		onInfo: (type: "file" | "folder", id: number) => {
+			void FileInfoDialog.preload();
 			if (type === "file") {
 				const f = displayFiles.find((f) => f.id === id);
 				if (f) {
@@ -946,9 +995,7 @@ export default function FileBrowserPage() {
 						}}
 						file={infoTarget?.file}
 						folder={infoTarget?.folder}
-						onPreview={(targetFile) =>
-							setPreviewState({ file: targetFile, openMode: "auto" })
-						}
+						onPreview={(targetFile) => openPreview(targetFile, "auto")}
 						onOpenFolder={(targetFolder) =>
 							navigate(
 								workspaceFolderPath(
@@ -958,9 +1005,9 @@ export default function FileBrowserPage() {
 								),
 							)
 						}
-						onShare={setShareTarget}
+						onShare={openShareDialog}
 						onDownload={handleDownload}
-						onRename={(type, id, name) => setRenameTarget({ type, id, name })}
+						onRename={openRenameDialog}
 						onVersions={handleVersions}
 						onToggleLock={handleToggleLock}
 					/>
@@ -974,9 +1021,7 @@ export default function FileBrowserPage() {
 			onTrashDrop={handleTrashDrop}
 			onMoveToFolder={handleMoveToFolder}
 		>
-			<Suspense fallback={pageCore}>
-				<UploadArea ref={handleUploadAreaReady}>{pageCore}</UploadArea>
-			</Suspense>
+			<UploadArea ref={handleUploadAreaReady}>{pageCore}</UploadArea>
 
 			<Suspense fallback={null}>
 				<CreateFolderDialog
@@ -994,20 +1039,18 @@ export default function FileBrowserPage() {
 
 			<BatchActionBar onArchiveDownload={startArchiveDownload} />
 
-			{shareTarget && (
-				<Suspense fallback={null}>
-					<ShareDialog
-						open={true}
-						onOpenChange={(open) => {
-							if (!open) setShareTarget(null);
-						}}
-						fileId={shareTarget.fileId}
-						folderId={shareTarget.folderId}
-						name={shareTarget.name}
-						initialMode={shareTarget.initialMode}
-					/>
-				</Suspense>
-			)}
+			<Suspense fallback={null}>
+				<ShareDialog
+					open={shareTarget !== null}
+					onOpenChange={(open) => {
+						if (!open) setShareTarget(null);
+					}}
+					fileId={shareTarget?.fileId}
+					folderId={shareTarget?.folderId}
+					name={shareTarget?.name ?? ""}
+					initialMode={shareTarget?.initialMode}
+				/>
+			</Suspense>
 			{previewState && (
 				<Suspense fallback={null}>
 					<FilePreview
@@ -1024,68 +1067,60 @@ export default function FileBrowserPage() {
 					/>
 				</Suspense>
 			)}
-			{copyTarget && (
-				<Suspense fallback={null}>
-					<BatchTargetFolderDialog
-						open={true}
-						onOpenChange={(open) => {
-							if (!open) setCopyTarget(null);
-						}}
-						mode="copy"
-						onConfirm={handleCopyConfirm}
-						currentFolderId={folderId}
-						initialBreadcrumb={breadcrumb}
-						selectedFolderIds={
-							copyTarget.type === "folder" ? [copyTarget.id] : []
-						}
-					/>
-				</Suspense>
-			)}
-			{moveTarget && (
-				<Suspense fallback={null}>
-					<BatchTargetFolderDialog
-						open={true}
-						onOpenChange={(open) => {
-							if (!open) setMoveTarget(null);
-						}}
-						mode="move"
-						onConfirm={handleMoveConfirm}
-						currentFolderId={folderId}
-						initialBreadcrumb={breadcrumb}
-						selectedFolderIds={moveTarget.folderIds}
-					/>
-				</Suspense>
-			)}
-			{versionTarget && (
-				<Suspense fallback={null}>
-					<VersionHistoryDialog
-						open={true}
-						onOpenChange={(open) => {
-							if (!open) setVersionTarget(null);
-						}}
-						fileId={versionTarget.fileId}
-						fileName={versionTarget.fileName}
-						mimeType={versionTarget.mimeType}
-						onRestored={() => {
-							setVersionTarget(null);
-							refresh();
-						}}
-					/>
-				</Suspense>
-			)}
-			{renameTarget && (
-				<Suspense fallback={null}>
-					<RenameDialog
-						open={true}
-						onOpenChange={(open) => {
-							if (!open) setRenameTarget(null);
-						}}
-						type={renameTarget.type}
-						id={renameTarget.id}
-						currentName={renameTarget.name}
-					/>
-				</Suspense>
-			)}
+			<Suspense fallback={null}>
+				<BatchTargetFolderDialog
+					open={copyTarget !== null}
+					onOpenChange={(open) => {
+						if (!open) setCopyTarget(null);
+					}}
+					mode="copy"
+					onConfirm={handleCopyConfirm}
+					currentFolderId={folderId}
+					initialBreadcrumb={breadcrumb}
+					selectedFolderIds={
+						copyTarget?.type === "folder" ? [copyTarget.id] : []
+					}
+				/>
+			</Suspense>
+			<Suspense fallback={null}>
+				<BatchTargetFolderDialog
+					open={moveTarget !== null}
+					onOpenChange={(open) => {
+						if (!open) setMoveTarget(null);
+					}}
+					mode="move"
+					onConfirm={handleMoveConfirm}
+					currentFolderId={folderId}
+					initialBreadcrumb={breadcrumb}
+					selectedFolderIds={moveTarget?.folderIds ?? []}
+				/>
+			</Suspense>
+			<Suspense fallback={null}>
+				<VersionHistoryDialog
+					open={versionTarget !== null}
+					onOpenChange={(open) => {
+						if (!open) setVersionTarget(null);
+					}}
+					fileId={versionTarget?.fileId ?? 0}
+					fileName={versionTarget?.fileName ?? ""}
+					mimeType={versionTarget?.mimeType}
+					onRestored={() => {
+						setVersionTarget(null);
+						refresh();
+					}}
+				/>
+			</Suspense>
+			<Suspense fallback={null}>
+				<RenameDialog
+					open={renameTarget !== null}
+					onOpenChange={(open) => {
+						if (!open) setRenameTarget(null);
+					}}
+					type={renameTarget?.type ?? "file"}
+					id={renameTarget?.id ?? 0}
+					currentName={renameTarget?.name ?? ""}
+				/>
+			</Suspense>
 		</AppLayout>
 	);
 }

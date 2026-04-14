@@ -9,10 +9,11 @@ import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
 import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { adminPolicyGroupService } from "@/services/adminService";
+import {
+	loadAdminPolicyGroupLookup,
+	readAdminPolicyGroupLookup,
+} from "@/lib/adminPolicyGroupLookup";
 import type { StoragePolicyGroup } from "@/types/api";
-
-const POLICY_GROUP_PAGE_SIZE = 100;
 
 function isAdminTeamDetailTab(
 	value: string | undefined,
@@ -49,19 +50,28 @@ export default function AdminTeamDetailPage() {
 		section?: string;
 	}>();
 	const parsedTeamId = Number(teamId);
-	const [policyGroups, setPolicyGroups] = useState<StoragePolicyGroup[]>([]);
-	const [policyGroupsLoading, setPolicyGroupsLoading] = useState(true);
+	const initialPolicyGroups = readAdminPolicyGroupLookup();
+	const [policyGroups, setPolicyGroups] = useState<StoragePolicyGroup[]>(
+		initialPolicyGroups ?? [],
+	);
+	const [policyGroupsLoading, setPolicyGroupsLoading] = useState(
+		initialPolicyGroups == null,
+	);
 	const validatedSection = isAdminTeamDetailTab(section) ? section : "overview";
 	usePageTitle(
 		`${t("teams")} · ${getAdminTeamDetailSectionTitle(validatedSection, t)}`,
 	);
 
 	const loadPolicyGroups = useCallback(async () => {
-		setPolicyGroupsLoading(true);
 		try {
-			setPolicyGroups(
-				await adminPolicyGroupService.listAll(POLICY_GROUP_PAGE_SIZE),
-			);
+			const cachedPolicyGroups = readAdminPolicyGroupLookup();
+			if (cachedPolicyGroups != null) {
+				setPolicyGroups(cachedPolicyGroups);
+				setPolicyGroupsLoading(false);
+			} else {
+				setPolicyGroupsLoading(true);
+			}
+			setPolicyGroups(await loadAdminPolicyGroupLookup());
 		} catch (error) {
 			handleApiError(error);
 		} finally {

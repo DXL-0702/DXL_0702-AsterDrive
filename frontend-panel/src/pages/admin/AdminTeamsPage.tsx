@@ -53,6 +53,10 @@ import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import {
+	loadAdminPolicyGroupLookup,
+	readAdminPolicyGroupLookup,
+} from "@/lib/adminPolicyGroupLookup";
+import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
 	ADMIN_ICON_BUTTON_CLASS,
 	ADMIN_TABLE_ACTIONS_WIDTH_CLASS,
@@ -64,15 +68,11 @@ import {
 	parsePageSizeOption,
 	parsePageSizeSearchParam,
 } from "@/lib/pagination";
-import {
-	adminPolicyGroupService,
-	adminTeamService,
-} from "@/services/adminService";
+import { adminTeamService } from "@/services/adminService";
 import type { AdminTeamInfo, StoragePolicyGroup } from "@/types/api";
 
 const TEAM_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 const DEFAULT_TEAM_PAGE_SIZE = 20 as const;
-const POLICY_GROUP_PAGE_SIZE = 100;
 const TEAM_MANAGED_QUERY_KEYS = [
 	"archived",
 	"keyword",
@@ -233,6 +233,7 @@ function TeamStorageCell({
 export default function AdminTeamsPage() {
 	const { t } = useTranslation(["admin", "core"]);
 	usePageTitle(t("teams"));
+	const initialPolicyGroups = readAdminPolicyGroupLookup();
 	const navigate = useNavigate();
 	const [searchParams, setSearchParams] = useSearchParams();
 	const initialKeyword = searchParams.get("keyword") ?? "";
@@ -256,8 +257,12 @@ export default function AdminTeamsPage() {
 	const [createForm, setCreateForm] =
 		useState<CreateTeamFormState>(EMPTY_CREATE_FORM);
 	const [submitting, setSubmitting] = useState(false);
-	const [policyGroups, setPolicyGroups] = useState<StoragePolicyGroup[]>([]);
-	const [policyGroupsLoading, setPolicyGroupsLoading] = useState(true);
+	const [policyGroups, setPolicyGroups] = useState<StoragePolicyGroup[]>(
+		initialPolicyGroups ?? [],
+	);
+	const [policyGroupsLoading, setPolicyGroupsLoading] = useState(
+		initialPolicyGroups == null,
+	);
 	const lastWrittenSearchRef = useRef<string | null>(null);
 	const setOffset = (value: number) => {
 		setOffsetState(normalizeOffset(value));
@@ -330,11 +335,15 @@ export default function AdminTeamsPage() {
 	);
 
 	const loadPolicyGroups = useCallback(async () => {
-		setPolicyGroupsLoading(true);
 		try {
-			setPolicyGroups(
-				await adminPolicyGroupService.listAll(POLICY_GROUP_PAGE_SIZE),
-			);
+			const cachedPolicyGroups = readAdminPolicyGroupLookup();
+			if (cachedPolicyGroups != null) {
+				setPolicyGroups(cachedPolicyGroups);
+				setPolicyGroupsLoading(false);
+			} else {
+				setPolicyGroupsLoading(true);
+			}
+			setPolicyGroups(await loadAdminPolicyGroupLookup());
 		} catch (error) {
 			handleApiError(error);
 		} finally {
@@ -737,7 +746,7 @@ export default function AdminTeamsPage() {
 			</AdminPageShell>
 
 			<Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-				<DialogContent>
+				<DialogContent keepMounted>
 					<form onSubmit={(event) => void handleCreate(event)}>
 						<DialogHeader>
 							<DialogTitle>{t("new_team")}</DialogTitle>

@@ -54,10 +54,9 @@ vi.mock("@/hooks/useApiError", () => ({
 	handleApiError: (...args: unknown[]) => mockState.handleApiError(...args),
 }));
 
-vi.mock("@/services/adminService", () => ({
-	adminPolicyGroupService: {
-		listAll: (...args: unknown[]) => mockState.listPolicyGroups(...args),
-	},
+vi.mock("@/lib/adminPolicyGroupLookup", () => ({
+	readAdminPolicyGroupLookup: () => null,
+	loadAdminPolicyGroupLookup: () => mockState.listPolicyGroups(100),
 }));
 
 describe("AdminTeamDetailPage", () => {

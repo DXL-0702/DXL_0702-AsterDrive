@@ -56,6 +56,7 @@ import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { invalidateAdminPolicyGroupLookup } from "@/lib/adminPolicyGroupLookup";
 import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
 	ADMIN_ICON_BUTTON_CLASS,
@@ -547,10 +548,12 @@ export default function AdminPolicyGroupsPage() {
 			setSubmitting(true);
 			if (editingGroup) {
 				await adminPolicyGroupService.update(editingGroup.id, payload);
+				invalidateAdminPolicyGroupLookup();
 				await reload();
 				toast.success(t("policy_group_updated"));
 			} else {
 				await adminPolicyGroupService.create(payload);
+				invalidateAdminPolicyGroupLookup();
 				const nextTotal = total + 1;
 				const nextLastOffset = Math.max(
 					0,
@@ -574,6 +577,7 @@ export default function AdminPolicyGroupsPage() {
 	const handleDelete = async (id: number) => {
 		try {
 			await adminPolicyGroupService.delete(id);
+			invalidateAdminPolicyGroupLookup();
 			if (groups.length === 1 && offset > 0) {
 				setOffset(Math.max(0, offset - pageSize));
 			} else {
@@ -614,6 +618,7 @@ export default function AdminPolicyGroupsPage() {
 				migrationSourceGroup.id,
 				{ target_group_id: targetGroupId },
 			);
+			invalidateAdminPolicyGroupLookup();
 			await reload();
 			toast.success(
 				getMigrationSuccessMessage(

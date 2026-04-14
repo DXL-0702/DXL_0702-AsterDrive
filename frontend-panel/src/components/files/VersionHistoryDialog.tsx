@@ -127,7 +127,7 @@ export function VersionHistoryDialog({
 	return (
 		<>
 			<Dialog open={open} onOpenChange={onOpenChange}>
-				<DialogContent className="max-w-lg">
+				<DialogContent keepMounted className="max-w-lg">
 					<DialogHeader>
 						<div className="flex items-start gap-3 pr-8">
 							{mimeType ? (

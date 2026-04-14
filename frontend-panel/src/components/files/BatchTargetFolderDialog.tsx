@@ -168,6 +168,7 @@ export function BatchTargetFolderDialog({
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
+				keepMounted
 				className="max-w-2xl p-0 gap-0 overflow-hidden"
 				showCloseButton={false}
 			>

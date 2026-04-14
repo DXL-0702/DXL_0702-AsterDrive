@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,12 @@ export function RenameDialog({
 	const refresh = useFileStore((s) => s.refresh);
 	const [name, setName] = useState(currentName);
 
+	useEffect(() => {
+		if (open) {
+			setName(currentName);
+		}
+	}, [currentName, open]);
+
 	const handleSubmit = async (e: FormEvent) => {
 		e.preventDefault();
 		const trimmed = name.trim();
@@ -56,7 +62,7 @@ export function RenameDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent>
+			<DialogContent keepMounted>
 				<DialogHeader>
 					<DialogTitle>{t("rename")}</DialogTitle>
 				</DialogHeader>

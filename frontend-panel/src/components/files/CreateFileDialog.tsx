@@ -41,7 +41,7 @@ export function CreateFileDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent>
+			<DialogContent keepMounted>
 				<DialogHeader>
 					<DialogTitle>{t("create_file")}</DialogTitle>
 				</DialogHeader>

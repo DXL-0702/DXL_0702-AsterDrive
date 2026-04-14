@@ -41,7 +41,7 @@ export function CreateFolderDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent>
+			<DialogContent keepMounted>
 				<DialogHeader>
 					<DialogTitle>{t("create_folder")}</DialogTitle>
 				</DialogHeader>

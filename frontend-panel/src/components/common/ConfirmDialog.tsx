@@ -38,7 +38,7 @@ export function ConfirmDialog({
 
 	return (
 		<AlertDialog open={open} onOpenChange={onOpenChange}>
-			<AlertDialogContent>
+			<AlertDialogContent keepMounted>
 				<AlertDialogHeader>
 					<AlertDialogTitle>{title}</AlertDialogTitle>
 					{description && (

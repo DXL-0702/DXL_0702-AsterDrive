@@ -287,6 +287,30 @@ vi.mock("@/hooks/useApiError", () => ({
 	handleApiError: (...args: unknown[]) => mockState.handleApiError(...args),
 }));
 
+vi.mock("@/lib/adminPolicyGroupLookup", () => ({
+	readAdminPolicyGroupLookup: () => null,
+	loadAdminPolicyGroupLookup: async () => {
+		const allGroups: Array<Record<string, unknown>> = [];
+		let offset = 0;
+		let total = 0;
+
+		do {
+			const page = await mockState.listPolicies({
+				limit: 100,
+				offset,
+			});
+			allGroups.push(...page.items);
+			total = page.total;
+			offset += page.items.length;
+			if (page.items.length === 0) {
+				break;
+			}
+		} while (allGroups.length < total);
+
+		return allGroups;
+	},
+}));
+
 vi.mock("@/lib/format", () => ({
 	formatBytes: (value: number) => `bytes:${value}`,
 	formatDateAbsolute: (value: string) => `date:${value}`,
@@ -296,29 +320,6 @@ vi.mock("@/services/adminService", () => ({
 	adminUserService: {
 		revokeSessions: (...args: unknown[]) => mockState.revokeSessions(...args),
 		resetPassword: (...args: unknown[]) => mockState.resetPassword(...args),
-	},
-	adminPolicyGroupService: {
-		list: (...args: unknown[]) => mockState.listPolicies(...args),
-		listAll: async (pageSize = 100) => {
-			const allGroups: Array<Record<string, unknown>> = [];
-			let offset = 0;
-			let total = 0;
-
-			do {
-				const page = await mockState.listPolicies({
-					limit: pageSize,
-					offset,
-				});
-				allGroups.push(...page.items);
-				total = page.total;
-				offset += page.items.length;
-				if (page.items.length === 0) {
-					break;
-				}
-			} while (allGroups.length < total);
-
-			return allGroups;
-		},
 	},
 }));
 

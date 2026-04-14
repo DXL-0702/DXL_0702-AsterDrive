@@ -688,7 +688,10 @@ export function FileInfoDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="w-[calc(100%-1rem)] max-w-[calc(100%-1rem)] gap-0 overflow-hidden p-0 sm:w-full sm:max-w-lg">
+			<DialogContent
+				keepMounted
+				className="w-[calc(100%-1rem)] max-w-[calc(100%-1rem)] gap-0 overflow-hidden p-0 sm:w-full sm:max-w-lg"
+			>
 				<DialogHeader className="sr-only">
 					<DialogTitle>{title}</DialogTitle>
 				</DialogHeader>

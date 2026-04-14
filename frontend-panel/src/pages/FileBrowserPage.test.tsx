@@ -120,6 +120,10 @@ class MockIntersectionObserver {
 	}
 }
 
+vi.mock("@/lib/idleTask", () => ({
+	runWhenIdle: () => () => undefined,
+}));
+
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string) => key,

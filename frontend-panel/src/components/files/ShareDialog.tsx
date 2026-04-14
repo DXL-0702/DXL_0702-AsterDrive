@@ -121,7 +121,7 @@ export function ShareDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={handleClose}>
-			<DialogContent className="max-w-md">
+			<DialogContent keepMounted className="max-w-md">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">
 						<Icon name="Link" className="h-4 w-4" />

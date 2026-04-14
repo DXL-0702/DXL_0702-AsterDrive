@@ -39,6 +39,14 @@ vi.mock("sonner", () => ({
 	},
 }));
 
+vi.mock("@/lib/adminPolicyGroupLookup", () => ({
+	loadAdminPolicyGroupLookup: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock("@/lib/idleTask", () => ({
+	runWhenIdle: () => () => undefined,
+}));
+
 vi.mock("@/components/admin/UserDetailDialog", () => ({
 	UserDetailDialog: ({
 		onUpdate,
@@ -449,6 +457,9 @@ vi.mock("@/lib/format", () => ({
 }));
 
 vi.mock("@/services/adminService", () => ({
+	adminPolicyGroupService: {
+		listAll: vi.fn().mockResolvedValue([]),
+	},
 	adminUserService: {
 		create: (...args: unknown[]) => mockState.create(...args),
 		delete: (...args: unknown[]) => mockState.deleteUser(...args),
