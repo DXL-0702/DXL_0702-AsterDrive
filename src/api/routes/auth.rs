@@ -611,12 +611,21 @@ pub async fn confirm_contact_verification(
         Err(error) => return Err(error),
     };
 
+    if result.purpose == VerificationPurpose::PasswordReset {
+        return Ok(contact_verification_redirect_response(
+            &state,
+            fallback_path,
+            ContactVerificationRedirectStatus::Invalid,
+            None,
+        ));
+    }
+
     let action = match result.purpose {
         VerificationPurpose::RegisterActivation => {
             audit_service::AuditAction::UserConfirmRegistration
         }
         VerificationPurpose::ContactChange => audit_service::AuditAction::UserConfirmEmailChange,
-        VerificationPurpose::PasswordReset => unreachable!("handled in password reset flow"),
+        VerificationPurpose::PasswordReset => audit_service::AuditAction::UserConfirmPasswordReset,
     };
     let ctx = audit_service::AuditContext {
         user_id: result.user_id,
@@ -662,7 +671,11 @@ pub async fn confirm_contact_verification(
             ContactVerificationRedirectStatus::EmailChanged,
             Some(result.target.as_str()),
         ),
-        VerificationPurpose::PasswordReset => unreachable!("handled in password reset flow"),
+        VerificationPurpose::PasswordReset => (
+            fallback_path,
+            ContactVerificationRedirectStatus::Invalid,
+            None,
+        ),
     };
 
     Ok(contact_verification_redirect_response(

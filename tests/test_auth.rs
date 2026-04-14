@@ -1083,6 +1083,50 @@ async fn test_password_reset_confirm_rejects_expired_token() {
 }
 
 #[actix_web::test]
+async fn test_contact_verification_confirm_rejects_password_reset_token() {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let mail_sender = state.mail_sender.clone();
+    let runtime_config = state.runtime_config.clone();
+    let app = create_test_app!(state);
+    let _ = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/password/reset/request")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "email": "test@example.com"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    common::flush_mail_outbox_with(&db, &runtime_config, &mail_sender).await;
+
+    let memory_sender = aster_drive::services::mail_service::memory_sender_ref(&mail_sender)
+        .expect("memory mail sender should be available in tests");
+    let token = extract_password_reset_token(
+        &memory_sender
+            .last_message()
+            .expect("password reset email should be sent"),
+    );
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/api/v1/auth/contact-verification/confirm?token={}",
+            urlencoding::encode(&token)
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 302);
+    let location = resp
+        .headers()
+        .get("Location")
+        .and_then(|value| value.to_str().ok())
+        .expect("contact verification redirect location missing");
+    assert_eq!(location, "/login?contact_verification=invalid");
+}
+
+#[actix_web::test]
 async fn test_password_reset_request_cooldown_returns_generic_success() {
     let state = common::setup().await;
     let db = state.db.clone();

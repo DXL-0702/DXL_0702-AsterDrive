@@ -300,16 +300,6 @@ pub async fn download_raw(
     download_raw_unchecked_with_file(state, f, if_none_match).await
 }
 
-#[allow(dead_code)]
-pub(crate) async fn download_raw_unchecked(
-    state: &AppState,
-    id: i64,
-    if_none_match: Option<&str>,
-) -> Result<HttpResponse> {
-    let f = file_repo::find_by_id(&state.db, id).await?;
-    download_raw_unchecked_with_file(state, f, if_none_match).await
-}
-
 async fn download_raw_unchecked_with_file(
     state: &AppState,
     f: file::Model,

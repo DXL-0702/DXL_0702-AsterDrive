@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use std::pin::Pin;
 
 use dav_server::davpath::DavPath;
@@ -11,12 +9,9 @@ use futures::stream;
 use sea_orm::DatabaseConnection;
 use tokio::io::AsyncWriteExt;
 
-use crate::cache::CacheBackend;
-use crate::config::{Config, RuntimeConfig};
 use crate::db::repository::{file_repo, folder_repo, property_repo, user_repo};
-use crate::services::mail_service::MailSender;
+use crate::runtime::AppState;
 use crate::services::{file_service, folder_service, webdav_service};
-use crate::storage::{DriverRegistry, PolicySnapshot};
 use crate::types::{EntityType, NullablePatch};
 use crate::webdav::dir_entry::AsterDavDirEntry;
 use crate::webdav::file::AsterDavFile;
@@ -26,16 +21,7 @@ use crate::webdav::path_resolver::{self, ResolvedNode};
 /// AsterDrive WebDAV 文件系统，per-user 实例
 #[derive(Clone)]
 pub struct AsterDavFs {
-    db: DatabaseConnection,
-    driver_registry: Arc<DriverRegistry>,
-    runtime_config: Arc<RuntimeConfig>,
-    policy_snapshot: Arc<PolicySnapshot>,
-    config: Arc<Config>,
-    cache: Arc<dyn CacheBackend>,
-    mail_sender: Arc<dyn MailSender>,
-    thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
-    storage_change_tx:
-        tokio::sync::broadcast::Sender<crate::services::storage_change_service::StorageChangeEvent>,
+    state: AppState,
     user_id: i64,
     /// 限制访问范围：None = 用户全部文件，Some(id) = 只能访问该文件夹及子目录
     root_folder_id: Option<i64>,
@@ -51,49 +37,16 @@ impl std::fmt::Debug for AsterDavFs {
 }
 
 impl AsterDavFs {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        db: DatabaseConnection,
-        driver_registry: Arc<DriverRegistry>,
-        runtime_config: Arc<RuntimeConfig>,
-        policy_snapshot: Arc<PolicySnapshot>,
-        config: Arc<Config>,
-        cache: Arc<dyn CacheBackend>,
-        mail_sender: Arc<dyn MailSender>,
-        thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
-        storage_change_tx: tokio::sync::broadcast::Sender<
-            crate::services::storage_change_service::StorageChangeEvent,
-        >,
-        user_id: i64,
-        root_folder_id: Option<i64>,
-    ) -> Self {
+    pub fn new(state: AppState, user_id: i64, root_folder_id: Option<i64>) -> Self {
         Self {
-            db,
-            driver_registry,
-            runtime_config,
-            policy_snapshot,
-            config,
-            cache,
-            mail_sender,
-            thumbnail_tx,
-            storage_change_tx,
+            state,
             user_id,
             root_folder_id,
         }
     }
 
-    fn app_state(&self) -> crate::runtime::AppState {
-        crate::runtime::AppState {
-            db: self.db.clone(),
-            driver_registry: self.driver_registry.clone(),
-            runtime_config: self.runtime_config.clone(),
-            policy_snapshot: self.policy_snapshot.clone(),
-            config: self.config.clone(),
-            cache: self.cache.clone(),
-            mail_sender: self.mail_sender.clone(),
-            thumbnail_tx: self.thumbnail_tx.clone(),
-            storage_change_tx: self.storage_change_tx.clone(),
-        }
+    fn app_state(&self) -> AppState {
+        self.state.clone()
     }
 }
 
@@ -107,17 +60,21 @@ impl DavFileSystem for AsterDavFs {
             if options.write {
                 // 写模式
                 let (parent_id, filename) = path_resolver::resolve_parent(
-                    &self.db,
+                    &self.state.db,
                     self.user_id,
                     path,
                     self.root_folder_id,
                 )
                 .await?;
 
-                let existing_file =
-                    file_repo::find_by_name_in_folder(&self.db, self.user_id, parent_id, &filename)
-                        .await
-                        .map_err(|_| FsError::GeneralFailure)?;
+                let existing_file = file_repo::find_by_name_in_folder(
+                    &self.state.db,
+                    self.user_id,
+                    parent_id,
+                    &filename,
+                )
+                .await
+                .map_err(|_| FsError::GeneralFailure)?;
 
                 // 注意：WebDAV 写操作不检查 is_locked
                 // dav-server 通过 lock token 验证保证只有持锁者能写
@@ -130,14 +87,7 @@ impl DavFileSystem for AsterDavFs {
                 }
 
                 let dav_file = AsterDavFile::for_write(
-                    self.db.clone(),
-                    self.driver_registry.clone(),
-                    self.runtime_config.clone(),
-                    self.policy_snapshot.clone(),
-                    self.config.clone(),
-                    self.cache.clone(),
-                    self.thumbnail_tx.clone(),
-                    self.storage_change_tx.clone(),
+                    self.app_state(),
                     self.user_id,
                     parent_id,
                     filename,
@@ -148,20 +98,26 @@ impl DavFileSystem for AsterDavFs {
                 Ok(Box::new(dav_file) as Box<dyn DavFile>)
             } else {
                 // 读模式：从存储复制到临时文件，避免全量加载到内存
-                let node =
-                    path_resolver::resolve_path(&self.db, self.user_id, path, self.root_folder_id)
-                        .await?;
+                let node = path_resolver::resolve_path(
+                    &self.state.db,
+                    self.user_id,
+                    path,
+                    self.root_folder_id,
+                )
+                .await?;
 
                 match node {
                     ResolvedNode::File(f) => {
-                        let blob = file_repo::find_blob_by_id(&self.db, f.blob_id)
+                        let blob = file_repo::find_blob_by_id(&self.state.db, f.blob_id)
                             .await
                             .map_err(|_| FsError::GeneralFailure)?;
                         let policy = self
+                            .state
                             .policy_snapshot
                             .get_policy(blob.policy_id)
                             .ok_or(FsError::GeneralFailure)?;
                         let driver = self
+                            .state
                             .driver_registry
                             .get_driver(&policy)
                             .map_err(|_| FsError::GeneralFailure)?;
@@ -169,10 +125,10 @@ impl DavFileSystem for AsterDavFs {
 
                         // 流式复制到临时文件
                         let temp_path = crate::utils::paths::temp_file_path(
-                            &self.config.server.temp_dir,
+                            &self.state.config.server.temp_dir,
                             &uuid::Uuid::new_v4().to_string(),
                         );
-                        tokio::fs::create_dir_all(&self.config.server.temp_dir)
+                        tokio::fs::create_dir_all(&self.state.config.server.temp_dir)
                             .await
                             .map_err(|_| FsError::GeneralFailure)?;
 
@@ -196,12 +152,8 @@ impl DavFileSystem for AsterDavFs {
                             .await
                             .map_err(|_| FsError::GeneralFailure)?;
 
-                        Ok(Box::new(AsterDavFile::for_read(
-                            read_file,
-                            temp_path,
-                            blob.size as u64,
-                            meta,
-                        )) as Box<dyn DavFile>)
+                        Ok(Box::new(AsterDavFile::for_read(read_file, temp_path, meta))
+                            as Box<dyn DavFile>)
                     }
                     _ => Err(FsError::Forbidden),
                 }
@@ -216,7 +168,7 @@ impl DavFileSystem for AsterDavFs {
     ) -> FsFuture<'a, FsStream<Box<dyn DavDirEntry>>> {
         Box::pin(async move {
             let folder_id = match path_resolver::resolve_path(
-                &self.db,
+                &self.state.db,
                 self.user_id,
                 path,
                 self.root_folder_id,
@@ -228,10 +180,10 @@ impl DavFileSystem for AsterDavFs {
                 ResolvedNode::File(_) => return Err(FsError::Forbidden),
             };
 
-            let folders = folder_repo::find_children(&self.db, self.user_id, folder_id)
+            let folders = folder_repo::find_children(&self.state.db, self.user_id, folder_id)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
-            let files = file_repo::find_by_folder(&self.db, self.user_id, folder_id)
+            let files = file_repo::find_by_folder(&self.state.db, self.user_id, folder_id)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 
@@ -247,7 +199,7 @@ impl DavFileSystem for AsterDavFs {
             // 批量查询所有 blob（1 次查询替代 N 次）
             let visible_files: Vec<_> = files.iter().filter(|f| !is_hidden_name(&f.name)).collect();
             let blob_ids: Vec<i64> = visible_files.iter().map(|f| f.blob_id).collect();
-            let blobs = file_repo::find_blobs_by_ids(&self.db, &blob_ids)
+            let blobs = file_repo::find_blobs_by_ids(&self.state.db, &blob_ids)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 
@@ -264,15 +216,19 @@ impl DavFileSystem for AsterDavFs {
 
     fn metadata<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, Box<dyn DavMetaData>> {
         Box::pin(async move {
-            let node =
-                path_resolver::resolve_path(&self.db, self.user_id, path, self.root_folder_id)
-                    .await?;
+            let node = path_resolver::resolve_path(
+                &self.state.db,
+                self.user_id,
+                path,
+                self.root_folder_id,
+            )
+            .await?;
 
             let meta: Box<dyn DavMetaData> = match node {
                 ResolvedNode::Root => Box::new(AsterDavMeta::root()),
                 ResolvedNode::Folder(f) => Box::new(AsterDavMeta::from_folder(&f)),
                 ResolvedNode::File(f) => {
-                    let blob = file_repo::find_blob_by_id(&self.db, f.blob_id)
+                    let blob = file_repo::find_blob_by_id(&self.state.db, f.blob_id)
                         .await
                         .map_err(|_| FsError::GeneralFailure)?;
                     Box::new(AsterDavMeta::from_file(&f, &blob))
@@ -285,9 +241,13 @@ impl DavFileSystem for AsterDavFs {
 
     fn create_dir<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let (parent_id, name) =
-                path_resolver::resolve_parent(&self.db, self.user_id, path, self.root_folder_id)
-                    .await?;
+            let (parent_id, name) = path_resolver::resolve_parent(
+                &self.state.db,
+                self.user_id,
+                path,
+                self.root_folder_id,
+            )
+            .await?;
 
             let state = self.app_state();
             folder_service::create(&state, self.user_id, &name, parent_id)
@@ -300,9 +260,13 @@ impl DavFileSystem for AsterDavFs {
 
     fn remove_dir<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let node =
-                path_resolver::resolve_path(&self.db, self.user_id, path, self.root_folder_id)
-                    .await?;
+            let node = path_resolver::resolve_path(
+                &self.state.db,
+                self.user_id,
+                path,
+                self.root_folder_id,
+            )
+            .await?;
             let folder = match node {
                 ResolvedNode::Folder(f) => f,
                 _ => return Err(FsError::Forbidden),
@@ -322,9 +286,13 @@ impl DavFileSystem for AsterDavFs {
 
     fn remove_file<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let node =
-                path_resolver::resolve_path(&self.db, self.user_id, path, self.root_folder_id)
-                    .await?;
+            let node = path_resolver::resolve_path(
+                &self.state.db,
+                self.user_id,
+                path,
+                self.root_folder_id,
+            )
+            .await?;
             let file = match node {
                 ResolvedNode::File(f) => f,
                 _ => return Err(FsError::Forbidden),
@@ -344,9 +312,13 @@ impl DavFileSystem for AsterDavFs {
 
     fn rename<'a>(&'a self, from: &'a DavPath, to: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let node =
-                path_resolver::resolve_path(&self.db, self.user_id, from, self.root_folder_id)
-                    .await?;
+            let node = path_resolver::resolve_path(
+                &self.state.db,
+                self.user_id,
+                from,
+                self.root_folder_id,
+            )
+            .await?;
 
             // 检查源是否锁定
             match &node {
@@ -355,9 +327,13 @@ impl DavFileSystem for AsterDavFs {
                 _ => {}
             }
 
-            let (dest_parent_id, dest_name) =
-                path_resolver::resolve_parent(&self.db, self.user_id, to, self.root_folder_id)
-                    .await?;
+            let (dest_parent_id, dest_name) = path_resolver::resolve_parent(
+                &self.state.db,
+                self.user_id,
+                to,
+                self.root_folder_id,
+            )
+            .await?;
 
             let state = self.app_state();
 
@@ -365,7 +341,7 @@ impl DavFileSystem for AsterDavFs {
                 ResolvedNode::File(f) => {
                     // 如果目标已有同名文件，先删除（WebDAV MOVE 覆盖语义）
                     if let Some(existing) = file_repo::find_by_name_in_folder(
-                        &self.db,
+                        &self.state.db,
                         self.user_id,
                         dest_parent_id,
                         &dest_name,
@@ -409,12 +385,20 @@ impl DavFileSystem for AsterDavFs {
 
     fn copy<'a>(&'a self, from: &'a DavPath, to: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let node =
-                path_resolver::resolve_path(&self.db, self.user_id, from, self.root_folder_id)
-                    .await?;
-            let (dest_parent_id, dest_name) =
-                path_resolver::resolve_parent(&self.db, self.user_id, to, self.root_folder_id)
-                    .await?;
+            let node = path_resolver::resolve_path(
+                &self.state.db,
+                self.user_id,
+                from,
+                self.root_folder_id,
+            )
+            .await?;
+            let (dest_parent_id, dest_name) = path_resolver::resolve_parent(
+                &self.state.db,
+                self.user_id,
+                to,
+                self.root_folder_id,
+            )
+            .await?;
 
             let state = self.app_state();
 
@@ -422,7 +406,7 @@ impl DavFileSystem for AsterDavFs {
                 ResolvedNode::File(f) => {
                     // WebDAV COPY 覆盖语义：目标已存在先删除
                     if let Some(existing) = file_repo::find_by_name_in_folder(
-                        &self.db,
+                        &self.state.db,
                         self.user_id,
                         dest_parent_id,
                         &dest_name,
@@ -459,7 +443,7 @@ impl DavFileSystem for AsterDavFs {
 
     fn get_quota(&self) -> FsFuture<'_, (u64, Option<u64>)> {
         Box::pin(async move {
-            let user = user_repo::find_by_id(&self.db, self.user_id)
+            let user = user_repo::find_by_id(&self.state.db, self.user_id)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 
@@ -480,11 +464,12 @@ impl DavFileSystem for AsterDavFs {
     ) -> Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
         Box::pin(async move {
             let (entity_type, entity_id) =
-                match resolve_entity(&self.db, self.user_id, path, self.root_folder_id).await {
+                match resolve_entity(&self.state.db, self.user_id, path, self.root_folder_id).await
+                {
                     Some(v) => v,
                     None => return false,
                 };
-            property_repo::has_properties(&self.db, entity_type, entity_id)
+            property_repo::has_properties(&self.state.db, entity_type, entity_id)
                 .await
                 .unwrap_or(false)
         })
@@ -493,11 +478,11 @@ impl DavFileSystem for AsterDavFs {
     fn get_props<'a>(&'a self, path: &'a DavPath, do_content: bool) -> FsFuture<'a, Vec<DavProp>> {
         Box::pin(async move {
             let (entity_type, entity_id) =
-                resolve_entity(&self.db, self.user_id, path, self.root_folder_id)
+                resolve_entity(&self.state.db, self.user_id, path, self.root_folder_id)
                     .await
                     .ok_or(FsError::NotFound)?;
 
-            let props = property_repo::find_by_entity(&self.db, entity_type, entity_id)
+            let props = property_repo::find_by_entity(&self.state.db, entity_type, entity_id)
                 .await
                 .map_err(|_| FsError::GeneralFailure)?;
 
@@ -528,7 +513,7 @@ impl DavFileSystem for AsterDavFs {
     ) -> FsFuture<'a, Vec<(http::StatusCode, DavProp)>> {
         Box::pin(async move {
             let (entity_type, entity_id) =
-                resolve_entity(&self.db, self.user_id, path, self.root_folder_id)
+                resolve_entity(&self.state.db, self.user_id, path, self.root_folder_id)
                     .await
                     .ok_or(FsError::NotFound)?;
 
@@ -546,7 +531,7 @@ impl DavFileSystem for AsterDavFs {
                 let status = if set {
                     let value = prop.xml.as_ref().map(|x| String::from_utf8_lossy(x));
                     match property_repo::upsert(
-                        &self.db,
+                        &self.state.db,
                         entity_type,
                         entity_id,
                         ns,
@@ -560,7 +545,7 @@ impl DavFileSystem for AsterDavFs {
                     }
                 } else {
                     match property_repo::delete_prop(
-                        &self.db,
+                        &self.state.db,
                         entity_type,
                         entity_id,
                         ns,

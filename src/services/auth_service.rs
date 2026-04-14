@@ -1113,7 +1113,11 @@ pub async fn confirm_contact_verification(
                 }
             }
         }
-        VerificationPurpose::PasswordReset => unreachable!("handled above"),
+        VerificationPurpose::PasswordReset => {
+            return Err(AsterError::contact_verification_invalid(
+                "password reset token cannot be confirmed from this endpoint",
+            ));
+        }
     }
     txn.commit().await.map_err(AsterError::from)?;
 

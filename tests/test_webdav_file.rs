@@ -21,7 +21,7 @@ async fn test_aster_dav_file_read_mode_enforces_read_only_behaviour() {
 
     let temp_path = write_temp_fixture("read-only.txt", "abcdef");
     let file = tokio::fs::File::open(&temp_path).await.unwrap();
-    let mut dav_file = AsterDavFile::for_read(file, temp_path, 6, AsterDavMeta::root());
+    let mut dav_file = AsterDavFile::for_read(file, temp_path, AsterDavMeta::root());
 
     dav_file.metadata().await.unwrap();
 
@@ -62,14 +62,7 @@ async fn test_aster_dav_file_write_mode_skips_empty_flush_and_persists_written_c
     .unwrap();
 
     let mut empty_file = AsterDavFile::for_write(
-        state.db.clone(),
-        state.driver_registry.clone(),
-        state.runtime_config.clone(),
-        state.policy_snapshot.clone(),
-        state.config.clone(),
-        state.cache.clone(),
-        state.thumbnail_tx.clone(),
-        state.storage_change_tx.clone(),
+        state.clone(),
         user.id,
         None,
         "empty-dav-file.txt".to_string(),
@@ -94,14 +87,7 @@ async fn test_aster_dav_file_write_mode_skips_empty_flush_and_persists_written_c
     );
 
     let mut written_file = AsterDavFile::for_write(
-        state.db.clone(),
-        state.driver_registry.clone(),
-        state.runtime_config.clone(),
-        state.policy_snapshot.clone(),
-        state.config.clone(),
-        state.cache.clone(),
-        state.thumbnail_tx.clone(),
-        state.storage_change_tx.clone(),
+        state.clone(),
         user.id,
         None,
         "buffered-dav-file.txt".to_string(),
@@ -158,19 +144,7 @@ async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
     .await
     .unwrap();
 
-    let dav_fs = AsterDavFs::new(
-        state.db.clone(),
-        state.driver_registry.clone(),
-        state.runtime_config.clone(),
-        state.policy_snapshot.clone(),
-        state.config.clone(),
-        state.cache.clone(),
-        state.mail_sender.clone(),
-        state.thumbnail_tx.clone(),
-        state.storage_change_tx.clone(),
-        user.id,
-        None,
-    );
+    let dav_fs = AsterDavFs::new(state.clone(), user.id, None);
     let file_path = DavPath::new("/quota-props.txt").unwrap();
 
     assert!(!dav_fs.have_props(&file_path).await);

@@ -84,15 +84,7 @@ pub async fn webdav_handler(
 
     // 4. 创建 per-user 文件系统（可能限制到指定文件夹）
     let dav_fs = fs::AsterDavFs::new(
-        state.db.clone(),
-        state.driver_registry.clone(),
-        state.runtime_config.clone(),
-        state.policy_snapshot.clone(),
-        state.config.clone(),
-        state.cache.clone(),
-        state.mail_sender.clone(),
-        state.thumbnail_tx.clone(),
-        state.storage_change_tx.clone(),
+        state.get_ref().clone(),
         auth_result.user_id,
         auth_result.root_folder_id,
     );

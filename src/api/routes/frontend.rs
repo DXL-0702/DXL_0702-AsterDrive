@@ -10,6 +10,7 @@ struct FrontendAssets;
 
 /// 运行时可覆盖的前端目录
 const CUSTOM_FRONTEND_DIR: &str = "./frontend-panel/dist";
+const FILE_NOT_FOUND_MESSAGE: &str = "File not found";
 
 pub struct FrontendService;
 
@@ -71,7 +72,7 @@ impl FrontendService {
 
         match Self::load_file(&asset_path).await {
             Some(data) => HttpResponse::Ok().content_type(content_type).body(data),
-            None => HttpResponse::NotFound().body("File not found"),
+            None => HttpResponse::NotFound().body(FILE_NOT_FOUND_MESSAGE),
         }
     }
 
@@ -82,7 +83,7 @@ impl FrontendService {
 
         match Self::load_file(&asset_path).await {
             Some(data) => HttpResponse::Ok().content_type(content_type).body(data),
-            None => HttpResponse::NotFound().body("File not found"),
+            None => HttpResponse::NotFound().body(FILE_NOT_FOUND_MESSAGE),
         }
     }
 
@@ -93,7 +94,7 @@ impl FrontendService {
 
         match Self::load_file(&asset_path).await {
             Some(data) => HttpResponse::Ok().content_type(content_type).body(data),
-            None => HttpResponse::NotFound().body("File not found"),
+            None => HttpResponse::NotFound().body(FILE_NOT_FOUND_MESSAGE),
         }
     }
 
@@ -118,7 +119,7 @@ impl FrontendService {
         let content_type = Self::get_content_type(filename);
         match Self::load_file(filename).await {
             Some(data) => HttpResponse::Ok().content_type(content_type).body(data),
-            None => HttpResponse::NotFound().body("File not found"),
+            None => HttpResponse::NotFound().body(FILE_NOT_FOUND_MESSAGE),
         }
     }
 

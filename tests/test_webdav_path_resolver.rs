@@ -388,19 +388,7 @@ async fn test_aster_dav_fs_handles_deep_paths_inside_scoped_root() {
     let (_projects, _docs, _reports, _file, contents) =
         seed_nested_file(&state, user.id, Some(scoped_root.id)).await;
 
-    let dav_fs = AsterDavFs::new(
-        state.db.clone(),
-        state.driver_registry.clone(),
-        state.runtime_config.clone(),
-        state.policy_snapshot.clone(),
-        state.config.clone(),
-        state.cache.clone(),
-        state.mail_sender.clone(),
-        state.thumbnail_tx.clone(),
-        state.storage_change_tx.clone(),
-        user.id,
-        Some(scoped_root.id),
-    );
+    let dav_fs = AsterDavFs::new(state.clone(), user.id, Some(scoped_root.id));
 
     let root_path = DavPath::new("/").unwrap();
     let mut root_entries = dav_fs
@@ -470,19 +458,7 @@ async fn test_aster_dav_fs_deep_write_create_new_and_overwrite_boundaries() {
     let (projects, docs, reports, _file, _contents) =
         seed_nested_file(&state, user.id, Some(scoped_root.id)).await;
 
-    let dav_fs = AsterDavFs::new(
-        state.db.clone(),
-        state.driver_registry.clone(),
-        state.runtime_config.clone(),
-        state.policy_snapshot.clone(),
-        state.config.clone(),
-        state.cache.clone(),
-        state.mail_sender.clone(),
-        state.thumbnail_tx.clone(),
-        state.storage_change_tx.clone(),
-        user.id,
-        Some(scoped_root.id),
-    );
+    let dav_fs = AsterDavFs::new(state.clone(), user.id, Some(scoped_root.id));
 
     let new_file_path = DavPath::new("/projects/docs/reports/new.txt").unwrap();
     let mut new_file = dav_fs
@@ -559,19 +535,7 @@ async fn test_aster_dav_fs_copy_file_publishes_storage_event() {
         seed_nested_file(&state, user.id, None).await;
 
     let mut rx = state.storage_change_tx.subscribe();
-    let dav_fs = AsterDavFs::new(
-        state.db.clone(),
-        state.driver_registry.clone(),
-        state.runtime_config.clone(),
-        state.policy_snapshot.clone(),
-        state.config.clone(),
-        state.cache.clone(),
-        state.mail_sender.clone(),
-        state.thumbnail_tx.clone(),
-        state.storage_change_tx.clone(),
-        user.id,
-        None,
-    );
+    let dav_fs = AsterDavFs::new(state.clone(), user.id, None);
 
     let source = DavPath::new("/projects/docs/reports/q1.txt").unwrap();
     let destination = DavPath::new("/projects/docs/reports/q1-copy.txt").unwrap();
@@ -619,19 +583,7 @@ async fn test_aster_dav_fs_remove_dir_publishes_storage_event() {
         seed_nested_file(&state, user.id, None).await;
 
     let mut rx = state.storage_change_tx.subscribe();
-    let dav_fs = AsterDavFs::new(
-        state.db.clone(),
-        state.driver_registry.clone(),
-        state.runtime_config.clone(),
-        state.policy_snapshot.clone(),
-        state.config.clone(),
-        state.cache.clone(),
-        state.mail_sender.clone(),
-        state.thumbnail_tx.clone(),
-        state.storage_change_tx.clone(),
-        user.id,
-        None,
-    );
+    let dav_fs = AsterDavFs::new(state.clone(), user.id, None);
 
     let target = DavPath::new("/projects/docs/").unwrap();
     dav_fs.remove_dir(&target).await.unwrap();
@@ -674,19 +626,7 @@ async fn test_aster_dav_fs_copy_folder_publishes_storage_event() {
         seed_nested_file(&state, user.id, None).await;
 
     let mut rx = state.storage_change_tx.subscribe();
-    let dav_fs = AsterDavFs::new(
-        state.db.clone(),
-        state.driver_registry.clone(),
-        state.runtime_config.clone(),
-        state.policy_snapshot.clone(),
-        state.config.clone(),
-        state.cache.clone(),
-        state.mail_sender.clone(),
-        state.thumbnail_tx.clone(),
-        state.storage_change_tx.clone(),
-        user.id,
-        None,
-    );
+    let dav_fs = AsterDavFs::new(state.clone(), user.id, None);
 
     let source = DavPath::new("/projects/docs/").unwrap();
     let destination = DavPath::new("/projects/docs-copy/").unwrap();

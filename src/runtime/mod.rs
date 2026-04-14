@@ -12,6 +12,7 @@ use crate::storage::{DriverRegistry, PolicySnapshot};
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 
+#[derive(Clone)]
 pub struct AppState {
     pub db: DatabaseConnection,
     pub driver_registry: Arc<DriverRegistry>,

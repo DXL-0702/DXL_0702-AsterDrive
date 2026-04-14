@@ -1,14 +1,10 @@
 use std::io::SeekFrom;
-use std::sync::Arc;
 
 use bytes::Bytes;
 use dav_server::fs::{DavFile, DavMetaData, FsError, FsFuture};
-use sea_orm::DatabaseConnection;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-use crate::cache::CacheBackend;
-use crate::config::{Config, RuntimeConfig};
-use crate::storage::{DriverRegistry, PolicySnapshot};
+use crate::runtime::AppState;
 use crate::webdav::metadata::AsterDavMeta;
 
 /// DavFile 实现，使用临时文件避免大文件内存爆炸
@@ -40,21 +36,10 @@ enum FileMode {
     Read {
         file: tokio::fs::File,
         temp_path: String,
-        #[allow(dead_code)]
-        size: u64,
         meta: AsterDavMeta,
     },
     Write {
-        db: DatabaseConnection,
-        driver_registry: Arc<DriverRegistry>,
-        runtime_config: Arc<RuntimeConfig>,
-        policy_snapshot: Arc<PolicySnapshot>,
-        config: Arc<Config>,
-        cache: Arc<dyn CacheBackend>,
-        thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
-        storage_change_tx: tokio::sync::broadcast::Sender<
-            crate::services::storage_change_service::StorageChangeEvent,
-        >,
+        state: AppState,
         user_id: i64,
         folder_id: Option<i64>,
         filename: String,
@@ -68,44 +53,28 @@ enum FileMode {
 
 impl AsterDavFile {
     /// 创建读模式文件（持有临时文件句柄）
-    pub fn for_read(
-        file: tokio::fs::File,
-        temp_path: String,
-        size: u64,
-        meta: AsterDavMeta,
-    ) -> Self {
+    pub fn for_read(file: tokio::fs::File, temp_path: String, meta: AsterDavMeta) -> Self {
         Self {
             mode: FileMode::Read {
                 file,
                 temp_path,
-                size,
                 meta,
             },
         }
     }
 
     /// 创建写模式文件（持有临时文件句柄）
-    #[allow(clippy::too_many_arguments)]
     pub async fn for_write(
-        db: DatabaseConnection,
-        driver_registry: Arc<DriverRegistry>,
-        runtime_config: Arc<RuntimeConfig>,
-        policy_snapshot: Arc<PolicySnapshot>,
-        config: Arc<Config>,
-        cache: Arc<dyn CacheBackend>,
-        thumbnail_tx: tokio::sync::mpsc::Sender<i64>,
-        storage_change_tx: tokio::sync::broadcast::Sender<
-            crate::services::storage_change_service::StorageChangeEvent,
-        >,
+        state: AppState,
         user_id: i64,
         folder_id: Option<i64>,
         filename: String,
         existing_file_id: Option<i64>,
     ) -> Result<Self, FsError> {
-        let temp_dir = &config.server.temp_dir;
+        let temp_dir = state.config.server.temp_dir.clone();
         let temp_path =
-            crate::utils::paths::temp_file_path(temp_dir, &uuid::Uuid::new_v4().to_string());
-        tokio::fs::create_dir_all(temp_dir)
+            crate::utils::paths::temp_file_path(&temp_dir, &uuid::Uuid::new_v4().to_string());
+        tokio::fs::create_dir_all(&temp_dir)
             .await
             .map_err(|_| FsError::GeneralFailure)?;
         let file = tokio::fs::File::create(&temp_path)
@@ -114,14 +83,7 @@ impl AsterDavFile {
 
         Ok(Self {
             mode: FileMode::Write {
-                db,
-                driver_registry,
-                runtime_config,
-                policy_snapshot,
-                config,
-                cache,
-                thumbnail_tx,
-                storage_change_tx,
+                state,
                 user_id,
                 folder_id,
                 filename,
@@ -233,14 +195,7 @@ impl DavFile for AsterDavFile {
     fn flush(&mut self) -> FsFuture<'_, ()> {
         Box::pin(async move {
             let FileMode::Write {
-                db,
-                driver_registry,
-                runtime_config,
-                policy_snapshot,
-                config,
-                cache,
-                thumbnail_tx,
-                storage_change_tx,
+                state,
                 user_id,
                 folder_id,
                 filename,
@@ -260,21 +215,9 @@ impl DavFile for AsterDavFile {
                 return Ok(());
             }
 
-            let state = crate::runtime::AppState {
-                db: db.clone(),
-                driver_registry: driver_registry.clone(),
-                runtime_config: runtime_config.clone(),
-                policy_snapshot: policy_snapshot.clone(),
-                config: config.clone(),
-                cache: cache.clone(),
-                mail_sender: crate::services::mail_service::runtime_sender(runtime_config.clone()),
-                thumbnail_tx: thumbnail_tx.clone(),
-                storage_change_tx: storage_change_tx.clone(),
-            };
-
             // 调用公共函数，不重复 hash/dedup/quota 逻辑
             crate::services::file_service::store_from_temp(
-                &state,
+                state,
                 *user_id,
                 *folder_id,
                 filename,

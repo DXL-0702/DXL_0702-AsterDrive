@@ -25,12 +25,16 @@ impl CacheBackend for RedisCache {
     async fn set_bytes(&self, key: &str, value: Vec<u8>, ttl_secs: Option<u64>) {
         let ttl = ttl_secs.unwrap_or(self.default_ttl);
         let mut conn = self.conn.clone();
-        let _: Result<(), _> = conn.set_ex(key, value, ttl).await;
+        if let Err(error) = conn.set_ex::<_, _, ()>(key, value, ttl).await {
+            tracing::warn!(ttl_secs = ttl, "redis cache set failed: {error}");
+        }
     }
 
     async fn delete(&self, key: &str) {
         let mut conn = self.conn.clone();
-        let _: Result<(), _> = conn.del(key).await;
+        if let Err(error) = conn.del::<_, ()>(key).await {
+            tracing::warn!("redis cache delete failed: {error}");
+        }
     }
 
     async fn invalidate_prefix(&self, prefix: &str) {
@@ -48,10 +52,18 @@ impl CacheBackend for RedisCache {
                 .await
             {
                 Ok(result) => result,
-                Err(_) => break,
+                Err(error) => {
+                    tracing::warn!("redis cache prefix scan failed: {error}");
+                    break;
+                }
             };
-            if !keys.is_empty() {
-                let _: Result<(), _> = conn.del::<_, ()>(&keys).await;
+            if !keys.is_empty()
+                && let Err(error) = conn.del::<_, ()>(&keys).await
+            {
+                tracing::warn!(
+                    matched_keys = keys.len(),
+                    "redis cache prefix delete failed: {error}"
+                );
             }
             cursor = next_cursor;
             if cursor == 0 {
