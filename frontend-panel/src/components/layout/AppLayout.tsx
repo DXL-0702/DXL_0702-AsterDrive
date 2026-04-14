@@ -33,7 +33,11 @@ export function AppLayout({
 
 	return (
 		<div className="h-screen flex flex-col">
-			<TopBar onSidebarToggle={handleMobileToggle} actions={actions} />
+			<TopBar
+				onSidebarToggle={handleMobileToggle}
+				mobileOpen={mobileOpen}
+				actions={actions}
+			/>
 			<div className="flex flex-1 overflow-hidden">
 				<Sidebar
 					mobileOpen={mobileOpen}

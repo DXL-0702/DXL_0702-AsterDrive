@@ -5,12 +5,14 @@ import { AppLayout } from "@/components/layout/AppLayout";
 vi.mock("@/components/layout/TopBar", () => ({
 	TopBar: ({
 		onSidebarToggle,
+		mobileOpen,
 		actions,
 	}: {
 		onSidebarToggle: () => void;
+		mobileOpen: boolean;
 		actions?: React.ReactNode;
 	}) => (
-		<div>
+		<div data-testid="topbar" data-mobile-open={String(mobileOpen)}>
 			<button type="button" onClick={onSidebarToggle}>
 				Toggle Sidebar
 			</button>
@@ -61,6 +63,10 @@ describe("AppLayout", () => {
 
 		expect(screen.getByRole("button", { name: "Extra" })).toBeInTheDocument();
 		expect(screen.getByText("Page Content")).toBeInTheDocument();
+		expect(screen.getByTestId("topbar")).toHaveAttribute(
+			"data-mobile-open",
+			"false",
+		);
 		expect(screen.getByTestId("sidebar")).toHaveAttribute(
 			"data-has-trash-drop",
 			"true",
@@ -78,15 +84,27 @@ describe("AppLayout", () => {
 			"data-mobile-open",
 			"false",
 		);
+		expect(screen.getByTestId("topbar")).toHaveAttribute(
+			"data-mobile-open",
+			"false",
+		);
 
 		fireEvent.click(screen.getByRole("button", { name: "Toggle Sidebar" }));
 		expect(screen.getByTestId("sidebar")).toHaveAttribute(
 			"data-mobile-open",
 			"true",
 		);
+		expect(screen.getByTestId("topbar")).toHaveAttribute(
+			"data-mobile-open",
+			"true",
+		);
 
 		fireEvent.click(screen.getByRole("button", { name: "Close Sidebar" }));
 		expect(screen.getByTestId("sidebar")).toHaveAttribute(
+			"data-mobile-open",
+			"false",
+		);
+		expect(screen.getByTestId("topbar")).toHaveAttribute(
 			"data-mobile-open",
 			"false",
 		);

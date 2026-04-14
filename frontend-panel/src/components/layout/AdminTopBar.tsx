@@ -6,14 +6,20 @@ import { ADMIN_TOPBAR_HEIGHT_CLASS } from "@/lib/constants";
 
 interface AdminTopBarProps {
 	onSidebarToggle: () => void;
+	mobileOpen: boolean;
 }
 
-export function AdminTopBar({ onSidebarToggle }: AdminTopBarProps) {
+export function AdminTopBar({ onSidebarToggle, mobileOpen }: AdminTopBarProps) {
 	const { t } = useTranslation();
 
 	return (
 		<TopBarShell
 			onSidebarToggle={onSidebarToggle}
+			sidebarOpen={mobileOpen}
+			sidebarToggleLabels={{
+				open: t("open_admin_sidebar"),
+				close: t("close_admin_sidebar"),
+			}}
 			left={
 				<div className="flex min-w-0 items-center gap-3">
 					<AsterDriveWordmark

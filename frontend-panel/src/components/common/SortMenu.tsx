@@ -33,17 +33,26 @@ export function SortMenu({
 	onSortOrder,
 }: SortMenuProps) {
 	const { t } = useTranslation("files");
+	const triggerLabel = `${t("sort_by")}: ${t(`sort_${sortBy}`)} · ${t(`sort_${sortOrder}`)}`;
 
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger
 				render={
-					<Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2">
+					<Button
+						aria-label={triggerLabel}
+						title={triggerLabel}
+						variant="ghost"
+						size="sm"
+						className="h-7 gap-1 px-1.5 max-[420px]:w-7 max-[420px]:justify-center max-[420px]:px-0 sm:h-8 sm:gap-1.5 sm:px-2"
+					>
 						<Icon
 							name={sortOrder === "asc" ? "SortAscending" : "SortDescending"}
 							className="h-4 w-4"
 						/>
-						<span className="text-xs">{t(`sort_${sortBy}`)}</span>
+						<span className="max-w-14 truncate text-[11px] max-[420px]:hidden sm:max-w-none sm:text-xs">
+							{t(`sort_${sortBy}`)}
+						</span>
 					</Button>
 				}
 			/>

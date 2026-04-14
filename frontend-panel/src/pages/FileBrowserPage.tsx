@@ -23,6 +23,7 @@ import type { UploadAreaHandle } from "@/components/files/UploadArea";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
 	Breadcrumb,
+	BreadcrumbEllipsis,
 	BreadcrumbItem,
 	BreadcrumbLink,
 	BreadcrumbList,
@@ -36,6 +37,12 @@ import {
 	ContextMenuSeparator,
 	ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Icon } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { handleApiError } from "@/hooks/useApiError";
@@ -104,6 +111,59 @@ const UploadArea = lazy(async () => {
 	return { default: module.UploadArea };
 });
 
+function useMediaQuery(query: string) {
+	const getMatches = () =>
+		typeof window !== "undefined" &&
+		typeof window.matchMedia === "function" &&
+		window.matchMedia(query).matches;
+
+	const [matches, setMatches] = useState(getMatches);
+
+	useEffect(() => {
+		if (
+			typeof window === "undefined" ||
+			typeof window.matchMedia !== "function"
+		) {
+			return;
+		}
+
+		const mediaQuery = window.matchMedia(query);
+		setMatches(mediaQuery.matches);
+
+		const handleChange = (event: MediaQueryListEvent) => {
+			setMatches(event.matches);
+		};
+
+		if (typeof mediaQuery.addEventListener === "function") {
+			mediaQuery.addEventListener("change", handleChange);
+			return () => mediaQuery.removeEventListener("change", handleChange);
+		}
+
+		mediaQuery.addListener(handleChange);
+		return () => mediaQuery.removeListener(handleChange);
+	}, [query]);
+
+	return matches;
+}
+
+type VisibleBreadcrumbEntry =
+	| {
+			type: "item";
+			item: {
+				id: number | null;
+				name: string;
+			};
+			sourceIndex: number;
+	  }
+	| {
+			type: "ellipsis";
+			key: string;
+			items: Array<{
+				id: number | null;
+				name: string;
+			}>;
+	  };
+
 export default function FileBrowserPage() {
 	const { t } = useTranslation(["files", "tasks"]);
 	const navigate = useNavigate();
@@ -142,7 +202,13 @@ export default function FileBrowserPage() {
 	const isSearching = searchQuery !== null;
 	const displayFolders = isSearching ? searchFolders : folders;
 	const displayFiles = isSearching ? searchFiles : files;
-	const currentFolderName = breadcrumb[breadcrumb.length - 1]?.name;
+	const currentBreadcrumbItem = breadcrumb[breadcrumb.length - 1];
+	const currentFolderName = currentBreadcrumbItem?.name;
+	const isRootFolder =
+		currentBreadcrumbItem != null
+			? currentBreadcrumbItem.id == null
+			: folderId == null;
+	const isCompactBreadcrumb = useMediaQuery("(max-width: 639px)");
 	const pageTitle = isSearching
 		? `${t("core:search")}: ${searchQuery}`
 		: folderId == null
@@ -603,62 +669,148 @@ export default function FileBrowserPage() {
 	const handleScrollViewportRef = useCallback((node: HTMLDivElement | null) => {
 		setScrollViewport(node);
 	}, []);
+	const visibleBreadcrumb: VisibleBreadcrumbEntry[] =
+		isCompactBreadcrumb && breadcrumb.length > 2
+			? [
+					{ type: "item", item: breadcrumb[0], sourceIndex: 0 },
+					{
+						type: "ellipsis",
+						key: "ellipsis",
+						items: breadcrumb.slice(1, -1),
+					},
+					{
+						type: "item",
+						item: breadcrumb[breadcrumb.length - 1],
+						sourceIndex: breadcrumb.length - 1,
+					},
+				]
+			: breadcrumb.map((item, index) => ({
+					type: "item" as const,
+					item,
+					sourceIndex: index,
+				}));
 	const pageCore = (
 		<>
 			{/* Breadcrumb / local controls */}
 			<ToolbarBar
 				left={
 					<>
-						<Icon
-							name="FolderOpen"
-							className="h-4 w-4 shrink-0 text-muted-foreground/70"
-						/>
+						<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background/40 text-muted-foreground/70 sm:h-8 sm:w-8">
+							<Icon
+								name={isRootFolder ? "House" : "FolderOpen"}
+								className="h-4 w-4"
+							/>
+						</span>
 						<div className="min-w-0 flex-1">
 							{isSearching ? (
-								<span className="text-sm text-muted-foreground">
+								<span className="block truncate text-xs text-muted-foreground sm:text-sm">
 									{t("core:search")}: &quot;{searchQuery}&quot;
 								</span>
 							) : (
-								<Breadcrumb>
-									<BreadcrumbList className="gap-2">
-										{breadcrumb.map((item, i) => (
-											<Fragment key={item.id ?? "root"}>
+								<Breadcrumb className="min-w-0">
+									<BreadcrumbList className="min-w-0 gap-1.5 text-xs sm:gap-2 sm:text-sm">
+										{visibleBreadcrumb.map((entry, i) => (
+											<Fragment
+												key={
+													entry.type === "ellipsis"
+														? entry.key
+														: `${entry.item.id ?? "root"}-${entry.sourceIndex}`
+												}
+											>
 												{i > 0 && (
 													<BreadcrumbSeparator className="mx-0.5 text-muted-foreground/45" />
 												)}
-												<BreadcrumbItem>
-													{i < breadcrumb.length - 1 ? (
-														<BreadcrumbLink
-															className={[
-																"cursor-pointer rounded-md px-1.5 py-0.5 text-muted-foreground",
-																dragOverBreadcrumbIndex === i &&
-																	"ring-2 ring-primary bg-accent/30 text-foreground",
-															]
-																.filter(Boolean)
-																.join(" ")}
-															onDragOver={(e) => handleBreadcrumbDragOver(e, i)}
-															onDragLeave={handleBreadcrumbDragLeave}
-															onDrop={(e) =>
-																handleBreadcrumbDrop(e, i, item.id)
-															}
-															onClick={() =>
-																navigate(
-																	workspaceFolderPath(
-																		workspace,
-																		item.id,
-																		item.name,
-																	),
-																)
-															}
-														>
-															{item.name}
-														</BreadcrumbLink>
-													) : (
-														<BreadcrumbPage className="text-base font-semibold text-foreground">
-															{item.name}
-														</BreadcrumbPage>
-													)}
-												</BreadcrumbItem>
+												{entry.type === "ellipsis" ? (
+													<BreadcrumbItem className="shrink-0">
+														<DropdownMenu>
+															<DropdownMenuTrigger
+																render={
+																	<button
+																		type="button"
+																		className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:h-7 sm:w-7"
+																		aria-label={t("core:more")}
+																	>
+																		<BreadcrumbEllipsis />
+																	</button>
+																}
+															/>
+															<DropdownMenuContent
+																align="start"
+																className="w-auto min-w-40"
+															>
+																{entry.items.map((hiddenItem) => (
+																	<DropdownMenuItem
+																		key={hiddenItem.id ?? "root"}
+																		onClick={() =>
+																			navigate(
+																				workspaceFolderPath(
+																					workspace,
+																					hiddenItem.id,
+																					hiddenItem.name,
+																				),
+																			)
+																		}
+																	>
+																		<Icon
+																			name="FolderOpen"
+																			className="h-4 w-4 text-muted-foreground"
+																		/>
+																		<span className="truncate">
+																			{hiddenItem.name}
+																		</span>
+																	</DropdownMenuItem>
+																))}
+															</DropdownMenuContent>
+														</DropdownMenu>
+													</BreadcrumbItem>
+												) : (
+													<BreadcrumbItem
+														className={
+															entry.sourceIndex === breadcrumb.length - 1
+																? "min-w-0 flex-1"
+																: "shrink-0"
+														}
+													>
+														{entry.sourceIndex < breadcrumb.length - 1 ? (
+															<BreadcrumbLink
+																className={[
+																	"cursor-pointer rounded-md px-1 py-0.5 text-[13px] text-muted-foreground sm:px-1.5 sm:text-sm",
+																	dragOverBreadcrumbIndex ===
+																		entry.sourceIndex &&
+																		"ring-2 ring-primary bg-accent/30 text-foreground",
+																]
+																	.filter(Boolean)
+																	.join(" ")}
+																onDragOver={(e) =>
+																	handleBreadcrumbDragOver(e, entry.sourceIndex)
+																}
+																onDragLeave={handleBreadcrumbDragLeave}
+																onDrop={(e) =>
+																	handleBreadcrumbDrop(
+																		e,
+																		entry.sourceIndex,
+																		entry.item.id,
+																	)
+																}
+																onClick={() =>
+																	navigate(
+																		workspaceFolderPath(
+																			workspace,
+																			entry.item.id,
+																			entry.item.name,
+																		),
+																	)
+																}
+															>
+																{entry.item.name}
+															</BreadcrumbLink>
+														) : (
+															<BreadcrumbPage className="text-sm font-semibold text-foreground sm:text-[0.95rem]">
+																{entry.item.name}
+															</BreadcrumbPage>
+														)}
+													</BreadcrumbItem>
+												)}
 											</Fragment>
 										))}
 									</BreadcrumbList>
@@ -667,7 +819,7 @@ export default function FileBrowserPage() {
 						</div>
 						<button
 							type="button"
-							className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground"
+							className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background/40 text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground sm:h-8 sm:w-8"
 							onClick={() => void refresh()}
 							aria-label={t("core:refresh")}
 							title={t("core:refresh")}

@@ -17,16 +17,29 @@ vi.mock("@/components/layout/HeaderControls", () => ({
 vi.mock("@/components/layout/TopBarShell", () => ({
 	TopBarShell: ({
 		onSidebarToggle,
+		sidebarOpen,
+		sidebarToggleLabels,
 		left,
 		right,
 		heightClassName,
 	}: {
 		onSidebarToggle?: () => void;
+		sidebarOpen?: boolean;
+		sidebarToggleLabels?: {
+			open: string;
+			close: string;
+		};
 		left: React.ReactNode;
 		right: React.ReactNode;
 		heightClassName?: string;
 	}) => (
-		<div data-testid="topbar-shell" data-height={heightClassName}>
+		<div
+			data-testid="topbar-shell"
+			data-height={heightClassName}
+			data-sidebar-open={String(Boolean(sidebarOpen))}
+			data-open-label={sidebarToggleLabels?.open}
+			data-close-label={sidebarToggleLabels?.close}
+		>
 			<button type="button" onClick={onSidebarToggle}>
 				Toggle
 			</button>
@@ -38,7 +51,7 @@ vi.mock("@/components/layout/TopBarShell", () => ({
 
 describe("AdminTopBar", () => {
 	it("renders the translated admin title, logo, and home-enabled header controls", () => {
-		render(<AdminTopBar onSidebarToggle={vi.fn()} />);
+		render(<AdminTopBar onSidebarToggle={vi.fn()} mobileOpen={false} />);
 
 		expect(screen.getByAltText("translated:app_name")).toBeInTheDocument();
 		expect(screen.getByText("translated:admin_panel")).toBeInTheDocument();
@@ -50,11 +63,23 @@ describe("AdminTopBar", () => {
 			"data-height",
 			"h-16",
 		);
+		expect(screen.getByTestId("topbar-shell")).toHaveAttribute(
+			"data-sidebar-open",
+			"false",
+		);
+		expect(screen.getByTestId("topbar-shell")).toHaveAttribute(
+			"data-open-label",
+			"translated:open_admin_sidebar",
+		);
+		expect(screen.getByTestId("topbar-shell")).toHaveAttribute(
+			"data-close-label",
+			"translated:close_admin_sidebar",
+		);
 	});
 
 	it("forwards sidebar toggle requests to the layout", () => {
 		const onSidebarToggle = vi.fn();
-		render(<AdminTopBar onSidebarToggle={onSidebarToggle} />);
+		render(<AdminTopBar onSidebarToggle={onSidebarToggle} mobileOpen />);
 
 		fireEvent.click(screen.getByRole("button", { name: "Toggle" }));
 

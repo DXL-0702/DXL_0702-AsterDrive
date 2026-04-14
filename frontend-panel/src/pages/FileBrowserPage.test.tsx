@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/react";
 import { forwardRef, useImperativeHandle } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FILE_BROWSER_FEEDBACK_DURATION_MS } from "@/lib/constants";
@@ -538,6 +544,7 @@ vi.mock("@/components/ui/breadcrumb", () => ({
 	Breadcrumb: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
+	BreadcrumbEllipsis: () => <span>ellipsis</span>,
 	BreadcrumbItem: ({ children }: { children: React.ReactNode }) => (
 		<div>{children}</div>
 	),
@@ -575,6 +582,31 @@ vi.mock("@/components/ui/breadcrumb", () => ({
 	),
 	BreadcrumbSeparator: ({ children }: { children?: React.ReactNode }) => (
 		<span>{children ?? "/"}</span>
+	),
+}));
+
+vi.mock("@/components/ui/dropdown-menu", () => ({
+	DropdownMenu: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => render,
+	DropdownMenuContent: ({
+		children,
+		className,
+	}: {
+		children: React.ReactNode;
+		className?: string;
+	}) => <div className={className}>{children}</div>,
+	DropdownMenuItem: ({
+		children,
+		onClick,
+	}: {
+		children: React.ReactNode;
+		onClick?: () => void;
+	}) => (
+		<button type="button" onClick={onClick}>
+			{children}
+		</button>
 	),
 }));
 
@@ -723,6 +755,17 @@ function createFile(overrides: Record<string, unknown> = {}) {
 
 describe("FileBrowserPage", () => {
 	beforeEach(() => {
+		vi.mocked(window.matchMedia).mockImplementation((query: string) => ({
+			matches: false,
+			media: query,
+			onchange: null,
+			addEventListener: vi.fn(),
+			removeEventListener: vi.fn(),
+			addListener: vi.fn(),
+			removeListener: vi.fn(),
+			dispatchEvent: vi.fn(),
+		}));
+
 		MockIntersectionObserver.reset();
 		mockState.batchDelete.mockReset();
 		mockState.copyFile.mockReset();
@@ -852,6 +895,81 @@ describe("FileBrowserPage", () => {
 		expect(
 			await screen.findByText("preview:report.pdf:auto"),
 		).toBeInTheDocument();
+	});
+
+	it("uses a house icon at root and a folder icon in child folders", async () => {
+		mockState.params = { folderId: undefined };
+		mockState.searchParams = new URLSearchParams();
+		mockState.store.breadcrumb = [{ id: null, name: "Root" }];
+
+		const { rerender } = render(<FileBrowserPage />);
+
+		await waitFor(() => {
+			expect(mockState.store.navigateTo).toHaveBeenCalledWith(null, undefined);
+		});
+
+		const refreshButton = screen.getByTitle("core:refresh");
+		const leftSlot = refreshButton.closest("div");
+		expect(leftSlot).toBeTruthy();
+		if (!leftSlot) {
+			throw new Error("missing toolbar left slot");
+		}
+		expect(within(leftSlot).getByText("House")).toBeInTheDocument();
+
+		mockState.params = { folderId: "12" };
+		mockState.searchParams = new URLSearchParams("name=Projects");
+		mockState.store.breadcrumb = [
+			{ id: null, name: "Root" },
+			{ id: 12, name: "Projects" },
+		];
+
+		rerender(<FileBrowserPage />);
+
+		await waitFor(() => {
+			expect(mockState.store.navigateTo).toHaveBeenCalledWith(12, "Projects");
+		});
+		expect(within(leftSlot).getByText("FolderOpen")).toBeInTheDocument();
+	});
+
+	it("collapses deep breadcrumbs on small screens to root ellipsis current", async () => {
+		vi.mocked(window.matchMedia).mockImplementation((query: string) => ({
+			matches: query === "(max-width: 639px)",
+			media: query,
+			onchange: null,
+			addEventListener: vi.fn(),
+			removeEventListener: vi.fn(),
+			addListener: vi.fn(),
+			removeListener: vi.fn(),
+			dispatchEvent: vi.fn(),
+		}));
+		mockState.store.breadcrumb = [
+			{ id: null, name: "Root" },
+			{ id: 1, name: "Workspace" },
+			{ id: 2, name: "Semester" },
+			{ id: 12, name: "人工智能学院选课名单0320" },
+		];
+
+		render(<FileBrowserPage />);
+
+		await waitFor(() => {
+			expect(mockState.store.navigateTo).toHaveBeenCalledWith(12, "Projects");
+		});
+
+		expect(screen.getByRole("button", { name: "Root" })).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: "core:more" }),
+		).toBeInTheDocument();
+		expect(screen.getByText("ellipsis")).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: /Workspace/ }),
+		).toBeInTheDocument();
+		expect(
+			screen.getByRole("button", { name: /Semester/ }),
+		).toBeInTheDocument();
+		expect(screen.getByText("人工智能学院选课名单0320")).toBeInTheDocument();
+
+		fireEvent.click(screen.getByRole("button", { name: /Workspace/ }));
+		expect(mockState.navigate).toHaveBeenCalledWith("/folder/1?name=Workspace");
 	});
 
 	it("groups page context menu actions with separators", () => {

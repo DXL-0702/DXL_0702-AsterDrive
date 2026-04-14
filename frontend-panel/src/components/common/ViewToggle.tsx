@@ -17,7 +17,7 @@ interface ViewToggleProps {
 export function ViewToggle({ value, onChange }: ViewToggleProps) {
 	const { t } = useTranslation("files");
 	return (
-		<div className="flex border rounded-md">
+		<div className="flex rounded-md border border-border/70 bg-background/60 p-0.5">
 			<Tooltip>
 				<TooltipTrigger
 					render={
@@ -25,7 +25,7 @@ export function ViewToggle({ value, onChange }: ViewToggleProps) {
 							variant="ghost"
 							size="icon"
 							className={cn(
-								"h-8 w-8 rounded-r-none",
+								"h-7 w-7 rounded-r-none sm:h-8 sm:w-8",
 								value === "list" && "bg-accent",
 							)}
 							onClick={() => onChange("list")}
@@ -43,7 +43,7 @@ export function ViewToggle({ value, onChange }: ViewToggleProps) {
 							variant="ghost"
 							size="icon"
 							className={cn(
-								"h-8 w-8 rounded-l-none",
+								"h-7 w-7 rounded-l-none sm:h-8 sm:w-8",
 								value === "grid" && "bg-accent",
 							)}
 							onClick={() => onChange("grid")}

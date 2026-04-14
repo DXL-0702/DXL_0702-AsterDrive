@@ -13,10 +13,11 @@ import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 interface TopBarProps {
 	onSidebarToggle: () => void;
+	mobileOpen: boolean;
 	actions?: ReactNode;
 }
 
-export function TopBar({ onSidebarToggle, actions }: TopBarProps) {
+export function TopBar({ onSidebarToggle, mobileOpen, actions }: TopBarProps) {
 	const { t } = useTranslation();
 	const navigate = useNavigate();
 	const location = useLocation();
@@ -48,6 +49,11 @@ export function TopBar({ onSidebarToggle, actions }: TopBarProps) {
 	return (
 		<TopBarShell
 			onSidebarToggle={onSidebarToggle}
+			sidebarOpen={mobileOpen}
+			sidebarToggleLabels={{
+				open: t("open_sidebar"),
+				close: t("close_sidebar"),
+			}}
 			left={
 				<AsterDriveWordmark
 					alt={t("app_name")}

@@ -82,6 +82,8 @@
 	"search_placeholder": "Search files...",
 	"clear_search": "Clear search",
 	"breadcrumb": "Breadcrumb",
+	"open_sidebar": "Open sidebar",
 	"close_sidebar": "Close sidebar",
+	"open_admin_sidebar": "Open admin sidebar",
 	"close_admin_sidebar": "Close admin sidebar"
 }

@@ -86,19 +86,23 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 
 	return (
 		<div className="flex h-screen flex-col bg-muted/20">
-			<AdminTopBar onSidebarToggle={handleMobileToggle} />
+			<AdminTopBar
+				onSidebarToggle={handleMobileToggle}
+				mobileOpen={mobileOpen}
+			/>
 			<div className="flex min-h-0 flex-1 overflow-hidden">
-				{mobileOpen && (
-					<button
-						type="button"
-						className={cn(
-							"fixed inset-x-0 z-40 bg-black/50 md:hidden",
-							ADMIN_TOPBAR_OFFSET_CLASS,
-						)}
-						onClick={handleMobileClose}
-						aria-label={t("core:close_admin_sidebar")}
-					/>
-				)}
+				<button
+					type="button"
+					className={cn(
+						"fixed inset-x-0 z-40 bg-black/50 transition-opacity duration-200 ease-out md:hidden motion-reduce:transition-none",
+						ADMIN_TOPBAR_OFFSET_CLASS,
+						mobileOpen ? "opacity-100" : "pointer-events-none opacity-0",
+					)}
+					onClick={handleMobileClose}
+					aria-label={t("core:close_admin_sidebar")}
+					aria-hidden={!mobileOpen}
+					tabIndex={mobileOpen ? 0 : -1}
+				/>
 				<aside
 					className={cn(
 						"border-r bg-background transition-transform duration-200 ease-out motion-reduce:transition-none",

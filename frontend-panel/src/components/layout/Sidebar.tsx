@@ -240,17 +240,18 @@ export function Sidebar({
 	return (
 		<>
 			{/* Mobile overlay backdrop */}
-			{mobileOpen && (
-				<button
-					type="button"
-					className={cn(
-						"fixed inset-x-0 bg-black/50 z-40 md:hidden cursor-default",
-						USER_TOPBAR_OFFSET_CLASS,
-					)}
-					onClick={onMobileClose}
-					aria-label={t("close_sidebar")}
-				/>
-			)}
+			<button
+				type="button"
+				className={cn(
+					"fixed inset-x-0 z-40 cursor-default bg-black/50 transition-opacity duration-200 ease-out md:hidden motion-reduce:transition-none",
+					USER_TOPBAR_OFFSET_CLASS,
+					mobileOpen ? "opacity-100" : "pointer-events-none opacity-0",
+				)}
+				onClick={onMobileClose}
+				aria-label={t("close_sidebar")}
+				aria-hidden={!mobileOpen}
+				tabIndex={mobileOpen ? 0 : -1}
+			/>
 
 			{/* Sidebar - desktop inline, mobile overlay */}
 			<aside

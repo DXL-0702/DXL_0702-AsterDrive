@@ -43,12 +43,24 @@ vi.mock("@/components/layout/TopBarShell", () => ({
 		left,
 		center,
 		right,
+		sidebarOpen,
+		sidebarToggleLabels,
 	}: {
 		left: React.ReactNode;
 		center?: React.ReactNode;
 		right: React.ReactNode;
+		sidebarOpen?: boolean;
+		sidebarToggleLabels?: {
+			open: string;
+			close: string;
+		};
 	}) => (
-		<div>
+		<div
+			data-testid="topbar-shell"
+			data-sidebar-open={String(Boolean(sidebarOpen))}
+			data-open-label={sidebarToggleLabels?.open}
+			data-close-label={sidebarToggleLabels?.close}
+		>
 			<div>{left}</div>
 			<div>{center}</div>
 			<div>{right}</div>
@@ -99,6 +111,7 @@ describe("TopBar", () => {
 		render(
 			<TopBar
 				onSidebarToggle={vi.fn()}
+				mobileOpen={false}
 				actions={<button type="button">Extra</button>}
 			/>,
 		);
@@ -109,6 +122,18 @@ describe("TopBar", () => {
 		).toBeInTheDocument();
 		expect(screen.getByText("HeaderControls")).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Extra" })).toBeInTheDocument();
+		expect(screen.getByTestId("topbar-shell")).toHaveAttribute(
+			"data-sidebar-open",
+			"false",
+		);
+		expect(screen.getByTestId("topbar-shell")).toHaveAttribute(
+			"data-open-label",
+			"translated:open_sidebar",
+		);
+		expect(screen.getByTestId("topbar-shell")).toHaveAttribute(
+			"data-close-label",
+			"translated:close_sidebar",
+		);
 		expect(screen.getAllByTestId("icon")[0]).toHaveAttribute(
 			"data-name",
 			"MagnifyingGlass",
@@ -118,7 +143,7 @@ describe("TopBar", () => {
 	it("searches trimmed input and navigates to the root route when needed", () => {
 		window.history.replaceState({}, "", "/trash");
 
-		render(<TopBar onSidebarToggle={vi.fn()} />);
+		render(<TopBar onSidebarToggle={vi.fn()} mobileOpen={false} />);
 
 		const input = screen.getByPlaceholderText(
 			"translated:search_placeholder",
@@ -131,7 +156,7 @@ describe("TopBar", () => {
 	});
 
 	it("does not search for blank input and skips redundant navigation on root", () => {
-		render(<TopBar onSidebarToggle={vi.fn()} />);
+		render(<TopBar onSidebarToggle={vi.fn()} mobileOpen={false} />);
 
 		const input = screen.getByPlaceholderText(
 			"translated:search_placeholder",
@@ -146,7 +171,9 @@ describe("TopBar", () => {
 	it("clears active searches with escape and the clear button", () => {
 		mockState.fileStore.searchQuery = "report";
 
-		const { rerender } = render(<TopBar onSidebarToggle={vi.fn()} />);
+		const { rerender } = render(
+			<TopBar onSidebarToggle={vi.fn()} mobileOpen={true} />,
+		);
 		const input = screen.getByPlaceholderText(
 			"translated:search_placeholder",
 		) as HTMLInputElement;
@@ -166,7 +193,7 @@ describe("TopBar", () => {
 		expect(input.value).toBe("");
 
 		mockState.fileStore.searchQuery = null;
-		rerender(<TopBar onSidebarToggle={vi.fn()} />);
+		rerender(<TopBar onSidebarToggle={vi.fn()} mobileOpen={false} />);
 		expect(input.value).toBe("");
 		expect(
 			screen.queryByRole("button", { name: "translated:clear_search" }),

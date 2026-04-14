@@ -82,6 +82,8 @@
 	"search_placeholder": "搜索文件...",
 	"clear_search": "清除搜索",
 	"breadcrumb": "路径导航",
+	"open_sidebar": "打开侧边栏",
 	"close_sidebar": "关闭侧边栏",
+	"open_admin_sidebar": "打开管理侧边栏",
 	"close_admin_sidebar": "关闭管理侧边栏"
 }
