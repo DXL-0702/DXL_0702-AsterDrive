@@ -1,6 +1,5 @@
 import {
 	type FormEvent,
-	type ReactNode,
 	useEffect,
 	useEffectEvent,
 	useLayoutEffect,
@@ -9,43 +8,18 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
+import {
+	AdminTeamDetailAuditSection,
+	AdminTeamDetailDangerSection,
+	AdminTeamDetailMembersSection,
+	AdminTeamDetailOverviewSection,
+	type PolicyGroupOption,
+} from "@/components/admin/admin-team-detail/AdminTeamDetailSections";
+import { AdminTeamDetailShell } from "@/components/admin/admin-team-detail/AdminTeamDetailShell";
+import type { AdminTeamDetailTab } from "@/components/admin/admin-team-detail/types";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
-import { EmptyState } from "@/components/common/EmptyState";
-import { SkeletonTable } from "@/components/common/SkeletonTable";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Progress } from "@/components/ui/progress";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { handleApiError } from "@/hooks/useApiError";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
-import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
-import { formatBytes, formatDateAbsolute, formatDateShort } from "@/lib/format";
-import { formatTeamAuditSummary, getTeamRoleBadgeClass } from "@/lib/team";
-import { cn } from "@/lib/utils";
 import { adminTeamService } from "@/services/adminService";
 import type {
 	AdminTeamInfo,
@@ -55,6 +29,8 @@ import type {
 	TeamMemberRole,
 	UserStatus,
 } from "@/types/api";
+
+export type { AdminTeamDetailTab } from "@/components/admin/admin-team-detail/types";
 
 interface AdminTeamDetailDialogProps {
 	layout?: "dialog" | "page";
@@ -71,14 +47,6 @@ interface AdminTeamDetailDialogProps {
 	onRefreshPolicyGroups: () => Promise<void>;
 	pageTab?: AdminTeamDetailTab;
 }
-
-interface PolicyGroupOption {
-	disabled?: boolean;
-	label: string;
-	value: string;
-}
-
-export type AdminTeamDetailTab = "overview" | "members" | "audit" | "danger";
 
 const MEMBER_PAGE_SIZE = 10;
 const AUDIT_PAGE_SIZE = 10;
@@ -666,30 +634,6 @@ export function AdminTeamDetailDialog({
 		return null;
 	}
 
-	const Wrapper = ({ children }: { children: ReactNode }) =>
-		isPageLayout ? (
-			<div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl border bg-background shadow-xs">
-				{children}
-			</div>
-		) : (
-			<Dialog
-				open={open}
-				onOpenChange={(nextOpen) => {
-					if (!nextOpen) {
-						setArchiveDialogOpen(false);
-					}
-					onOpenChange(nextOpen);
-				}}
-			>
-				<DialogContent
-					keepMounted
-					className="flex max-h-[min(860px,calc(100vh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1180px,calc(100vw-2rem))]"
-				>
-					{children}
-				</DialogContent>
-			</Dialog>
-		);
-
 	const currentTab = isPageLayout ? pageLayoutTab : dialogTab;
 	const panelAnimationClass =
 		tabDirection === "forward"
@@ -722,951 +666,153 @@ export function AdminTeamDetailDialog({
 		}
 	};
 
+	const handleDialogOpenChange = (nextOpen: boolean) => {
+		if (!nextOpen) {
+			setArchiveDialogOpen(false);
+		}
+		onOpenChange(nextOpen);
+	};
+
+	const handleContentScroll = () => {
+		if (teamId == null || contentRef.current == null) {
+			return;
+		}
+
+		adminTeamDetailContentScrollPositions.set(
+			teamId,
+			contentRef.current.scrollTop,
+		);
+	};
+
+	const handleSidebarScroll = () => {
+		if (teamId == null || sidebarRef.current == null) {
+			return;
+		}
+
+		adminTeamDetailSidebarScrollPositions.set(
+			teamId,
+			sidebarRef.current.scrollTop,
+		);
+	};
+
 	const overviewSection = (
-		<section className="rounded-2xl border bg-background/60 p-6">
-			<div className="mb-5 flex items-start justify-between gap-3">
-				<div>
-					<h4 className="text-base font-semibold text-foreground">
-						{t("edit_team")}
-					</h4>
-					<p className="mt-1 text-sm text-muted-foreground">
-						{t("team_details_desc")}
-					</p>
-				</div>
-				<Button
-					type="button"
-					variant="ghost"
-					size="sm"
-					className={ADMIN_CONTROL_HEIGHT_CLASS}
-					onClick={() => void onRefreshPolicyGroups()}
-					disabled={policyGroupsLoading}
-				>
-					<Icon
-						name={policyGroupsLoading ? "Spinner" : "ArrowsClockwise"}
-						className={`mr-1 h-3.5 w-3.5 ${policyGroupsLoading ? "animate-spin" : ""}`}
-					/>
-					{t("refresh")}
-				</Button>
-			</div>
-			{detailLoading && !team ? (
-				<SkeletonTable columns={2} rows={4} />
-			) : (
-				<form
-					className="space-y-4"
-					onSubmit={(event) => {
-						event.preventDefault();
-						void handleSave();
-					}}
-				>
-					<div className="grid gap-5 md:grid-cols-2">
-						<div className="space-y-2 md:col-span-2">
-							<Label htmlFor="admin-team-detail-name">{t("core:name")}</Label>
-							<Input
-								id="admin-team-detail-name"
-								value={name}
-								maxLength={128}
-								disabled={
-									detailLoading ||
-									saving ||
-									archiving ||
-									restoring ||
-									!canMutateTeam
-								}
-								className={ADMIN_CONTROL_HEIGHT_CLASS}
-								onChange={(event) => setName(event.target.value)}
-							/>
-						</div>
-						<div className="space-y-2 md:col-span-2">
-							<Label>{t("team_policy_group")}</Label>
-							<Select
-								items={policyGroupOptions}
-								value={policyGroupId}
-								onValueChange={(value) => setPolicyGroupId(value ?? "")}
-							>
-								<SelectTrigger
-									disabled={
-										detailLoading ||
-										saving ||
-										archiving ||
-										restoring ||
-										policyGroupsLoading ||
-										!canMutateTeam
-									}
-								>
-									<SelectValue placeholder={t("select_policy_group")} />
-								</SelectTrigger>
-								<SelectContent>
-									{policyGroupOptions.map((option) => (
-										<SelectItem
-											key={option.value}
-											value={option.value}
-											disabled={option.disabled}
-										>
-											{option.label}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-							<p className="text-xs text-muted-foreground">
-								{t("team_policy_group_desc")}
-							</p>
-							{assignedPolicyGroupIsInvalid ? (
-								<p className="text-xs text-destructive">
-									{t("policy_group_invalid_assignment")}
-								</p>
-							) : null}
-							{policyGroupUnavailable ? (
-								<p className="text-xs text-destructive">
-									{t("policy_group_no_assignable_groups")}
-								</p>
-							) : null}
-						</div>
-						<div className="space-y-2 md:col-span-2">
-							<Label htmlFor="admin-team-detail-description">
-								{t("description")}
-							</Label>
-							<textarea
-								id="admin-team-detail-description"
-								value={description}
-								disabled={
-									detailLoading ||
-									saving ||
-									archiving ||
-									restoring ||
-									!canMutateTeam
-								}
-								rows={6}
-								className="min-h-32 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50"
-								onChange={(event) => setDescription(event.target.value)}
-							/>
-						</div>
-					</div>
-					<div className="flex items-center justify-end gap-2 border-t pt-4">
-						<Button
-							type="submit"
-							disabled={
-								detailLoading ||
-								saving ||
-								!canMutateTeam ||
-								!name.trim() ||
-								!policyGroupId ||
-								!hasChanges
-							}
-						>
-							{saving ? (
-								<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
-							) : (
-								<Icon name="FloppyDisk" className="mr-1 h-4 w-4" />
-							)}
-							{t("save_changes")}
-						</Button>
-					</div>
-				</form>
-			)}
-		</section>
+		<AdminTeamDetailOverviewSection
+			archiving={archiving}
+			assignedPolicyGroupIsInvalid={assignedPolicyGroupIsInvalid}
+			canMutateTeam={canMutateTeam}
+			description={description}
+			detailLoading={detailLoading}
+			hasChanges={hasChanges}
+			name={name}
+			onDescriptionChange={setDescription}
+			onNameChange={setName}
+			onPolicyGroupChange={setPolicyGroupId}
+			onRefreshPolicyGroups={onRefreshPolicyGroups}
+			onSave={handleSave}
+			policyGroupId={policyGroupId}
+			policyGroupOptions={policyGroupOptions}
+			policyGroupUnavailable={policyGroupUnavailable}
+			policyGroupsLoading={policyGroupsLoading}
+			restoring={restoring}
+			saving={saving}
+			team={team}
+		/>
 	);
 
 	const membersSection = (
-		<section className="rounded-2xl border bg-background/60 p-6">
-			<div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-				<div>
-					<h4 className="text-base font-semibold text-foreground">
-						{t("settings:settings_team_members")}
-					</h4>
-					<p className="mt-1 text-sm text-muted-foreground">
-						{t("settings:settings_team_members_desc")}
-					</p>
-				</div>
-				<div className="grid gap-2 sm:grid-cols-[minmax(220px,1fr)_160px_160px]">
-					<Input
-						value={memberQuery}
-						onChange={(event) => {
-							setMemberOffset(0);
-							setMemberQuery(event.target.value);
-						}}
-						placeholder={t("team_member_search_placeholder")}
-						className={ADMIN_CONTROL_HEIGHT_CLASS}
-					/>
-					<Select
-						items={roleFilterOptions}
-						value={memberRoleFilter}
-						onValueChange={(value) => {
-							setMemberOffset(0);
-							setMemberRoleFilter(
-								(value as "__all__" | TeamMemberRole) ?? "__all__",
-							);
-						}}
-					>
-						<SelectTrigger>
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							{roleFilterOptions.map((option) => (
-								<SelectItem key={option.value} value={option.value}>
-									{option.label}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-					<Select
-						items={statusFilterOptions}
-						value={memberStatusFilter}
-						onValueChange={(value) => {
-							setMemberOffset(0);
-							setMemberStatusFilter(
-								(value as "__all__" | UserStatus) ?? "__all__",
-							);
-						}}
-					>
-						<SelectTrigger>
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent>
-							{statusFilterOptions.map((option) => (
-								<SelectItem key={option.value} value={option.value}>
-									{option.label}
-								</SelectItem>
-							))}
-						</SelectContent>
-					</Select>
-				</div>
-			</div>
-
-			<div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-muted/20 px-4 py-3 text-sm">
-				<div className="flex flex-wrap gap-4 text-muted-foreground">
-					<span>
-						{t("member_filtered_count", {
-							filtered: memberTotal,
-							total: team?.member_count ?? memberTotal,
-						})}
-					</span>
-					<span>
-						{t("team_owner_count")}: {ownerCount}
-					</span>
-					<span>
-						{t("team_manager_count")}: {managerCount}
-					</span>
-				</div>
-				{hasMemberFilters ? (
-					<Button
-						type="button"
-						variant="ghost"
-						size="sm"
-						onClick={() => {
-							setMemberOffset(0);
-							setMemberQuery("");
-							setMemberRoleFilter("__all__");
-							setMemberStatusFilter("__all__");
-						}}
-					>
-						{t("clear_filters")}
-					</Button>
-				) : null}
-			</div>
-
-			{canMutateTeam ? (
-				<form
-					className="mb-4 grid gap-3 rounded-xl border bg-muted/20 p-4 md:grid-cols-[minmax(0,1fr)_180px_auto]"
-					onSubmit={(event) => void handleAddMember(event)}
-				>
-					<div className="space-y-2">
-						<Label htmlFor="admin-team-member-identifier">
-							{t("settings:settings_team_member_identifier")}
-						</Label>
-						<Input
-							id="admin-team-member-identifier"
-							value={memberIdentifier}
-							disabled={memberMutating}
-							placeholder={t("settings:settings_team_member_placeholder")}
-							onChange={(event) => setMemberIdentifier(event.target.value)}
-						/>
-						<p className="text-xs text-muted-foreground">
-							{t("settings:settings_team_member_identifier_desc")}
-						</p>
-					</div>
-					<div className="space-y-2">
-						<Label>{t("settings:settings_team_role_label")}</Label>
-						<Select
-							items={roleOptions.map((role) => ({
-								label: roleLabel(role),
-								value: role,
-							}))}
-							value={memberRole}
-							onValueChange={(value) => setMemberRole(value as TeamMemberRole)}
-						>
-							<SelectTrigger>
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{roleOptions.map((role) => (
-									<SelectItem key={role} value={role}>
-										{roleLabel(role)}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-					</div>
-					<div className="flex items-end">
-						<Button
-							type="submit"
-							className="w-full"
-							disabled={memberMutating || !memberIdentifier.trim()}
-						>
-							{t("settings:settings_team_add_member")}
-						</Button>
-					</div>
-				</form>
-			) : (
-				<div className="mb-4 rounded-xl border border-dashed bg-muted/10 px-4 py-3 text-sm text-muted-foreground">
-					{t("team_members_readonly_archived")}
-				</div>
-			)}
-
-			{memberLoading && members.length === 0 ? (
-				<SkeletonTable columns={6} rows={5} />
-			) : memberTotal === 0 ? (
-				<EmptyState
-					icon={<Icon name="ListBullets" className="h-10 w-10" />}
-					title={
-						hasMemberFilters
-							? t("team_member_filtered_empty")
-							: t("settings:settings_team_no_members")
-					}
-					description={
-						hasMemberFilters
-							? t("team_member_filtered_empty_desc")
-							: t("settings:settings_team_no_members_desc")
-					}
-				/>
-			) : (
-				<>
-					<div className="overflow-x-auto rounded-xl border">
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead>{t("settings:settings_team_member")}</TableHead>
-									<TableHead>{t("settings:settings_team_email")}</TableHead>
-									<TableHead>{t("settings:settings_team_status")}</TableHead>
-									<TableHead>
-										{t("settings:settings_team_role_label")}
-									</TableHead>
-									<TableHead>{t("core:created_at")}</TableHead>
-									<TableHead>{t("core:actions")}</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{members.map((member) => {
-									const canEditRole = canMutateTeam && !memberMutating;
-									const canRemove = canMutateTeam && !memberMutating;
-
-									return (
-										<TableRow key={member.id}>
-											<TableCell>
-												<div className="space-y-1">
-													<div className="flex items-center gap-2">
-														<span className="font-medium">
-															{member.username}
-														</span>
-														<Badge
-															className={cn(
-																"border",
-																getTeamRoleBadgeClass(member.role),
-															)}
-														>
-															{roleLabel(member.role)}
-														</Badge>
-													</div>
-													<p className="text-xs text-muted-foreground">
-														#{member.user_id}
-													</p>
-												</div>
-											</TableCell>
-											<TableCell>{member.email}</TableCell>
-											<TableCell>
-												<Badge
-													variant="outline"
-													className={
-														member.status === "active"
-															? "border-green-500/60 bg-green-500/10 text-green-700 dark:text-green-300"
-															: "border-amber-500/60 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-													}
-												>
-													{member.status === "active"
-														? t("core:active")
-														: t("core:disabled_status")}
-												</Badge>
-											</TableCell>
-											<TableCell>
-												{canEditRole ? (
-													<Select
-														items={roleOptions.map((role) => ({
-															label: roleLabel(role),
-															value: role,
-														}))}
-														value={member.role}
-														onValueChange={(value) => {
-															if (value && value !== member.role) {
-																void handleUpdateMemberRole(
-																	member.user_id,
-																	value as TeamMemberRole,
-																);
-															}
-														}}
-													>
-														<SelectTrigger width="compact">
-															<SelectValue />
-														</SelectTrigger>
-														<SelectContent>
-															{roleOptions.map((role) => (
-																<SelectItem key={role} value={role}>
-																	{roleLabel(role)}
-																</SelectItem>
-															))}
-														</SelectContent>
-													</Select>
-												) : (
-													<span className="text-sm text-muted-foreground">
-														{roleLabel(member.role)}
-													</span>
-												)}
-											</TableCell>
-											<TableCell className="text-sm text-muted-foreground">
-												{formatDateShort(member.created_at)}
-											</TableCell>
-											<TableCell>
-												{canRemove ? (
-													<Button
-														type="button"
-														variant="ghost"
-														size="sm"
-														className="text-destructive"
-														disabled={memberMutating}
-														onClick={() => requestRemoveConfirm(member.user_id)}
-													>
-														{t("settings:settings_team_remove_member")}
-													</Button>
-												) : (
-													<span className="text-xs text-muted-foreground">
-														-
-													</span>
-												)}
-											</TableCell>
-										</TableRow>
-									);
-								})}
-							</TableBody>
-						</Table>
-					</div>
-					{memberTotal > MEMBER_PAGE_SIZE ? (
-						<div className="mt-4 flex items-center justify-between gap-3 text-sm text-muted-foreground">
-							<span>
-								{t("entries_page", {
-									total: memberTotal,
-									current: memberCurrentPage,
-									pages: memberTotalPages,
-								})}
-							</span>
-							<div className="flex items-center gap-2">
-								<Button
-									type="button"
-									variant="outline"
-									size="sm"
-									disabled={prevMemberPageDisabled || memberLoading}
-									onClick={() =>
-										setMemberOffset(
-											Math.max(0, memberOffset - MEMBER_PAGE_SIZE),
-										)
-									}
-								>
-									<Icon name="CaretLeft" className="h-4 w-4" />
-								</Button>
-								<Button
-									type="button"
-									variant="outline"
-									size="sm"
-									disabled={nextMemberPageDisabled || memberLoading}
-									onClick={() =>
-										setMemberOffset(memberOffset + MEMBER_PAGE_SIZE)
-									}
-								>
-									<Icon name="CaretRight" className="h-4 w-4" />
-								</Button>
-							</div>
-						</div>
-					) : null}
-				</>
-			)}
-		</section>
+		<AdminTeamDetailMembersSection
+			canMutateTeam={canMutateTeam}
+			hasMemberFilters={hasMemberFilters}
+			managerCount={managerCount}
+			memberCurrentPage={memberCurrentPage}
+			memberIdentifier={memberIdentifier}
+			memberLoading={memberLoading}
+			memberMutating={memberMutating}
+			memberOffset={memberOffset}
+			memberQuery={memberQuery}
+			memberRole={memberRole}
+			memberRoleFilter={memberRoleFilter}
+			memberStatusFilter={memberStatusFilter}
+			memberTotal={memberTotal}
+			memberTotalPages={memberTotalPages}
+			members={members}
+			nextMemberPageDisabled={nextMemberPageDisabled}
+			ownerCount={ownerCount}
+			prevMemberPageDisabled={prevMemberPageDisabled}
+			requestRemoveConfirm={requestRemoveConfirm}
+			roleFilterOptions={roleFilterOptions}
+			roleLabel={roleLabel}
+			roleOptions={roleOptions}
+			setMemberIdentifier={setMemberIdentifier}
+			setMemberOffset={setMemberOffset}
+			setMemberQuery={setMemberQuery}
+			setMemberRole={setMemberRole}
+			setMemberRoleFilter={setMemberRoleFilter}
+			setMemberStatusFilter={setMemberStatusFilter}
+			statusFilterOptions={statusFilterOptions}
+			team={team}
+			onAddMember={handleAddMember}
+			onUpdateMemberRole={handleUpdateMemberRole}
+		/>
 	);
 
 	const auditSection = (
-		<section className="rounded-2xl border bg-background/60 p-6">
-			<div className="mb-5">
-				<h4 className="text-base font-semibold text-foreground">
-					{t("team_audit_title")}
-				</h4>
-				<p className="mt-1 text-sm text-muted-foreground">
-					{t("team_audit_desc")}
-				</p>
-			</div>
-			{auditLoading && auditEntries.length === 0 ? (
-				<SkeletonTable columns={4} rows={4} />
-			) : auditTotal === 0 ? (
-				<EmptyState
-					icon={<Icon name="Scroll" className="h-10 w-10" />}
-					title={t("team_audit_empty")}
-					description={t("team_audit_empty_desc")}
-				/>
-			) : (
-				<>
-					<div className="space-y-3">
-						{auditEntries.map((entry) => {
-							const summary = formatTeamAuditSummary(entry, roleLabel);
-
-							return (
-								<div
-									key={entry.id}
-									className="rounded-xl border bg-muted/10 p-4"
-								>
-									<div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-										<div className="space-y-2">
-											<div className="flex flex-wrap items-center gap-2">
-												<Badge variant="outline">
-													{t(entry.action, {
-														defaultValue: entry.action,
-													})}
-												</Badge>
-												<span className="text-sm text-foreground">
-													@{entry.actor_username}
-												</span>
-											</div>
-											<p className="text-sm text-muted-foreground">
-												{formatDateAbsolute(entry.created_at)}
-											</p>
-											{summary ? (
-												<p className="text-sm text-muted-foreground">
-													{summary}
-												</p>
-											) : null}
-										</div>
-									</div>
-								</div>
-							);
-						})}
-					</div>
-					{auditTotal > AUDIT_PAGE_SIZE ? (
-						<div className="mt-4 flex items-center justify-between gap-3 text-sm text-muted-foreground">
-							<span>
-								{t("entries_page", {
-									total: auditTotal,
-									current: auditCurrentPage,
-									pages: auditTotalPages,
-								})}
-							</span>
-							<div className="flex items-center gap-2">
-								<Button
-									type="button"
-									variant="outline"
-									size="sm"
-									disabled={prevAuditPageDisabled || auditLoading}
-									onClick={() =>
-										setAuditOffset(Math.max(0, auditOffset - AUDIT_PAGE_SIZE))
-									}
-								>
-									<Icon name="CaretLeft" className="h-4 w-4" />
-								</Button>
-								<Button
-									type="button"
-									variant="outline"
-									size="sm"
-									disabled={nextAuditPageDisabled || auditLoading}
-									onClick={() => setAuditOffset(auditOffset + AUDIT_PAGE_SIZE)}
-								>
-									<Icon name="CaretRight" className="h-4 w-4" />
-								</Button>
-							</div>
-						</div>
-					) : null}
-				</>
-			)}
-		</section>
+		<AdminTeamDetailAuditSection
+			auditCurrentPage={auditCurrentPage}
+			auditEntries={auditEntries}
+			auditLoading={auditLoading}
+			auditOffset={auditOffset}
+			auditTotal={auditTotal}
+			auditTotalPages={auditTotalPages}
+			nextAuditPageDisabled={nextAuditPageDisabled}
+			prevAuditPageDisabled={prevAuditPageDisabled}
+			roleLabel={roleLabel}
+			setAuditOffset={setAuditOffset}
+		/>
 	);
 
 	const dangerSection = (
-		<section className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6">
-			<div className="mb-5">
-				<h4 className="text-base font-semibold text-foreground">
-					{t("team_danger_zone")}
-				</h4>
-				<p className="mt-1 text-sm text-muted-foreground">
-					{t("team_danger_zone_desc")}
-				</p>
-			</div>
-			<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-				<div className="space-y-3 rounded-xl border bg-background/70 p-4">
-					<div className="flex items-center justify-between gap-3">
-						<span className="text-sm text-muted-foreground">
-							{t("team_owner_count")}
-						</span>
-						<span className="font-medium">{ownerCount}</span>
-					</div>
-					<div className="flex items-center justify-between gap-3">
-						<span className="text-sm text-muted-foreground">
-							{t("team_manager_count")}
-						</span>
-						<span className="font-medium">{managerCount}</span>
-					</div>
-					<div className="flex items-center justify-between gap-3">
-						<span className="text-sm text-muted-foreground">
-							{t("team_status")}
-						</span>
-						<span className="font-medium">
-							{team?.archived_at ? t("archived_badge") : t("core:active")}
-						</span>
-					</div>
-					<p className="text-xs text-muted-foreground">
-						{t("team_danger_zone_hint")}
-					</p>
-				</div>
-				<div className="space-y-3 rounded-xl border border-destructive/30 bg-background/70 p-4">
-					{team?.archived_at ? (
-						<>
-							<p className="text-sm text-muted-foreground">
-								{t("team_restore_danger_desc")}
-							</p>
-							<Button
-								type="button"
-								variant="outline"
-								disabled={detailLoading || restoring}
-								onClick={() => void handleRestore()}
-							>
-								{restoring ? (
-									<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
-								) : (
-									<Icon name="ArrowCounterClockwise" className="mr-1 h-4 w-4" />
-								)}
-								{t("restore")}
-							</Button>
-						</>
-					) : (
-						<>
-							<div className="space-y-2">
-								<Label htmlFor="admin-team-archive-confirm">
-									{t("team_archive_confirm_label")}
-								</Label>
-								<Input
-									id="admin-team-archive-confirm"
-									value={archiveConfirmValue}
-									placeholder={t("team_archive_confirm_placeholder")}
-									onChange={(event) =>
-										setArchiveConfirmValue(event.target.value)
-									}
-									className={ADMIN_CONTROL_HEIGHT_CLASS}
-								/>
-								<p className="text-xs text-muted-foreground">
-									{t("team_archive_confirm_hint", {
-										name: team?.name ?? "",
-									})}
-								</p>
-							</div>
-							<Button
-								type="button"
-								variant="destructive"
-								disabled={
-									detailLoading ||
-									archiving ||
-									archiveConfirmValue.trim() !== (team?.name ?? "")
-								}
-								onClick={() => setArchiveDialogOpen(true)}
-							>
-								{archiving ? (
-									<Icon name="Spinner" className="mr-1 h-4 w-4 animate-spin" />
-								) : (
-									<Icon name="Trash" className="mr-1 h-4 w-4" />
-								)}
-								{t("delete_team")}
-							</Button>
-						</>
-					)}
-				</div>
-			</div>
-		</section>
+		<AdminTeamDetailDangerSection
+			archiveConfirmValue={archiveConfirmValue}
+			archiving={archiving}
+			detailLoading={detailLoading}
+			managerCount={managerCount}
+			ownerCount={ownerCount}
+			restoring={restoring}
+			setArchiveConfirmValue={setArchiveConfirmValue}
+			setArchiveDialogOpen={setArchiveDialogOpen}
+			team={team}
+			onRestore={handleRestore}
+		/>
 	);
 
 	return (
 		<>
-			{Wrapper({
-				children: (
-					<>
-						{isPageLayout ? (
-							<div className="flex flex-wrap items-start justify-between gap-3 border-b px-6 pt-5 pb-4">
-								<div className="space-y-1">
-									<p className="text-xs uppercase tracking-wide text-muted-foreground">
-										{t("teams")}
-									</p>
-									<h1 className="text-xl font-semibold tracking-tight">
-										{team?.name ?? t("team_details_title")}
-									</h1>
-									<p className="text-sm text-muted-foreground">
-										{t("team_details_title")}
-									</p>
-								</div>
-								<Button
-									type="button"
-									variant="outline"
-									onClick={() => onOpenChange(false)}
-								>
-									<Icon name="CaretLeft" className="mr-1 h-4 w-4" />
-									{t("core:back")}
-								</Button>
-							</div>
-						) : (
-							<DialogHeader className="flex items-center justify-center px-6 pt-5 pb-0 text-center max-lg:px-4 max-lg:pt-4">
-								<DialogTitle className="text-lg">
-									{t("team_details_title")}
-								</DialogTitle>
-							</DialogHeader>
-						)}
-						<div
-							ref={contentRef}
-							className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden"
-							onScroll={() => {
-								if (teamId == null || contentRef.current == null) {
-									return;
-								}
-
-								adminTeamDetailContentScrollPositions.set(
-									teamId,
-									contentRef.current.scrollTop,
-								);
-							}}
-						>
-							<div className="flex min-h-full flex-col lg:h-full lg:min-h-0 lg:flex-1 lg:flex-row">
-								<aside
-									ref={sidebarRef}
-									className="border-b bg-muted/20 lg:min-h-0 lg:w-80 lg:flex-none lg:overflow-y-auto lg:border-r lg:border-b-0"
-									onScroll={() => {
-										if (teamId == null || sidebarRef.current == null) {
-											return;
-										}
-
-										adminTeamDetailSidebarScrollPositions.set(
-											teamId,
-											sidebarRef.current.scrollTop,
-										);
-									}}
-								>
-									<div className="space-y-5 p-6 max-lg:space-y-4 max-lg:p-4">
-										<div className="space-y-3 max-lg:flex max-lg:items-start max-lg:gap-3 max-lg:space-y-0">
-											<div className="flex size-16 items-center justify-center rounded-2xl bg-primary/10 text-primary max-lg:size-12 max-lg:rounded-xl">
-												<Icon name="Cloud" className="h-7 w-7" />
-											</div>
-											<div className="space-y-3 max-lg:min-w-0 max-lg:flex-1">
-												<div className="space-y-1">
-													<h3 className="text-lg font-semibold text-foreground">
-														{team?.name ?? t("core:loading")}
-													</h3>
-													<p className="text-sm text-muted-foreground max-lg:line-clamp-2">
-														{team?.description || t("team_no_description")}
-													</p>
-												</div>
-												<div className="flex flex-wrap gap-2">
-													{team?.archived_at ? (
-														<Badge variant="outline">
-															{t("archived_badge")}
-														</Badge>
-													) : (
-														<Badge variant="outline">{t("core:active")}</Badge>
-													)}
-													{team?.policy_group_id != null ? (
-														<Badge variant="outline">
-															{selectedPolicyGroup?.name ??
-																currentPolicyGroup?.name ??
-																`PG ${team.policy_group_id}`}
-														</Badge>
-													) : null}
-												</div>
-											</div>
-										</div>
-
-										<div className="space-y-3 rounded-xl border bg-background/60 p-4 max-lg:grid max-lg:grid-cols-2 max-lg:gap-3 max-lg:space-y-0 max-lg:p-3">
-											<div className="space-y-1">
-												<p className="text-xs uppercase tracking-wide text-muted-foreground">
-													ID
-												</p>
-												<p className="font-mono text-sm text-foreground">
-													{team?.id ?? "-"}
-												</p>
-											</div>
-											<div className="space-y-1">
-												<p className="text-xs uppercase tracking-wide text-muted-foreground">
-													{t("created_by")}
-												</p>
-												<p className="text-sm text-foreground">
-													{team
-														? `${team.created_by_username} (#${team.created_by})`
-														: "-"}
-												</p>
-											</div>
-											<div className="space-y-1">
-												<p className="text-xs uppercase tracking-wide text-muted-foreground">
-													{t("core:created_at")}
-												</p>
-												<p className="text-sm text-foreground">
-													{team ? formatDateAbsolute(team.created_at) : "-"}
-												</p>
-											</div>
-											<div className="space-y-1">
-												<p className="text-xs uppercase tracking-wide text-muted-foreground">
-													{t("core:updated_at")}
-												</p>
-												<p className="text-sm text-foreground">
-													{team ? formatDateAbsolute(team.updated_at) : "-"}
-												</p>
-											</div>
-											{team?.archived_at ? (
-												<div className="space-y-1">
-													<p className="text-xs uppercase tracking-wide text-muted-foreground">
-														{t("team_archived_at")}
-													</p>
-													<p className="text-sm text-foreground">
-														{formatDateAbsolute(team.archived_at)}
-													</p>
-												</div>
-											) : null}
-										</div>
-										<div className="space-y-3 rounded-xl border bg-background/60 p-4 max-lg:p-3">
-											<div>
-												<p className="text-sm font-medium text-foreground">
-													{t("storage")}
-												</p>
-												<p className="text-xs text-muted-foreground">
-													{formatBytes(used)}
-													{quota > 0
-														? ` / ${formatBytes(quota)}`
-														: ` / ${t("core:unlimited")}`}
-												</p>
-											</div>
-											{quota > 0 ? (
-												<Progress value={usagePercentage} className="h-2" />
-											) : null}
-											<div className="space-y-2 text-xs text-muted-foreground">
-												<div className="flex items-center justify-between gap-3">
-													<span>{t("member_count")}</span>
-													<span>{team?.member_count ?? "-"}</span>
-												</div>
-												<div className="flex items-center justify-between gap-3">
-													<span>{t("team_owner_count")}</span>
-													<span>{ownerCount}</span>
-												</div>
-												<div className="flex items-center justify-between gap-3">
-													<span>{t("team_manager_count")}</span>
-													<span>{managerCount}</span>
-												</div>
-											</div>
-										</div>
-									</div>
-								</aside>
-
-								<div
-									className={cn(
-										"min-h-0 min-w-0 lg:flex-1",
-										isPageLayout
-											? "lg:flex lg:h-full lg:flex-col lg:overflow-hidden"
-											: "lg:overflow-y-auto",
-									)}
-								>
-									{isPageLayout ? (
-										<Tabs
-											value={currentTab}
-											onValueChange={handleTabChange}
-											className="flex flex-col lg:h-full lg:min-h-0 lg:flex-1 lg:overflow-hidden"
-										>
-											<div className="px-6 pt-6 max-lg:px-4 max-lg:pt-4 lg:shrink-0">
-												<TabsList
-													variant="line"
-													className="h-auto w-full gap-5 border-b px-0 pb-2"
-												>
-													<TabsTrigger
-														value="overview"
-														className="h-10 min-w-0 rounded-none px-0"
-													>
-														{t("overview")}
-													</TabsTrigger>
-													<TabsTrigger
-														value="members"
-														className="h-10 min-w-0 rounded-none px-0"
-													>
-														{t("settings:settings_team_members")}
-													</TabsTrigger>
-													<TabsTrigger
-														value="audit"
-														className="h-10 min-w-0 rounded-none px-0"
-													>
-														{t("team_audit_title")}
-													</TabsTrigger>
-													<TabsTrigger
-														value="danger"
-														className="h-10 min-w-0 rounded-none px-0"
-													>
-														{t("team_danger_zone")}
-													</TabsTrigger>
-												</TabsList>
-											</div>
-
-											<div className="px-6 pt-4 pb-6 max-lg:px-4 max-lg:pt-3 max-lg:pb-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-												<TabsContent
-													value="overview"
-													className={cn(
-														"outline-none",
-														currentTab === "overview" && panelAnimationClass,
-													)}
-												>
-													{overviewSection}
-												</TabsContent>
-												<TabsContent
-													value="members"
-													className={cn(
-														"outline-none",
-														currentTab === "members" && panelAnimationClass,
-													)}
-												>
-													{membersSection}
-												</TabsContent>
-												<TabsContent
-													value="audit"
-													className={cn(
-														"outline-none",
-														currentTab === "audit" && panelAnimationClass,
-													)}
-												>
-													{auditSection}
-												</TabsContent>
-												<TabsContent
-													value="danger"
-													className={cn(
-														"outline-none",
-														currentTab === "danger" && panelAnimationClass,
-													)}
-												>
-													{dangerSection}
-												</TabsContent>
-											</div>
-										</Tabs>
-									) : (
-										<div className="space-y-4 p-6">
-											{overviewSection}
-											{membersSection}
-											{auditSection}
-											{dangerSection}
-										</div>
-									)}
-								</div>
-							</div>
-						</div>
-					</>
-				),
-			})}
+			<AdminTeamDetailShell
+				auditSection={auditSection}
+				contentRef={contentRef}
+				currentPolicyGroupName={currentPolicyGroup?.name ?? null}
+				currentTab={currentTab}
+				dangerSection={dangerSection}
+				isPageLayout={isPageLayout}
+				membersSection={membersSection}
+				onContentScroll={handleContentScroll}
+				onOpenChange={handleDialogOpenChange}
+				onPageBack={() => onOpenChange(false)}
+				onSidebarScroll={handleSidebarScroll}
+				onTabChange={handleTabChange}
+				open={open}
+				overviewSection={overviewSection}
+				ownerCount={ownerCount}
+				managerCount={managerCount}
+				panelAnimationClass={panelAnimationClass}
+				quota={quota}
+				selectedPolicyGroupName={selectedPolicyGroup?.name ?? null}
+				sidebarRef={sidebarRef}
+				team={team}
+				usagePercentage={usagePercentage}
+				used={used}
+			/>
 
 			<ConfirmDialog
 				{...removeDialogProps}

@@ -1,25 +1,15 @@
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::response::ApiResponse;
-use crate::api::routes::search;
+use crate::api::routes::{search, team_scope};
 use crate::errors::Result;
 use crate::runtime::AppState;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::services::search_service::SearchResults;
-use crate::services::{
-    auth_service::Claims, search_service::SearchParams,
-    workspace_storage_service::WorkspaceStorageScope,
-};
+use crate::services::{auth_service::Claims, search_service::SearchParams};
 use actix_web::{HttpResponse, web};
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
     web::scope("/{team_id}/search").route("", web::get().to(search))
-}
-
-fn team_scope(team_id: i64, user_id: i64) -> WorkspaceStorageScope {
-    WorkspaceStorageScope::Team {
-        team_id,
-        actor_user_id: user_id,
-    }
 }
 
 #[api_docs_macros::path(

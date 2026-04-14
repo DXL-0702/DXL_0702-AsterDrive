@@ -247,7 +247,9 @@ test.describe
 			await expect(createDialog).toBeVisible();
 			await createDialog.locator("#create-user-username").fill(username);
 			await createDialog.locator("#create-user-email").fill(email);
-			await createDialog.locator("#create-user-password").fill("Playwright123!");
+			await createDialog
+				.locator("#create-user-password")
+				.fill("Playwright123!");
 			await createDialog.getByRole("button", { name: "Create" }).click();
 			await expect(createDialog).toBeHidden();
 
@@ -265,7 +267,9 @@ test.describe
 			await tableRowByCellText(page, username).click();
 			const detailDialog = dialogByTitle(page, "User details");
 			await expect(detailDialog).toBeVisible();
-			await expect(detailDialog.getByText(email, { exact: true })).toBeVisible();
+			await expect(
+				detailDialog.getByText(email, { exact: true }),
+			).toBeVisible();
 			await detailDialog
 				.locator('[data-slot="dialog-footer"]')
 				.getByRole("button", { name: "Close" })
@@ -522,7 +526,9 @@ test.describe
 
 			const credentialsDialog = dialogByTitle(page, "Latest Credentials");
 			await expect(credentialsDialog).toBeVisible();
-			await credentialsDialog.getByRole("button", { name: "Test Connection" }).click();
+			await credentialsDialog
+				.getByRole("button", { name: "Test Connection" })
+				.click();
 			await expect(
 				credentialsDialog.getByText("Connection successful", {
 					exact: true,
@@ -1360,12 +1366,7 @@ async function webdavRequest(
 	options: {
 		body?: string;
 		headers?: Record<string, string>;
-		method:
-			| "DELETE"
-			| "GET"
-			| "MKCOL"
-			| "PROPFIND"
-			| "PUT";
+		method: "DELETE" | "GET" | "MKCOL" | "PROPFIND" | "PUT";
 	},
 ) {
 	return page.evaluate(

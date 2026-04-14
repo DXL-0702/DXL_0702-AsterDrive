@@ -1,5 +1,5 @@
 import {
-	Fragment,
+	type DragEvent,
 	Suspense,
 	useCallback,
 	useEffect,
@@ -11,45 +11,13 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { BatchActionBar } from "@/components/common/BatchActionBar";
-import { EmptyState } from "@/components/common/EmptyState";
-import { SkeletonFileGrid } from "@/components/common/SkeletonFileGrid";
-import { SkeletonFileTable } from "@/components/common/SkeletonFileTable";
-import { SortMenu } from "@/components/common/SortMenu";
-import { ToolbarBar } from "@/components/common/ToolbarBar";
-import { ViewToggle } from "@/components/common/ViewToggle";
-import { FileBrowserProvider } from "@/components/files/FileBrowserContext";
-import { FileGrid } from "@/components/files/FileGrid";
+import type { FileBrowserContextValue } from "@/components/files/FileBrowserContext";
 import { FilePreview } from "@/components/files/FilePreview";
-import { FileTable } from "@/components/files/FileTable";
 import {
 	UploadArea,
 	type UploadAreaHandle,
 } from "@/components/files/UploadArea";
 import { AppLayout } from "@/components/layout/AppLayout";
-import {
-	Breadcrumb,
-	BreadcrumbEllipsis,
-	BreadcrumbItem,
-	BreadcrumbLink,
-	BreadcrumbList,
-	BreadcrumbPage,
-	BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb";
-import {
-	ContextMenu,
-	ContextMenuContent,
-	ContextMenuItem,
-	ContextMenuSeparator,
-	ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import {
-	DropdownMenu,
-	DropdownMenuContent,
-	DropdownMenuItem,
-	DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Icon } from "@/components/ui/icon";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { handleApiError } from "@/hooks/useApiError";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { usePageTitle } from "@/hooks/usePageTitle";
@@ -65,113 +33,35 @@ import {
 } from "@/lib/dragDrop";
 import { formatBatchToast } from "@/lib/formatBatchToast";
 import { runWhenIdle } from "@/lib/idleTask";
-import { lazyWithPreload } from "@/lib/lazyWithPreload";
-import { cn } from "@/lib/utils";
 import { workspaceFolderPath } from "@/lib/workspace";
+import { FileBrowserToolbar } from "@/pages/file-browser/FileBrowserToolbar";
+import { FileBrowserWorkspace } from "@/pages/file-browser/FileBrowserWorkspace";
+import {
+	BatchTargetFolderDialog,
+	CreateFileDialog,
+	CreateFolderDialog,
+	FILE_BROWSER_LAZY_PRELOADERS,
+	RenameDialog,
+	ShareDialog,
+	VersionHistoryDialog,
+} from "@/pages/file-browser/fileBrowserLazy";
+import type {
+	FileBrowserCopyTarget,
+	FileBrowserInfoTarget,
+	FileBrowserMoveTarget,
+	FileBrowserPreviewState,
+	FileBrowserRenameTarget,
+	FileBrowserShareTarget,
+	FileBrowserVersionTarget,
+} from "@/pages/file-browser/types";
+import { useMediaQuery } from "@/pages/file-browser/useMediaQuery";
 import { batchService } from "@/services/batchService";
 import { fileService } from "@/services/fileService";
 import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import type {
-	FileInfo,
-	FileListItem,
-	FolderInfo,
-	FolderListItem,
-} from "@/types/api";
-
-const BatchTargetFolderDialog = lazyWithPreload(async () => {
-	const module = await import("@/components/files/BatchTargetFolderDialog");
-	return { default: module.BatchTargetFolderDialog };
-});
-const CreateFileDialog = lazyWithPreload(async () => {
-	const module = await import("@/components/files/CreateFileDialog");
-	return { default: module.CreateFileDialog };
-});
-const CreateFolderDialog = lazyWithPreload(async () => {
-	const module = await import("@/components/files/CreateFolderDialog");
-	return { default: module.CreateFolderDialog };
-});
-const FileInfoDialog = lazyWithPreload(async () => {
-	const module = await import("@/components/files/FileInfoDialog");
-	return { default: module.FileInfoDialog };
-});
-const RenameDialog = lazyWithPreload(async () => {
-	const module = await import("@/components/files/RenameDialog");
-	return { default: module.RenameDialog };
-});
-const ShareDialog = lazyWithPreload(async () => {
-	const module = await import("@/components/files/ShareDialog");
-	return { default: module.ShareDialog };
-});
-const VersionHistoryDialog = lazyWithPreload(async () => {
-	const module = await import("@/components/files/VersionHistoryDialog");
-	return { default: module.VersionHistoryDialog };
-});
-
-const FILE_BROWSER_LAZY_PRELOADERS = [
-	BatchTargetFolderDialog,
-	CreateFileDialog,
-	CreateFolderDialog,
-	FileInfoDialog,
-	RenameDialog,
-	ShareDialog,
-	VersionHistoryDialog,
-] as const;
-
-function useMediaQuery(query: string) {
-	const getMatches = () =>
-		typeof window !== "undefined" &&
-		typeof window.matchMedia === "function" &&
-		window.matchMedia(query).matches;
-
-	const [matches, setMatches] = useState(getMatches);
-
-	useEffect(() => {
-		if (
-			typeof window === "undefined" ||
-			typeof window.matchMedia !== "function"
-		) {
-			return;
-		}
-
-		const mediaQuery = window.matchMedia(query);
-		setMatches(mediaQuery.matches);
-
-		const handleChange = (event: MediaQueryListEvent) => {
-			setMatches(event.matches);
-		};
-
-		if (typeof mediaQuery.addEventListener === "function") {
-			mediaQuery.addEventListener("change", handleChange);
-			return () => mediaQuery.removeEventListener("change", handleChange);
-		}
-
-		mediaQuery.addListener(handleChange);
-		return () => mediaQuery.removeListener(handleChange);
-	}, [query]);
-
-	return matches;
-}
-
-type VisibleBreadcrumbEntry =
-	| {
-			type: "item";
-			item: {
-				id: number | null;
-				name: string;
-			};
-			sourceIndex: number;
-	  }
-	| {
-			type: "ellipsis";
-			key: string;
-			items: Array<{
-				id: number | null;
-				name: string;
-			}>;
-	  };
+import type { FileInfo, FileListItem } from "@/types/api";
 
 export default function FileBrowserPage() {
 	const { t } = useTranslation(["files", "tasks"]);
@@ -225,7 +115,6 @@ export default function FileBrowserPage() {
 			: (currentFolderName ?? t("core:all_files"));
 
 	usePageTitle(pageTitle);
-
 	useKeyboardShortcuts();
 
 	const uploadAreaRef = useRef<UploadAreaHandle | null>(null);
@@ -242,7 +131,6 @@ export default function FileBrowserPage() {
 		});
 	}, []);
 
-	// Infinite scroll: load more files when sentinel is visible
 	useEffect(() => {
 		if (isSearching || !hasMoreFiles || loadingMore) return;
 		const el = sentinelRef.current;
@@ -258,49 +146,36 @@ export default function FileBrowserPage() {
 		observer.observe(el);
 		return () => observer.disconnect();
 	}, [hasMoreFiles, isSearching, loadingMore, loadMoreFiles, scrollViewport]);
+
 	const [createFolderOpen, setCreateFolderOpen] = useState(false);
 	const [createFileOpen, setCreateFileOpen] = useState(false);
 	const [fadingFileIds, setFadingFileIds] = useState<Set<number>>(new Set());
 	const [fadingFolderIds, setFadingFolderIds] = useState<Set<number>>(
 		new Set(),
 	);
-	const [previewState, setPreviewState] = useState<{
-		file: FileInfo | FileListItem;
-		openMode: "auto" | "direct" | "picker";
-	} | null>(null);
-	const [shareTarget, setShareTarget] = useState<{
-		fileId?: number;
-		folderId?: number;
-		name: string;
-		initialMode?: "page" | "direct";
-	} | null>(null);
-	const [copyTarget, setCopyTarget] = useState<{
-		type: "file" | "folder";
-		id: number;
-	} | null>(null);
-	const [moveTarget, setMoveTarget] = useState<{
-		fileIds: number[];
-		folderIds: number[];
-	} | null>(null);
-	const [versionTarget, setVersionTarget] = useState<{
-		fileId: number;
-		fileName: string;
-		mimeType: string;
-	} | null>(null);
+	const [previewState, setPreviewState] =
+		useState<FileBrowserPreviewState | null>(null);
+	const [shareTarget, setShareTarget] = useState<FileBrowserShareTarget | null>(
+		null,
+	);
+	const [copyTarget, setCopyTarget] = useState<FileBrowserCopyTarget | null>(
+		null,
+	);
+	const [moveTarget, setMoveTarget] = useState<FileBrowserMoveTarget | null>(
+		null,
+	);
+	const [versionTarget, setVersionTarget] =
+		useState<FileBrowserVersionTarget | null>(null);
 	const [dragOverBreadcrumbIndex, setDragOverBreadcrumbIndex] = useState<
 		number | null
 	>(null);
 	const [contentDragOver, setContentDragOver] = useState(false);
-	const [renameTarget, setRenameTarget] = useState<{
-		type: "file" | "folder";
-		id: number;
-		name: string;
-	} | null>(null);
+	const [renameTarget, setRenameTarget] =
+		useState<FileBrowserRenameTarget | null>(null);
 	const [infoPanelOpen, setInfoPanelOpen] = useState(false);
-	const [infoTarget, setInfoTarget] = useState<{
-		file?: FileInfo | FileListItem;
-		folder?: FolderInfo | FolderListItem;
-	} | null>(null);
+	const [infoTarget, setInfoTarget] = useState<FileBrowserInfoTarget | null>(
+		null,
+	);
 
 	useEffect(() => {
 		setInfoPanelOpen(false);
@@ -339,8 +214,8 @@ export default function FileBrowserPage() {
 	}, [displayFiles, displayFolders, infoPanelOpen, infoTarget]);
 
 	useEffect(() => {
-		function onRenameRequest(e: Event) {
-			const { type, id, name } = (e as CustomEvent).detail as {
+		function onRenameRequest(event: Event) {
+			const { type, id, name } = (event as CustomEvent).detail as {
 				type: "file" | "folder";
 				id: number;
 				name: string;
@@ -354,10 +229,10 @@ export default function FileBrowserPage() {
 	}, []);
 
 	const handleDownload = useCallback((fileId: number, _fileName: string) => {
-		const a = document.createElement("a");
-		a.href = fileService.downloadUrl(fileId);
-		a.download = "";
-		a.click();
+		const anchor = document.createElement("a");
+		anchor.href = fileService.downloadUrl(fileId);
+		anchor.download = "";
+		anchor.click();
 	}, []);
 
 	const handleCopy = useCallback((type: "file" | "folder", id: number) => {
@@ -430,18 +305,10 @@ export default function FileBrowserPage() {
 		[],
 	);
 
-	const openShareDialog = useCallback(
-		(target: {
-			fileId?: number;
-			folderId?: number;
-			name: string;
-			initialMode?: "page" | "direct";
-		}) => {
-			void ShareDialog.preload();
-			setShareTarget(target);
-		},
-		[],
-	);
+	const openShareDialog = useCallback((target: FileBrowserShareTarget) => {
+		void ShareDialog.preload();
+		setShareTarget(target);
+	}, []);
 
 	const openRenameDialog = useCallback(
 		(type: "file" | "folder", id: number, name: string) => {
@@ -482,7 +349,6 @@ export default function FileBrowserPage() {
 			targetFolderId: number | null,
 		) => {
 			try {
-				// Fade out moved items before refreshing
 				setFadingFileIds(new Set(fileIds));
 				setFadingFolderIds(new Set(folderIds));
 				const result = await moveToFolder(fileIds, folderIds, targetFolderId);
@@ -491,9 +357,8 @@ export default function FileBrowserPage() {
 						detail: { folderIds, targetFolderId },
 					}),
 				);
-				// Keep local feedback brief, closer to desktop file managers.
-				await new Promise((r) =>
-					setTimeout(r, FILE_BROWSER_FEEDBACK_DURATION_MS),
+				await new Promise((resolve) =>
+					setTimeout(resolve, FILE_BROWSER_FEEDBACK_DURATION_MS),
 				);
 				setFadingFileIds(new Set());
 				setFadingFolderIds(new Set());
@@ -530,32 +395,31 @@ export default function FileBrowserPage() {
 	);
 
 	const handleBreadcrumbDragOver = useCallback(
-		(e: React.DragEvent, index: number) => {
-			if (!hasInternalDragData(e.dataTransfer)) return;
-			e.preventDefault();
-			e.dataTransfer.dropEffect = "move";
+		(event: DragEvent, index: number) => {
+			if (!hasInternalDragData(event.dataTransfer)) return;
+			event.preventDefault();
+			event.dataTransfer.dropEffect = "move";
 			setDragOverBreadcrumbIndex(index);
 		},
 		[],
 	);
 
-	const handleBreadcrumbDragLeave = useCallback((e: React.DragEvent) => {
-		const nextTarget = e.relatedTarget;
-		if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) {
+	const handleBreadcrumbDragLeave = useCallback((event: DragEvent) => {
+		const nextTarget = event.relatedTarget;
+		if (
+			nextTarget instanceof Node &&
+			event.currentTarget.contains(nextTarget)
+		) {
 			return;
 		}
 		setDragOverBreadcrumbIndex(null);
 	}, []);
 
 	const handleBreadcrumbDrop = useCallback(
-		async (
-			e: React.DragEvent,
-			index: number,
-			targetFolderId: number | null,
-		) => {
+		async (event: DragEvent, index: number, targetFolderId: number | null) => {
 			setDragOverBreadcrumbIndex(null);
-			e.preventDefault();
-			const data = readInternalDragData(e.dataTransfer);
+			event.preventDefault();
+			const data = readInternalDragData(event.dataTransfer);
 			if (!data) return;
 
 			const targetPathIds = breadcrumb
@@ -575,23 +439,30 @@ export default function FileBrowserPage() {
 	);
 
 	const handleContentDragOver = useCallback(
-		(e: React.DragEvent<HTMLDivElement>) => {
-			const isTreeDrag = e.dataTransfer.types.includes(DRAG_SOURCE_MIME);
-			if (!hasInternalDragData(e.dataTransfer) || isSearching || !isTreeDrag) {
+		(event: DragEvent<HTMLElement>) => {
+			const isTreeDrag = event.dataTransfer.types.includes(DRAG_SOURCE_MIME);
+			if (
+				!hasInternalDragData(event.dataTransfer) ||
+				isSearching ||
+				!isTreeDrag
+			) {
 				setContentDragOver(false);
 				return;
 			}
-			e.preventDefault();
-			e.dataTransfer.dropEffect = "move";
+			event.preventDefault();
+			event.dataTransfer.dropEffect = "move";
 			setContentDragOver(true);
 		},
 		[isSearching],
 	);
 
 	const handleContentDragLeave = useCallback(
-		(e: React.DragEvent<HTMLDivElement>) => {
-			const nextTarget = e.relatedTarget;
-			if (nextTarget instanceof Node && e.currentTarget.contains(nextTarget)) {
+		(event: DragEvent<HTMLElement>) => {
+			const nextTarget = event.relatedTarget;
+			if (
+				nextTarget instanceof Node &&
+				event.currentTarget.contains(nextTarget)
+			) {
 				return;
 			}
 			setContentDragOver(false);
@@ -600,12 +471,13 @@ export default function FileBrowserPage() {
 	);
 
 	const handleContentDrop = useCallback(
-		async (e: React.DragEvent<HTMLDivElement>) => {
+		async (event: DragEvent<HTMLElement>) => {
 			setContentDragOver(false);
-			if (isSearching || !e.dataTransfer.types.includes(DRAG_SOURCE_MIME))
+			if (isSearching || !event.dataTransfer.types.includes(DRAG_SOURCE_MIME)) {
 				return;
-			e.preventDefault();
-			const data = readInternalDragData(e.dataTransfer);
+			}
+			event.preventDefault();
+			const data = readInternalDragData(event.dataTransfer);
 			if (!data) return;
 			const currentPathIds = breadcrumb
 				.map((item) => item.id)
@@ -663,11 +535,19 @@ export default function FileBrowserPage() {
 				.filter((id): id is number => id !== null),
 		[breadcrumb],
 	);
-	const handleFolderOpen = useCallback(
-		(id: number, name: string) => {
-			navigate(workspaceFolderPath(workspace, id, name));
+	const handleNavigateToFolder = useCallback(
+		(targetFolderId: number | null, targetFolderName: string) => {
+			navigate(
+				workspaceFolderPath(workspace, targetFolderId, targetFolderName),
+			);
 		},
 		[navigate, workspace],
+	);
+	const handleFolderOpen = useCallback(
+		(id: number, name: string) => {
+			handleNavigateToFolder(id, name);
+		},
+		[handleNavigateToFolder],
 	);
 	const handleFileClick = useCallback(
 		(file: FileListItem) => openPreview(file, "auto"),
@@ -682,14 +562,13 @@ export default function FileBrowserPage() {
 		[openPreview],
 	);
 	const handleArchiveDownload = useCallback(
-		(folderId: number) => {
-			void startArchiveDownload([], [folderId]).catch(handleApiError);
+		(targetFolderId: number) => {
+			void startArchiveDownload([], [targetFolderId]).catch(handleApiError);
 		},
 		[startArchiveDownload],
 	);
 	const handleInfo = useCallback(
 		(type: "file" | "folder", id: number) => {
-			void FileInfoDialog.preload();
 			if (type === "file") {
 				const file = displayFiles.find((entry) => entry.id === id);
 				if (file) {
@@ -707,7 +586,7 @@ export default function FileBrowserPage() {
 		},
 		[displayFiles, displayFolders],
 	);
-	const fileBrowserContextValue = useMemo(
+	const fileBrowserContextValue = useMemo<FileBrowserContextValue>(
 		() => ({
 			folders: displayFolders,
 			files: displayFiles,
@@ -768,305 +647,65 @@ export default function FileBrowserPage() {
 	const handleScrollViewportRef = useCallback((node: HTMLDivElement | null) => {
 		setScrollViewport(node);
 	}, []);
-	const visibleBreadcrumb: VisibleBreadcrumbEntry[] =
-		isCompactBreadcrumb && breadcrumb.length > 2
-			? [
-					{ type: "item", item: breadcrumb[0], sourceIndex: 0 },
-					{
-						type: "ellipsis",
-						key: "ellipsis",
-						items: breadcrumb.slice(1, -1),
-					},
-					{
-						type: "item",
-						item: breadcrumb[breadcrumb.length - 1],
-						sourceIndex: breadcrumb.length - 1,
-					},
-				]
-			: breadcrumb.map((item, index) => ({
-					type: "item" as const,
-					item,
-					sourceIndex: index,
-				}));
 	const pageCore = (
 		<>
-			{/* Breadcrumb / local controls */}
-			<ToolbarBar
-				left={
-					<>
-						<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background/40 text-muted-foreground/70 sm:h-8 sm:w-8">
-							<Icon
-								name={isRootFolder ? "House" : "FolderOpen"}
-								className="h-4 w-4"
-							/>
-						</span>
-						<div className="min-w-0 flex-1">
-							{isSearching ? (
-								<span className="block truncate text-xs text-muted-foreground sm:text-sm">
-									{t("core:search")}: &quot;{searchQuery}&quot;
-								</span>
-							) : (
-								<Breadcrumb className="min-w-0">
-									<BreadcrumbList className="min-w-0 gap-1.5 text-xs sm:gap-2 sm:text-sm">
-										{visibleBreadcrumb.map((entry, i) => (
-											<Fragment
-												key={
-													entry.type === "ellipsis"
-														? entry.key
-														: `${entry.item.id ?? "root"}-${entry.sourceIndex}`
-												}
-											>
-												{i > 0 && (
-													<BreadcrumbSeparator className="mx-0.5 text-muted-foreground/45" />
-												)}
-												{entry.type === "ellipsis" ? (
-													<BreadcrumbItem className="shrink-0">
-														<DropdownMenu>
-															<DropdownMenuTrigger
-																render={
-																	<button
-																		type="button"
-																		className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:h-7 sm:w-7"
-																		aria-label={t("core:more")}
-																	>
-																		<BreadcrumbEllipsis />
-																	</button>
-																}
-															/>
-															<DropdownMenuContent
-																align="start"
-																className="w-auto min-w-40"
-															>
-																{entry.items.map((hiddenItem) => (
-																	<DropdownMenuItem
-																		key={hiddenItem.id ?? "root"}
-																		onClick={() =>
-																			navigate(
-																				workspaceFolderPath(
-																					workspace,
-																					hiddenItem.id,
-																					hiddenItem.name,
-																				),
-																			)
-																		}
-																	>
-																		<Icon
-																			name="FolderOpen"
-																			className="h-4 w-4 text-muted-foreground"
-																		/>
-																		<span className="truncate">
-																			{hiddenItem.name}
-																		</span>
-																	</DropdownMenuItem>
-																))}
-															</DropdownMenuContent>
-														</DropdownMenu>
-													</BreadcrumbItem>
-												) : (
-													<BreadcrumbItem
-														className={
-															entry.sourceIndex === breadcrumb.length - 1
-																? "min-w-0 flex-1"
-																: "shrink-0"
-														}
-													>
-														{entry.sourceIndex < breadcrumb.length - 1 ? (
-															<BreadcrumbLink
-																className={[
-																	"cursor-pointer rounded-md px-1 py-0.5 text-[13px] text-muted-foreground sm:px-1.5 sm:text-sm",
-																	dragOverBreadcrumbIndex ===
-																		entry.sourceIndex &&
-																		"ring-2 ring-primary bg-accent/30 text-foreground",
-																]
-																	.filter(Boolean)
-																	.join(" ")}
-																onDragOver={(e) =>
-																	handleBreadcrumbDragOver(e, entry.sourceIndex)
-																}
-																onDragLeave={handleBreadcrumbDragLeave}
-																onDrop={(e) =>
-																	handleBreadcrumbDrop(
-																		e,
-																		entry.sourceIndex,
-																		entry.item.id,
-																	)
-																}
-																onClick={() =>
-																	navigate(
-																		workspaceFolderPath(
-																			workspace,
-																			entry.item.id,
-																			entry.item.name,
-																		),
-																	)
-																}
-															>
-																{entry.item.name}
-															</BreadcrumbLink>
-														) : (
-															<BreadcrumbPage className="text-sm font-semibold text-foreground sm:text-[0.95rem]">
-																{entry.item.name}
-															</BreadcrumbPage>
-														)}
-													</BreadcrumbItem>
-												)}
-											</Fragment>
-										))}
-									</BreadcrumbList>
-								</Breadcrumb>
-							)}
-						</div>
-						<button
-							type="button"
-							className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background/40 text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground sm:h-8 sm:w-8"
-							onClick={() => void refresh()}
-							aria-label={t("core:refresh")}
-							title={t("core:refresh")}
-						>
-							<Icon name="ArrowsClockwise" className="h-4 w-4" />
-						</button>
-					</>
-				}
-				right={
-					<>
-						<SortMenu
-							sortBy={sortBy}
-							sortOrder={sortOrder}
-							onSortBy={setSortBy}
-							onSortOrder={setSortOrder}
-						/>
-						<ViewToggle value={viewMode} onChange={setViewMode} />
-					</>
-				}
+			<FileBrowserToolbar
+				breadcrumb={breadcrumb}
+				dragOverBreadcrumbIndex={dragOverBreadcrumbIndex}
+				isCompactBreadcrumb={isCompactBreadcrumb}
+				isRootFolder={isRootFolder}
+				isSearching={isSearching}
+				searchQuery={searchQuery}
+				sortBy={sortBy}
+				sortOrder={sortOrder}
+				viewMode={viewMode}
+				onBreadcrumbDragLeave={handleBreadcrumbDragLeave}
+				onBreadcrumbDragOver={handleBreadcrumbDragOver}
+				onBreadcrumbDrop={handleBreadcrumbDrop}
+				onNavigateToFolder={handleNavigateToFolder}
+				onRefresh={refresh}
+				onSetSortBy={setSortBy}
+				onSetSortOrder={setSortOrder}
+				onSetViewMode={setViewMode}
 			/>
-			<div className="min-h-0 flex flex-1">
-				<section
-					aria-label={t("file_drop_zone")}
-					className={cn(
-						"relative flex min-h-0 min-w-0 flex-1 flex-col transition-colors",
-						contentDragOver && "bg-accent/10",
-					)}
-					onDragOver={handleContentDragOver}
-					onDragLeave={handleContentDragLeave}
-					onDrop={handleContentDrop}
-				>
-					{contentDragOver && (
-						<div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-background/35 backdrop-blur-[2px]">
-							<div className="flex items-center gap-3 rounded-2xl bg-background/80 px-4 py-3 shadow-lg shadow-black/5 ring-1 ring-border/50 backdrop-blur-md">
-								<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-									<Icon name="FolderOpen" className="h-5 w-5" />
-								</div>
-								<div className="space-y-0.5">
-									<div className="text-sm font-semibold text-foreground">
-										{t("move_to_current_folder")}
-									</div>
-									<div className="max-w-56 truncate text-xs text-muted-foreground">
-										{breadcrumb[breadcrumb.length - 1]?.name ?? t("root")}
-									</div>
-								</div>
-							</div>
-						</div>
-					)}
-					<ContextMenu>
-						<ContextMenuTrigger className="flex min-h-0 flex-1 flex-col">
-							<ScrollArea
-								ref={handleScrollViewportRef}
-								className="min-h-0 flex-1"
-							>
-								{loading ? (
-									viewMode === "grid" ? (
-										<SkeletonFileGrid />
-									) : (
-										<SkeletonFileTable />
-									)
-								) : error ? (
-									<EmptyState
-										icon={<Icon name="Warning" className="h-12 w-12" />}
-										title={t("core:error")}
-										description={error}
-									/>
-								) : isEmpty ? (
-									<EmptyState
-										icon={<Icon name="FolderOpen" className="h-12 w-12" />}
-										title={t("folder_empty")}
-										description={t("folder_empty_desc")}
-									/>
-								) : (
-									<FileBrowserProvider value={fileBrowserContextValue}>
-										{viewMode === "grid" ? (
-											<FileGrid scrollElement={scrollViewport} />
-										) : (
-											<FileTable scrollElement={scrollViewport} />
-										)}
-									</FileBrowserProvider>
-								)}
-								{!isSearching && hasMoreFiles && (
-									<div ref={sentinelRef} className="flex justify-center py-4">
-										{loadingMore && (
-											<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-										)}
-									</div>
-								)}
-							</ScrollArea>
-						</ContextMenuTrigger>
-						<ContextMenuContent>
-							<ContextMenuItem
-								disabled={!uploadReady}
-								onClick={() => uploadAreaRef.current?.triggerFileUpload()}
-							>
-								<Icon name="Upload" className="mr-2 h-4 w-4" />
-								{t("upload_file")}
-							</ContextMenuItem>
-							<ContextMenuItem
-								disabled={!uploadReady}
-								onClick={() => uploadAreaRef.current?.triggerFolderUpload()}
-							>
-								<Icon name="FolderOpen" className="mr-2 h-4 w-4" />
-								{t("upload_folder")}
-							</ContextMenuItem>
-							<ContextMenuSeparator />
-							<ContextMenuItem onClick={() => setCreateFolderOpen(true)}>
-								<Icon name="FolderPlus" className="mr-2 h-4 w-4" />
-								{t("new_folder")}
-							</ContextMenuItem>
-							<ContextMenuItem onClick={() => setCreateFileOpen(true)}>
-								<Icon name="FilePlus" className="mr-2 h-4 w-4" />
-								{t("new_file")}
-							</ContextMenuItem>
-							<ContextMenuSeparator />
-							<ContextMenuItem onClick={() => void refresh()}>
-								<Icon name="ArrowsClockwise" className="mr-2 h-4 w-4" />
-								{t("core:refresh")}
-							</ContextMenuItem>
-						</ContextMenuContent>
-					</ContextMenu>
-				</section>
-				<Suspense fallback={null}>
-					<FileInfoDialog
-						open={infoPanelOpen}
-						onOpenChange={(open) => {
-							setInfoPanelOpen(open);
-						}}
-						file={infoTarget?.file}
-						folder={infoTarget?.folder}
-						onPreview={(targetFile) => openPreview(targetFile, "auto")}
-						onOpenFolder={(targetFolder) =>
-							navigate(
-								workspaceFolderPath(
-									workspace,
-									targetFolder.id,
-									targetFolder.name,
-								),
-							)
-						}
-						onShare={openShareDialog}
-						onDownload={handleDownload}
-						onRename={openRenameDialog}
-						onVersions={handleVersions}
-						onToggleLock={handleToggleLock}
-					/>
-				</Suspense>
-			</div>
+			<FileBrowserWorkspace
+				breadcrumb={breadcrumb}
+				contentDragOver={contentDragOver}
+				error={error}
+				fileBrowserContextValue={fileBrowserContextValue}
+				hasMoreFiles={hasMoreFiles}
+				infoPanelOpen={infoPanelOpen}
+				infoTarget={infoTarget}
+				isEmpty={isEmpty}
+				isSearching={isSearching}
+				loading={loading}
+				loadingMore={loadingMore}
+				scrollViewport={scrollViewport}
+				sentinelRef={sentinelRef}
+				uploadReady={uploadReady}
+				viewMode={viewMode}
+				onContentDragLeave={handleContentDragLeave}
+				onContentDragOver={handleContentDragOver}
+				onContentDrop={handleContentDrop}
+				onCreateFile={() => setCreateFileOpen(true)}
+				onCreateFolder={() => setCreateFolderOpen(true)}
+				onDownload={handleDownload}
+				onInfoPanelOpenChange={setInfoPanelOpen}
+				onOpenInfoFolder={(targetFolder) =>
+					handleNavigateToFolder(targetFolder.id, targetFolder.name)
+				}
+				onPreview={(targetFile) => openPreview(targetFile, "auto")}
+				onRefresh={refresh}
+				onRename={openRenameDialog}
+				onScrollViewportRef={handleScrollViewportRef}
+				onShare={openShareDialog}
+				onToggleLock={handleToggleLock}
+				onTriggerFileUpload={() => uploadAreaRef.current?.triggerFileUpload()}
+				onTriggerFolderUpload={() =>
+					uploadAreaRef.current?.triggerFolderUpload()
+				}
+				onVersions={handleVersions}
+			/>
 		</>
 	);
 

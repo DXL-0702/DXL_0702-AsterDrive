@@ -3,10 +3,10 @@ use crate::api::pagination::LimitOffsetQuery;
 use crate::api::pagination::OffsetPage;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::response::ApiResponse;
-use crate::api::routes::tasks;
+use crate::api::routes::{tasks, team_scope};
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{auth_service::Claims, workspace_storage_service::WorkspaceStorageScope};
+use crate::services::auth_service::Claims;
 use actix_web::{HttpResponse, web};
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -14,13 +14,6 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
         .route("", web::get().to(list_tasks))
         .route("/{id}", web::get().to(get_task))
         .route("/{id}/retry", web::post().to(retry_task))
-}
-
-fn team_scope(team_id: i64, user_id: i64) -> WorkspaceStorageScope {
-    WorkspaceStorageScope::Team {
-        team_id,
-        actor_user_id: user_id,
-    }
 }
 
 #[api_docs_macros::path(

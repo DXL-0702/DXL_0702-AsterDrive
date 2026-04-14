@@ -1,10 +1,10 @@
 use crate::api::pagination::FolderListQuery;
 use crate::api::response::ApiResponse;
-use crate::api::routes::{files, folders};
+use crate::api::routes::{files, folders, team_scope};
 use crate::config::RateLimitConfig;
 use crate::errors::Result;
 use crate::runtime::AppState;
-use crate::services::{auth_service::Claims, workspace_storage_service::WorkspaceStorageScope};
+use crate::services::auth_service::Claims;
 use actix_web::{HttpRequest, HttpResponse, web};
 
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -60,13 +60,6 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
             web::delete().to(delete_version),
         )
         .route("/files/{id}/download", web::get().to(download))
-}
-
-fn team_scope(team_id: i64, user_id: i64) -> WorkspaceStorageScope {
-    WorkspaceStorageScope::Team {
-        team_id,
-        actor_user_id: user_id,
-    }
 }
 
 #[api_docs_macros::path(

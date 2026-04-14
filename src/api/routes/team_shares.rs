@@ -3,12 +3,12 @@ use crate::api::pagination::LimitOffsetQuery;
 use crate::api::pagination::OffsetPage;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::response::ApiResponse;
-use crate::api::routes::shares;
+use crate::api::routes::{shares, team_scope};
 use crate::errors::Result;
 use crate::runtime::AppState;
+use crate::services::auth_service::Claims;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::services::batch_service;
-use crate::services::{auth_service::Claims, workspace_storage_service::WorkspaceStorageScope};
 use actix_web::{HttpRequest, HttpResponse, web};
 
 pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
@@ -18,13 +18,6 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
         .route("/batch-delete", web::post().to(batch_delete_shares))
         .route("/{id}", web::patch().to(update_share))
         .route("/{id}", web::delete().to(delete_share))
-}
-
-fn team_scope(team_id: i64, user_id: i64) -> WorkspaceStorageScope {
-    WorkspaceStorageScope::Team {
-        team_id,
-        actor_user_id: user_id,
-    }
 }
 
 #[api_docs_macros::path(
