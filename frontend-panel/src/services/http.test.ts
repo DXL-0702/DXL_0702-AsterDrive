@@ -32,6 +32,7 @@ const mockState = vi.hoisted(() => {
 
 	const axiosModule = {
 		create: vi.fn(() => client),
+		isCancel: vi.fn(() => false),
 		post: vi.fn(),
 		isAxiosError: vi.fn(
 			(error: unknown) => !!(error as MockAxiosError | undefined)?.isAxiosError,
@@ -76,6 +77,7 @@ async function loadHttpModule() {
 describe("http api helpers", () => {
 	beforeEach(() => {
 		mockState.axiosModule.create.mockClear();
+		mockState.axiosModule.isCancel.mockClear();
 		mockState.axiosModule.isAxiosError.mockClear();
 		mockState.axiosModule.post.mockReset();
 		mockState.client.mockReset();
@@ -109,6 +111,28 @@ describe("http api helpers", () => {
 		);
 		expect(mockState.client.get).toHaveBeenCalledWith("/files", {
 			params: { limit: 10 },
+		});
+	});
+
+	it("forwards abort signals to axios requests", async () => {
+		const controller = new AbortController();
+		mockState.client.get.mockResolvedValue({
+			data: {
+				code: ErrorCode.Success,
+				msg: "ok",
+				data: { id: 8 },
+			},
+		});
+
+		const { api } = await loadHttpModule();
+
+		await expect(
+			api.get("/files", { signal: controller.signal }),
+		).resolves.toEqual({
+			id: 8,
+		});
+		expect(mockState.client.get).toHaveBeenCalledWith("/files", {
+			signal: controller.signal,
 		});
 	});
 

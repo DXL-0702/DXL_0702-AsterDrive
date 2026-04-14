@@ -16,8 +16,7 @@ const mockState = vi.hoisted(() => ({
 	copyFolder: vi.fn(),
 	streamArchiveDownload: vi.fn(),
 	dispatchEvent: vi.fn(),
-	fileGridProps: null as Record<string, unknown> | null,
-	fileTableProps: null as Record<string, unknown> | null,
+	fileBrowserContext: null as Record<string, unknown> | null,
 	formatBatchToast: vi.fn(),
 	handleApiError: vi.fn(),
 	navigate: vi.fn(),
@@ -235,35 +234,61 @@ vi.mock("@/components/common/ViewToggle", () => ({
 	),
 }));
 
+vi.mock("@/components/files/FileBrowserContext", () => ({
+	FileBrowserProvider: ({
+		children,
+		value,
+	}: {
+		children: React.ReactNode;
+		value: Record<string, unknown>;
+	}) => {
+		mockState.fileBrowserContext = value;
+		return children;
+	},
+}));
+
 vi.mock("@/components/files/FileGrid", () => ({
-	FileGrid: (props: Record<string, unknown>) => {
-		mockState.fileGridProps = props;
-		const folders = props.folders as Array<{ id: number; name: string }>;
-		const files = props.files as Array<{ id: number; name: string }>;
+	FileGrid: () => {
+		const context = mockState.fileBrowserContext as {
+			files: Array<{ id: number; name: string }>;
+			folders: Array<{ id: number; name: string }>;
+			onArchiveDownload: (folderId: number) => void;
+			onCopy: (type: "file" | "folder", id: number) => void;
+			onFileChooseOpenMethod: (file: { id: number; name: string }) => void;
+			onFileClick: (file: { id: number; name: string }) => void;
+			onFileOpen: (file: { id: number; name: string }) => void;
+			onFolderOpen: (id: number, name: string) => void;
+			onMoveToFolder: (
+				fileIds: number[],
+				folderIds: number[],
+				targetFolderId: number | null,
+			) => Promise<void>;
+			onShare: (target: {
+				fileId?: number;
+				folderId?: number;
+				name: string;
+				initialMode?: "page" | "direct";
+			}) => void;
+		} | null;
+		const folders = context?.folders ?? [];
+		const files = context?.files ?? [];
 
 		return (
 			<div>
 				<div>{`grid:${folders.length}:${files.length}`}</div>
 				<button
 					type="button"
-					onClick={() =>
-						(props.onFolderOpen as (id: number, name: string) => void)(
-							5,
-							"Docs A",
-						)
-					}
+					onClick={() => context?.onFolderOpen(5, "Docs A")}
 				>
 					open-folder
 				</button>
 				<button
 					type="button"
 					onClick={() =>
-						(props.onFileClick as (file: { id: number; name: string }) => void)(
-							{
-								id: 3,
-								name: "report.pdf",
-							},
-						)
+						context?.onFileClick({
+							id: 3,
+							name: "report.pdf",
+						})
 					}
 				>
 					open-file
@@ -271,7 +296,7 @@ vi.mock("@/components/files/FileGrid", () => ({
 				<button
 					type="button"
 					onClick={() =>
-						(props.onFileOpen as (file: { id: number; name: string }) => void)({
+						context?.onFileOpen({
 							id: 3,
 							name: "report.pdf",
 						})
@@ -282,12 +307,7 @@ vi.mock("@/components/files/FileGrid", () => ({
 				<button
 					type="button"
 					onClick={() =>
-						(
-							props.onFileChooseOpenMethod as (file: {
-								id: number;
-								name: string;
-							}) => void
-						)({
+						context?.onFileChooseOpenMethod({
 							id: 3,
 							name: "report.pdf",
 						})
@@ -295,39 +315,16 @@ vi.mock("@/components/files/FileGrid", () => ({
 				>
 					open-file-picker
 				</button>
-				<button
-					type="button"
-					onClick={() =>
-						(props.onCopy as (type: "file" | "folder", id: number) => void)(
-							"file",
-							9,
-						)
-					}
-				>
+				<button type="button" onClick={() => context?.onCopy("file", 9)}>
 					copy-file
 				</button>
-				<button
-					type="button"
-					onClick={() =>
-						(props.onCopy as (type: "file" | "folder", id: number) => void)(
-							"folder",
-							10,
-						)
-					}
-				>
+				<button type="button" onClick={() => context?.onCopy("folder", 10)}>
 					copy-folder
 				</button>
 				<button
 					type="button"
 					onClick={() =>
-						(
-							props.onShare as (target: {
-								fileId?: number;
-								folderId?: number;
-								name: string;
-								initialMode?: "page" | "direct";
-							}) => void
-						)({
+						context?.onShare({
 							folderId: 5,
 							name: "Docs A",
 							initialMode: "page",
@@ -339,14 +336,7 @@ vi.mock("@/components/files/FileGrid", () => ({
 				<button
 					type="button"
 					onClick={() =>
-						(
-							props.onShare as (target: {
-								fileId?: number;
-								folderId?: number;
-								name: string;
-								initialMode?: "page" | "direct";
-							}) => void
-						)({
+						context?.onShare({
 							fileId: 3,
 							name: "report.pdf",
 							initialMode: "page",
@@ -358,14 +348,7 @@ vi.mock("@/components/files/FileGrid", () => ({
 				<button
 					type="button"
 					onClick={() =>
-						(
-							props.onShare as (target: {
-								fileId?: number;
-								folderId?: number;
-								name: string;
-								initialMode?: "page" | "direct";
-							}) => void
-						)({
+						context?.onShare({
 							fileId: 3,
 							name: "report.pdf",
 							initialMode: "direct",
@@ -376,24 +359,11 @@ vi.mock("@/components/files/FileGrid", () => ({
 				</button>
 				<button
 					type="button"
-					onClick={() =>
-						(
-							props.onMoveToFolder as (
-								fileIds: number[],
-								folderIds: number[],
-								targetFolderId: number | null,
-							) => Promise<void>
-						)([7], [8], 20)
-					}
+					onClick={() => void context?.onMoveToFolder([7], [8], 20)}
 				>
 					move-selection
 				</button>
-				<button
-					type="button"
-					onClick={() =>
-						(props.onArchiveDownload as (folderId: number) => void)(5)
-					}
-				>
+				<button type="button" onClick={() => context?.onArchiveDownload(5)}>
 					archive-folder
 				</button>
 			</div>
@@ -402,10 +372,7 @@ vi.mock("@/components/files/FileGrid", () => ({
 }));
 
 vi.mock("@/components/files/FileTable", () => ({
-	FileTable: (props: Record<string, unknown>) => {
-		mockState.fileTableProps = props;
-		return <div>table-view</div>;
-	},
+	FileTable: () => <div>table-view</div>,
 }));
 
 vi.mock("@/components/files/BatchTargetFolderDialog", () => ({
@@ -776,8 +743,7 @@ describe("FileBrowserPage", () => {
 		mockState.copyFolder.mockReset();
 		mockState.streamArchiveDownload.mockReset();
 		mockState.dispatchEvent.mockReset();
-		mockState.fileGridProps = null;
-		mockState.fileTableProps = null;
+		mockState.fileBrowserContext = null;
 		mockState.formatBatchToast.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.navigate.mockReset();

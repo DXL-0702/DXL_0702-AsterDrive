@@ -1,43 +1,14 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useFileBrowserContext } from "@/components/files/FileBrowserContext";
+import { FileBrowserItemContextMenu } from "@/components/files/FileBrowserItemContextMenu";
 import { FileCard } from "@/components/files/FileCard";
-import { FileContextMenu } from "@/components/files/FileContextMenu";
-import { type BrowserOpenMode, useFileStore } from "@/stores/fileStore";
+import { useFileStore } from "@/stores/fileStore";
 import type { FileListItem, FolderListItem } from "@/types/api";
 
 interface FileGridProps {
-	folders: FolderListItem[];
-	files: FileListItem[];
-	browserOpenMode: BrowserOpenMode;
 	scrollElement?: HTMLDivElement | null;
-	breadcrumbPathIds?: number[];
-	onFolderOpen: (id: number, name: string) => void;
-	onFileClick: (file: FileListItem) => void;
-	onFileOpen?: (file: FileListItem) => void;
-	onFileChooseOpenMethod?: (file: FileListItem) => void;
-	onShare: (target: {
-		fileId?: number;
-		folderId?: number;
-		name: string;
-		initialMode?: "page" | "direct";
-	}) => void;
-	onDownload: (fileId: number, fileName: string) => void;
-	onArchiveDownload?: (folderId: number) => void;
-	onCopy: (type: "file" | "folder", id: number) => void;
-	onMove?: (type: "file" | "folder", id: number) => void;
-	onToggleLock: (type: "file" | "folder", id: number, locked: boolean) => void;
-	onDelete: (type: "file" | "folder", id: number) => void;
-	onRename?: (type: "file" | "folder", id: number, name: string) => void;
-	onVersions?: (fileId: number) => void;
-	onInfo?: (type: "file" | "folder", id: number) => void;
-	onMoveToFolder?: (
-		fileIds: number[],
-		folderIds: number[],
-		targetFolderId: number,
-	) => void;
-	fadingFileIds?: Set<number>;
-	fadingFolderIds?: Set<number>;
 }
 
 const GRID_CLASSES =
@@ -74,31 +45,19 @@ function getGridColumnCount(viewportWidth: number) {
 	return 2;
 }
 
-export function FileGrid({
-	folders,
-	files,
-	browserOpenMode,
-	scrollElement,
-	breadcrumbPathIds = [],
-	onFolderOpen,
-	onFileClick,
-	onFileOpen,
-	onFileChooseOpenMethod,
-	onShare,
-	onDownload,
-	onArchiveDownload,
-	onCopy,
-	onMove,
-	onToggleLock,
-	onRename,
-	onDelete,
-	onVersions,
-	onInfo,
-	onMoveToFolder,
-	fadingFileIds,
-	fadingFolderIds,
-}: FileGridProps) {
+export function FileGrid({ scrollElement }: FileGridProps) {
 	const { t } = useTranslation("files");
+	const {
+		breadcrumbPathIds,
+		browserOpenMode,
+		fadingFileIds,
+		fadingFolderIds,
+		files,
+		folders,
+		onFileClick,
+		onFolderOpen,
+		onMoveToFolder,
+	} = useFileBrowserContext();
 	const selectedFileIds = useFileStore((s) => s.selectedFileIds);
 	const selectedFolderIds = useFileStore((s) => s.selectedFolderIds);
 	const toggleFileSelection = useFileStore((s) => s.toggleFileSelection);
@@ -144,31 +103,10 @@ export function FileGrid({
 	];
 
 	const renderFolderCard = (folder: FolderListItem) => (
-		<FileContextMenu
+		<FileBrowserItemContextMenu
 			key={`folder-${folder.id}`}
+			item={folder}
 			isFolder
-			isLocked={folder.is_locked ?? false}
-			onOpen={() => onFolderOpen(folder.id, folder.name)}
-			onPageShare={() =>
-				onShare({
-					folderId: folder.id,
-					name: folder.name,
-					initialMode: "page",
-				})
-			}
-			onArchiveDownload={
-				onArchiveDownload ? () => onArchiveDownload(folder.id) : undefined
-			}
-			onCopy={() => onCopy("folder", folder.id)}
-			onMove={onMove ? () => onMove("folder", folder.id) : undefined}
-			onRename={
-				onRename ? () => onRename("folder", folder.id, folder.name) : undefined
-			}
-			onToggleLock={() =>
-				onToggleLock("folder", folder.id, folder.is_locked ?? false)
-			}
-			onDelete={() => onDelete("folder", folder.id)}
-			onInfo={() => onInfo?.("folder", folder.id)}
 		>
 			<FileCard
 				item={folder}
@@ -192,44 +130,14 @@ export function FileGrid({
 				targetPathIds={getTargetPathIds(folder.id)}
 				fading={fadingFolderIds?.has(folder.id)}
 			/>
-		</FileContextMenu>
+		</FileBrowserItemContextMenu>
 	);
 
 	const renderFileCard = (file: FileListItem) => (
-		<FileContextMenu
+		<FileBrowserItemContextMenu
 			key={`file-${file.id}`}
+			item={file}
 			isFolder={false}
-			isLocked={file.is_locked ?? false}
-			onOpen={() => (onFileOpen ?? onFileClick)(file)}
-			onChooseOpenMethod={
-				onFileChooseOpenMethod ? () => onFileChooseOpenMethod(file) : undefined
-			}
-			onDownload={() => onDownload(file.id, file.name)}
-			onPageShare={() =>
-				onShare({
-					fileId: file.id,
-					name: file.name,
-					initialMode: "page",
-				})
-			}
-			onDirectShare={() =>
-				onShare({
-					fileId: file.id,
-					name: file.name,
-					initialMode: "direct",
-				})
-			}
-			onCopy={() => onCopy("file", file.id)}
-			onMove={onMove ? () => onMove("file", file.id) : undefined}
-			onRename={
-				onRename ? () => onRename("file", file.id, file.name) : undefined
-			}
-			onToggleLock={() =>
-				onToggleLock("file", file.id, file.is_locked ?? false)
-			}
-			onDelete={() => onDelete("file", file.id)}
-			onVersions={onVersions ? () => onVersions(file.id) : undefined}
-			onInfo={() => onInfo?.("file", file.id)}
 		>
 			<FileCard
 				item={file}
@@ -251,7 +159,7 @@ export function FileGrid({
 				dragData={getDragData(file.id, false)}
 				fading={fadingFileIds?.has(file.id)}
 			/>
-		</FileContextMenu>
+		</FileBrowserItemContextMenu>
 	);
 
 	const columnCount = getGridColumnCount(viewportWidth);

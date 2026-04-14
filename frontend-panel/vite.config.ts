@@ -246,6 +246,8 @@ export default defineConfig(({ command }) => {
 			},
 		},
 		test: {
+			include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+			exclude: ["e2e/**", "node_modules/**", "dist/**"],
 			environment: "jsdom",
 			setupFiles: "./src/test/setup.ts",
 			restoreMocks: true,

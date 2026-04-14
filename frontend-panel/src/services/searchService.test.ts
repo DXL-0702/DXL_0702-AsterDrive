@@ -31,6 +31,7 @@ describe("searchService", () => {
 
 		expect(apiGet).toHaveBeenCalledWith(
 			"/search?q=report&folder_id=7&limit=50&offset=0",
+			undefined,
 		);
 
 		const teamSearchService = createSearchService({ kind: "team", teamId: 3 });
@@ -39,6 +40,17 @@ describe("searchService", () => {
 		expect(apiGet).toHaveBeenNthCalledWith(
 			2,
 			"/teams/3/search?q=report&folder_id=7&limit=50&offset=0",
+			undefined,
 		);
+	});
+
+	it("forwards abort signals to the request layer", () => {
+		const controller = new AbortController();
+
+		searchService.search({ q: "report" }, { signal: controller.signal });
+
+		expect(apiGet).toHaveBeenCalledWith("/search?q=report", {
+			signal: controller.signal,
+		});
 	});
 });

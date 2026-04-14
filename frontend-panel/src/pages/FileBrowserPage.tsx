@@ -16,6 +16,7 @@ import { SkeletonFileTable } from "@/components/common/SkeletonFileTable";
 import { SortMenu } from "@/components/common/SortMenu";
 import { ToolbarBar } from "@/components/common/ToolbarBar";
 import { ViewToggle } from "@/components/common/ViewToggle";
+import { FileBrowserProvider } from "@/components/files/FileBrowserContext";
 import { FileGrid } from "@/components/files/FileGrid";
 import { FilePreview } from "@/components/files/FilePreview";
 import { FileTable } from "@/components/files/FileTable";
@@ -658,7 +659,7 @@ export default function FileBrowserPage() {
 		.map((item) => item.id)
 		.filter((id): id is number => id !== null);
 
-	const sharedProps = {
+	const fileBrowserContextValue = {
 		folders: displayFolders,
 		files: displayFiles,
 		browserOpenMode,
@@ -936,10 +937,14 @@ export default function FileBrowserPage() {
 										title={t("folder_empty")}
 										description={t("folder_empty_desc")}
 									/>
-								) : viewMode === "grid" ? (
-									<FileGrid {...sharedProps} />
 								) : (
-									<FileTable {...sharedProps} />
+									<FileBrowserProvider value={fileBrowserContextValue}>
+										{viewMode === "grid" ? (
+											<FileGrid scrollElement={scrollViewport} />
+										) : (
+											<FileTable scrollElement={scrollViewport} />
+										)}
+									</FileBrowserProvider>
 								)}
 								{!isSearching && hasMoreFiles && (
 									<div ref={sentinelRef} className="flex justify-center py-4">

@@ -4,15 +4,18 @@ import {
 	PERSONAL_WORKSPACE,
 	type Workspace,
 } from "@/lib/workspace";
-import { api } from "@/services/http";
+import { type ApiRequestConfig, api } from "@/services/http";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
 import type { SearchParams, SearchResults } from "@/types/api";
 
+type SearchRequestOptions = Pick<ApiRequestConfig, "signal">;
+
 export function createSearchService(workspace: Workspace = PERSONAL_WORKSPACE) {
 	return {
-		search: (params: SearchParams) =>
+		search: (params: SearchParams, options?: SearchRequestOptions) =>
 			api.get<SearchResults>(
 				withQuery(buildWorkspacePath(workspace, "/search"), params),
+				options,
 			),
 	};
 }

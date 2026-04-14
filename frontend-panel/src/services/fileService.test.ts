@@ -76,7 +76,11 @@ describe("fileService", () => {
 		expect(mockState.get).toHaveBeenNthCalledWith(2, "/folders/7", {
 			params: { sort_by: "updated_at" },
 		});
-		expect(mockState.get).toHaveBeenNthCalledWith(3, "/folders/7/ancestors");
+		expect(mockState.get).toHaveBeenNthCalledWith(
+			3,
+			"/folders/7/ancestors",
+			undefined,
+		);
 		expect(mockState.get).toHaveBeenNthCalledWith(4, "/folders/7/info");
 		expect(mockState.post).toHaveBeenNthCalledWith(1, "/folders", {
 			name: "Docs",
@@ -152,6 +156,31 @@ describe("fileService", () => {
 			"/api/v1/teams/9/files/8/download",
 		);
 		expect(teamFileService.thumbnailPath(8)).toBe("/teams/9/files/8/thumbnail");
+	});
+
+	it("forwards abort signals for folder listing requests", async () => {
+		const controller = new AbortController();
+		const { fileService } = await import("@/services/fileService");
+
+		fileService.listRoot({ file_limit: 50 }, { signal: controller.signal });
+		fileService.listFolder(
+			7,
+			{ sort_by: "updated_at" },
+			{ signal: controller.signal },
+		);
+		fileService.getFolderAncestors(7, { signal: controller.signal });
+
+		expect(mockState.get).toHaveBeenNthCalledWith(1, "/folders", {
+			params: { file_limit: 50 },
+			signal: controller.signal,
+		});
+		expect(mockState.get).toHaveBeenNthCalledWith(2, "/folders/7", {
+			params: { sort_by: "updated_at" },
+			signal: controller.signal,
+		});
+		expect(mockState.get).toHaveBeenNthCalledWith(3, "/folders/7/ancestors", {
+			signal: controller.signal,
+		});
 	});
 
 	it("updates file content with optimistic concurrency headers", async () => {

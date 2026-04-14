@@ -1,4 +1,4 @@
-import type { AxiosInstance } from "axios";
+import type { AxiosInstance, AxiosRequestConfig } from "axios";
 import axios from "axios";
 import { config } from "@/config/app";
 import {
@@ -34,9 +34,32 @@ function shouldSkipRefresh(url: string) {
 let isRefreshing = false;
 let refreshPromise: Promise<void> | null = null;
 
+export type ApiRequestConfig = Pick<
+	AxiosRequestConfig,
+	"headers" | "params" | "signal"
+>;
+
+export function isRequestCanceled(error: unknown): boolean {
+	if (typeof axios.isCancel === "function" && axios.isCancel(error)) {
+		return true;
+	}
+
+	if (typeof error !== "object" || error === null) {
+		return false;
+	}
+
+	const code = "code" in error ? error.code : null;
+	const name = "name" in error ? error.name : null;
+	return code === "ERR_CANCELED" || name === "AbortError";
+}
+
 client.interceptors.response.use(
 	(res) => res,
 	async (error) => {
+		if (isRequestCanceled(error)) {
+			return Promise.reject(error);
+		}
+
 		const original = error.config;
 		const url = original?.url || "";
 
@@ -122,11 +145,15 @@ async function unwrap<T>(
 }
 
 export const api = {
-	get: <T>(url: string, config?: { params?: object }) =>
+	get: <T>(url: string, config?: ApiRequestConfig) =>
 		unwrap<T>(client.get(url, config)),
-	post: <T>(url: string, data?: unknown) => unwrap<T>(client.post(url, data)),
-	put: <T>(url: string, data?: unknown) => unwrap<T>(client.put(url, data)),
-	patch: <T>(url: string, data?: unknown) => unwrap<T>(client.patch(url, data)),
-	delete: <T>(url: string) => unwrap<T>(client.delete(url)),
+	post: <T>(url: string, data?: unknown, config?: ApiRequestConfig) =>
+		unwrap<T>(client.post(url, data, config)),
+	put: <T>(url: string, data?: unknown, config?: ApiRequestConfig) =>
+		unwrap<T>(client.put(url, data, config)),
+	patch: <T>(url: string, data?: unknown, config?: ApiRequestConfig) =>
+		unwrap<T>(client.patch(url, data, config)),
+	delete: <T>(url: string, config?: ApiRequestConfig) =>
+		unwrap<T>(client.delete(url, config)),
 	client,
 };

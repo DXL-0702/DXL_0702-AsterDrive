@@ -1,0 +1,60 @@
+name: E2E
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'frontend-panel/**'
+      - 'src/**'
+      - 'migration/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/e2e.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'frontend-panel/**'
+      - 'src/**'
+      - 'migration/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/e2e.yml'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  playwright:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install frontend dependencies
+        working-directory: frontend-panel
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright browser
+        working-directory: frontend-panel
+        run: PLAYWRIGHT_BROWSERS_PATH=.playwright bunx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        working-directory: frontend-panel
+        run: PLAYWRIGHT_BROWSERS_PATH=.playwright bun run test:e2e
+
+      - name: Upload Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-artifacts
+          path: |
+            frontend-panel/playwright-report
+            frontend-panel/test-results

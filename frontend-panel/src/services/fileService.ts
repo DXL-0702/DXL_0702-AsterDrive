@@ -14,7 +14,7 @@ import type {
 	PreviewLinkInfo,
 	WopiLaunchSession,
 } from "@/types/api";
-import { ApiError, api } from "./http";
+import { ApiError, type ApiRequestConfig, api } from "./http";
 
 export interface FolderListParams {
 	folder_limit?: number;
@@ -26,25 +26,34 @@ export interface FolderListParams {
 	sort_order?: "asc" | "desc";
 }
 
+type ServiceRequestOptions = Pick<ApiRequestConfig, "signal">;
+
 function encodeFileName(fileName: string) {
 	return encodeURIComponent(fileName);
 }
 
 export function createFileService(workspace: Workspace) {
 	return {
-		listRoot: (params?: FolderListParams) =>
+		listRoot: (params?: FolderListParams, options?: ServiceRequestOptions) =>
 			api.get<FolderContents>(buildWorkspacePath(workspace, "/folders"), {
+				...(options ?? {}),
 				params,
 			}),
 
-		listFolder: (id: number, params?: FolderListParams) =>
+		listFolder: (
+			id: number,
+			params?: FolderListParams,
+			options?: ServiceRequestOptions,
+		) =>
 			api.get<FolderContents>(buildWorkspacePath(workspace, `/folders/${id}`), {
+				...(options ?? {}),
 				params,
 			}),
 
-		getFolderAncestors: (id: number) =>
+		getFolderAncestors: (id: number, options?: ServiceRequestOptions) =>
 			api.get<FolderAncestorItem[]>(
 				buildWorkspacePath(workspace, `/folders/${id}/ancestors`),
+				options,
 			),
 
 		getFolderInfo: (id: number) =>

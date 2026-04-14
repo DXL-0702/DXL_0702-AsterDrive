@@ -4,6 +4,17 @@ import { FileTable } from "@/components/files/FileTable";
 import { DRAG_SOURCE_MIME } from "@/lib/constants";
 
 const mockState = vi.hoisted(() => ({
+	browserContext: {
+		breadcrumbPathIds: [] as number[],
+		browserOpenMode: "single_click" as "single_click" | "double_click",
+		fadingFileIds: undefined as Set<number> | undefined,
+		fadingFolderIds: undefined as Set<number> | undefined,
+		files: [] as Array<Record<string, unknown>>,
+		folders: [] as Array<Record<string, unknown>>,
+		onFileClick: vi.fn(),
+		onFolderOpen: vi.fn(),
+		onMoveToFolder: vi.fn(),
+	},
 	store: {
 		selectedFileIds: new Set<number>(),
 		selectedFolderIds: new Set<number>(),
@@ -31,13 +42,18 @@ vi.mock("react-i18next", () => ({
 	}),
 }));
 
+vi.mock("@/components/files/FileBrowserContext", () => ({
+	useFileBrowserContext: () => mockState.browserContext,
+}));
+
 vi.mock("@/stores/fileStore", () => ({
 	useFileStore: (selector: (state: typeof mockState.store) => unknown) =>
 		selector(mockState.store),
 }));
 
-vi.mock("@/components/files/FileContextMenu", () => ({
-	FileContextMenu: ({ children }: { children: React.ReactNode }) => children,
+vi.mock("@/components/files/FileBrowserItemContextMenu", () => ({
+	FileBrowserItemContextMenu: ({ children }: { children: React.ReactNode }) =>
+		children,
 }));
 
 vi.mock("@/components/files/FileTableCells", () => ({
@@ -184,6 +200,15 @@ const file = {
 
 describe("FileTable", () => {
 	beforeEach(() => {
+		mockState.browserContext.breadcrumbPathIds = [];
+		mockState.browserContext.browserOpenMode = "single_click";
+		mockState.browserContext.fadingFileIds = undefined;
+		mockState.browserContext.fadingFolderIds = undefined;
+		mockState.browserContext.files = [file];
+		mockState.browserContext.folders = [folder];
+		mockState.browserContext.onFileClick.mockReset();
+		mockState.browserContext.onFolderOpen.mockReset();
+		mockState.browserContext.onMoveToFolder.mockReset();
 		mockState.store.selectedFileIds = new Set();
 		mockState.store.selectedFolderIds = new Set();
 		mockState.store.selectOnlyFile.mockReset();
@@ -207,23 +232,7 @@ describe("FileTable", () => {
 	});
 
 	it("renders current sort state and updates sorting from header clicks", () => {
-		mockState.store.sortBy = "name";
-		mockState.store.sortOrder = "asc";
-
-		render(
-			<FileTable
-				folders={[folder as never]}
-				files={[file as never]}
-				browserOpenMode="single_click"
-				onFolderOpen={vi.fn()}
-				onFileClick={vi.fn()}
-				onShare={vi.fn()}
-				onDownload={vi.fn()}
-				onCopy={vi.fn()}
-				onToggleLock={vi.fn()}
-				onDelete={vi.fn()}
-			/>,
-		);
+		render(<FileTable />);
 
 		expect(screen.getByText("translated:core:name")).toBeInTheDocument();
 		expect(screen.getByText("translated:core:size")).toBeInTheDocument();
@@ -244,64 +253,23 @@ describe("FileTable", () => {
 		mockState.store.selectedFileIds = new Set([2]);
 		mockState.store.selectedFolderIds = new Set([1]);
 
-		const { rerender } = render(
-			<FileTable
-				folders={[folder as never]}
-				files={[file as never]}
-				browserOpenMode="single_click"
-				onFolderOpen={vi.fn()}
-				onFileClick={vi.fn()}
-				onShare={vi.fn()}
-				onDownload={vi.fn()}
-				onCopy={vi.fn()}
-				onToggleLock={vi.fn()}
-				onDelete={vi.fn()}
-			/>,
-		);
+		const { rerender } = render(<FileTable />);
 
 		fireEvent.click(screen.getAllByTestId("checkbox")[0]);
 		expect(mockState.store.clearSelection).toHaveBeenCalledTimes(1);
 
 		mockState.store.selectedFileIds = new Set();
 		mockState.store.selectedFolderIds = new Set();
-		rerender(
-			<FileTable
-				folders={[folder as never]}
-				files={[file as never]}
-				browserOpenMode="single_click"
-				onFolderOpen={vi.fn()}
-				onFileClick={vi.fn()}
-				onShare={vi.fn()}
-				onDownload={vi.fn()}
-				onCopy={vi.fn()}
-				onToggleLock={vi.fn()}
-				onDelete={vi.fn()}
-			/>,
-		);
+		rerender(<FileTable />);
 
 		fireEvent.click(screen.getAllByTestId("checkbox")[0]);
 		expect(mockState.store.selectAll).toHaveBeenCalledTimes(1);
 	});
 
 	it("wires row clicks, selection toggles, and drag start metadata", () => {
-		const onFolderOpen = vi.fn();
-		const onFileClick = vi.fn();
 		const dataTransfer = { types: [] } as unknown as DataTransfer;
 
-		render(
-			<FileTable
-				folders={[folder as never]}
-				files={[file as never]}
-				browserOpenMode="single_click"
-				onFolderOpen={onFolderOpen}
-				onFileClick={onFileClick}
-				onShare={vi.fn()}
-				onDownload={vi.fn()}
-				onCopy={vi.fn()}
-				onToggleLock={vi.fn()}
-				onDelete={vi.fn()}
-			/>,
-		);
+		render(<FileTable />);
 
 		const rows = screen.getAllByTestId("row");
 		fireEvent.click(rows[1]);
@@ -310,8 +278,11 @@ describe("FileTable", () => {
 		fireEvent.click(screen.getAllByTestId("checkbox")[2]);
 		fireEvent.dragStart(rows[1], { dataTransfer });
 
-		expect(onFolderOpen).toHaveBeenCalledWith(1, "Docs");
-		expect(onFileClick).toHaveBeenCalledWith(
+		expect(mockState.browserContext.onFolderOpen).toHaveBeenCalledWith(
+			1,
+			"Docs",
+		);
+		expect(mockState.browserContext.onFileClick).toHaveBeenCalledWith(
 			expect.objectContaining({ id: 2 }),
 		);
 		expect(mockState.store.toggleFolderSelection).toHaveBeenCalledWith(1);
@@ -330,23 +301,9 @@ describe("FileTable", () => {
 	});
 
 	it("selects folders and files on single click and opens them on double click in double-click mode", () => {
-		const onFolderOpen = vi.fn();
-		const onFileClick = vi.fn();
+		mockState.browserContext.browserOpenMode = "double_click";
 
-		render(
-			<FileTable
-				folders={[folder as never]}
-				files={[file as never]}
-				browserOpenMode="double_click"
-				onFolderOpen={onFolderOpen}
-				onFileClick={onFileClick}
-				onShare={vi.fn()}
-				onDownload={vi.fn()}
-				onCopy={vi.fn()}
-				onToggleLock={vi.fn()}
-				onDelete={vi.fn()}
-			/>,
-		);
+		render(<FileTable />);
 
 		const rows = screen.getAllByTestId("row");
 		fireEvent.click(rows[1]);
@@ -356,40 +313,29 @@ describe("FileTable", () => {
 
 		expect(mockState.store.selectOnlyFolder).toHaveBeenCalledWith(1);
 		expect(mockState.store.selectOnlyFile).toHaveBeenCalledWith(2);
-		expect(onFolderOpen).toHaveBeenCalledWith(1, "Docs");
-		expect(onFileClick).toHaveBeenCalledWith(
+		expect(mockState.browserContext.onFolderOpen).toHaveBeenCalledWith(
+			1,
+			"Docs",
+		);
+		expect(mockState.browserContext.onFileClick).toHaveBeenCalledWith(
 			expect.objectContaining({ id: 2 }),
 		);
 	});
 
 	it("accepts valid folder drops and ignores invalid ones", () => {
-		const onMoveToFolder = vi.fn();
 		const dataTransfer = {
 			types: ["application/x-asterdrive-move"],
 			dropEffect: "copy",
 		} as unknown as DataTransfer;
+		mockState.browserContext.breadcrumbPathIds = [10];
+		mockState.browserContext.files = [];
 		mockState.hasInternalDragData.mockReturnValue(true);
 		mockState.readInternalDragData.mockReturnValue({
 			fileIds: [2],
 			folderIds: [3],
 		});
 
-		render(
-			<FileTable
-				folders={[folder as never]}
-				files={[]}
-				browserOpenMode="single_click"
-				breadcrumbPathIds={[10]}
-				onFolderOpen={vi.fn()}
-				onFileClick={vi.fn()}
-				onShare={vi.fn()}
-				onDownload={vi.fn()}
-				onCopy={vi.fn()}
-				onToggleLock={vi.fn()}
-				onDelete={vi.fn()}
-				onMoveToFolder={onMoveToFolder}
-			/>,
-		);
+		render(<FileTable />);
 
 		const folderRow = screen.getAllByTestId("row")[1];
 
@@ -403,17 +349,21 @@ describe("FileTable", () => {
 			1,
 			[10, 1],
 		);
-		expect(onMoveToFolder).toHaveBeenCalledWith([2], [3], 1);
+		expect(mockState.browserContext.onMoveToFolder).toHaveBeenCalledWith(
+			[2],
+			[3],
+			1,
+		);
 
 		mockState.getInvalidInternalDropReason.mockReturnValueOnce("descendant");
 		fireEvent.drop(folderRow, { dataTransfer });
-		expect(onMoveToFolder).toHaveBeenCalledTimes(1);
+		expect(mockState.browserContext.onMoveToFolder).toHaveBeenCalledTimes(1);
 
 		const sourceDataTransfer = {
 			types: [DRAG_SOURCE_MIME],
 		} as unknown as DataTransfer;
 		fireEvent.dragOver(folderRow, { dataTransfer: sourceDataTransfer });
 		fireEvent.drop(folderRow, { dataTransfer: sourceDataTransfer });
-		expect(onMoveToFolder).toHaveBeenCalledTimes(1);
+		expect(mockState.browserContext.onMoveToFolder).toHaveBeenCalledTimes(1);
 	});
 });

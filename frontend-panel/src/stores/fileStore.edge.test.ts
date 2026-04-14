@@ -116,10 +116,15 @@ describe("useFileStore edge cases", () => {
 
 		await useFileStore.getState().search("notes");
 
-		expect(mockState.search).toHaveBeenCalledWith({
-			q: "notes",
-			limit: 100,
-		});
+		expect(mockState.search).toHaveBeenCalledWith(
+			{
+				q: "notes",
+				limit: 100,
+			},
+			expect.objectContaining({
+				signal: expect.any(AbortSignal),
+			}),
+		);
 		expect(useFileStore.getState()).toMatchObject({
 			loading: false,
 			searchQuery: "notes",
