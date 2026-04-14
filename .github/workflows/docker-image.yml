@@ -9,6 +9,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 env:
   REGISTRY_IMAGE_GHCR: ghcr.io/apts-1547/asterdrive
@@ -32,6 +33,9 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
       - name: Extract metadata for Docker
         id: meta
         uses: docker/metadata-action@v6
@@ -48,6 +52,7 @@ jobs:
             org.opencontainers.image.vendor=AptS-1547
 
       - name: Build and push Docker image
+        id: build-push
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -60,3 +65,7 @@ jobs:
             CARGO_FEATURES=server
           provenance: true
           sbom: true
+
+      - name: Sign Docker image
+        run: |
+          cosign sign --yes "${{ env.REGISTRY_IMAGE_GHCR }}@${{ steps.build-push.outputs.digest }}"

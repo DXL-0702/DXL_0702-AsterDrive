@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -180,11 +181,21 @@ jobs:
         with:
           path: artifacts
 
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
       - name: Prepare release files
         run: |
           mkdir -p release
           find artifacts -type f -name "aster_drive_*" -exec cp {} release/ \;
           cd release && sha256sum * > checksums.txt
+
+      - name: Sign checksums
+        run: |
+          cosign sign-blob --yes \
+            release/checksums.txt \
+            --output-signature release/checksums.txt.sig \
+            --output-certificate release/checksums.txt.pem
 
       - name: Extract changelog
         id: changelog
@@ -225,6 +236,25 @@ jobs:
             echo "| macOS | ARM64 | [aster_drive_${{ github.ref_name }}_macos_aarch64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_macos_aarch64) |"
             echo ""
             echo "**Checksums**: [checksums.txt](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/checksums.txt)"
+            echo ""
+            echo "### Verify signatures"
+            echo ""
+            echo "All release binaries are signed with [Sigstore cosign](https://docs.sigstore.dev/). To verify:"
+            echo ""
+            echo '```bash'
+            echo "# Download checksums + signature + certificate"
+            echo "wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/{checksums.txt,checksums.txt.sig,checksums.txt.pem}"
+            echo ""
+            echo "# Verify signature"
+            echo 'cosign verify-blob checksums.txt \'
+            echo '  --signature checksums.txt.sig \'
+            echo '  --certificate checksums.txt.pem \'
+            echo '  --certificate-oidc-issuer https://token.actions.githubusercontent.com \'
+            echo "  --certificate-identity-regexp 'github.com/AptS-1547/AsterDrive'"
+            echo ""
+            echo "# Verify binary integrity"
+            echo "sha256sum -c checksums.txt"
+            echo '```'
           } > release_body.md
 
       - name: Create Release
