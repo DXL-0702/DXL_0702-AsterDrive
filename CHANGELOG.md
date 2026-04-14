@@ -5,6 +5,134 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.20] - 2026-04-15
+
+### Release Highlights
+
+- **全链路 CSRF 防护** — 实现 Double Submit Cookie 模式的 CSRF 双重提交令牌防护，所有 Cookie 认证的写操作需携带 `X-CSRF-Token` 请求头，前端 axios 拦截器自动注入，后端同时校验 Origin/Referer/Sec-Fetch-Site 来源可信性
+- **`doctor --deep` 深度一致性检查** — 新增 `integrity_service` 支持存储计数漂移检测、Blob 引用计数校验、存储对象清单比对（发现无主/缺失/孤儿对象）、目录树结构校验（循环引用/丢失父节点），支持 `--fix` 自动修复
+- **文件信息侧边栏与预览全屏** — 桌面端文件信息面板从弹窗改造为持久化侧边栏，支持滑入/滑出动画，新增快捷操作区和概览/状态分区；文件预览对话框新增全屏/还原窗口切换
+- **安全加固全面升级** — SVG/HTML 内联沙箱 CSP 策略、Docker 非 root 运行、Sigstore cosign 签名、依赖安全审计 CI、密码最小长度提升至 8 位、修复高并发下载栈溢出
+- **大规模代码重构** — 文件浏览器状态管理 7-slice 拆分、管理设置页组件化、WOPI 服务模块化、数据库迁移工具模块化、团队详情组件拆分、`parking_lot` 替换标准库锁
+
+
+### Added
+
+- **CSRF 双重提交令牌防护**
+  - 后端新增 `csrf.rs` 中间件：登录/刷新时生成 32 字节随机令牌写入 `aster_csrf` Cookie，非安全请求校验 `X-CSRF-Token` 请求头
+  - 同时校验 `Origin`/`Referer`/`Sec-Fetch-Site` 请求头的来源可信性
+  - 前端 axios 拦截器自动从 Cookie 读取并注入 CSRF 令牌，分块上传 (XHR) 同步附加
+- **`doctor --deep` 深度一致性审计**
+  - 新增 `integrity_service`：存储计数漂移、Blob 引用计数、存储对象清单比对、目录树结构校验
+  - 存储驱动新增 `scan_paths` visitor 接口（本地按目录遍历，S3 按分页流式消费）
+  - CLI 支持 `--deep`、`--scope`、`--policy-id`、`--fix` 参数，keyset 分批（每批 1000）避免全表加载
+- **SVG 内联沙箱与预览双模式**
+  - HTML/SVG/XHTML 文件改为内联响应 + `Content-Security-Policy: sandbox` + `X-Content-Type-Options: nosniff`，允许预览同时阻止脚本执行
+  - 前端 SVG 文件新增图片/代码双模式预览切换
+- **文件信息侧边栏**
+  - 桌面端 `FileInfoDialog` 改造为持久化侧边栏（220ms 滑入/滑出动画），移动端保留弹窗
+  - 新增快捷操作区：预览、下载、分享、重命名、版本历史、锁定（乐观更新）
+  - 信息面板拆分为概览/状态两个分区，引入 `DetailList`、`Section`、`ActionGrid` 子组件
+- **文件预览全屏切换**
+  - 预览对话框新增全屏/还原窗口切换按钮
+- **版本号自动重排**
+  - 删除历史版本后自动将后续版本号减 1，保持显示编号连续
+- **对话框预加载**
+  - 新增 `lazyWithPreload` 工具，封装 `requestIdleCallback` 空闲时预加载弹窗模块
+  - 新增 `adminPolicyGroupLookup` 模块，策略组数据全局缓存与去重请求
+- **移动端响应式优化**
+  - 面包屑导航：小屏超过两级时折叠中间项为省略号下拉菜单，根目录使用 House 图标
+  - 工具栏、排序菜单、视图切换按钮适配小屏尺寸
+  - 汉堡菜单 List/X 图标切换动画，侧边栏遮罩层透明度过渡
+- **安全基础设施**
+  - Docker 容器改为 UID/GID 10001 非 root 用户运行
+  - CI 新增 Sigstore cosign 签名（Docker 镜像 + Release checksums.txt）
+  - CI 新增每周依赖安全审计（`cargo audit` + `bun pm audit`）
+  - 密码最小长度从 6 位提升至 8 位，新增 `existingPasswordSchema` 保证已有短密码用户可登录
+- **E2E 测试套件**
+  - Playwright E2E 覆盖：管理员用户增删查、存储策略 CRUD、文件批量操作、分块上传断点续传、WebDAV PROPFIND/MKCOL/PUT/GET/DELETE、移动端布局
+- **k6 性能基准**
+  - 10+ 个性能基准脚本覆盖：登录、令牌刷新、文件夹列表、搜索、下载、直传/分块上传、批量移动、WebDAV 读写、长稳混合负载、分阶段并发爬坡 (mixed-ramp)
+  - 下载/上传/WebDAV 脚本新增字节计数器，支持从 summary 直接推算吞吐量
+- **文档**
+  - 反向代理文档重写：Caddy/Nginx/Traefik 三套完整配置示例，HTTPS 从"建议"改为"必须"
+  - 新增备份与恢复文档，覆盖 SQLite/PostgreSQL/MySQL + 本地/S3 场景
+  - 新增性能基准文档和社区行为准则 (`CODE_OF_CONDUCT.md`)
+
+
+### Changed
+
+- **文件浏览器状态管理重构**
+  - `fileStore` 拆分为 7 个 slice：`navigationSlice`、`searchSlice`、`selectionSlice`、`clipboardSlice`、`crudSlice`、`preferencesSlice`、`requestSlice`
+  - 引入 `FileBrowserContext`/`FileBrowserProvider` 消除 `FileGrid`/`FileTable` 的 props 透传
+  - HTTP 请求层添加 `AbortSignal` 支持，导航/搜索/排序操作防止竞态
+- **文件浏览器与团队详情组件拆分**
+  - `FileBrowserPage` 拆分为 `FileBrowserToolbar`、`FileBrowserWorkspace` 等独立组件
+  - `AdminTeamDetailDialog` 拆分为 `AdminTeamDetailShell`、`AdminTeamDetailSections` 等子组件，支持页面与对话框双布局
+  - 提取 `useUploadAreaManager` hook 将上传区域逻辑从 `UploadArea` 组件中解耦
+  - 新增 `useMediaQuery` hook 封装媒体查询响应式逻辑
+- **管理设置页拆分**
+  - `AdminSettingsPage` 从 3220+ 行单文件拆分为 `CategoryContent`、`SaveBar`、`Dialogs` 等子组件和 3 个自定义 Hook
+  - `AdminPolicyGroupsPage` 拆分为 `PolicyGroupsTable`、`PolicyGroupDialog`、`PolicyGroupMigrationDialog`
+- **WOPI 服务模块化与 `parking_lot` 引入**
+  - `wopi_service.rs` 拆分为 `locks`/`operations`/`session`/`targets`/`types`/`discovery`/`tests` 子模块
+  - 全局引入 `parking_lot` 替换标准库 `Mutex`/`RwLock`，消除 lock-poison 样板代码
+- **数据库迁移工具模块化**
+  - `database_migration.rs` 拆分为 `apply`/`checkpoint`/`helpers`/`schema`/`verify` 子模块
+- **WebDAV 接口简化**
+  - `AppState` 实现 `Clone`，`AsterDavFs`/`AsterDavFile` 改为持有 `AppState` 替代多字段展开，消除大量冗余参数传递
+- **SQLite 行锁简化**
+  - 移除 file_repo/folder_repo/team_repo 中针对 SQLite 的伪行锁 UPDATE，依赖单连接池序列化并发
+- **预览应用配置持久化缓存**
+  - `previewAppStore` 新增 localStorage 缓存与会话级单次重验证，跨刷新即时水合
+  - `FilePreviewDialog` 合并双 Dialog 为单一 Dialog
+- **全局错误映射统一**
+  - 新增 `map_aster_err_with` 方法，提取 `display_error` 工具函数
+  - 全局统一为 `map_aster_err_with(|| ...)` 和 `map_aster_err_ctx("ctx", f)` 模式
+- **旧版根目录布局兼容代码移除**
+  - 删除 `reject_legacy_root_layout` 及 `LEGACY_*` 常量等 alpha.17 引入的临时兼容路径
+- **后端路由重构**
+  - `team_scope` 辅助函数上移至 `routes/mod.rs`，消除各团队路由模块中的重复定义
+- **对话框挂载策略**
+  - 所有对话框添加 `keepMounted`，避免切换 tab 时表单输入值丢失
+- **Redis 缓存错误处理**
+  - `set_ex`/`del`/前缀扫描失败时输出 `warn` 日志替代静默丢弃
+- **CI 独立化**
+  - 前端 CI 从 `rust.yml` 抽离为 `frontend.yml`，仅在 `frontend-panel/**` 变更时触发
+  - Rust CI 新增 `cargo fmt --check` 格式检查
+  - 新增代码覆盖率上报 Codecov
+
+
+### Fixed
+
+- **高并发下载栈溢出** — `RequestId` 中间件将跨 `.await` 的 `span.enter()` 改为 `.instrument(span)`，避免 actix worker 上请求 span 错误嵌套导致的 stack overflow（[`3ce13e2`](https://github.com/AptS-1547/AsterDrive/commit/3ce13e2)，Co-authored-by: AptS-1738）
+- **危险 MIME 类型内联漏洞** — HTML/SVG/XHTML 文件通过直链和预览链接可被同源内联执行，改为 CSP sandbox 策略
+- **密码重置 token 误用** — 密码重置 token 被用于联系方式验证端点时错误地 `unreachable!`，改为返回 `Invalid` 重定向
+- **指数退避整数溢出** — `db/retry.rs` 中延迟计算使用 `checked_shl` 与 `saturating_mul` 防止溢出
+- **移动端侧边栏未撑满全高** — `inset-y-16` 拆分为 `top-16 bottom-0`
+- **侧边栏展开/收起无动画** — 改用 `translate-x` 过渡动画替代 display 切换
+- **对话框切换 tab 时输入值丢失** — `<Wrapper>` JSX 改为函数调用防止 React 重新挂载
+- **RenameDialog 外部 name 变化未同步** — 补充 `useEffect` 同步 `currentName` prop
+- **面包屑长文件名撑破布局** — 修复溢出截断样式
+- **SVG 图片预览尺寸失控** — `BlobMediaPreview` 对 SVG 单独处理布局宽度
+- **`public_site_url` 使用 http 未警告** — `doctor` 检查时对 `http://` 返回 warn 状态
+
+
+### Breaking Changes
+
+- **CSRF 令牌强制校验**：所有通过 Cookie 认证的写操作必须携带 `X-CSRF-Token` 请求头，自定义 API 客户端需从 `aster_csrf` Cookie 读取令牌并注入
+- **密码最小长度从 6 改为 8**：新注册和修改密码必须满足 8 位，已有 6-7 位密码用户仍可登录
+- **Docker 容器以非 root 运行**：挂载卷需对 UID/GID 10001 可读写，需调整 `chown` 或使用 `user:` 指令覆盖
+- **旧版根目录布局兼容代码移除**：alpha.17 之前的 `config.toml`/`asterdrive.db` 放在根目录的布局不再有迁移提示
+
+
+---
+
+**统计数据**：
+- 327 files changed, 32,763 insertions(+), 15,727 deletions(-)
+- 29 commits
+
+
 ## [v0.0.1-alpha.19] - 2026-04-14
 
 ### Release Highlights
@@ -1605,7 +1733,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.19...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.20...HEAD
+[v0.0.1-alpha.20]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.19...v0.0.1-alpha.20
 [v0.0.1-alpha.19]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.18...v0.0.1-alpha.19
 [v0.0.1-alpha.18]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.17...v0.0.1-alpha.18
 [v0.0.1-alpha.17]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.16...v0.0.1-alpha.17
