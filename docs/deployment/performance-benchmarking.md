@@ -16,6 +16,7 @@ AsterDrive 的性能基准脚本放在仓库里的 `tests/performance/`。
 - 并发 chunked 上传
 - 批量移动并发
 - WebDAV 读写并发
+- staged mixed workload ramp（看延迟/失败率随并发抬升）
 - 长稳 mixed workload soak 测试
 
 ## 工具选择
@@ -66,7 +67,11 @@ k6 run tests/performance/k6/upload-direct.js
 k6 run tests/performance/k6/upload-chunked.js
 k6 run tests/performance/k6/batch-move.js
 k6 run tests/performance/k6/webdav-rw.js
+ASTER_BENCH_MIXED_RAMP_STAGES=1:20s,8:30s,32:30s,64:45s,0:15s \
+k6 run tests/performance/k6/mixed-ramp.js
 ```
+
+`ASTER_BENCH_MIXED_RAMP_STAGES` 的格式是 `target_vus:duration`，比如 `32:30s`。
 
 如果你要把结果落盘：
 
@@ -75,6 +80,8 @@ mkdir -p tests/performance/results/local
 ASTER_BENCH_SUMMARY_DIR=tests/performance/results/local \
 k6 run tests/performance/k6/download.js
 ```
+
+现在下载、上传、WebDAV 和 `mixed-ramp.js` 的 summary 里都会带字节计数器，可以直接拿 `count` / `rate` 看有效吞吐，不用只看 `http_req_duration` 这种会把你带沟里的单请求延迟。
 
 ## 长稳测试
 

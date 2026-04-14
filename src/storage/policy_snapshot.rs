@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::RwLock;
 
+use parking_lot::RwLock;
 use sea_orm::ConnectionTrait;
 
 use crate::db::repository::{policy_group_repo, policy_repo, user_repo};
@@ -77,10 +77,7 @@ impl PolicySnapshot {
             .filter_map(|user| user.policy_group_id.map(|group_id| (user.id, group_id)))
             .collect();
 
-        *self
-            .snapshot
-            .write()
-            .expect("policy snapshot lock poisoned") = PolicySnapshotData {
+        *self.snapshot.write() = PolicySnapshotData {
             policies_by_id,
             policy_groups_by_id,
             policy_group_items_by_group_id,
@@ -93,12 +90,7 @@ impl PolicySnapshot {
     }
 
     pub fn get_policy(&self, policy_id: i64) -> Option<storage_policy::Model> {
-        self.snapshot
-            .read()
-            .expect("policy snapshot lock poisoned")
-            .policies_by_id
-            .get(&policy_id)
-            .cloned()
+        self.snapshot.read().policies_by_id.get(&policy_id).cloned()
     }
 
     pub fn get_policy_or_err(&self, policy_id: i64) -> Result<storage_policy::Model> {
@@ -109,7 +101,6 @@ impl PolicySnapshot {
     pub fn get_policy_group(&self, group_id: i64) -> Option<storage_policy_group::Model> {
         self.snapshot
             .read()
-            .expect("policy snapshot lock poisoned")
             .policy_groups_by_id
             .get(&group_id)
             .cloned()
@@ -124,7 +115,6 @@ impl PolicySnapshot {
     pub fn get_policy_group_items(&self, group_id: i64) -> Vec<ResolvedPolicyGroupItem> {
         self.snapshot
             .read()
-            .expect("policy snapshot lock poisoned")
             .policy_group_items_by_group_id
             .get(&group_id)
             .cloned()
@@ -134,7 +124,6 @@ impl PolicySnapshot {
     pub fn resolve_default_policy_group_id(&self, user_id: i64) -> Option<i64> {
         self.snapshot
             .read()
-            .expect("policy snapshot lock poisoned")
             .user_policy_group_by_user_id
             .get(&user_id)
             .copied()
@@ -227,27 +216,18 @@ impl PolicySnapshot {
     }
 
     pub fn system_default_policy(&self) -> Option<storage_policy::Model> {
-        let policy_id = self
-            .snapshot
-            .read()
-            .expect("policy snapshot lock poisoned")
-            .system_default_policy_id?;
+        let policy_id = self.snapshot.read().system_default_policy_id?;
         self.get_policy(policy_id)
     }
 
     pub fn system_default_policy_group(&self) -> Option<storage_policy_group::Model> {
-        let group_id = self
-            .snapshot
-            .read()
-            .expect("policy snapshot lock poisoned")
-            .system_default_policy_group_id?;
+        let group_id = self.snapshot.read().system_default_policy_group_id?;
         self.get_policy_group(group_id)
     }
 
     pub fn set_user_policy_group(&self, user_id: i64, group_id: i64) {
         self.snapshot
             .write()
-            .expect("policy snapshot lock poisoned")
             .user_policy_group_by_user_id
             .insert(user_id, group_id);
     }
@@ -255,7 +235,6 @@ impl PolicySnapshot {
     pub fn remove_user_policy_group(&self, user_id: i64) {
         self.snapshot
             .write()
-            .expect("policy snapshot lock poisoned")
             .user_policy_group_by_user_id
             .remove(&user_id);
     }

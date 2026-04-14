@@ -1,5 +1,5 @@
 import { sleep } from "k6";
-import { Trend } from "k6/metrics";
+import { Counter, Trend } from "k6/metrics";
 
 import { benchConfig, durationEnv, intEnv } from "./lib/config.js";
 import { listWebdavAccounts, login, uniqueName, webdavRequest } from "./lib/client.js";
@@ -8,7 +8,11 @@ import { createSummary } from "./lib/summary.js";
 const webdavPutDuration = new Trend("aster_webdav_put_duration", true);
 const webdavGetDuration = new Trend("aster_webdav_get_duration", true);
 const webdavDeleteDuration = new Trend("aster_webdav_delete_duration", true);
-const payload = "W".repeat(intEnv("ASTER_BENCH_WEBDAV_PAYLOAD_BYTES", 64 * 1024));
+const webdavFlowDuration = new Trend("aster_webdav_flow_duration", true);
+const webdavPutBytes = new Counter("aster_webdav_put_bytes");
+const webdavGetBytes = new Counter("aster_webdav_get_bytes");
+const payloadBytes = intEnv("ASTER_BENCH_WEBDAV_PAYLOAD_BYTES", 64 * 1024);
+const payload = "W".repeat(payloadBytes);
 
 export const options = {
 	vus: intEnv("ASTER_BENCH_WEBDAV_VUS", 4),
@@ -40,6 +44,7 @@ export function setup() {
 }
 
 export default function () {
+	const startedAt = Date.now();
 	const path = uniqueName("webdav", "txt");
 	const putResponse = webdavRequest("PUT", path, payload, {
 		headers: {
@@ -50,18 +55,21 @@ export default function () {
 		throw new Error(`webdav PUT failed: ${putResponse.status}`);
 	}
 	webdavPutDuration.add(putResponse.timings.duration);
+	webdavPutBytes.add(payloadBytes);
 
 	const getResponse = webdavRequest("GET", path);
 	if (getResponse.status !== 200) {
 		throw new Error(`webdav GET failed: ${getResponse.status}`);
 	}
 	webdavGetDuration.add(getResponse.timings.duration);
+	webdavGetBytes.add(payloadBytes);
 
 	const deleteResponse = webdavRequest("DELETE", path);
 	if (deleteResponse.status !== 204) {
 		throw new Error(`webdav DELETE failed: ${deleteResponse.status}`);
 	}
 	webdavDeleteDuration.add(deleteResponse.timings.duration);
+	webdavFlowDuration.add(Date.now() - startedAt);
 
 	if (benchConfig.thinkTimeMs > 0) {
 		sleep(benchConfig.thinkTimeMs / 1000);
@@ -72,5 +80,7 @@ export const handleSummary = createSummary("webdav-rw", [
 	"aster_webdav_put_duration",
 	"aster_webdav_get_duration",
 	"aster_webdav_delete_duration",
+	"aster_webdav_flow_duration",
+	"aster_webdav_put_bytes",
+	"aster_webdav_get_bytes",
 ]);
-

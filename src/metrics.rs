@@ -175,7 +175,7 @@ mod inner {
 
     /// 后台任务：定期更新系统指标（RSS、CPU）
     pub fn spawn_system_metrics_updater() {
-        use std::sync::Mutex;
+        use parking_lot::Mutex;
         use sysinfo::{Pid, ProcessesToUpdate, System};
 
         static SYSTEM: OnceLock<Mutex<System>> = OnceLock::new();
@@ -189,7 +189,7 @@ mod inner {
                 };
                 let pid = Pid::from_u32(std::process::id());
                 let sys_mutex = SYSTEM.get_or_init(|| Mutex::new(System::new()));
-                let mut sys = sys_mutex.lock().unwrap_or_else(|p| p.into_inner());
+                let mut sys = sys_mutex.lock();
                 sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
                 if let Some(process) = sys.process(pid) {
                     metrics

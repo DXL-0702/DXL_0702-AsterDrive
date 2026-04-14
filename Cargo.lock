@@ -623,6 +623,7 @@ dependencies = [
  "mime_guess",
  "moka",
  "num_cpus",
+ "parking_lot",
  "paste",
  "prometheus",
  "rand 0.10.1",

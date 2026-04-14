@@ -13,6 +13,7 @@ Issue `#120` uses `k6` as the primary benchmark runner.
 - `upload-chunked.js`: chunked upload throughput
 - `batch-move.js`: concurrent batch move operations
 - `webdav-rw.js`: WebDAV concurrent read/write flow
+- `mixed-ramp.js`: staged mixed workload ramp for latency / error curve observation
 - `soak-mixed.js`: long-running mixed workload for memory / pool observation
 
 ## Prerequisites
@@ -120,6 +121,15 @@ WebDAV read/write:
 k6 run tests/performance/k6/webdav-rw.js
 ```
 
+Mixed ramp:
+
+```bash
+ASTER_BENCH_MIXED_RAMP_STAGES=1:20s,8:30s,32:30s,64:45s,0:15s \
+k6 run tests/performance/k6/mixed-ramp.js
+```
+
+Stage format is `target_vus:duration`, for example `32:30s`.
+
 Long soak:
 
 ```bash
@@ -138,6 +148,14 @@ ASTER_BENCH_SUMMARY_DIR=tests/performance/results/local \
 k6 run tests/performance/k6/download.js
 ```
 
+Data-plane scripts now emit byte counters in the compact summary, so you can derive effective throughput instead of staring at request latency alone:
+
+- `download.js` → `aster_download_bytes`
+- `upload-direct.js` → `aster_upload_direct_bytes`
+- `upload-chunked.js` → `aster_upload_chunked_bytes`
+- `webdav-rw.js` → `aster_webdav_put_bytes`, `aster_webdav_get_bytes`
+- `mixed-ramp.js` → `aster_mixed_ramp_bytes`
+
 ## Soak-Test Observation
 
 `soak-mixed.js` only drives workload. Pair it with runtime monitoring:
@@ -152,4 +170,3 @@ Recommended soak checklist:
 2. Sample RSS / heap / CPU every `30s` to `60s`.
 3. Watch p95 latency drift in the k6 summary.
 4. Watch DB pool exhaustion, request retries, and cleanup backlog in logs.
-

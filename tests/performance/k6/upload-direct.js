@@ -1,5 +1,5 @@
 import { sleep } from "k6";
-import { Trend } from "k6/metrics";
+import { Counter, Trend } from "k6/metrics";
 
 import { benchConfig, durationEnv, intEnv } from "./lib/config.js";
 import {
@@ -12,6 +12,7 @@ import {
 import { createSummary } from "./lib/summary.js";
 
 const uploadDuration = new Trend("aster_upload_direct_duration", true);
+const uploadTransferredBytes = new Counter("aster_upload_direct_bytes");
 const uploadBytes = intEnv("ASTER_BENCH_DIRECT_UPLOAD_BYTES", 1024 * 1024);
 const payload = "U".repeat(uploadBytes);
 let state;
@@ -49,6 +50,7 @@ export default function (data) {
 		folderId: state.folderId,
 	});
 	uploadDuration.add(response.timings.duration);
+	uploadTransferredBytes.add(uploadBytes);
 
 	if (benchConfig.thinkTimeMs > 0) {
 		sleep(benchConfig.thinkTimeMs / 1000);
@@ -57,5 +59,5 @@ export default function (data) {
 
 export const handleSummary = createSummary("upload-direct", [
 	"aster_upload_direct_duration",
+	"aster_upload_direct_bytes",
 ]);
-

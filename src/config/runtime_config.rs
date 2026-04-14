@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use std::sync::RwLock;
 
+use parking_lot::RwLock;
 use sea_orm::ConnectionTrait;
 
 use crate::db::repository::config_repo;
@@ -24,19 +24,12 @@ impl RuntimeConfig {
             .into_iter()
             .map(|config| (config.key.clone(), config))
             .collect();
-        *self
-            .snapshot
-            .write()
-            .expect("runtime config snapshot lock poisoned") = snapshot;
+        *self.snapshot.write() = snapshot;
         Ok(())
     }
 
     pub fn get_model(&self, key: &str) -> Option<system_config::Model> {
-        self.snapshot
-            .read()
-            .expect("runtime config snapshot lock poisoned")
-            .get(key)
-            .cloned()
+        self.snapshot.read().get(key).cloned()
     }
 
     pub fn get(&self, key: &str) -> Option<String> {
@@ -73,10 +66,7 @@ impl RuntimeConfig {
     }
 
     pub fn apply(&self, config: system_config::Model) {
-        let mut snapshot = self
-            .snapshot
-            .write()
-            .expect("runtime config snapshot lock poisoned");
+        let mut snapshot = self.snapshot.write();
 
         if config.requires_restart && snapshot.contains_key(&config.key) {
             return;
@@ -86,10 +76,7 @@ impl RuntimeConfig {
     }
 
     pub fn remove(&self, key: &str) {
-        self.snapshot
-            .write()
-            .expect("runtime config snapshot lock poisoned")
-            .remove(key);
+        self.snapshot.write().remove(key);
     }
 }
 

@@ -1,10 +1,10 @@
 import { sleep } from "k6";
-import { Trend } from "k6/metrics";
+import { Counter, Trend } from "k6/metrics";
 
 import { benchConfig, durationEnv, intEnv } from "./lib/config.js";
 import {
 	downloadFile,
-	findFileInFolder,
+	findFileEntryInFolder,
 	login,
 	maybeRefreshSession,
 	resolveRootFolderId,
@@ -12,6 +12,7 @@ import {
 import { createSummary } from "./lib/summary.js";
 
 const downloadDuration = new Trend("aster_download_duration", true);
+const downloadBytes = new Counter("aster_download_bytes");
 let state;
 
 export const options = {
@@ -34,8 +35,8 @@ export function setup() {
 		);
 	}
 
-	const fileId = findFileInFolder(session, folderId, benchConfig.downloadFile);
-	if (!fileId) {
+	const file = findFileEntryInFolder(session, folderId, benchConfig.downloadFile);
+	if (!file) {
 		throw new Error(
 			`missing seeded file ${benchConfig.downloadFile}; run bun tests/performance/seed.mjs first`,
 		);
@@ -43,7 +44,8 @@ export function setup() {
 
 	return {
 		session,
-		fileId,
+		fileId: file.id,
+		fileSize: Number(file.size),
 	};
 }
 
@@ -55,6 +57,7 @@ export default function (data) {
 	state.session = maybeRefreshSession(state.session);
 	const response = downloadFile(state.session, state.fileId);
 	downloadDuration.add(response.timings.duration);
+	downloadBytes.add(state.fileSize);
 
 	if (benchConfig.thinkTimeMs > 0) {
 		sleep(benchConfig.thinkTimeMs / 1000);
@@ -63,5 +66,5 @@ export default function (data) {
 
 export const handleSummary = createSummary("download", [
 	"aster_download_duration",
+	"aster_download_bytes",
 ]);
-

@@ -193,7 +193,7 @@ export function ensureRootFolder(session, name) {
 	return createFolder(session, name, null).body.data.id;
 }
 
-export function findFileInFolder(session, folderId, filename) {
+export function findFileEntryInFolder(session, folderId, filename) {
 	let cursorValue = null;
 	let cursorId = null;
 
@@ -209,7 +209,7 @@ export function findFileInFolder(session, folderId, filename) {
 
 		const match = body.data.files.find((file) => file.name === filename);
 		if (match) {
-			return match.id;
+			return match;
 		}
 
 		if (!body.data.next_file_cursor) {
@@ -219,6 +219,11 @@ export function findFileInFolder(session, folderId, filename) {
 		cursorValue = body.data.next_file_cursor.value;
 		cursorId = body.data.next_file_cursor.id;
 	}
+}
+
+export function findFileInFolder(session, folderId, filename) {
+	const file = findFileEntryInFolder(session, folderId, filename);
+	return file ? file.id : null;
 }
 
 export function uploadDirect(

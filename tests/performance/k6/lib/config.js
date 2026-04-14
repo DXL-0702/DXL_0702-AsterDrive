@@ -16,6 +16,25 @@ export function durationEnv(name, fallback) {
 	return env(name, fallback);
 }
 
+export function stagesEnv(name, fallback) {
+	return env(name, fallback)
+		.split(",")
+		.map((entry) => entry.trim())
+		.filter(Boolean)
+		.map((entry) => {
+			const [targetRaw, durationRaw] = entry.split(":").map((part) => part.trim());
+			const target = Number.parseInt(targetRaw, 10);
+			if (Number.isNaN(target) || target < 0 || !durationRaw) {
+				throw new Error(`invalid stage env ${name}: ${entry}`);
+			}
+
+			return {
+				target,
+				duration: durationRaw,
+			};
+		});
+}
+
 function stripTrailingSlash(value) {
 	return value.endsWith("/") ? value.slice(0, -1) : value;
 }
@@ -54,4 +73,3 @@ export const benchConfig = {
 export function listFolderName(size) {
 	return `${benchConfig.listFolderPrefix}-${size}`;
 }
-

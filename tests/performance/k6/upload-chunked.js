@@ -1,5 +1,5 @@
 import { sleep } from "k6";
-import { Trend } from "k6/metrics";
+import { Counter, Trend } from "k6/metrics";
 
 import { benchConfig, durationEnv, intEnv } from "./lib/config.js";
 import {
@@ -14,6 +14,8 @@ import {
 import { createSummary } from "./lib/summary.js";
 
 const flowDuration = new Trend("aster_upload_chunked_flow_duration", true);
+const chunkDuration = new Trend("aster_upload_chunked_chunk_duration", true);
+const uploadTransferredBytes = new Counter("aster_upload_chunked_bytes");
 const totalBytes = intEnv("ASTER_BENCH_CHUNKED_TOTAL_BYTES", 10 * 1024 * 1024);
 let state;
 
@@ -67,15 +69,17 @@ export default function (data) {
 			index === sessionData.total_chunks - 1
 				? remaining
 				: sessionData.chunk_size;
-		uploadChunk(
+		const { response } = uploadChunk(
 			state.session,
 			sessionData.upload_id,
 			index,
 			makeChunk(chunkSize, index),
 		);
+		chunkDuration.add(response.timings.duration);
 	}
 	completeUpload(state.session, sessionData.upload_id);
 	flowDuration.add(Date.now() - startedAt);
+	uploadTransferredBytes.add(totalBytes);
 
 	if (benchConfig.thinkTimeMs > 0) {
 		sleep(benchConfig.thinkTimeMs / 1000);
@@ -84,5 +88,6 @@ export default function (data) {
 
 export const handleSummary = createSummary("upload-chunked", [
 	"aster_upload_chunked_flow_duration",
+	"aster_upload_chunked_chunk_duration",
+	"aster_upload_chunked_bytes",
 ]);
-

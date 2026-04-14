@@ -1,7 +1,7 @@
 use std::io::{self, IsTerminal, Write};
-use std::sync::Mutex;
 
 use clap::ValueEnum;
+use parking_lot::Mutex;
 use serde::Serialize;
 
 use crate::errors::AsterError;
@@ -166,7 +166,7 @@ impl ProgressReporter {
             return;
         }
 
-        let mut state = self.state.lock().expect("progress state lock poisoned");
+        let mut state = self.state.lock();
         if !state.active_line {
             return;
         }
@@ -182,7 +182,7 @@ impl ProgressReporter {
             return;
         }
 
-        let mut state = self.state.lock().expect("progress state lock poisoned");
+        let mut state = self.state.lock();
         eprint!("\r\x1b[2K{line}");
         let _ = io::stderr().flush();
         state.active_line = true;
@@ -245,7 +245,7 @@ impl Drop for ProgressReporter {
             return;
         }
 
-        let mut state = self.state.lock().expect("progress state lock poisoned");
+        let mut state = self.state.lock();
         if !state.active_line {
             return;
         }
