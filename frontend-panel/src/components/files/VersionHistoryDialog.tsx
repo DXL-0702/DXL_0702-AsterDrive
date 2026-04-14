@@ -32,8 +32,16 @@ interface VersionHistoryDialogProps {
 	fileId: number;
 	fileName: string;
 	mimeType?: string;
-	currentSize?: number;
 	onRestored?: () => void;
+}
+
+function getCurrentVersionNumber(versions: FileVersion[]) {
+	return (
+		versions.reduce(
+			(maxVersion, version) => Math.max(maxVersion, version.version),
+			0,
+		) + 1
+	);
 }
 
 export function VersionHistoryDialog({
@@ -42,7 +50,6 @@ export function VersionHistoryDialog({
 	fileId,
 	fileName,
 	mimeType,
-	currentSize,
 	onRestored,
 }: VersionHistoryDialogProps) {
 	const { t } = useTranslation("files");
@@ -58,6 +65,7 @@ export function VersionHistoryDialog({
 		useState<FileVersion | null>(null);
 	const [confirmDeleteVersion, setConfirmDeleteVersion] =
 		useState<FileVersion | null>(null);
+	const currentVersion = loading ? null : getCurrentVersionNumber(versions);
 
 	const load = useCallback(async () => {
 		try {
@@ -106,8 +114,9 @@ export function VersionHistoryDialog({
 		try {
 			setDeletingVersionId(versionId);
 			await fileService.deleteVersion(fileId, versionId);
+			const data = await fileService.listVersions(fileId);
+			setVersions(data);
 			toast.success(t("version_deleted"));
-			setVersions((prev) => prev.filter((v) => v.id !== versionId));
 		} catch (e) {
 			handleApiError(e);
 		} finally {
@@ -132,36 +141,20 @@ export function VersionHistoryDialog({
 								<DialogTitle>
 									{t("version_history_title", { name: fileName })}
 								</DialogTitle>
-								{(mimeType || currentSize !== undefined) && (
-									<div className="mt-1 text-xs text-muted-foreground">
-										{mimeType ?? t("core:file")}
-										{currentSize !== undefined
-											? ` · ${formatBytes(currentSize)}`
-											: ""}
-									</div>
-								)}
 							</div>
 						</div>
 					</DialogHeader>
 					<div className="mb-4 rounded-lg border bg-muted/20 p-3">
 						<div className="flex items-center gap-3">
-							{mimeType ? (
-								<FileTypeIcon
-									mimeType={mimeType}
-									fileName={fileName}
-									className="h-5 w-5 shrink-0"
-								/>
-							) : null}
 							<div className="min-w-0 flex-1">
 								<div className="text-sm font-medium text-foreground">
 									{t("version_current")}
 								</div>
-								<div className="mt-1 text-xs text-muted-foreground">
-									{currentSize !== undefined
-										? formatBytes(currentSize)
-										: t("core:file")}
-									{mimeType ? ` · ${mimeType}` : ""}
-								</div>
+								{currentVersion !== null ? (
+									<div className="mt-1 font-mono text-xs text-muted-foreground">
+										v{currentVersion}
+									</div>
+								) : null}
 							</div>
 							<div className="text-xs text-muted-foreground">
 								{t("version_history_count", { count: versions.length })}

@@ -202,13 +202,13 @@ const versions = [
 		created_at: "2026-03-01T00:00:00Z",
 		id: 11,
 		size: 128,
-		version: 3,
+		version: 2,
 	},
 	{
 		created_at: "2026-03-02T00:00:00Z",
 		id: 12,
 		size: 256,
-		version: 4,
+		version: 1,
 	},
 ] as never[];
 
@@ -240,7 +240,6 @@ describe("VersionHistoryDialog", () => {
 				fileId={8}
 				fileName="report.pdf"
 				mimeType="application/pdf"
-				currentSize={2048}
 			/>,
 		);
 
@@ -248,20 +247,17 @@ describe("VersionHistoryDialog", () => {
 		expect(
 			screen.getByRole("heading", { name: "history:report.pdf" }),
 		).toBeInTheDocument();
-		expect(
-			screen.getByText("application/pdf · bytes:2048"),
-		).toBeInTheDocument();
-		expect(
-			screen.getByText("bytes:2048 · application/pdf"),
-		).toBeInTheDocument();
+		expect(screen.queryByText("application/pdf · bytes:2048")).toBeNull();
+		expect(screen.queryByText("bytes:2048 · application/pdf")).toBeNull();
 		expect(screen.getByText("count:0")).toBeInTheDocument();
 		expect(screen.getByText("loading")).toBeInTheDocument();
-		expect(screen.getAllByTestId("file-type-icon")).toHaveLength(2);
+		expect(screen.getAllByTestId("file-type-icon")).toHaveLength(1);
 
 		resolveList?.(versions);
 
 		expect(await screen.findByText("v3")).toBeInTheDocument();
-		expect(screen.getByText("v4")).toBeInTheDocument();
+		expect(screen.getByText("v2")).toBeInTheDocument();
+		expect(screen.getByText("v1")).toBeInTheDocument();
 		expect(screen.getByText("bytes:128")).toBeInTheDocument();
 		expect(screen.getByText("bytes:256")).toBeInTheDocument();
 		expect(screen.getByText("time:2026-03-01T00:00:00Z")).toBeInTheDocument();
@@ -274,12 +270,11 @@ describe("VersionHistoryDialog", () => {
 				fileId={8}
 				fileName="report.pdf"
 				mimeType="application/pdf"
-				currentSize={2048}
 			/>,
 		);
 
 		expect(screen.queryByTestId("dialog")).not.toBeInTheDocument();
-		expect(screen.queryByText("v3")).not.toBeInTheDocument();
+		expect(screen.queryByText("v2")).not.toBeInTheDocument();
 	});
 
 	it("restores a version after confirmation and invalidates related caches", async () => {
@@ -297,11 +292,11 @@ describe("VersionHistoryDialog", () => {
 			/>,
 		);
 
-		await screen.findByText("v3");
+		await screen.findByText("v2");
 		fireEvent.click(screen.getByRole("button", { name: "version_restore" }));
 
 		const confirmDialog = screen.getByTestId("confirm-dialog");
-		expect(within(confirmDialog).getByText("restore:3")).toBeInTheDocument();
+		expect(within(confirmDialog).getByText("restore:2")).toBeInTheDocument();
 
 		fireEvent.click(
 			within(confirmDialog).getByRole("button", { name: "version_restore" }),
@@ -326,6 +321,7 @@ describe("VersionHistoryDialog", () => {
 	it("deletes a version after confirmation and removes it from the rendered list", async () => {
 		mockState.listVersions.mockResolvedValueOnce(versions);
 		mockState.deleteVersion.mockResolvedValueOnce(undefined);
+		mockState.listVersions.mockResolvedValueOnce([versions[1]]);
 
 		render(
 			<VersionHistoryDialog
@@ -336,13 +332,13 @@ describe("VersionHistoryDialog", () => {
 			/>,
 		);
 
-		await screen.findByText("v3");
+		await screen.findByText("v2");
 		fireEvent.click(
 			screen.getAllByRole("button", { name: "version_delete" })[0],
 		);
 
 		const confirmDialog = screen.getByTestId("confirm-dialog");
-		expect(within(confirmDialog).getByText("delete:3")).toBeInTheDocument();
+		expect(within(confirmDialog).getByText("delete:2")).toBeInTheDocument();
 
 		fireEvent.click(
 			within(confirmDialog).getByRole("button", { name: "version_delete" }),
@@ -352,8 +348,8 @@ describe("VersionHistoryDialog", () => {
 			expect(mockState.deleteVersion).toHaveBeenCalledWith(15, 11);
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("version_deleted");
-		expect(screen.queryByText("v3")).not.toBeInTheDocument();
-		expect(screen.getByText("v4")).toBeInTheDocument();
+		expect(screen.getAllByText("v2")).toHaveLength(1);
+		expect(screen.getByText("v1")).toBeInTheDocument();
 	});
 
 	it("surfaces loading failures through the api error handler and falls back to the empty state", async () => {

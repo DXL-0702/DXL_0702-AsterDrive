@@ -1,6 +1,6 @@
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, sea_query::Expr,
 };
 
 use crate::entities::file_version::{self, Entity as FileVersion};
@@ -38,6 +38,25 @@ pub async fn find_by_id<C: ConnectionTrait>(
 
 pub async fn delete_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<()> {
     FileVersion::delete_by_id(id)
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(())
+}
+
+/// 删除某个历史版本后，把更“新”的版本号整体减 1，保持显示编号连续
+pub async fn decrement_versions_after<C: ConnectionTrait>(
+    db: &C,
+    file_id: i64,
+    deleted_version: i32,
+) -> Result<()> {
+    FileVersion::update_many()
+        .col_expr(
+            file_version::Column::Version,
+            Expr::col(file_version::Column::Version).sub(1i32),
+        )
+        .filter(file_version::Column::FileId.eq(file_id))
+        .filter(file_version::Column::Version.gt(deleted_version))
         .exec(db)
         .await
         .map_err(AsterError::from)?;

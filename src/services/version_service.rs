@@ -145,6 +145,7 @@ async fn delete_version_inner(
 ) -> Result<()> {
     let txn = state.db.begin().await.map_err(AsterError::from)?;
     version_repo::delete_by_id(&txn, version.id).await?;
+    version_repo::decrement_versions_after(&txn, version.file_id, version.version).await?;
     if version.size != 0 {
         workspace_storage_service::update_storage_used(&txn, scope, -version.size).await?;
     }
@@ -317,6 +318,7 @@ pub async fn cleanup_excess(state: &AppState, file_id: i64) -> Result<()> {
         if let Some(oldest) = oldest {
             let txn = state.db.begin().await.map_err(AsterError::from)?;
             version_repo::delete_by_id(&txn, oldest.id).await?;
+            version_repo::decrement_versions_after(&txn, file_id, oldest.version).await?;
             if oldest.size != 0 {
                 workspace_storage_service::update_storage_used(&txn, scope, -oldest.size).await?;
             }

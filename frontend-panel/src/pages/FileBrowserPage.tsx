@@ -203,7 +203,6 @@ export default function FileBrowserPage() {
 		fileId: number;
 		fileName: string;
 		mimeType: string;
-		size: number;
 	} | null>(null);
 	const [dragOverBreadcrumbIndex, setDragOverBreadcrumbIndex] = useState<
 		number | null
@@ -535,7 +534,6 @@ export default function FileBrowserPage() {
 				fileId,
 				fileName: targetFile.name,
 				mimeType: targetFile.mime_type,
-				size: targetFile.size,
 			});
 		},
 		onInfo: (type: "file" | "folder", id: number) => {
@@ -846,7 +844,6 @@ export default function FileBrowserPage() {
 						fileId={versionTarget.fileId}
 						fileName={versionTarget.fileName}
 						mimeType={versionTarget.mimeType}
-						currentSize={versionTarget.size}
 						onRestored={() => {
 							setVersionTarget(null);
 							refresh();

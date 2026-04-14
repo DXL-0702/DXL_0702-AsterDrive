@@ -834,6 +834,113 @@ async fn test_version_service_list_delete() {
 }
 
 #[actix_web::test]
+async fn test_delete_version_keeps_history_numbers_dense() {
+    let state = common::setup().await;
+
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "densever",
+        "densever@example.com",
+        "pass123",
+    )
+    .await
+    .unwrap();
+
+    let temp1 = write_service_fixture("dense-v1.txt", "1111");
+    let file = aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "dense-versioned.txt",
+        &temp1,
+        4,
+        None,
+        false,
+    )
+    .await
+    .unwrap();
+
+    let temp2 = write_service_fixture("dense-v2.txt", "2222");
+    aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "dense-versioned.txt",
+        &temp2,
+        4,
+        Some(file.id),
+        false,
+    )
+    .await
+    .unwrap();
+
+    let temp3 = write_service_fixture("dense-v3.txt", "3333");
+    aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "dense-versioned.txt",
+        &temp3,
+        4,
+        Some(file.id),
+        false,
+    )
+    .await
+    .unwrap();
+
+    let versions = aster_drive::services::version_service::list_versions(&state, file.id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        versions
+            .iter()
+            .map(|version| version.version)
+            .collect::<Vec<_>>(),
+        vec![2, 1]
+    );
+
+    aster_drive::services::version_service::delete_version(
+        &state,
+        file.id,
+        versions[1].id,
+        user.id,
+    )
+    .await
+    .unwrap();
+
+    let versions = aster_drive::services::version_service::list_versions(&state, file.id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(versions.len(), 1);
+    assert_eq!(versions[0].version, 1);
+
+    let temp4 = write_service_fixture("dense-v4.txt", "4444");
+    aster_drive::services::file_service::store_from_temp(
+        &state,
+        user.id,
+        None,
+        "dense-versioned.txt",
+        &temp4,
+        4,
+        Some(file.id),
+        false,
+    )
+    .await
+    .unwrap();
+
+    let versions = aster_drive::services::version_service::list_versions(&state, file.id, user.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        versions
+            .iter()
+            .map(|version| version.version)
+            .collect::<Vec<_>>(),
+        vec![2, 1]
+    );
+}
+
+#[actix_web::test]
 async fn test_version_storage_used_tracks_overwrite_delete_and_restore() {
     let state = common::setup().await;
 
@@ -1001,6 +1108,7 @@ async fn test_version_cleanup_excess_reclaims_storage_used() {
         .await
         .unwrap();
     assert_eq!(versions.len(), 1);
+    assert_eq!(versions[0].version, 1);
     assert_eq!(versions[0].size, 6);
     assert_eq!(user_storage_used(&state, user.id).await, 14);
 }
