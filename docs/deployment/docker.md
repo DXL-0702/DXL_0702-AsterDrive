@@ -15,13 +15,16 @@ Docker 适合 NAS、单机和小团队部署。
 
 - `asterdrive.db`
 - `uploads/`
+- `avatar/`（用户上传头像后）
 - `.tmp/`
 - `.uploads/`
 
 其中：
 
-- `asterdrive.db` 和 `uploads/` 需要长期保留
+- `asterdrive.db`、`uploads/`，以及如果你启用了上传头像时的 `avatar/` 需要长期保留
 - `.tmp/` 和 `.uploads/` 一般不用备份，但会影响本地磁盘占用
+
+更完整的备份 / 恢复建议见 [备份与恢复](/deployment/backup)。
 
 ## 先试跑一遍
 

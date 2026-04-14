@@ -33,6 +33,11 @@ AsterDrive 是单服务交付：
 - 数据库
 - 本地上传目录
 
+如果你启用了上传头像，或额外配置了其他本地 `local` 存储策略，还要一起保留：
+
+- `avatar_dir` 对应的本地目录（默认通常是 `data/avatar`）
+- 你自定义的本地存储根目录
+
 服务运行时还会使用临时目录：
 
 - `data/.tmp`
@@ -107,6 +112,7 @@ bootstrap_insecure_cookies = false
 
 - 用 Docker：看 [Docker 部署](/deployment/docker)
 - 用 systemd：看 [systemd 部署](/deployment/systemd)
+- 准备备份、恢复和恢复后校验：看 [备份与恢复](/deployment/backup)
 - 想在命令行里做部署检查、离线配置或跨数据库迁移：看 [运维 CLI](/deployment/ops-cli)
 - 准备挂 HTTPS：看 [反向代理](/deployment/reverse-proxy)
 - 想确认首次启动到底自动做了哪些事：看 [首次启动检查](/deployment/runtime-behavior)

@@ -42,6 +42,9 @@ sudo chown -R asterdrive:asterdrive /var/lib/asterdrive/data
 
 长期部署时，建议数据库路径、本地存储路径和临时目录都尽量使用绝对路径。
 
+如果你准备长期运行，别只考虑“怎么启动”，还要同时规划备份和恢复。  
+SQLite、本地存储目录、头像目录和你自定义的本地 `local` 存储根目录，都应该纳入同一套备份策略。见 [备份与恢复](/deployment/backup)。
+
 ## 4. 写入 Service 文件
 
 创建 `/etc/systemd/system/asterdrive.service`：
