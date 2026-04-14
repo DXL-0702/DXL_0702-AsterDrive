@@ -313,6 +313,15 @@ export function FilePreviewDialog({
 		}
 		return allOptions[0]?.key ?? null;
 	}, [allOptions, profile]);
+	const shouldAutoOpenPreferredMode = useMemo(
+		() =>
+			openMode === "auto" &&
+			Boolean(profile) &&
+			profile?.category === "image" &&
+			profile.isTextBased &&
+			preferredMode === "image",
+		[openMode, preferredMode, profile],
+	);
 
 	const [mode, setMode] = useState<OpenWithMode | null>(null);
 	const [isDialogAnimationEnabled, setIsDialogAnimationEnabled] =
@@ -320,12 +329,14 @@ export function FilePreviewDialog({
 	const [isExpanded, setIsExpanded] = useState(false);
 	const previousFileIdRef = useRef(file.id);
 	const [hasConfirmedInitialMode, setHasConfirmedInitialMode] = useState(false);
+	const [forceOpenMethodChooser, setForceOpenMethodChooser] = useState(false);
 	useEffect(() => {
 		const hasFileChanged = previousFileIdRef.current !== file.id;
 		if (hasFileChanged) {
 			previousFileIdRef.current = file.id;
 			setHasConfirmedInitialMode(false);
 			setIsExpanded(false);
+			setForceOpenMethodChooser(false);
 		}
 		setMode(preferredMode);
 	}, [file.id, preferredMode]);
@@ -362,11 +373,15 @@ export function FilePreviewDialog({
 	}, [activeOption, wopiSessionFactory]);
 	const showOpenMethodChooser =
 		previewAppsLoaded &&
-		(openMode === "picker"
+		(forceOpenMethodChooser
 			? allOptions.length > 0
-			: openMode === "direct"
-				? false
-				: allOptions.length > 1) &&
+			: openMode === "picker"
+				? allOptions.length > 0
+				: openMode === "direct"
+					? false
+					: shouldAutoOpenPreferredMode
+						? false
+						: allOptions.length > 1) &&
 		!hasConfirmedInitialMode;
 
 	const usesInnerScroll =
@@ -400,7 +415,15 @@ export function FilePreviewDialog({
 	const handleOpenMethodSelect = useCallback((nextMode: OpenWithMode) => {
 		setIsDialogAnimationEnabled(true);
 		setMode(nextMode);
+		setForceOpenMethodChooser(false);
 		setHasConfirmedInitialMode(true);
+	}, []);
+
+	const handleOpenMethodPickerOpen = useCallback(() => {
+		setIsDialogAnimationEnabled(true);
+		setForceOpenMethodChooser(true);
+		setHasConfirmedInitialMode(false);
+		setShowAllOpenMethods(false);
 	}, []);
 
 	const handleDiscardChanges = useCallback(() => {
@@ -695,6 +718,18 @@ export function FilePreviewDialog({
 						</DialogTitle>
 					</div>
 					<div className="flex items-center gap-1">
+						{allOptions.length > 1 ? (
+							<Button
+								variant="ghost"
+								size="sm"
+								onClick={handleOpenMethodPickerOpen}
+								disabled={isDirty}
+								aria-label={t("files:choose_open_method")}
+								title={t("files:choose_open_method")}
+							>
+								{t("files:choose_open_method")}
+							</Button>
+						) : null}
 						<Button
 							variant="ghost"
 							size="icon-sm"

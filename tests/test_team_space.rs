@@ -2108,16 +2108,16 @@ async fn test_team_upload_session_enforces_owner_even_for_members() {
     for token in [&member_token, &outsider_token] {
         let req = test::TestRequest::get()
             .uri(&format!("/api/v1/teams/{team_id}/files/upload/{upload_id}"))
-            .insert_header(("Cookie", common::access_cookie_header(&token)))
-            .insert_header(common::csrf_header_for(&token))
+            .insert_header(("Cookie", common::access_cookie_header(token)))
+            .insert_header(common::csrf_header_for(token))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 403);
 
         let req = test::TestRequest::delete()
             .uri(&format!("/api/v1/teams/{team_id}/files/upload/{upload_id}"))
-            .insert_header(("Cookie", common::access_cookie_header(&token)))
-            .insert_header(common::csrf_header_for(&token))
+            .insert_header(("Cookie", common::access_cookie_header(token)))
+            .insert_header(common::csrf_header_for(token))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), 403);

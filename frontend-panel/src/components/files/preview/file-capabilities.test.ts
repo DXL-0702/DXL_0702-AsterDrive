@@ -92,6 +92,7 @@ describe("file preview capabilities", () => {
 			getFileTypeInfo({ name: "photo.svg", mime_type: "image/svg+xml" }),
 		).toMatchObject({
 			category: "image",
+			icon: "FileText",
 		});
 		expect(
 			getFileTypeInfo({ name: "notes.txt", mime_type: "text/xml" }),
@@ -153,6 +154,7 @@ describe("file preview capabilities", () => {
 		const json = { name: "data.json", mime_type: "application/json" };
 		const xml = { name: "config.xml", mime_type: "application/xml" };
 		const image = { name: "photo.png", mime_type: "image/png" };
+		const svg = { name: "photo.svg", mime_type: "image/svg+xml" };
 		const document = {
 			name: "report.docx",
 			mime_type:
@@ -188,6 +190,13 @@ describe("file preview capabilities", () => {
 			isBlobPreview: true,
 			defaultMode: "image",
 		});
+		expect(detectFilePreviewProfile(svg)).toMatchObject({
+			category: "image",
+			isBlobPreview: true,
+			isTextBased: true,
+			isEditableText: true,
+			defaultMode: "image",
+		});
 		expect(detectFilePreviewProfile(document)).toMatchObject({
 			category: "document",
 			isBlobPreview: false,
@@ -219,11 +228,23 @@ describe("file preview capabilities", () => {
 			}),
 			expect.objectContaining({ mode: "code" }),
 		]);
+		expect(getAvailableOpenWithOptions(svg)).toEqual([
+			expect.objectContaining({
+				key: "image",
+				mode: "image",
+			}),
+			expect.objectContaining({
+				key: "code",
+				mode: "code",
+			}),
+		]);
 		expect(getDefaultOpenWith(json)).toBe("formatted");
+		expect(getDefaultOpenWith(svg)).toBe("image");
 		expect(getDefaultOpenWith(document)).toBe("office_microsoft");
 		expect(getDefaultOpenWith(tsv)).toBe("table");
 		expect(isEditableTextFile(markdown)).toBe(true);
 		expect(isEditableTextFile(image)).toBe(false);
+		expect(isEditableTextFile(svg)).toBe(true);
 		expect(isEditableTextFile(shell)).toBe(true);
 	});
 

@@ -596,6 +596,55 @@ describe("FilePreviewDialog", () => {
 		).not.toContain("h-[90vh]");
 	});
 
+	it("auto-opens hybrid svg previews directly and still allows switching modes", async () => {
+		mockState.profile = {
+			category: "image",
+			defaultMode: "image",
+			isBlobPreview: true,
+			isEditableText: true,
+			isTextBased: true,
+			options: [
+				{
+					icon: "Eye",
+					key: "image",
+					labelKey: "open_with_image",
+					mode: "image",
+				},
+				{
+					icon: "TextT",
+					key: "code",
+					labelKey: "mode_code",
+					mode: "code",
+				},
+			],
+		};
+
+		renderDialog({
+			file: {
+				id: 7,
+				mime_type: "image/svg+xml",
+				name: "logo.svg",
+				size: 512,
+			} as never,
+		});
+
+		expect(
+			screen.queryByRole("heading", { name: "files:choose_open_method" }),
+		).not.toBeInTheDocument();
+		await screen.findByText("blob:image:/files/7/download");
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "files:choose_open_method" }),
+		);
+		expect(
+			await screen.findByRole("heading", { name: "files:choose_open_method" }),
+		).toBeInTheDocument();
+		await chooseOpenMethod("files:mode_code");
+		expect(
+			await screen.findByText("code:/files/7/download:true"),
+		).toBeInTheDocument();
+	});
+
 	it("renders iframe url-template previews in the fixed-height workspace", async () => {
 		mockState.profile = {
 			category: "document",

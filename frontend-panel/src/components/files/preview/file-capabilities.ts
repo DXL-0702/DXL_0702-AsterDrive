@@ -504,6 +504,20 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 			icon: PREVIEW_APP_ICON_URLS.code,
 		},
 	],
+	svg: [
+		{
+			key: "image",
+			mode: "image",
+			labelKey: "open_with_image",
+			icon: PREVIEW_APP_ICON_URLS.image,
+		},
+		{
+			key: "code",
+			mode: "code",
+			labelKey: "open_with_code",
+			icon: PREVIEW_APP_ICON_URLS.code,
+		},
+	],
 };
 
 const BUILTIN_KEY_BY_LEGACY_OPTION_KEY: Partial<Record<string, string>> = {
@@ -549,6 +563,11 @@ function getExtension(name: string) {
 
 export function getFileExtension(file: PreviewableFileLike) {
 	return getExtension(file.name).ext;
+}
+
+function isSvgFile(file: PreviewableFileLike) {
+	const { ext } = getExtension(file.name);
+	return ext === "svg" || file.mime_type === "image/svg+xml";
 }
 
 export function getEditorLanguage(file: PreviewableFileLike): string {
@@ -626,6 +645,17 @@ function detectLegacyFilePreviewProfile(
 	const typeInfo = getFileTypeInfo(file);
 	const { ext } = getExtension(file.name);
 	const isOpenDocument = ext === "odt" || ext === "ods" || ext === "odp";
+
+	if (isSvgFile(file)) {
+		return {
+			category: "image",
+			isBlobPreview: true,
+			isTextBased: true,
+			isEditableText: true,
+			defaultMode: "image",
+			options: OPEN_WITH_OPTIONS.svg,
+		};
+	}
 
 	if (typeInfo.category === "image") {
 		return {

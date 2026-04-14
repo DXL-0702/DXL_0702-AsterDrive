@@ -53,13 +53,12 @@ pub fn csrf_token_for(session_token: impl AsRef<str>) -> String {
     lock_csrf_registry()
         .get(session_token)
         .cloned()
-        .map(|csrf_token| {
+        .inspect(|csrf_token| {
             CSRF_LOOKUP_CACHE.with(|cache| {
                 cache
                     .borrow_mut()
                     .insert(session_token.to_string(), csrf_token.clone());
             });
-            csrf_token
         })
         .unwrap_or_else(|| panic!("missing csrf token for session token: {session_token}"))
 }
@@ -254,15 +253,14 @@ pub fn extract_cookie<B>(resp: &actix_web::dev::ServiceResponse<B>, name: &str) 
         .find(|c| c.name() == name)
         .map(|c| c.value().to_string())?;
 
-    if matches!(name, "aster_access" | "aster_refresh") {
-        if let Some(csrf_token) = resp
+    if matches!(name, "aster_access" | "aster_refresh")
+        && let Some(csrf_token) = resp
             .response()
             .cookies()
             .find(|cookie| cookie.name() == "aster_csrf")
             .map(|cookie| cookie.value().to_string())
-        {
-            remember_csrf_token(&value, &csrf_token);
-        }
+    {
+        remember_csrf_token(&value, &csrf_token);
     }
 
     Some(value)

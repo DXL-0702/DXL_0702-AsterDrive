@@ -10,6 +10,13 @@ interface BlobMediaPreviewProps {
 	path: string;
 }
 
+function isSvgPreview(file: PreviewableFileLike) {
+	return (
+		file.mime_type.toLowerCase() === "image/svg+xml" ||
+		file.name.toLowerCase().endsWith(".svg")
+	);
+}
+
 export function BlobMediaPreview({ file, mode, path }: BlobMediaPreviewProps) {
 	const { t } = useTranslation("files");
 	const { blobUrl, error, loading, retry } = useBlobUrl(path);
@@ -25,12 +32,24 @@ export function BlobMediaPreview({ file, mode, path }: BlobMediaPreviewProps) {
 	}
 
 	if (mode === "image") {
+		const isSvg = isSvgPreview(file);
+
 		return (
-			<div className="mx-auto flex w-fit max-w-full min-w-0 items-center justify-center p-4">
+			<div
+				className={
+					isSvg
+						? "flex w-full items-center justify-center p-4"
+						: "mx-auto flex w-fit max-w-full min-w-0 items-center justify-center p-4"
+				}
+			>
 				<img
 					src={blobUrl}
 					alt={file.name}
-					className="block max-h-[min(70vh,48rem)] max-w-full min-w-0 object-contain"
+					className={
+						isSvg
+							? "block h-auto w-full max-h-[min(70vh,48rem)] max-w-[min(70vw,48rem)] min-w-0 object-contain"
+							: "block max-h-[min(70vh,48rem)] max-w-full min-w-0 object-contain"
+					}
 				/>
 			</div>
 		);

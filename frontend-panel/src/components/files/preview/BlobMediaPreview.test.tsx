@@ -89,6 +89,28 @@ describe("BlobMediaPreview", () => {
 		expect(image.parentElement).toHaveClass("mx-auto", "w-fit", "p-4");
 	});
 
+	it("gives svg image previews an explicit layout width", () => {
+		render(
+			<BlobMediaPreview
+				file={{ name: "logo.svg", mime_type: "image/svg+xml" }}
+				mode="image"
+				path="/files/svg"
+			/>,
+		);
+
+		const image = screen.getByRole("img", { name: "logo.svg" });
+
+		expect(image).toHaveClass(
+			"h-auto",
+			"w-full",
+			"max-h-[min(70vh,48rem)]",
+			"max-w-[min(70vw,48rem)]",
+			"object-contain",
+		);
+		expect(image.parentElement).toHaveClass("w-full", "p-4");
+		expect(image.parentElement).not.toHaveClass("w-fit");
+	});
+
 	it("renders video and audio previews for their media modes", () => {
 		const video = render(
 			<BlobMediaPreview

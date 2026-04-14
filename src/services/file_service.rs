@@ -18,6 +18,7 @@ use sha2::{Digest, Sha256};
 
 const BLOB_CLEANUP_CONCURRENCY: usize = 8;
 const MAX_COPY_NAME_RETRIES: usize = 32;
+const INLINE_SANDBOX_CSP: &str = "sandbox";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DownloadDisposition {
@@ -35,7 +36,7 @@ impl DownloadDisposition {
     }
 }
 
-fn disallows_same_origin_inline(mime_type: &str) -> bool {
+fn requires_inline_sandbox(mime_type: &str) -> bool {
     let normalized = mime_type
         .split(';')
         .next()
@@ -55,16 +56,16 @@ pub(crate) fn ensure_personal_file_scope(file: &file::Model) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::disallows_same_origin_inline;
+    use super::requires_inline_sandbox;
 
     #[test]
-    fn dangerous_same_origin_inline_mime_types_are_blocked() {
-        assert!(disallows_same_origin_inline("text/html"));
-        assert!(disallows_same_origin_inline("application/xhtml+xml"));
-        assert!(disallows_same_origin_inline("image/svg+xml"));
-        assert!(disallows_same_origin_inline("text/html; charset=utf-8"));
-        assert!(!disallows_same_origin_inline("text/plain"));
-        assert!(!disallows_same_origin_inline("application/pdf"));
+    fn dangerous_same_origin_inline_mime_types_require_sandbox() {
+        assert!(requires_inline_sandbox("text/html"));
+        assert!(requires_inline_sandbox("application/xhtml+xml"));
+        assert!(requires_inline_sandbox("image/svg+xml"));
+        assert!(requires_inline_sandbox("text/html; charset=utf-8"));
+        assert!(!requires_inline_sandbox("text/plain"));
+        assert!(!requires_inline_sandbox("application/pdf"));
     }
 }
 
@@ -353,19 +354,17 @@ pub(crate) async fn build_stream_response_with_disposition(
     disposition: DownloadDisposition,
     if_none_match: Option<&str>,
 ) -> Result<HttpResponse> {
-    let effective_disposition = if disposition == DownloadDisposition::Inline
-        && disallows_same_origin_inline(&f.mime_type)
-    {
+    let requires_sandbox =
+        disposition == DownloadDisposition::Inline && requires_inline_sandbox(&f.mime_type);
+
+    if requires_sandbox {
         tracing::debug!(
             file_id = f.id,
             blob_id = blob.id,
             mime_type = %f.mime_type,
-            "forcing attachment for same-origin inline-unsafe file"
+            "adding CSP sandbox for inline script-capable file"
         );
-        DownloadDisposition::Attachment
-    } else {
-        disposition
-    };
+    }
 
     let etag = format!("\"{}\"", blob.hash);
     if let Some(if_none_match) = if_none_match
@@ -374,13 +373,17 @@ pub(crate) async fn build_stream_response_with_disposition(
         tracing::debug!(
             file_id = f.id,
             blob_id = blob.id,
-            disposition = ?effective_disposition,
+            disposition = ?disposition,
             "serving cached file response with 304"
         );
-        return Ok(HttpResponse::NotModified()
-            .insert_header(("ETag", etag))
-            .insert_header(("Cache-Control", "private, max-age=0, must-revalidate"))
-            .finish());
+        let mut response = HttpResponse::NotModified();
+        response.insert_header(("ETag", etag));
+        response.insert_header(("Cache-Control", "private, max-age=0, must-revalidate"));
+        if requires_sandbox {
+            response.insert_header(("Content-Security-Policy", INLINE_SANDBOX_CSP));
+            response.insert_header(("X-Content-Type-Options", "nosniff"));
+        }
+        return Ok(response.finish());
     }
 
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
@@ -395,22 +398,23 @@ pub(crate) async fn build_stream_response_with_disposition(
         blob_id = blob.id,
         policy_id = blob.policy_id,
         size = blob.size,
-        disposition = ?effective_disposition,
+        disposition = ?disposition,
         "building streaming file response"
     );
 
-    Ok(HttpResponse::Ok()
-        .content_type(f.mime_type.clone())
-        .insert_header(("Content-Length", blob.size.to_string()))
-        .insert_header((
-            "Content-Disposition",
-            effective_disposition.header_value(&f.name),
-        ))
-        .insert_header(("ETag", etag))
-        .insert_header(("Cache-Control", "private, max-age=0, must-revalidate"))
-        // 跳过全局 Compress 中间件，避免压缩编码器缓冲导致内存暴涨
-        .insert_header(("Content-Encoding", "identity"))
-        .streaming(reader_stream))
+    let mut response = HttpResponse::Ok();
+    response.content_type(f.mime_type.clone());
+    response.insert_header(("Content-Length", blob.size.to_string()));
+    response.insert_header(("Content-Disposition", disposition.header_value(&f.name)));
+    response.insert_header(("ETag", etag));
+    response.insert_header(("Cache-Control", "private, max-age=0, must-revalidate"));
+    if requires_sandbox {
+        response.insert_header(("Content-Security-Policy", INLINE_SANDBOX_CSP));
+        response.insert_header(("X-Content-Type-Options", "nosniff"));
+    }
+    // 跳过全局 Compress 中间件，避免压缩编码器缓冲导致内存暴涨
+    response.insert_header(("Content-Encoding", "identity"));
+    Ok(response.streaming(reader_stream))
 }
 
 /// 删除文件（软删除 → 回收站）

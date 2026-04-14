@@ -54,7 +54,7 @@ bootstrap_insecure_cookies = false
 
 如果站点要对外访问，最好同时确认：
 
-- 反向代理已经给浏览器页面补上 `Content-Security-Policy` 响应头
+- 反向代理已经给浏览器页面补上基线 `Content-Security-Policy` 响应头
 - `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 已经填成真实的 `https://` 域名
 - 如果要开放注册、找回密码或邮箱改绑，`管理 -> 系统设置 -> 邮件投递` 已经发通过测试邮件
 
@@ -93,7 +93,7 @@ bootstrap_insecure_cookies = false
 ## 上线后先验收这几项
 
 1. 首页能正常打开并登录
-2. 首页响应头里已经能看到 `Content-Security-Policy`
+2. 首页响应头里已经能看到页面基线 `Content-Security-Policy`
 3. `/health` 和 `/health/ready` 返回正常
 4. 能创建文件夹并上传一个文件
 5. 回收站恢复正常

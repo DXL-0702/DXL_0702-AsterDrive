@@ -64,7 +64,7 @@ http://127.0.0.1:3000
 
 The first registered user becomes `admin`.
 
-Do not expose `:3000` directly to the public Internet in production. Put AsterDrive behind a reverse proxy and let the proxy handle HTTPS, `Content-Security-Policy` and related security headers, upload limits, and WebDAV / WOPI passthrough.
+Do not expose `:3000` directly to the public Internet in production. Put AsterDrive behind a reverse proxy and let the proxy handle HTTPS, page-level `Content-Security-Policy` and related security headers, upload limits, and WebDAV / WOPI passthrough. Do not replace the whole site's CSP with `sandbox`; script-capable inline file responses are sandboxed separately by the app.
 
 ### Run with Docker
 

@@ -4,7 +4,7 @@ AsterDrive 不内置 TLS 终端。
 只要你准备把站点暴露到公网、开放 WebDAV，或者接外部 Office / WOPI 服务，前面就**必须**有一层反向代理来负责：
 
 - HTTPS 证书
-- 安全响应头（至少 `Content-Security-Policy`）
+- 安全响应头（至少给站点页面补一条基线 `Content-Security-Policy`）
 - HTTP 到 HTTPS 重定向
 - 大文件上传体积限制
 - SSE 长连接超时和缓冲
@@ -19,7 +19,8 @@ AsterDrive 不内置 TLS 终端。
 - `管理 -> 系统设置 -> 站点配置 -> 公开站点地址` 填成真实的 `https://` 域名，例如 `https://drive.example.com`
 - 静态引导项 `auth.bootstrap_insecure_cookies` 只在纯 HTTP 首次引导时临时设成 `true`
 - 正式切到 HTTPS 后，把 `auth.bootstrap_insecure_cookies` 去掉，并确认运行时 `auth_cookie_secure` 已恢复为开启
-- 代理层至少给浏览器页面补上一条可用的 `Content-Security-Policy`，别只做 HTTPS
+- 代理层至少给浏览器页面补上一条可用的基线 `Content-Security-Policy`，别只做 HTTPS
+- 不要把站点自己的基线 CSP 直接改成全站 `sandbox`
 - 代理层不要拦掉 WebDAV 的 `PROPFIND`、`MOVE`、`COPY`、`LOCK`、`UNLOCK`
 - 代理层不要覆盖缩略图接口返回的 `ETag` / `Cache-Control`
 
@@ -249,6 +250,23 @@ Traefik 默认会补上常见的 `X-Forwarded-*` 头。
 AsterDrive 当前不会替你在 SPA 页面上自动补一套通用 CSP。  
 如果安全扫描报“无 `Content-Security-Policy` 响应头”，优先在反向代理或你自己的网关中间件层收口，不要指望靠前端构建产物自己解决。
 
+### 先把两类 CSP 分清楚
+
+生产环境里现在有两层不同的策略，别混成一坨：
+
+- **站点页面基线 CSP**：给 `/`、管理后台、分享页这类 HTML 页面用，主要约束脚本、样式、图片、iframe、worker 等资源加载来源
+- **危险文件 inline 沙箱 CSP**：给脚本能力文件的原始 inline 响应用，当前后端会只在 `text/html`、`application/xhtml+xml`、`image/svg+xml` 这类响应上额外挂 `Content-Security-Policy: sandbox`
+
+`sandbox` 本身是 **Document directive**，适合约束文档上下文，不是“把所有文件都改成 `sandbox`”的通用方案。  
+如果你把站点自己的基线 CSP 直接改成全站 `sandbox`，登录页、后台、分享页这些正常 HTML 也会一起进沙箱，脚本、表单、存储和同源能力都会被一刀砍掉，站点基本等于自废武功。
+
+所以部署时要按这个原则走：
+
+- 反向代理继续给站点页面补**基线 CSP**
+- 不要把全站 `Content-Security-Policy` 统一改写成 `sandbox`
+- 不要在代理层移除上游对危险 inline 文件返回的 `Content-Security-Policy`
+- 如果代理层和应用层都返回了 CSP，浏览器会**同时执行**这些策略；这是允许的，但策略会按更严格的结果生效
+
 推荐先从这条基线策略起步：
 
 ```text
@@ -325,7 +343,7 @@ AsterDrive 的缩略图接口已经返回了：
 ## 上线后最少验收一次
 
 1. 浏览器能通过 `https://你的域名/` 正常登录
-2. 首页响应头里已经能看到 `Content-Security-Policy`
+2. 首页响应头里已经能看到页面基线 `Content-Security-Policy`
 3. `管理 -> 系统设置 -> 公开站点地址` 显示的是 `https://` 域名
 4. 上传一个大文件，确认不会被代理层截断
 5. 打开两个浏览器标签页，确认文件变更能通过 SSE 刷新出来

@@ -251,7 +251,7 @@ async fn test_file_preview_link_supports_public_inline_access_and_usage_limit() 
 }
 
 #[actix_web::test]
-async fn test_dangerous_html_direct_link_is_forced_to_attachment() {
+async fn test_dangerous_html_direct_link_stays_inline_with_csp_sandbox() {
     let state = common::setup().await;
     let app = create_test_app!(state);
 
@@ -284,12 +284,20 @@ async fn test_dangerous_html_direct_link_is_forced_to_attachment() {
     assert_eq!(resp.status(), 200);
     assert_eq!(
         resp.headers().get("Content-Disposition").unwrap(),
-        r#"attachment; filename="dangerous.html""#
+        r#"inline; filename="dangerous.html""#
+    );
+    assert_eq!(
+        resp.headers().get("Content-Security-Policy").unwrap(),
+        "sandbox"
+    );
+    assert_eq!(
+        resp.headers().get("X-Content-Type-Options").unwrap(),
+        "nosniff"
     );
 }
 
 #[actix_web::test]
-async fn test_dangerous_svg_preview_link_is_forced_to_attachment() {
+async fn test_dangerous_svg_preview_link_stays_inline_with_csp_sandbox() {
     let mut state = common::setup().await;
     state.cache = aster_drive::cache::create_cache(&aster_drive::config::CacheConfig {
         enabled: true,
@@ -325,7 +333,15 @@ async fn test_dangerous_svg_preview_link_is_forced_to_attachment() {
     assert_eq!(resp.status(), 200);
     assert_eq!(
         resp.headers().get("Content-Disposition").unwrap(),
-        r#"attachment; filename="dangerous.svg""#
+        r#"inline; filename="dangerous.svg""#
+    );
+    assert_eq!(
+        resp.headers().get("Content-Security-Policy").unwrap(),
+        "sandbox"
+    );
+    assert_eq!(
+        resp.headers().get("X-Content-Type-Options").unwrap(),
+        "nosniff"
     );
 }
 
