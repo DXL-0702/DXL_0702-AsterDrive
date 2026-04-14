@@ -23,6 +23,7 @@ interface FileCardProps {
 	onDoubleClick?: () => void;
 	/** IDs to drag when this item is part of a selection */
 	dragData?: { fileIds: number[]; folderIds: number[] };
+	resolveDragData?: () => { fileIds: number[]; folderIds: number[] };
 	onDrop?: (
 		fileIds: number[],
 		folderIds: number[],
@@ -43,6 +44,7 @@ export function FileCard({
 	onClick,
 	onDoubleClick,
 	dragData,
+	resolveDragData,
 	onDrop,
 	targetPathIds = [],
 	fading,
@@ -53,11 +55,13 @@ export function FileCard({
 
 	const handleDragStart = (e: React.DragEvent) => {
 		const data =
-			dragData && (dragData.fileIds.length > 0 || dragData.folderIds.length > 0)
+			resolveDragData?.() ??
+			(dragData &&
+			(dragData.fileIds.length > 0 || dragData.folderIds.length > 0)
 				? dragData
 				: isFolder
 					? { fileIds: [], folderIds: [item.id] }
-					: { fileIds: [item.id], folderIds: [] };
+					: { fileIds: [item.id], folderIds: [] });
 		writeInternalDragData(e.dataTransfer, data);
 		setInternalDragPreview(e, {
 			variant: "grid-card",

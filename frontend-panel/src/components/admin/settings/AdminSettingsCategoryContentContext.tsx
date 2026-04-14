@@ -1,0 +1,90 @@
+import type { Dispatch, SetStateAction } from "react";
+import { createContext, useContext } from "react";
+import type {
+	NewCustomDraft,
+	SizeDisplayUnitValue,
+	SystemSubcategoryGroup,
+	TimeDisplayUnitValue,
+} from "@/components/admin/settings/adminSettingsContentShared";
+import type { SystemConfig } from "@/types/api";
+
+type TranslationFn = (key: string, options?: Record<string, unknown>) => string;
+
+export interface AdminSettingsCategoryContentProps {
+	activeTab: string;
+	addCustomDraftRow: () => void;
+	category: string;
+	deletedCustomConfigs: SystemConfig[];
+	displayUnits: Partial<
+		Record<string, TimeDisplayUnitValue | SizeDisplayUnitValue>
+	>;
+	editorTheme: "vs" | "vs-dark";
+	expandedSubcategoryGroups: Record<string, boolean>;
+	expandedTemplateGroups: Record<string, boolean>;
+	getCategoryDescription: (category: string) => string | undefined;
+	getCategoryLabel: (category: string) => string;
+	getDraftValue: (config: SystemConfig) => string;
+	getMailTemplateGroupLabel: (groupId: string) => string;
+	getSubcategoryDescription: (
+		category: string,
+		subcategory?: string,
+	) => string | undefined;
+	getSubcategoryLabel: (category: string, subcategory?: string) => string;
+	getSystemConfigDescription: (config: SystemConfig) => string | undefined;
+	getSystemConfigLabel: (config: SystemConfig) => string;
+	handleBuildWopiDiscoveryPreviewConfig: (options: {
+		discoveryUrl: string;
+		value: string;
+	}) => Promise<string>;
+	isMobileNavigation: boolean;
+	markCustomDeleted: (key: string) => void;
+	newCustomRowErrors: Map<string, string>;
+	newCustomRows: NewCustomDraft[];
+	openTemplateVariablesDialog: (config: SystemConfig) => void;
+	openTestEmailDialog: () => void;
+	removeNewCustomRow: (id: string) => void;
+	restoreDeletedCustom: (key: string) => void;
+	setDisplayUnits: Dispatch<
+		SetStateAction<
+			Partial<Record<string, TimeDisplayUnitValue | SizeDisplayUnitValue>>
+		>
+	>;
+	systemGroups: Record<string, SystemConfig[]>;
+	systemSubcategoryGroups: Record<string, SystemSubcategoryGroup[]>;
+	t: TranslationFn;
+	tabDirection: "forward" | "backward";
+	toggleSubcategoryGroup: (groupKey: string, nextExpanded: boolean) => void;
+	toggleTemplateGroup: (groupKey: string, nextExpanded: boolean) => void;
+	updateDraftValue: (key: string, value: string) => void;
+	updateNewCustomRow: (
+		id: string,
+		field: keyof Omit<NewCustomDraft, "id">,
+		value: string,
+	) => void;
+	visibleCustomConfigs: SystemConfig[];
+}
+
+const AdminSettingsCategoryContentContext =
+	createContext<AdminSettingsCategoryContentProps | null>(null);
+
+export function AdminSettingsCategoryContentProvider({
+	children,
+	value,
+}: {
+	children: React.ReactNode;
+	value: AdminSettingsCategoryContentProps;
+}) {
+	return (
+		<AdminSettingsCategoryContentContext.Provider value={value}>
+			{children}
+		</AdminSettingsCategoryContentContext.Provider>
+	);
+}
+
+export function useAdminSettingsCategoryContent() {
+	const context = useContext(AdminSettingsCategoryContentContext);
+	if (!context) {
+		throw new Error("AdminSettingsCategoryContent context is missing");
+	}
+	return context;
+}

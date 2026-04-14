@@ -1,6 +1,6 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type React from "react";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useFileBrowserContext } from "@/components/files/FileBrowserContext";
 import { FileBrowserItemContextMenu } from "@/components/files/FileBrowserItemContextMenu";
@@ -11,6 +11,7 @@ import {
 	FolderSizeCell,
 	UpdatedAtCell,
 } from "@/components/files/FileTableCells";
+import { getCurrentSelectionDragData } from "@/components/files/selectionDragData";
 import { Icon } from "@/components/ui/icon";
 import { ItemCheckbox } from "@/components/ui/item-checkbox";
 import {
@@ -30,7 +31,7 @@ import {
 	writeInternalDragData,
 } from "@/lib/dragDrop";
 import { cn } from "@/lib/utils";
-import type { SortBy } from "@/stores/fileStore";
+import type { BrowserOpenMode, SortBy } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
 import type { FileListItem, FolderListItem } from "@/types/api";
 
@@ -62,73 +63,41 @@ function SortIcon({
 	);
 }
 
-export function FileTable({ scrollElement }: FileTableProps) {
-	const { t } = useTranslation("files");
-	const {
-		breadcrumbPathIds,
-		browserOpenMode,
-		fadingFileIds,
-		fadingFolderIds,
-		files,
-		folders,
-		onFileClick,
-		onFolderOpen,
-		onMoveToFolder,
-	} = useFileBrowserContext();
-	const selectedFileIds = useFileStore((s) => s.selectedFileIds);
-	const selectedFolderIds = useFileStore((s) => s.selectedFolderIds);
-	const toggleFileSelection = useFileStore((s) => s.toggleFileSelection);
-	const toggleFolderSelection = useFileStore((s) => s.toggleFolderSelection);
-	const selectOnlyFile = useFileStore((s) => s.selectOnlyFile);
+interface BaseTableRowProps {
+	browserOpenMode: BrowserOpenMode;
+}
+
+interface FolderTableDataRowProps extends BaseTableRowProps {
+	breadcrumbPathIds: number[];
+	fading: boolean;
+	folder: FolderListItem;
+	onFolderOpen: (id: number, name: string) => void;
+	onMoveToFolder?: (
+		fileIds: number[],
+		folderIds: number[],
+		targetFolderId: number | null,
+	) => void | Promise<void>;
+}
+
+const FolderTableDataRow = memo(function FolderTableDataRow({
+	breadcrumbPathIds,
+	browserOpenMode,
+	fading,
+	folder,
+	onFolderOpen,
+	onMoveToFolder,
+}: FolderTableDataRowProps) {
+	const selected = useFileStore((s) => s.selectedFolderIds.has(folder.id));
 	const selectOnlyFolder = useFileStore((s) => s.selectOnlyFolder);
-	const selectAll = useFileStore((s) => s.selectAll);
-	const clearSelection = useFileStore((s) => s.clearSelection);
-	const sortBy = useFileStore((s) => s.sortBy);
-	const sortOrder = useFileStore((s) => s.sortOrder);
-	const setSortBy = useFileStore((s) => s.setSortBy);
-	const setSortOrder = useFileStore((s) => s.setSortOrder);
+	const toggleFolderSelection = useFileStore((s) => s.toggleFolderSelection);
+	const [dragOver, setDragOver] = useState(false);
+	const targetPathIds = useMemo(
+		() => [...breadcrumbPathIds, folder.id],
+		[breadcrumbPathIds, folder.id],
+	);
 
-	const allSelected =
-		folders.length + files.length > 0 &&
-		selectedFileIds.size === files.length &&
-		selectedFolderIds.size === folders.length;
-
-	const handleSort = (col: SortBy) => {
-		if (sortBy === col) {
-			setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-		} else {
-			setSortBy(col);
-		}
-	};
-
-	const handleSelectAll = () => {
-		if (allSelected) clearSelection();
-		else selectAll();
-	};
-
-	const [dragOverId, setDragOverId] = useState<number | null>(null);
-
-	const makeDragData = (itemId: number, isFolder: boolean) => {
-		const isSelected = isFolder
-			? selectedFolderIds.has(itemId)
-			: selectedFileIds.has(itemId);
-		if (isSelected && selectedFileIds.size + selectedFolderIds.size > 1) {
-			return {
-				fileIds: [...selectedFileIds],
-				folderIds: [...selectedFolderIds],
-			};
-		}
-		return isFolder
-			? { fileIds: [], folderIds: [itemId] }
-			: { fileIds: [itemId], folderIds: [] };
-	};
-
-	const handleDragStart = (
-		e: React.DragEvent,
-		itemId: number,
-		isFolder: boolean,
-	) => {
-		const data = makeDragData(itemId, isFolder);
+	const handleDragStart = (e: React.DragEvent<HTMLTableRowElement>) => {
+		const data = getCurrentSelectionDragData(folder.id, true);
 		writeInternalDragData(e.dataTransfer, data);
 		setInternalDragPreview(e, {
 			variant: "list-row",
@@ -136,12 +105,7 @@ export function FileTable({ scrollElement }: FileTableProps) {
 		});
 	};
 
-	const getTargetPathIds = (folderId: number) => [
-		...breadcrumbPathIds,
-		folderId,
-	];
-
-	const handleFolderDragOver = (e: React.DragEvent, folderId: number) => {
+	const handleDragOver = (e: React.DragEvent<HTMLTableRowElement>) => {
 		if (
 			!hasInternalDragData(e.dataTransfer) ||
 			e.dataTransfer.types.includes(DRAG_SOURCE_MIME)
@@ -151,11 +115,11 @@ export function FileTable({ scrollElement }: FileTableProps) {
 		e.preventDefault();
 		e.stopPropagation();
 		e.dataTransfer.dropEffect = "move";
-		setDragOverId(folderId);
+		setDragOver(true);
 	};
 
-	const handleFolderDrop = (e: React.DragEvent, folderId: number) => {
-		setDragOverId(null);
+	const handleDrop = (e: React.DragEvent<HTMLTableRowElement>) => {
+		setDragOver(false);
 		if (e.dataTransfer.types.includes(DRAG_SOURCE_MIME)) {
 			return;
 		}
@@ -163,32 +127,26 @@ export function FileTable({ scrollElement }: FileTableProps) {
 		e.stopPropagation();
 		const data = readInternalDragData(e.dataTransfer);
 		if (!data) return;
-		const targetPathIds = getTargetPathIds(folderId);
-		if (getInvalidInternalDropReason(data, folderId, targetPathIds) !== null) {
+		if (getInvalidInternalDropReason(data, folder.id, targetPathIds) !== null) {
 			return;
 		}
-		onMoveToFolder?.(data.fileIds, data.folderIds, folderId);
+		void onMoveToFolder?.(data.fileIds, data.folderIds, folder.id);
 	};
 
-	const renderFolderRow = (folder: FolderListItem) => (
-		<FileBrowserItemContextMenu
-			renderTrigger
-			key={`folder-${folder.id}`}
-			item={folder}
-			isFolder
-		>
+	return (
+		<FileBrowserItemContextMenu renderTrigger item={folder} isFolder>
 			<TableRow
 				data-folder-drop-target="true"
 				className={cn(
 					"cursor-pointer transition-[background-color,box-shadow,opacity] duration-150 ease-out",
-					dragOverId === folder.id && "ring-2 ring-primary bg-accent/30",
-					fadingFolderIds?.has(folder.id) && "opacity-0",
+					dragOver && "ring-2 ring-primary bg-accent/30",
+					fading && "opacity-0",
 				)}
 				draggable
-				onDragStart={(e) => handleDragStart(e, folder.id, true)}
-				onDragOver={(e) => handleFolderDragOver(e, folder.id)}
-				onDragLeave={() => setDragOverId(null)}
-				onDrop={(e) => handleFolderDrop(e, folder.id)}
+				onDragStart={handleDragStart}
+				onDragOver={handleDragOver}
+				onDragLeave={() => setDragOver(false)}
+				onDrop={handleDrop}
 				onClick={() => {
 					if (browserOpenMode === "double_click") {
 						selectOnlyFolder(folder.id);
@@ -208,7 +166,7 @@ export function FileTable({ scrollElement }: FileTableProps) {
 				>
 					<div className="flex justify-center">
 						<ItemCheckbox
-							checked={selectedFolderIds.has(folder.id)}
+							checked={selected}
 							onChange={() => toggleFolderSelection(folder.id)}
 						/>
 					</div>
@@ -219,21 +177,42 @@ export function FileTable({ scrollElement }: FileTableProps) {
 			</TableRow>
 		</FileBrowserItemContextMenu>
 	);
+});
 
-	const renderFileRow = (file: FileListItem) => (
-		<FileBrowserItemContextMenu
-			renderTrigger
-			key={`file-${file.id}`}
-			item={file}
-			isFolder={false}
-		>
+interface FileTableDataRowProps extends BaseTableRowProps {
+	fading: boolean;
+	file: FileListItem;
+	onFileClick: (file: FileListItem) => void;
+}
+
+const FileTableDataRow = memo(function FileTableDataRow({
+	browserOpenMode,
+	fading,
+	file,
+	onFileClick,
+}: FileTableDataRowProps) {
+	const selected = useFileStore((s) => s.selectedFileIds.has(file.id));
+	const selectOnlyFile = useFileStore((s) => s.selectOnlyFile);
+	const toggleFileSelection = useFileStore((s) => s.toggleFileSelection);
+
+	const handleDragStart = (e: React.DragEvent<HTMLTableRowElement>) => {
+		const data = getCurrentSelectionDragData(file.id, false);
+		writeInternalDragData(e.dataTransfer, data);
+		setInternalDragPreview(e, {
+			variant: "list-row",
+			itemCount: data.fileIds.length + data.folderIds.length,
+		});
+	};
+
+	return (
+		<FileBrowserItemContextMenu renderTrigger item={file} isFolder={false}>
 			<TableRow
 				className={cn(
 					"cursor-pointer transition-[background-color,box-shadow,opacity] duration-150 ease-out",
-					fadingFileIds?.has(file.id) && "opacity-0",
+					fading && "opacity-0",
 				)}
 				draggable
-				onDragStart={(e) => handleDragStart(e, file.id, false)}
+				onDragStart={handleDragStart}
 				onClick={() => {
 					if (browserOpenMode === "double_click") {
 						selectOnlyFile(file.id);
@@ -253,7 +232,7 @@ export function FileTable({ scrollElement }: FileTableProps) {
 				>
 					<div className="flex justify-center">
 						<ItemCheckbox
-							checked={selectedFileIds.has(file.id)}
+							checked={selected}
 							onChange={() => toggleFileSelection(file.id)}
 						/>
 					</div>
@@ -263,6 +242,69 @@ export function FileTable({ scrollElement }: FileTableProps) {
 				<UpdatedAtCell updatedAt={file.updated_at} />
 			</TableRow>
 		</FileBrowserItemContextMenu>
+	);
+});
+
+function FileTableComponent({ scrollElement }: FileTableProps) {
+	const { t } = useTranslation("files");
+	const {
+		breadcrumbPathIds,
+		browserOpenMode,
+		fadingFileIds,
+		fadingFolderIds,
+		files,
+		folders,
+		onFileClick,
+		onFolderOpen,
+		onMoveToFolder,
+	} = useFileBrowserContext();
+	const selectedFileCount = useFileStore((s) => s.selectedFileIds.size);
+	const selectedFolderCount = useFileStore((s) => s.selectedFolderIds.size);
+	const selectAll = useFileStore((s) => s.selectAll);
+	const clearSelection = useFileStore((s) => s.clearSelection);
+	const sortBy = useFileStore((s) => s.sortBy);
+	const sortOrder = useFileStore((s) => s.sortOrder);
+	const setSortBy = useFileStore((s) => s.setSortBy);
+	const setSortOrder = useFileStore((s) => s.setSortOrder);
+
+	const allSelected =
+		folders.length + files.length > 0 &&
+		selectedFileCount === files.length &&
+		selectedFolderCount === folders.length;
+
+	const handleSort = (col: SortBy) => {
+		if (sortBy === col) {
+			setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+		} else {
+			setSortBy(col);
+		}
+	};
+
+	const handleSelectAll = () => {
+		if (allSelected) clearSelection();
+		else selectAll();
+	};
+
+	const renderFolderRow = (folder: FolderListItem) => (
+		<FolderTableDataRow
+			key={`folder-${folder.id}`}
+			breadcrumbPathIds={breadcrumbPathIds}
+			browserOpenMode={browserOpenMode}
+			fading={fadingFolderIds?.has(folder.id) ?? false}
+			folder={folder}
+			onFolderOpen={onFolderOpen}
+			onMoveToFolder={onMoveToFolder}
+		/>
+	);
+
+	const renderFileRow = (file: FileListItem) => (
+		<FileTableDataRow
+			key={`file-${file.id}`}
+			browserOpenMode={browserOpenMode}
+			fading={fadingFileIds?.has(file.id) ?? false}
+			file={file}
+			onFileClick={onFileClick}
+		/>
 	);
 
 	const tableRows = useMemo<TableRowItem[]>(
@@ -375,3 +417,5 @@ export function FileTable({ scrollElement }: FileTableProps) {
 		</Table>
 	);
 }
+
+export const FileTable = memo(FileTableComponent);

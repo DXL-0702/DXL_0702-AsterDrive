@@ -47,8 +47,13 @@ vi.mock("@/components/files/FileBrowserContext", () => ({
 }));
 
 vi.mock("@/stores/fileStore", () => ({
-	useFileStore: (selector: (state: typeof mockState.store) => unknown) =>
-		selector(mockState.store),
+	useFileStore: Object.assign(
+		(selector: (state: typeof mockState.store) => unknown) =>
+			selector(mockState.store),
+		{
+			getState: () => mockState.store,
+		},
+	),
 }));
 
 vi.mock("@/components/files/FileBrowserItemContextMenu", () => ({
@@ -253,14 +258,14 @@ describe("FileTable", () => {
 		mockState.store.selectedFileIds = new Set([2]);
 		mockState.store.selectedFolderIds = new Set([1]);
 
-		const { rerender } = render(<FileTable />);
+		const { rerender } = render(<FileTable scrollElement={null} />);
 
 		fireEvent.click(screen.getAllByTestId("checkbox")[0]);
 		expect(mockState.store.clearSelection).toHaveBeenCalledTimes(1);
 
 		mockState.store.selectedFileIds = new Set();
 		mockState.store.selectedFolderIds = new Set();
-		rerender(<FileTable />);
+		rerender(<FileTable scrollElement={document.createElement("div")} />);
 
 		fireEvent.click(screen.getAllByTestId("checkbox")[0]);
 		expect(mockState.store.selectAll).toHaveBeenCalledTimes(1);

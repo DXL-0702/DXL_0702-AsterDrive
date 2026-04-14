@@ -111,6 +111,126 @@ test.describe
 				clientState,
 			);
 		});
+
+		test("manages folders, files, and trash lifecycle flows", async ({
+			page,
+			request,
+		}) => {
+			await authenticate(page, request);
+
+			const projectFolder = "pw-life-projects";
+			const archiveFolder = "pw-life-archive";
+			const referencesFolder = "pw-life-references";
+			const lifecycleFile = {
+				buffer: Buffer.from("Lifecycle flow from Playwright\n", "utf8"),
+				mimeType: "text/plain",
+				name: "pw-life-note.txt",
+			} as const;
+			const renamedLifecycleFile = "pw-life-note-renamed.txt";
+
+			await createFolderFromSurface(page, projectFolder);
+			await createFolderFromSurface(page, archiveFolder);
+
+			await uploadViaPicker(page, [lifecycleFile]);
+			await expect(fileNameCell(page, lifecycleFile.name)).toBeVisible({
+				timeout: 30_000,
+			});
+
+			await renameItem(page, lifecycleFile.name, renamedLifecycleFile);
+			await expect(fileNameCell(page, renamedLifecycleFile)).toBeVisible({
+				timeout: 30_000,
+			});
+
+			await copyItemToFolder(page, renamedLifecycleFile, archiveFolder);
+			await openFolder(page, archiveFolder);
+			await expect(fileNameCell(page, renamedLifecycleFile)).toBeVisible({
+				timeout: 30_000,
+			});
+
+			await navigateToRoot(page);
+			await renameItem(page, archiveFolder, referencesFolder);
+			await expect(fileNameCell(page, referencesFolder)).toBeVisible({
+				timeout: 30_000,
+			});
+
+			await moveItemToFolder(page, renamedLifecycleFile, projectFolder);
+			await expectItemMissing(page, renamedLifecycleFile);
+
+			await openFolder(page, projectFolder);
+			await expect(fileNameCell(page, renamedLifecycleFile)).toBeVisible({
+				timeout: 30_000,
+			});
+
+			await navigateToRoot(page);
+			await deleteItem(page, projectFolder);
+			await deleteItem(page, referencesFolder);
+			await expectItemMissing(page, projectFolder);
+			await expectItemMissing(page, referencesFolder);
+
+			await page.getByRole("link", { name: "Trash" }).click();
+			await expect(page).toHaveURL(/\/trash$/);
+			await expectTrashItemVisible(page, projectFolder);
+			await expectTrashItemVisible(page, referencesFolder);
+
+			await trashItemRow(page, projectFolder).click();
+			await page.getByRole("button", { name: "Restore Selected" }).click();
+			await expectTrashItemMissing(page, projectFolder);
+
+			await trashItemRow(page, referencesFolder).click();
+			await page
+				.getByRole("button", { name: "Delete Selected Permanently" })
+				.click();
+			await page.getByRole("button", { name: "Permanently Delete" }).click();
+			await expectTrashItemMissing(page, referencesFolder);
+
+			await page.getByRole("link", { name: "My Drive" }).click();
+			await expect(fileDropZone(page)).toBeVisible();
+			await expect(folderTreeButton(page, projectFolder)).toBeVisible({
+				timeout: 30_000,
+			});
+			await expect(folderTreeButton(page, referencesFolder)).toHaveCount(0);
+
+			await openFolder(page, projectFolder);
+			await expect(fileNameCell(page, renamedLifecycleFile)).toBeVisible({
+				timeout: 30_000,
+			});
+		});
+
+		test("opens a password-protected folder share and previews files anonymously", async ({
+			browser,
+			page,
+			request,
+		}) => {
+			await authenticate(page, request);
+
+			const sharedFolder = "pw-share-protected-folder";
+			const sharedImage = {
+				...IMAGE_FILE,
+				name: "pw-share-protected-image.gif",
+			} as const;
+			const sharePassword = "PlaywrightShare123!";
+
+			await createFolderFromSurface(page, sharedFolder);
+			await openFolder(page, sharedFolder);
+			await uploadViaPicker(page, [sharedImage]);
+			await expect(fileNameCell(page, sharedImage.name)).toBeVisible({
+				timeout: 30_000,
+			});
+
+			await navigateToRoot(page);
+			const shareUrl = await createPageShare(page, sharedFolder, {
+				password: sharePassword,
+			});
+			const clientState = await captureClientState(page);
+
+			await expectProtectedFolderSharePreview(
+				browser,
+				shareUrl,
+				sharedImage.name,
+				sharePassword,
+				clientState,
+			);
+		});
 	});
 
 async function seedClientState(
@@ -297,6 +417,37 @@ async function uploadViaDragDrop(
 	await dropZone.dispatchEvent("drop", { dataTransfer });
 }
 
+async function openSurfaceContextMenu(page: Page) {
+	const trigger = fileDropZone(page)
+		.locator('[data-slot="context-menu-trigger"]')
+		.first();
+	await trigger.evaluate((element) => {
+		const rect = element.getBoundingClientRect();
+		element.dispatchEvent(
+			new MouseEvent("contextmenu", {
+				bubbles: true,
+				button: 2,
+				cancelable: true,
+				clientX: rect.left + Math.max(24, rect.width - 80),
+				clientY: rect.top + Math.max(24, rect.height - 80),
+				view: window,
+			}),
+		);
+	});
+}
+
+async function createFolderFromSurface(page: Page, folderName: string) {
+	await openSurfaceContextMenu(page);
+	await page.getByRole("menuitem", { name: "New Folder" }).click();
+
+	const dialog = page.getByRole("dialog");
+	await expect(dialog).toBeVisible();
+	await dialog.getByPlaceholder("Folder name").fill(folderName);
+	await dialog.getByRole("button", { name: "Create Folder" }).click();
+	await expect(dialog).toBeHidden();
+	await expect(fileNameCell(page, folderName)).toBeVisible({ timeout: 30_000 });
+}
+
 async function expectImagePreview(page: Page, fileName: string) {
 	await fileNameCell(page, fileName).click();
 	await chooseOpenMethodIfPrompted(page, "Image preview");
@@ -371,8 +522,106 @@ async function chooseOpenMethodIfPrompted(
 	await option.click();
 }
 
-async function openFileContextMenu(page: Page, fileName: string) {
-	await fileRow(page, fileName).click({ button: "right" });
+async function openItemContextMenu(page: Page, itemName: string) {
+	await fileRow(page, itemName).click({ button: "right" });
+}
+
+async function renameItem(page: Page, currentName: string, nextName: string) {
+	await openItemContextMenu(page, currentName);
+	await page.getByRole("menuitem", { name: "Rename" }).click();
+
+	const dialog = page.getByRole("dialog");
+	await expect(dialog).toBeVisible();
+	await dialog.getByRole("textbox").fill(nextName);
+	await dialog.getByRole("button", { name: "Rename" }).click();
+	await expect(dialog).toBeHidden();
+}
+
+async function chooseTargetFolder(
+	page: Page,
+	targetFolderName: string,
+	confirmLabel: "Copy here" | "Move here",
+) {
+	const dialog = page.getByRole("dialog");
+	await expect(dialog).toBeVisible();
+	await dialog
+		.getByRole("button", { exact: true, name: targetFolderName })
+		.click();
+	await dialog.getByRole("button", { name: confirmLabel }).click();
+	await expect(dialog).toBeHidden();
+}
+
+async function copyItemToFolder(
+	page: Page,
+	itemName: string,
+	targetFolderName: string,
+) {
+	await openItemContextMenu(page, itemName);
+	await page.getByRole("menuitem", { name: "Copy" }).click();
+	await chooseTargetFolder(page, targetFolderName, "Copy here");
+}
+
+async function moveItemToFolder(
+	page: Page,
+	itemName: string,
+	targetFolderName: string,
+) {
+	await openItemContextMenu(page, itemName);
+	await page.getByRole("menuitem", { name: "Move" }).click();
+	await chooseTargetFolder(page, targetFolderName, "Move here");
+}
+
+async function deleteItem(page: Page, itemName: string) {
+	await openItemContextMenu(page, itemName);
+	await page.getByRole("menuitem", { name: "Delete" }).click();
+}
+
+function folderTreeButton(page: Page, folderName: string) {
+	return page
+		.getByRole("complementary")
+		.getByRole("button", { exact: true, name: folderName })
+		.first();
+}
+
+async function openFolder(page: Page, folderName: string) {
+	await expect(folderTreeButton(page, folderName)).toBeVisible({
+		timeout: 30_000,
+	});
+	await folderTreeButton(page, folderName).click();
+	await expect(
+		page.getByRole("navigation", { name: "Breadcrumb" }).getByText(folderName, {
+			exact: true,
+		}),
+	).toBeVisible();
+}
+
+async function navigateToRoot(page: Page) {
+	await page.getByRole("link", { name: "My Drive" }).click();
+	await expect(fileDropZone(page)).toBeVisible();
+	await expect(page).toHaveURL(/\/$/);
+}
+
+async function expectItemMissing(page: Page, itemName: string) {
+	await expect(fileNameCell(page, itemName)).toHaveCount(0, {
+		timeout: 30_000,
+	});
+}
+
+function trashItemRow(page: Page, itemName: string) {
+	return page
+		.getByRole("row")
+		.filter({ has: page.getByText(itemName, { exact: true }) })
+		.first();
+}
+
+async function expectTrashItemVisible(page: Page, itemName: string) {
+	await expect(trashItemRow(page, itemName)).toBeVisible({ timeout: 30_000 });
+}
+
+async function expectTrashItemMissing(page: Page, itemName: string) {
+	await expect(trashItemRow(page, itemName)).toHaveCount(0, {
+		timeout: 30_000,
+	});
 }
 
 async function expectDownloadMatches(
@@ -382,7 +631,7 @@ async function expectDownloadMatches(
 	outputDir: string,
 ) {
 	const downloadPromise = page.waitForEvent("download");
-	await openFileContextMenu(page, fileName);
+	await openItemContextMenu(page, fileName);
 	await page.getByRole("menuitem", { name: "Download" }).click();
 
 	const download = await downloadPromise;
@@ -393,12 +642,21 @@ async function expectDownloadMatches(
 	expect(actual.equals(expected)).toBe(true);
 }
 
-async function createPageShare(page: Page, fileName: string) {
-	await openFileContextMenu(page, fileName);
+async function createPageShare(
+	page: Page,
+	itemName: string,
+	options?: {
+		password?: string;
+	},
+) {
+	await openItemContextMenu(page, itemName);
 	await page.getByRole("menuitem", { name: "Share page" }).click();
 
 	const dialog = page.getByRole("dialog");
 	await expect(dialog).toBeVisible();
+	if (options?.password) {
+		await dialog.getByLabel("Password (optional)").fill(options.password);
+	}
 	await dialog.getByRole("button", { name: "Create share link" }).click();
 
 	const shareUrlInput = dialog.getByTestId("share-primary-url");
@@ -429,6 +687,44 @@ async function expectAnonymousSharePreview(
 
 	await expect(page.getByText(fileName, { exact: true })).toBeVisible();
 	await page.getByRole("button", { name: "Preview" }).click();
+	await chooseOpenMethodIfPrompted(page, "Image preview", 5_000);
+
+	const dialog = page.getByRole("dialog");
+	await expect(dialog.getByRole("img", { name: fileName })).toBeVisible({
+		timeout: 30_000,
+	});
+
+	await closeActiveDialog(page);
+	await context.close();
+}
+
+async function expectProtectedFolderSharePreview(
+	browser: Browser,
+	shareUrl: string,
+	fileName: string,
+	password: string,
+	clientState: Record<string, string>,
+) {
+	const context = await browser.newContext({
+		acceptDownloads: true,
+		locale: "en-US",
+		serviceWorkers: "block",
+	});
+	const page = await context.newPage();
+
+	await seedClientState(page, clientState);
+	await page.goto(shareUrl);
+
+	await expect(
+		page.getByText("This share is password protected"),
+	).toBeVisible();
+	await page.getByPlaceholder("Password").fill(password);
+	await page.getByRole("button", { name: "Verify" }).click();
+
+	await expect(page.getByText(fileName, { exact: true })).toBeVisible({
+		timeout: 30_000,
+	});
+	await page.getByRole("button", { exact: true, name: fileName }).click();
 	await chooseOpenMethodIfPrompted(page, "Image preview", 5_000);
 
 	const dialog = page.getByRole("dialog");

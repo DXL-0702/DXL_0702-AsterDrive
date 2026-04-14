@@ -5,6 +5,10 @@ import { defineConfig } from "@playwright/test";
 const port = Number(process.env.ASTER_E2E_PORT ?? "3310");
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`;
 const configDir = path.dirname(fileURLToPath(import.meta.url));
+const webServerCommand =
+	process.env.ASTER_E2E_SKIP_BUILD === "1"
+		? "./scripts/run-e2e-server.sh"
+		: "bun run build && ./scripts/run-e2e-server.sh";
 
 export default defineConfig({
 	testDir: "./e2e",
@@ -30,7 +34,7 @@ export default defineConfig({
 		viewport: { width: 1440, height: 960 },
 	},
 	webServer: {
-		command: "bun run build && ./scripts/run-e2e-server.sh",
+		command: webServerCommand,
 		cwd: configDir,
 		reuseExistingServer: false,
 		stderr: "pipe",

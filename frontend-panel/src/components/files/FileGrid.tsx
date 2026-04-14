@@ -1,9 +1,11 @@
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useFileBrowserContext } from "@/components/files/FileBrowserContext";
 import { FileBrowserItemContextMenu } from "@/components/files/FileBrowserItemContextMenu";
 import { FileCard } from "@/components/files/FileCard";
+import { getCurrentSelectionDragData } from "@/components/files/selectionDragData";
+import type { BrowserOpenMode } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
 import type { FileListItem, FolderListItem } from "@/types/api";
 
@@ -45,7 +47,109 @@ function getGridColumnCount(viewportWidth: number) {
 	return 2;
 }
 
-export function FileGrid({ scrollElement }: FileGridProps) {
+interface BaseGridCardProps {
+	browserOpenMode: BrowserOpenMode;
+}
+
+interface FolderGridCardProps extends BaseGridCardProps {
+	breadcrumbPathIds: number[];
+	fading: boolean;
+	folder: FolderListItem;
+	onFolderOpen: (id: number, name: string) => void;
+	onMoveToFolder?: (
+		fileIds: number[],
+		folderIds: number[],
+		targetFolderId: number | null,
+	) => void | Promise<void>;
+}
+
+const FolderGridCard = memo(function FolderGridCard({
+	browserOpenMode,
+	breadcrumbPathIds,
+	fading,
+	folder,
+	onFolderOpen,
+	onMoveToFolder,
+}: FolderGridCardProps) {
+	const selected = useFileStore((s) => s.selectedFolderIds.has(folder.id));
+	const selectOnlyFolder = useFileStore((s) => s.selectOnlyFolder);
+	const toggleFolderSelection = useFileStore((s) => s.toggleFolderSelection);
+	const targetPathIds = useMemo(
+		() => [...breadcrumbPathIds, folder.id],
+		[breadcrumbPathIds, folder.id],
+	);
+
+	return (
+		<FileBrowserItemContextMenu item={folder} isFolder>
+			<FileCard
+				item={folder}
+				isFolder
+				selected={selected}
+				onSelect={() => toggleFolderSelection(folder.id)}
+				onClick={() => {
+					if (browserOpenMode === "double_click") {
+						selectOnlyFolder(folder.id);
+						return;
+					}
+					onFolderOpen(folder.id, folder.name);
+				}}
+				onDoubleClick={
+					browserOpenMode === "double_click"
+						? () => onFolderOpen(folder.id, folder.name)
+						: undefined
+				}
+				resolveDragData={() => getCurrentSelectionDragData(folder.id, true)}
+				onDrop={onMoveToFolder}
+				targetPathIds={targetPathIds}
+				fading={fading}
+			/>
+		</FileBrowserItemContextMenu>
+	);
+});
+
+interface FileGridCardProps extends BaseGridCardProps {
+	fading: boolean;
+	file: FileListItem;
+	onFileClick: (file: FileListItem) => void;
+}
+
+const FileGridCard = memo(function FileGridCard({
+	browserOpenMode,
+	fading,
+	file,
+	onFileClick,
+}: FileGridCardProps) {
+	const selected = useFileStore((s) => s.selectedFileIds.has(file.id));
+	const selectOnlyFile = useFileStore((s) => s.selectOnlyFile);
+	const toggleFileSelection = useFileStore((s) => s.toggleFileSelection);
+
+	return (
+		<FileBrowserItemContextMenu item={file} isFolder={false}>
+			<FileCard
+				item={file}
+				isFolder={false}
+				selected={selected}
+				onSelect={() => toggleFileSelection(file.id)}
+				onClick={() => {
+					if (browserOpenMode === "double_click") {
+						selectOnlyFile(file.id);
+						return;
+					}
+					onFileClick(file);
+				}}
+				onDoubleClick={
+					browserOpenMode === "double_click"
+						? () => onFileClick(file)
+						: undefined
+				}
+				resolveDragData={() => getCurrentSelectionDragData(file.id, false)}
+				fading={fading}
+			/>
+		</FileBrowserItemContextMenu>
+	);
+});
+
+function FileGridComponent({ scrollElement }: FileGridProps) {
 	const { t } = useTranslation("files");
 	const {
 		breadcrumbPathIds,
@@ -58,12 +162,6 @@ export function FileGrid({ scrollElement }: FileGridProps) {
 		onFolderOpen,
 		onMoveToFolder,
 	} = useFileBrowserContext();
-	const selectedFileIds = useFileStore((s) => s.selectedFileIds);
-	const selectedFolderIds = useFileStore((s) => s.selectedFolderIds);
-	const toggleFileSelection = useFileStore((s) => s.toggleFileSelection);
-	const toggleFolderSelection = useFileStore((s) => s.toggleFolderSelection);
-	const selectOnlyFile = useFileStore((s) => s.selectOnlyFile);
-	const selectOnlyFolder = useFileStore((s) => s.selectOnlyFolder);
 	const [viewportWidth, setViewportWidth] = useState(() =>
 		typeof window === "undefined" ? 1280 : window.innerWidth,
 	);
@@ -82,84 +180,26 @@ export function FileGrid({ scrollElement }: FileGridProps) {
 		return () => window.removeEventListener("resize", updateViewportWidth);
 	}, []);
 
-	const getDragData = (itemId: number, isFolder: boolean) => {
-		const isSelected = isFolder
-			? selectedFolderIds.has(itemId)
-			: selectedFileIds.has(itemId);
-		if (isSelected && selectedFileIds.size + selectedFolderIds.size > 1) {
-			return {
-				fileIds: [...selectedFileIds],
-				folderIds: [...selectedFolderIds],
-			};
-		}
-		return isFolder
-			? { fileIds: [], folderIds: [itemId] }
-			: { fileIds: [itemId], folderIds: [] };
-	};
-
-	const getTargetPathIds = (folderId: number) => [
-		...breadcrumbPathIds,
-		folderId,
-	];
-
 	const renderFolderCard = (folder: FolderListItem) => (
-		<FileBrowserItemContextMenu
+		<FolderGridCard
 			key={`folder-${folder.id}`}
-			item={folder}
-			isFolder
-		>
-			<FileCard
-				item={folder}
-				isFolder
-				selected={selectedFolderIds.has(folder.id)}
-				onSelect={() => toggleFolderSelection(folder.id)}
-				onClick={() => {
-					if (browserOpenMode === "double_click") {
-						selectOnlyFolder(folder.id);
-						return;
-					}
-					onFolderOpen(folder.id, folder.name);
-				}}
-				onDoubleClick={
-					browserOpenMode === "double_click"
-						? () => onFolderOpen(folder.id, folder.name)
-						: undefined
-				}
-				dragData={getDragData(folder.id, true)}
-				onDrop={onMoveToFolder}
-				targetPathIds={getTargetPathIds(folder.id)}
-				fading={fadingFolderIds?.has(folder.id)}
-			/>
-		</FileBrowserItemContextMenu>
+			breadcrumbPathIds={breadcrumbPathIds}
+			browserOpenMode={browserOpenMode}
+			fading={fadingFolderIds?.has(folder.id) ?? false}
+			folder={folder}
+			onFolderOpen={onFolderOpen}
+			onMoveToFolder={onMoveToFolder}
+		/>
 	);
 
 	const renderFileCard = (file: FileListItem) => (
-		<FileBrowserItemContextMenu
+		<FileGridCard
 			key={`file-${file.id}`}
-			item={file}
-			isFolder={false}
-		>
-			<FileCard
-				item={file}
-				isFolder={false}
-				selected={selectedFileIds.has(file.id)}
-				onSelect={() => toggleFileSelection(file.id)}
-				onClick={() => {
-					if (browserOpenMode === "double_click") {
-						selectOnlyFile(file.id);
-						return;
-					}
-					onFileClick(file);
-				}}
-				onDoubleClick={
-					browserOpenMode === "double_click"
-						? () => onFileClick(file)
-						: undefined
-				}
-				dragData={getDragData(file.id, false)}
-				fading={fadingFileIds?.has(file.id)}
-			/>
-		</FileBrowserItemContextMenu>
+			browserOpenMode={browserOpenMode}
+			fading={fadingFileIds?.has(file.id) ?? false}
+			file={file}
+			onFileClick={onFileClick}
+		/>
 	);
 
 	const columnCount = getGridColumnCount(viewportWidth);
@@ -296,3 +336,5 @@ export function FileGrid({ scrollElement }: FileGridProps) {
 		</div>
 	);
 }
+
+export const FileGrid = memo(FileGridComponent);

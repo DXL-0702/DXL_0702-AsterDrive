@@ -1,0 +1,428 @@
+import { PreviewAppsConfigEditor } from "@/components/admin/PreviewAppsConfigEditor";
+import { PREVIEW_APPS_CONFIG_KEY } from "@/components/admin/previewAppsConfigEditorShared";
+import { useAdminSettingsCategoryContent } from "@/components/admin/settings/AdminSettingsCategoryContentContext";
+import {
+	ConfigCodeEditor,
+	formatDisplayValue,
+	getAvailableDisplayUnits,
+	getBrandingAssetPreviewAppearance,
+	getConfigDescription,
+	getConfigEditorLanguage,
+	getConfigIsSensitive,
+	getConfigRequiresRestart,
+	getConfigValueType,
+	getPreferredDisplayUnit,
+	getTimeConfigBaseUnit,
+	isBrandingAssetConfig,
+	isMultilineType,
+	isNumberType,
+	isSizeConfig,
+	type NewCustomDraft,
+	parseWholeNumber,
+	SIZE_DISPLAY_UNITS,
+	type SizeDisplayUnitValue,
+	TIME_DISPLAY_UNITS,
+	type TimeDisplayUnitValue,
+	UrlAssetPreview,
+} from "@/components/admin/settings/adminSettingsContentShared";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
+import type { SystemConfig } from "@/types/api";
+
+function FieldMeta({ config }: { config: SystemConfig }) {
+	const {
+		getDraftValue,
+		getSystemConfigDescription,
+		getSystemConfigLabel,
+		openTemplateVariablesDialog,
+		t,
+	} = useAdminSettingsCategoryContent();
+	const draftChanged = getDraftValue(config) !== config.value;
+	const requiresRestart = getConfigRequiresRestart(config);
+	const configLabel = getSystemConfigLabel(config);
+	const configDescription = getSystemConfigDescription(config);
+	const showRawKey = configLabel !== config.key;
+	const showTemplateVariableLink =
+		config.category === "mail.template" && config.key.endsWith("_html");
+
+	return (
+		<div className="space-y-1">
+			<div className="flex flex-wrap items-center gap-2">
+				<p
+					className={
+						showRawKey
+							? "break-words text-sm font-medium"
+							: "break-all font-mono text-sm font-medium"
+					}
+				>
+					{configLabel}
+				</p>
+				{draftChanged ? (
+					<span className="text-xs font-medium text-primary">
+						{t("settings_status_unsaved")}
+					</span>
+				) : null}
+				{requiresRestart ? (
+					<span className="text-xs text-muted-foreground">
+						{t("requires_restart")}
+					</span>
+				) : null}
+			</div>
+			{configDescription ? (
+				<p className="max-w-3xl break-words text-sm text-muted-foreground">
+					{configDescription}
+				</p>
+			) : null}
+			{showTemplateVariableLink ? (
+				<button
+					type="button"
+					className="w-fit text-sm text-primary underline-offset-4 transition-colors hover:text-primary/80 hover:underline"
+					onClick={() => openTemplateVariablesDialog(config)}
+				>
+					{t("mail_template_variable_link")}
+				</button>
+			) : null}
+		</div>
+	);
+}
+
+function ScaledNumberInputControl({
+	config,
+	draftValue,
+	fullWidth,
+	unitLabelKey,
+	units,
+}: {
+	config: SystemConfig;
+	draftValue: string;
+	fullWidth?: boolean;
+	unitLabelKey: string;
+	units: ReadonlyArray<{
+		labelKey: string;
+		multiplier: number;
+		value: string;
+	}>;
+}) {
+	const { displayUnits, setDisplayUnits, t, updateDraftValue } =
+		useAdminSettingsCategoryContent();
+
+	if (draftValue.trim() && parseWholeNumber(draftValue) === null) {
+		return null;
+	}
+
+	const availableUnits = getAvailableDisplayUnits(units, draftValue);
+	const preferredUnit = getPreferredDisplayUnit(units, draftValue);
+	const selectedUnit =
+		availableUnits.find((unit) => unit.value === displayUnits[config.key]) ??
+		preferredUnit;
+
+	return (
+		<div
+			className={cn(
+				"flex flex-col gap-3 sm:flex-row sm:items-center",
+				fullWidth ? "w-full max-w-2xl" : "max-w-2xl",
+			)}
+		>
+			<Input
+				type="number"
+				inputMode="numeric"
+				step="1"
+				className="w-full sm:max-w-48"
+				value={formatDisplayValue(draftValue, selectedUnit)}
+				onChange={(event) => {
+					const nextDisplayValue = event.target.value.trim();
+					if (!nextDisplayValue) {
+						updateDraftValue(config.key, "");
+						return;
+					}
+					if (!/^\d+$/.test(nextDisplayValue)) {
+						return;
+					}
+
+					const parsed = Number(nextDisplayValue);
+					if (!Number.isSafeInteger(parsed)) {
+						return;
+					}
+
+					updateDraftValue(
+						config.key,
+						String(parsed * selectedUnit.multiplier),
+					);
+				}}
+				placeholder={t("config_value")}
+			/>
+			<Select
+				items={availableUnits.map((unit) => ({
+					label: t(unit.labelKey),
+					value: unit.value,
+				}))}
+				value={selectedUnit.value}
+				onValueChange={(value) =>
+					setDisplayUnits((previous) => ({
+						...previous,
+						[config.key]: value as TimeDisplayUnitValue | SizeDisplayUnitValue,
+					}))
+				}
+			>
+				<SelectTrigger
+					id={`${config.key}-unit`}
+					width="fit"
+					className="min-w-28"
+					aria-label={t(unitLabelKey)}
+				>
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					{availableUnits.map((unit) => (
+						<SelectItem key={unit.value} value={unit.value}>
+							{t(unit.labelKey)}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+		</div>
+	);
+}
+
+function ConfigInputControl({
+	config,
+	draftValue,
+	fullWidth,
+}: {
+	config: SystemConfig;
+	draftValue: string;
+	fullWidth?: boolean;
+}) {
+	const {
+		editorTheme,
+		handleBuildWopiDiscoveryPreviewConfig,
+		t,
+		updateDraftValue,
+	} = useAdminSettingsCategoryContent();
+	const valueType = getConfigValueType(config);
+	const isSensitive = getConfigIsSensitive(config);
+	const multiline = isMultilineType(valueType);
+	const brandingPreviewAppearance = isBrandingAssetConfig(config)
+		? getBrandingAssetPreviewAppearance(config)
+		: null;
+
+	if (brandingPreviewAppearance) {
+		return (
+			<div className="flex max-w-4xl items-end gap-3">
+				<div className="w-full max-w-3xl">
+					<Input
+						type={
+							isNumberType(valueType)
+								? "number"
+								: isSensitive
+									? "password"
+									: "text"
+						}
+						inputMode={isNumberType(valueType) ? "decimal" : "text"}
+						value={draftValue}
+						onChange={(event) =>
+							updateDraftValue(config.key, event.target.value)
+						}
+						placeholder={t("config_value")}
+					/>
+				</div>
+				<UrlAssetPreview
+					url={draftValue}
+					appearance={brandingPreviewAppearance}
+				/>
+			</div>
+		);
+	}
+
+	if (config.key === PREVIEW_APPS_CONFIG_KEY) {
+		return (
+			<PreviewAppsConfigEditor
+				onBuildWopiDiscoveryPreviewConfig={
+					handleBuildWopiDiscoveryPreviewConfig
+				}
+				value={draftValue}
+				onChange={(nextValue) => updateDraftValue(config.key, nextValue)}
+			/>
+		);
+	}
+
+	if (multiline) {
+		return (
+			<ConfigCodeEditor
+				language={getConfigEditorLanguage(config)}
+				theme={editorTheme}
+				value={draftValue}
+				onChange={(value) => updateDraftValue(config.key, value)}
+			/>
+		);
+	}
+
+	const timeConfigBaseUnit = getTimeConfigBaseUnit(config);
+	if (timeConfigBaseUnit) {
+		return (
+			<ScaledNumberInputControl
+				config={config}
+				draftValue={draftValue}
+				fullWidth={fullWidth}
+				unitLabelKey="settings_time_unit_label"
+				units={TIME_DISPLAY_UNITS[timeConfigBaseUnit]}
+			/>
+		);
+	}
+
+	if (isSizeConfig(config)) {
+		return (
+			<ScaledNumberInputControl
+				config={config}
+				draftValue={draftValue}
+				fullWidth={fullWidth}
+				unitLabelKey="settings_size_unit_label"
+				units={SIZE_DISPLAY_UNITS}
+			/>
+		);
+	}
+
+	return (
+		<Input
+			type={
+				isNumberType(valueType) ? "number" : isSensitive ? "password" : "text"
+			}
+			inputMode={isNumberType(valueType) ? "decimal" : "text"}
+			className={fullWidth ? "w-full max-w-2xl" : "max-w-2xl"}
+			value={draftValue}
+			onChange={(event) => updateDraftValue(config.key, event.target.value)}
+			placeholder={t("config_value")}
+		/>
+	);
+}
+
+export function SystemConfigRow({ config }: { config: SystemConfig }) {
+	const { getDraftValue, t, updateDraftValue } =
+		useAdminSettingsCategoryContent();
+	const draftValue = getDraftValue(config);
+	const valueType = getConfigValueType(config);
+
+	return (
+		<div className="space-y-3">
+			<FieldMeta config={config} />
+			{valueType === "boolean" ? (
+				<div className="flex items-center gap-3 text-sm">
+					<Switch
+						id={config.key}
+						checked={draftValue === "true"}
+						onCheckedChange={(checked) =>
+							updateDraftValue(config.key, checked ? "true" : "false")
+						}
+					/>
+					<span>
+						{draftValue === "true"
+							? t("settings_value_on")
+							: t("settings_value_off")}
+					</span>
+				</div>
+			) : (
+				<ConfigInputControl config={config} draftValue={draftValue} />
+			)}
+		</div>
+	);
+}
+
+export function CustomConfigRow({ config }: { config: SystemConfig }) {
+	const { getDraftValue, markCustomDeleted, t } =
+		useAdminSettingsCategoryContent();
+	const draftValue = getDraftValue(config);
+	const valueType = getConfigValueType(config);
+	const draftChanged = draftValue !== config.value;
+	const multiline = isMultilineType(valueType);
+
+	return (
+		<div className="space-y-3">
+			<div className="space-y-1">
+				<div className="flex flex-wrap items-center gap-2">
+					<p className="break-all font-mono text-sm font-medium">
+						{config.key}
+					</p>
+					{draftChanged ? (
+						<span className="text-xs font-medium text-primary">
+							{t("settings_status_unsaved")}
+						</span>
+					) : null}
+				</div>
+				{getConfigDescription(config) ? (
+					<p className="max-w-3xl break-words text-sm text-muted-foreground">
+						{getConfigDescription(config)}
+					</p>
+				) : null}
+			</div>
+
+			<div
+				className={
+					multiline
+						? "space-y-3"
+						: "flex flex-col gap-3 sm:flex-row sm:items-center"
+				}
+			>
+				<ConfigInputControl config={config} draftValue={draftValue} fullWidth />
+				<Button
+					variant="ghost"
+					size="sm"
+					className="justify-start text-destructive"
+					onClick={() => markCustomDeleted(config.key)}
+				>
+					{t("core:delete")}
+				</Button>
+			</div>
+		</div>
+	);
+}
+
+export function NewCustomRow({ row }: { row: NewCustomDraft }) {
+	const { newCustomRowErrors, removeNewCustomRow, t, updateNewCustomRow } =
+		useAdminSettingsCategoryContent();
+	const error = newCustomRowErrors.get(row.id);
+
+	return (
+		<div className="space-y-3">
+			<p className="text-sm font-medium text-muted-foreground">
+				{t("custom_config_new_entry")}
+			</p>
+			<div className="flex max-w-4xl flex-col gap-3 lg:flex-row">
+				<Input
+					className="lg:max-w-sm"
+					value={row.key}
+					aria-invalid={error ? true : undefined}
+					onChange={(event) =>
+						updateNewCustomRow(row.id, "key", event.target.value)
+					}
+					placeholder={t("custom_config_key_placeholder")}
+				/>
+				<Input
+					className="lg:max-w-xl"
+					value={row.value}
+					onChange={(event) =>
+						updateNewCustomRow(row.id, "value", event.target.value)
+					}
+					placeholder={t("config_value")}
+				/>
+				<Button
+					variant="ghost"
+					size="sm"
+					className="justify-start text-destructive"
+					onClick={() => removeNewCustomRow(row.id)}
+				>
+					{t("core:delete")}
+				</Button>
+			</div>
+			{error ? <p className="text-sm text-destructive">{error}</p> : null}
+		</div>
+	);
+}

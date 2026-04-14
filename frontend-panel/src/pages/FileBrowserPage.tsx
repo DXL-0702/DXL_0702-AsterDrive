@@ -3,6 +3,7 @@ import {
 	Suspense,
 	useCallback,
 	useEffect,
+	useMemo,
 	useRef,
 	useState,
 } from "react";
@@ -655,52 +656,105 @@ export default function FileBrowserPage() {
 		[clearSelection, refresh, search, searchQuery, t],
 	);
 
-	const breadcrumbPathIds = breadcrumb
-		.map((item) => item.id)
-		.filter((id): id is number => id !== null);
-
-	const fileBrowserContextValue = {
-		folders: displayFolders,
-		files: displayFiles,
-		browserOpenMode,
-		scrollElement: scrollViewport,
-		breadcrumbPathIds,
-		onFolderOpen: (id: number, name: string) =>
-			navigate(workspaceFolderPath(workspace, id, name)),
-		onFileClick: (file: FileListItem) => openPreview(file, "auto"),
-		onFileOpen: (file: FileListItem) => openPreview(file, "direct"),
-		onFileChooseOpenMethod: (file: FileListItem) => openPreview(file, "picker"),
-		onShare: openShareDialog,
-		onDownload: handleDownload,
-		onArchiveDownload: (folderId: number) => {
+	const breadcrumbPathIds = useMemo(
+		() =>
+			breadcrumb
+				.map((item) => item.id)
+				.filter((id): id is number => id !== null),
+		[breadcrumb],
+	);
+	const handleFolderOpen = useCallback(
+		(id: number, name: string) => {
+			navigate(workspaceFolderPath(workspace, id, name));
+		},
+		[navigate, workspace],
+	);
+	const handleFileClick = useCallback(
+		(file: FileListItem) => openPreview(file, "auto"),
+		[openPreview],
+	);
+	const handleFileOpen = useCallback(
+		(file: FileListItem) => openPreview(file, "direct"),
+		[openPreview],
+	);
+	const handleFileChooseOpenMethod = useCallback(
+		(file: FileListItem) => openPreview(file, "picker"),
+		[openPreview],
+	);
+	const handleArchiveDownload = useCallback(
+		(folderId: number) => {
 			void startArchiveDownload([], [folderId]).catch(handleApiError);
 		},
-		onCopy: handleCopy,
-		onMove: handleMove,
-		onToggleLock: handleToggleLock,
-		onDelete: handleDelete,
-		onRename: openRenameDialog,
-		onVersions: handleVersions,
-		onInfo: (type: "file" | "folder", id: number) => {
+		[startArchiveDownload],
+	);
+	const handleInfo = useCallback(
+		(type: "file" | "folder", id: number) => {
 			void FileInfoDialog.preload();
 			if (type === "file") {
-				const f = displayFiles.find((f) => f.id === id);
-				if (f) {
-					setInfoTarget({ file: f });
+				const file = displayFiles.find((entry) => entry.id === id);
+				if (file) {
+					setInfoTarget({ file });
 					setInfoPanelOpen(true);
 				}
-			} else {
-				const folder = displayFolders.find((f) => f.id === id);
-				if (folder) {
-					setInfoTarget({ folder });
-					setInfoPanelOpen(true);
-				}
+				return;
+			}
+
+			const folder = displayFolders.find((entry) => entry.id === id);
+			if (folder) {
+				setInfoTarget({ folder });
+				setInfoPanelOpen(true);
 			}
 		},
-		onMoveToFolder: handleMoveToFolder,
-		fadingFileIds,
-		fadingFolderIds,
-	};
+		[displayFiles, displayFolders],
+	);
+	const fileBrowserContextValue = useMemo(
+		() => ({
+			folders: displayFolders,
+			files: displayFiles,
+			browserOpenMode,
+			breadcrumbPathIds,
+			onFolderOpen: handleFolderOpen,
+			onFileClick: handleFileClick,
+			onFileOpen: handleFileOpen,
+			onFileChooseOpenMethod: handleFileChooseOpenMethod,
+			onShare: openShareDialog,
+			onDownload: handleDownload,
+			onArchiveDownload: handleArchiveDownload,
+			onCopy: handleCopy,
+			onMove: handleMove,
+			onToggleLock: handleToggleLock,
+			onDelete: handleDelete,
+			onRename: openRenameDialog,
+			onVersions: handleVersions,
+			onInfo: handleInfo,
+			onMoveToFolder: handleMoveToFolder,
+			fadingFileIds,
+			fadingFolderIds,
+		}),
+		[
+			displayFolders,
+			displayFiles,
+			browserOpenMode,
+			breadcrumbPathIds,
+			handleFolderOpen,
+			handleFileClick,
+			handleFileOpen,
+			handleFileChooseOpenMethod,
+			openShareDialog,
+			handleDownload,
+			handleArchiveDownload,
+			handleCopy,
+			handleMove,
+			handleToggleLock,
+			handleDelete,
+			openRenameDialog,
+			handleVersions,
+			handleInfo,
+			handleMoveToFolder,
+			fadingFileIds,
+			fadingFolderIds,
+		],
+	);
 
 	const isEmpty =
 		!loading && displayFolders.length === 0 && displayFiles.length === 0;

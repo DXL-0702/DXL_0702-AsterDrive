@@ -1,0 +1,598 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
+import {
+	getPreviewAppsConfigIssuesFromString,
+	PREVIEW_APPS_CONFIG_KEY,
+} from "@/components/admin/previewAppsConfigEditorShared";
+import {
+	buildDraftValues,
+	type DraftValues,
+	formatSubcategoryLabel,
+	getConfigDescription,
+	getMailTemplateGroupId,
+	getMailTemplateGroupOrderIndex,
+	getSubcategoryGroupKey,
+	type NewCustomDraft,
+	normalizeCategory,
+	normalizeSubcategory,
+	type SizeDisplayUnitValue,
+	type SystemSubcategoryGroup,
+	sortConfigsByKey,
+	type TimeDisplayUnitValue,
+} from "@/components/admin/settings/adminSettingsContentShared";
+import { handleApiError } from "@/hooks/useApiError";
+import { adminConfigService } from "@/services/adminService";
+import { usePreviewAppStore } from "@/stores/previewAppStore";
+import type {
+	ConfigSchemaItem,
+	SystemConfig,
+	TemplateVariableGroup,
+} from "@/types/api";
+
+const PUBLIC_SITE_URL_KEY = "public_site_url";
+
+type TranslationFn = (key: string, options?: Record<string, unknown>) => string;
+
+interface UseAdminSettingsDataProps {
+	currentUserEmail: string;
+	onPublicSiteUrlChanged: (value: string | null | undefined) => void;
+	t: TranslationFn;
+}
+
+export function useAdminSettingsData({
+	currentUserEmail,
+	onPublicSiteUrlChanged,
+	t,
+}: UseAdminSettingsDataProps) {
+	const customDraftIdRef = useRef(0);
+	const [configs, setConfigs] = useState<SystemConfig[]>([]);
+	const [schemas, setSchemas] = useState<ConfigSchemaItem[]>([]);
+	const [templateVariableGroups, setTemplateVariableGroups] = useState<
+		TemplateVariableGroup[]
+	>([]);
+	const [loading, setLoading] = useState(true);
+	const [saving, setSaving] = useState(false);
+	const [draftValues, setDraftValues] = useState<DraftValues>({});
+	const [displayUnits, setDisplayUnits] = useState<
+		Partial<Record<string, TimeDisplayUnitValue | SizeDisplayUnitValue>>
+	>({});
+	const [deletedCustomKeys, setDeletedCustomKeys] = useState<string[]>([]);
+	const [newCustomRows, setNewCustomRows] = useState<NewCustomDraft[]>([]);
+	const [expandedSubcategoryGroups, setExpandedSubcategoryGroups] = useState<
+		Record<string, boolean>
+	>({});
+	const [expandedTemplateGroups, setExpandedTemplateGroups] = useState<
+		Record<string, boolean>
+	>({});
+	const [testEmailDialogOpen, setTestEmailDialogOpen] = useState(false);
+	const [activeTemplateVariableGroupCode, setActiveTemplateVariableGroupCode] =
+		useState<string | null>(null);
+	const [testEmailTarget, setTestEmailTarget] = useState("");
+	const [sendingTestEmail, setSendingTestEmail] = useState(false);
+
+	const openTestEmailDialog = useCallback(() => {
+		setTestEmailTarget(currentUserEmail);
+		setTestEmailDialogOpen(true);
+	}, [currentUserEmail]);
+
+	const handleSendTestEmail = useCallback(async () => {
+		setSendingTestEmail(true);
+		try {
+			const response = await adminConfigService.sendTestEmail(
+				testEmailTarget.trim() || undefined,
+			);
+			toast.success(response.message);
+			setTestEmailDialogOpen(false);
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setSendingTestEmail(false);
+		}
+	}, [testEmailTarget]);
+
+	const handleBuildWopiDiscoveryPreviewConfig = useCallback(
+		async ({
+			discoveryUrl,
+			value,
+		}: {
+			discoveryUrl: string;
+			value: string;
+		}) => {
+			try {
+				const response = await adminConfigService.action(
+					PREVIEW_APPS_CONFIG_KEY,
+					{
+						action: "build_wopi_discovery_preview_config",
+						discovery_url: discoveryUrl,
+						value,
+					},
+				);
+				toast.success(response.message);
+				return response.value ?? value;
+			} catch (error) {
+				handleApiError(error);
+				throw error;
+			}
+		},
+		[],
+	);
+
+	const load = useCallback(async (options?: { showLoading?: boolean }) => {
+		const showLoading = options?.showLoading ?? true;
+
+		try {
+			if (showLoading) {
+				setLoading(true);
+			}
+			const [cfgs, schemaList, nextTemplateVariableGroups] = await Promise.all([
+				adminConfigService.list({ limit: 200, offset: 0 }),
+				adminConfigService.schema(),
+				adminConfigService.templateVariables().catch((error) => {
+					handleApiError(error);
+					return [];
+				}),
+			]);
+			setConfigs(cfgs.items);
+			setSchemas(schemaList);
+			setTemplateVariableGroups(nextTemplateVariableGroups);
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			if (showLoading) {
+				setLoading(false);
+			}
+		}
+	}, []);
+
+	useEffect(() => {
+		void load();
+	}, [load]);
+
+	useEffect(() => {
+		setDraftValues(buildDraftValues(configs));
+		setDisplayUnits({});
+		setDeletedCustomKeys([]);
+		setNewCustomRows([]);
+	}, [configs]);
+
+	const schemaMap = useMemo(() => {
+		const map = new Map<string, ConfigSchemaItem>();
+		for (const schema of schemas) {
+			map.set(schema.key, schema);
+		}
+		return map;
+	}, [schemas]);
+
+	const resolveSchemaTranslation = useCallback(
+		(translationKey: string | undefined, fallback?: string) => {
+			if (!translationKey) {
+				return fallback;
+			}
+
+			const translated = t(translationKey);
+			return translated === translationKey ? fallback : translated;
+		},
+		[t],
+	);
+
+	const getSystemConfigLabel = useCallback(
+		(config: SystemConfig) => {
+			const schema = schemaMap.get(config.key);
+			return (
+				resolveSchemaTranslation(schema?.label_i18n_key, config.key) ??
+				config.key
+			);
+		},
+		[resolveSchemaTranslation, schemaMap],
+	);
+
+	const getSystemConfigDescription = useCallback(
+		(config: SystemConfig) => {
+			const schema = schemaMap.get(config.key);
+			const fallback = schema?.description || getConfigDescription(config);
+			return resolveSchemaTranslation(schema?.description_i18n_key, fallback);
+		},
+		[resolveSchemaTranslation, schemaMap],
+	);
+
+	const mailTemplateVariableGroups = useMemo(
+		() =>
+			[...templateVariableGroups]
+				.filter((group) => group.category === "mail.template")
+				.sort(
+					(left, right) =>
+						getMailTemplateGroupOrderIndex(left.template_code) -
+							getMailTemplateGroupOrderIndex(right.template_code) ||
+						left.template_code.localeCompare(right.template_code),
+				),
+		[templateVariableGroups],
+	);
+
+	const activeTemplateVariableGroup = useMemo(
+		() =>
+			activeTemplateVariableGroupCode
+				? (mailTemplateVariableGroups.find(
+						(group) => group.template_code === activeTemplateVariableGroupCode,
+					) ?? null)
+				: null,
+		[activeTemplateVariableGroupCode, mailTemplateVariableGroups],
+	);
+
+	const getTemplateVariableGroupLabel = useCallback(
+		(group: TemplateVariableGroup) =>
+			resolveSchemaTranslation(
+				group.label_i18n_key,
+				formatSubcategoryLabel(group.template_code),
+			) ?? formatSubcategoryLabel(group.template_code),
+		[resolveSchemaTranslation],
+	);
+
+	const getTemplateVariableLabel = useCallback(
+		(variable: TemplateVariableGroup["variables"][number]) =>
+			resolveSchemaTranslation(variable.label_i18n_key, variable.token) ??
+			variable.token,
+		[resolveSchemaTranslation],
+	);
+
+	const getTemplateVariableDescription = useCallback(
+		(variable: TemplateVariableGroup["variables"][number]) =>
+			resolveSchemaTranslation(variable.description_i18n_key),
+		[resolveSchemaTranslation],
+	);
+
+	const openTemplateVariablesDialog = useCallback((config: SystemConfig) => {
+		setActiveTemplateVariableGroupCode(getMailTemplateGroupId(config.key));
+	}, []);
+
+	const systemConfigs = useMemo(
+		() =>
+			configs
+				.filter((config) => config.source === "system")
+				.sort(sortConfigsByKey),
+		[configs],
+	);
+
+	const customConfigs = useMemo(
+		() =>
+			configs
+				.filter((config) => config.source !== "system")
+				.sort(sortConfigsByKey),
+		[configs],
+	);
+
+	const systemGroups = useMemo(() => {
+		const groups: Record<string, SystemConfig[]> = {};
+
+		for (const config of systemConfigs) {
+			const category = normalizeCategory(config.category);
+			if (!groups[category]) {
+				groups[category] = [];
+			}
+			groups[category].push(config);
+		}
+
+		return groups;
+	}, [systemConfigs]);
+
+	const systemCategories = useMemo(
+		() => Object.keys(systemGroups),
+		[systemGroups],
+	);
+
+	const systemSubcategoryGroups = useMemo(() => {
+		const groups: Record<string, SystemSubcategoryGroup[]> = {};
+
+		for (const category of systemCategories) {
+			const grouped = new Map<string, SystemSubcategoryGroup>();
+
+			for (const config of systemGroups[category] ?? []) {
+				const subcategory = normalizeSubcategory(config.category);
+				const groupKey = getSubcategoryGroupKey(category, subcategory);
+				const existingGroup = grouped.get(groupKey);
+				if (existingGroup) {
+					existingGroup.configs.push(config);
+					continue;
+				}
+
+				grouped.set(groupKey, {
+					category,
+					subcategory,
+					configs: [config],
+				});
+			}
+
+			groups[category] = Array.from(grouped.values()).sort((left, right) => {
+				if (!left.subcategory && !right.subcategory) return 0;
+				if (!left.subcategory) return -1;
+				if (!right.subcategory) return 1;
+				return left.subcategory.localeCompare(right.subcategory);
+			});
+		}
+
+		return groups;
+	}, [systemCategories, systemGroups]);
+
+	const deletedCustomKeySet = useMemo(
+		() => new Set(deletedCustomKeys),
+		[deletedCustomKeys],
+	);
+
+	const visibleCustomConfigs = useMemo(
+		() =>
+			customConfigs.filter((config) => !deletedCustomKeySet.has(config.key)),
+		[customConfigs, deletedCustomKeySet],
+	);
+
+	const deletedCustomConfigs = useMemo(
+		() => customConfigs.filter((config) => deletedCustomKeySet.has(config.key)),
+		[customConfigs, deletedCustomKeySet],
+	);
+
+	const activeNewCustomRows = useMemo(
+		() =>
+			newCustomRows.filter(
+				(row) => row.key.trim().length > 0 || row.value.trim().length > 0,
+			),
+		[newCustomRows],
+	);
+
+	const newCustomRowErrors = useMemo(() => {
+		const errors = new Map<string, string>();
+		const keyCounts = new Map<string, number>();
+
+		for (const row of activeNewCustomRows) {
+			const trimmedKey = row.key.trim();
+			if (!trimmedKey) continue;
+			keyCounts.set(trimmedKey, (keyCounts.get(trimmedKey) ?? 0) + 1);
+		}
+
+		const existingKeys = new Set(
+			visibleCustomConfigs.map((config) => config.key),
+		);
+
+		for (const row of activeNewCustomRows) {
+			const trimmedKey = row.key.trim();
+			if (!trimmedKey) {
+				errors.set(row.id, t("custom_config_key_required"));
+				continue;
+			}
+			if (
+				existingKeys.has(trimmedKey) ||
+				(keyCounts.get(trimmedKey) ?? 0) > 1
+			) {
+				errors.set(row.id, t("custom_config_key_duplicate"));
+			}
+		}
+
+		return errors;
+	}, [activeNewCustomRows, t, visibleCustomConfigs]);
+
+	const changedExistingConfigs = useMemo(
+		() =>
+			configs.filter((config) => {
+				if (deletedCustomKeySet.has(config.key)) {
+					return false;
+				}
+				return (draftValues[config.key] ?? config.value) !== config.value;
+			}),
+		[configs, deletedCustomKeySet, draftValues],
+	);
+
+	const previewAppsValidationIssues = useMemo(() => {
+		const config = configs.find((item) => item.key === PREVIEW_APPS_CONFIG_KEY);
+		if (!config) {
+			return [];
+		}
+
+		return getPreviewAppsConfigIssuesFromString(
+			draftValues[config.key] ?? config.value,
+		);
+	}, [configs, draftValues]);
+
+	const changedCount =
+		changedExistingConfigs.length +
+		deletedCustomConfigs.length +
+		activeNewCustomRows.length;
+	const hasValidationError =
+		newCustomRowErrors.size > 0 || previewAppsValidationIssues.length > 0;
+	const hasUnsavedChanges = changedCount > 0;
+	const hasAnyConfig = configs.length > 0;
+
+	const getDraftValue = useCallback(
+		(config: SystemConfig) => draftValues[config.key] ?? config.value,
+		[draftValues],
+	);
+
+	const updateDraftValue = useCallback((key: string, value: string) => {
+		setDraftValues((previous) => ({ ...previous, [key]: value }));
+	}, []);
+
+	const toggleSubcategoryGroup = useCallback(
+		(groupKey: string, nextExpanded: boolean) => {
+			setExpandedSubcategoryGroups((previous) => ({
+				...previous,
+				[groupKey]: nextExpanded,
+			}));
+		},
+		[],
+	);
+
+	const toggleTemplateGroup = useCallback(
+		(groupKey: string, nextExpanded: boolean) => {
+			setExpandedTemplateGroups((previous) => ({
+				...previous,
+				[groupKey]: nextExpanded,
+			}));
+		},
+		[],
+	);
+
+	const discardChanges = useCallback(() => {
+		setDraftValues(buildDraftValues(configs));
+		setDisplayUnits({});
+		setDeletedCustomKeys([]);
+		setNewCustomRows([]);
+	}, [configs]);
+
+	const appendCustomDraftRow = useCallback(() => {
+		customDraftIdRef.current += 1;
+		setNewCustomRows((previous) => [
+			...previous,
+			{
+				id: `new-custom-${customDraftIdRef.current}`,
+				key: "",
+				value: "",
+			},
+		]);
+	}, []);
+
+	const updateNewCustomRow = useCallback(
+		(id: string, field: keyof Omit<NewCustomDraft, "id">, value: string) => {
+			setNewCustomRows((previous) =>
+				previous.map((row) =>
+					row.id === id ? { ...row, [field]: value } : row,
+				),
+			);
+		},
+		[],
+	);
+
+	const removeNewCustomRow = useCallback((id: string) => {
+		setNewCustomRows((previous) => previous.filter((row) => row.id !== id));
+	}, []);
+
+	const markCustomDeleted = useCallback((key: string) => {
+		setDeletedCustomKeys((previous) =>
+			previous.includes(key) ? previous : [...previous, key],
+		);
+	}, []);
+
+	const restoreDeletedCustom = useCallback((key: string) => {
+		setDeletedCustomKeys((previous) => previous.filter((item) => item !== key));
+	}, []);
+
+	const handleSaveAll = useCallback(async () => {
+		if (saving || hasValidationError || !hasUnsavedChanges) {
+			return;
+		}
+
+		try {
+			setSaving(true);
+			const previewAppsChanged = changedExistingConfigs.some(
+				(config) => config.key === PREVIEW_APPS_CONFIG_KEY,
+			);
+			const nextConfigsByKey = new Map(
+				configs.map((config) => [config.key, config] as const),
+			);
+
+			for (const config of deletedCustomConfigs) {
+				await adminConfigService.delete(config.key);
+				nextConfigsByKey.delete(config.key);
+			}
+
+			for (const config of changedExistingConfigs) {
+				const nextValue = getDraftValue(config);
+				const savedConfig = await adminConfigService.set(config.key, nextValue);
+				nextConfigsByKey.set(
+					config.key,
+					savedConfig.key === config.key
+						? savedConfig
+						: { ...config, value: nextValue },
+				);
+			}
+
+			for (const row of activeNewCustomRows) {
+				const key = row.key.trim();
+				const savedConfig = await adminConfigService.set(key, row.value);
+				if (savedConfig.key !== key) {
+					throw new Error(`Saved config key mismatch: expected ${key}`);
+				}
+				nextConfigsByKey.set(key, savedConfig);
+			}
+
+			const nextConfigs = Array.from(nextConfigsByKey.values());
+			setConfigs(nextConfigs);
+			const nextPublicSiteUrl =
+				nextConfigsByKey.get(PUBLIC_SITE_URL_KEY)?.value;
+			if (nextPublicSiteUrl !== undefined) {
+				onPublicSiteUrlChanged(nextPublicSiteUrl);
+			}
+			if (previewAppsChanged) {
+				usePreviewAppStore.getState().invalidate();
+				void usePreviewAppStore.getState().load({ force: true });
+			}
+			toast.success(t("settings_saved"));
+		} catch (error) {
+			handleApiError(error);
+			try {
+				await load({ showLoading: false });
+			} catch (reloadError) {
+				handleApiError(reloadError);
+			}
+		} finally {
+			setSaving(false);
+		}
+	}, [
+		activeNewCustomRows,
+		changedExistingConfigs,
+		configs,
+		deletedCustomConfigs,
+		getDraftValue,
+		hasUnsavedChanges,
+		hasValidationError,
+		load,
+		onPublicSiteUrlChanged,
+		saving,
+		t,
+	]);
+
+	return {
+		activeTemplateVariableGroup,
+		activeTemplateVariableGroupCode,
+		appendCustomDraftRow,
+		changedCount,
+		configs,
+		deletedCustomConfigs,
+		displayUnits,
+		discardChanges,
+		expandedSubcategoryGroups,
+		expandedTemplateGroups,
+		getDraftValue,
+		getSystemConfigDescription,
+		getSystemConfigLabel,
+		getTemplateVariableDescription,
+		getTemplateVariableGroupLabel,
+		getTemplateVariableLabel,
+		handleBuildWopiDiscoveryPreviewConfig,
+		handleSaveAll,
+		handleSendTestEmail,
+		hasAnyConfig,
+		hasUnsavedChanges,
+		hasValidationError,
+		loading,
+		markCustomDeleted,
+		newCustomRowErrors,
+		newCustomRows,
+		openTemplateVariablesDialog,
+		openTestEmailDialog,
+		previewAppsValidationIssues,
+		removeNewCustomRow,
+		restoreDeletedCustom,
+		saving,
+		setActiveTemplateVariableGroupCode,
+		setDisplayUnits,
+		setTestEmailDialogOpen,
+		setTestEmailTarget,
+		sendingTestEmail,
+		systemCategories,
+		systemGroups,
+		systemSubcategoryGroups,
+		testEmailDialogOpen,
+		testEmailTarget,
+		toggleSubcategoryGroup,
+		toggleTemplateGroup,
+		updateDraftValue,
+		updateNewCustomRow,
+		visibleCustomConfigs,
+	};
+}

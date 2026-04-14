@@ -35,8 +35,13 @@ vi.mock("@/components/files/FileBrowserContext", () => ({
 }));
 
 vi.mock("@/stores/fileStore", () => ({
-	useFileStore: (selector: (state: typeof mockState.store) => unknown) =>
-		selector(mockState.store),
+	useFileStore: Object.assign(
+		(selector: (state: typeof mockState.store) => unknown) =>
+			selector(mockState.store),
+		{
+			getState: () => mockState.store,
+		},
+	),
 }));
 
 vi.mock("@/components/files/FileBrowserItemContextMenu", () => ({
@@ -54,6 +59,7 @@ vi.mock("@/components/files/FileCard", () => ({
 		onClick,
 		onDoubleClick,
 		dragData,
+		resolveDragData,
 		targetPathIds,
 		fading,
 	}: {
@@ -64,28 +70,32 @@ vi.mock("@/components/files/FileCard", () => ({
 		onClick: () => void;
 		onDoubleClick?: () => void;
 		dragData?: { fileIds: number[]; folderIds: number[] };
+		resolveDragData?: () => { fileIds: number[]; folderIds: number[] };
 		targetPathIds?: number[];
 		fading?: boolean;
-	}) => (
-		<div
-			data-testid={isFolder ? "folder-card" : "file-card"}
-			data-selected={String(selected)}
-			data-drag-file-ids={dragData?.fileIds.join(",") ?? ""}
-			data-drag-folder-ids={dragData?.folderIds.join(",") ?? ""}
-			data-target-path-ids={targetPathIds?.join(",") ?? ""}
-			data-fading={String(Boolean(fading))}
-		>
-			<button type="button" onClick={onClick}>
-				open:{item.name}
-			</button>
-			<button type="button" onClick={onDoubleClick}>
-				open-double:{item.name}
-			</button>
-			<button type="button" onClick={onSelect}>
-				select:{item.name}
-			</button>
-		</div>
-	),
+	}) => {
+		const computedDragData = resolveDragData?.() ?? dragData;
+		return (
+			<div
+				data-testid={isFolder ? "folder-card" : "file-card"}
+				data-selected={String(selected)}
+				data-drag-file-ids={computedDragData?.fileIds.join(",") ?? ""}
+				data-drag-folder-ids={computedDragData?.folderIds.join(",") ?? ""}
+				data-target-path-ids={targetPathIds?.join(",") ?? ""}
+				data-fading={String(Boolean(fading))}
+			>
+				<button type="button" onClick={onClick}>
+					open:{item.name}
+				</button>
+				<button type="button" onClick={onDoubleClick}>
+					open-double:{item.name}
+				</button>
+				<button type="button" onClick={onSelect}>
+					select:{item.name}
+				</button>
+			</div>
+		);
+	},
 }));
 
 describe("FileGrid", () => {
