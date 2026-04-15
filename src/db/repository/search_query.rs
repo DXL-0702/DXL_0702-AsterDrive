@@ -21,7 +21,7 @@ pub fn sqlite_match_query(query: &str) -> Option<String> {
 }
 
 pub fn mysql_boolean_mode_query(query: &str) -> Option<String> {
-    if query.chars().count() < 2 || query.chars().any(|ch| !ch.is_alphanumeric()) {
+    if query.chars().count() < 3 || query.chars().any(|ch| !ch.is_alphanumeric()) {
         return None;
     }
 
@@ -77,6 +77,7 @@ mod tests {
     #[test]
     fn mysql_boolean_mode_query_falls_back_for_invalid_input() {
         assert_eq!(mysql_boolean_mode_query("r"), None);
+        assert_eq!(mysql_boolean_mode_query("re"), None);
         assert_eq!(mysql_boolean_mode_query("re-port"), None);
     }
 }

@@ -333,9 +333,6 @@ export async function createPageShare(
 	return shareUrl;
 }
 
-export async function clickRowAction(
-	row: Locator,
-	title: string,
-) {
+export async function clickRowAction(row: Locator, title: string) {
 	await row.getByTitle(title).click();
 }

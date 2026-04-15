@@ -72,6 +72,8 @@ vi.mock("react-i18next", () => ({
 		t: (key: string, options?: Record<string, unknown>) => {
 			if (key === "settings_save_notice")
 				return `settings_save_notice:${options?.count}`;
+			if (key === "mail_test_email_sent")
+				return `mail_test_email_sent:${options?.email}`;
 			return translationMap[key] ?? key;
 		},
 	}),
@@ -690,7 +692,7 @@ describe("AdminSettingsPage", () => {
 			);
 		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith(
-			"Test email sent to deliver@example.com",
+			"mail_test_email_sent:deliver@example.com",
 		);
 	});
 
@@ -1434,7 +1436,7 @@ describe("AdminSettingsPage", () => {
 		});
 		await waitFor(() => {
 			expect(mockState.toastSuccess).toHaveBeenCalledWith(
-				"Built preview apps from discovery",
+				"preview_apps_wopi_discovery_success",
 			);
 		});
 		expect(screen.getAllByText("Word").length).toBeGreaterThan(0);

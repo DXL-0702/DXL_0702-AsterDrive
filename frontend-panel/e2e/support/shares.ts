@@ -1,4 +1,4 @@
-import { expect, type Browser } from "@playwright/test";
+import { type Browser, expect, type Page } from "@playwright/test";
 import { seedClientState } from "./auth";
 import { chooseOpenMethodIfPrompted, closeActiveDialog } from "./files";
 
@@ -67,4 +67,63 @@ export async function expectProtectedFolderSharePreview(
 
 	await closeActiveDialog(page);
 	await context.close();
+}
+
+export async function expectShareUnavailable(
+	browser: Browser,
+	shareUrl: string,
+	expectedError = "Share link not found.",
+) {
+	const context = await browser.newContext({
+		locale: "en-US",
+		serviceWorkers: "block",
+	});
+	const page = await context.newPage();
+
+	await seedClientState(page);
+	await page.goto(shareUrl);
+	await expect(page.getByText(expectedError, { exact: true })).toBeVisible({
+		timeout: 30_000,
+	});
+
+	await context.close();
+}
+
+export async function gotoMyShares(page: Page) {
+	await page.goto("/shares");
+	await expect(
+		page.getByRole("heading", { exact: true, name: "My Shares" }),
+	).toBeVisible({
+		timeout: 30_000,
+	});
+}
+
+export function shareCard(page: Page, resourceName: string) {
+	return page
+		.locator('div[role="button"]')
+		.filter({ has: page.getByText(resourceName, { exact: true }) })
+		.first();
+}
+
+export function shareSelectionToggle(page: Page, resourceName: string) {
+	return shareCard(page, resourceName).locator("button[aria-pressed]").first();
+}
+
+export async function expectShareCardVisible(page: Page, resourceName: string) {
+	await expect(shareCard(page, resourceName)).toBeVisible({ timeout: 30_000 });
+}
+
+export async function expectShareCardMissing(page: Page, resourceName: string) {
+	await expect(shareCard(page, resourceName)).toHaveCount(0, {
+		timeout: 30_000,
+	});
+}
+
+export function extractShareToken(shareUrl: string) {
+	const match = shareUrl.match(/\/s\/([^/?#]+)/);
+	if (!match) {
+		throw new Error(`Could not extract share token from URL: ${shareUrl}`);
+	}
+
+	return match[1];
 }

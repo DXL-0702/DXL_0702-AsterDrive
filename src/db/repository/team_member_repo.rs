@@ -421,10 +421,32 @@ mod tests {
                 .filter(team_member_keyword_condition(DbBackend::MySql, "42"))
                 .build(DbBackend::MySql)
         );
-        assert!(numeric_sql.as_str().contains("MATCH("), "{numeric_sql}");
+        assert!(!numeric_sql.as_str().contains("MATCH("), "{numeric_sql}");
         assert!(
             numeric_sql.as_str().contains("`users`.`id` = 42"),
             "{numeric_sql}"
+        );
+    }
+
+    #[test]
+    fn mysql_team_member_keyword_condition_falls_back_to_like_for_short_queries() {
+        let sql: String = format!(
+            "{}",
+            TeamMember::find()
+                .inner_join(user::Entity)
+                .filter(team_member_keyword_condition(DbBackend::MySql, "be"))
+                .build(DbBackend::MySql)
+        );
+
+        assert!(!sql.as_str().contains("MATCH("), "{sql}");
+        assert!(
+            sql.as_str()
+                .contains("LOWER(`users`.`username`) LIKE '%be%'"),
+            "{sql}"
+        );
+        assert!(
+            sql.as_str().contains("LOWER(`users`.`email`) LIKE '%be%'"),
+            "{sql}"
         );
     }
 
@@ -464,6 +486,31 @@ mod tests {
         assert!(
             sql.as_str()
                 .contains(r#""users"."id" IN (SELECT "rowid" FROM "users_search_fts""#),
+            "{sql}"
+        );
+    }
+
+    #[test]
+    fn sqlite_team_member_keyword_condition_falls_back_to_like_for_short_queries() {
+        let sql: String = format!(
+            "{}",
+            TeamMember::find()
+                .inner_join(user::Entity)
+                .filter(team_member_keyword_condition(DbBackend::Sqlite, "be"))
+                .build(DbBackend::Sqlite)
+        );
+
+        assert!(
+            !sql.as_str().contains(r#""users_search_fts""#),
+            "{sql}"
+        );
+        assert!(
+            sql.as_str()
+                .contains(r#"LOWER("users"."username") LIKE '%be%'"#),
+            "{sql}"
+        );
+        assert!(
+            sql.as_str().contains(r#"LOWER("users"."email") LIKE '%be%'"#),
             "{sql}"
         );
     }

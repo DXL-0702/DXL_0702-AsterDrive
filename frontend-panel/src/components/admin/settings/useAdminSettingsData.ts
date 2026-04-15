@@ -78,17 +78,20 @@ export function useAdminSettingsData({
 	const handleSendTestEmail = useCallback(async () => {
 		setSendingTestEmail(true);
 		try {
-			const response = await adminConfigService.sendTestEmail(
-				testEmailTarget.trim() || undefined,
+			const targetEmail = testEmailTarget.trim() || currentUserEmail.trim();
+			await adminConfigService.sendTestEmail(targetEmail || undefined);
+			toast.success(
+				targetEmail
+					? t("mail_test_email_sent", { email: targetEmail })
+					: t("mail_test_email_sent_default"),
 			);
-			toast.success(response.message);
 			setTestEmailDialogOpen(false);
 		} catch (error) {
 			handleApiError(error);
 		} finally {
 			setSendingTestEmail(false);
 		}
-	}, [testEmailTarget]);
+	}, [currentUserEmail, t, testEmailTarget]);
 
 	const handleBuildWopiDiscoveryPreviewConfig = useCallback(
 		async ({
@@ -107,14 +110,14 @@ export function useAdminSettingsData({
 						value,
 					},
 				);
-				toast.success(response.message);
+				toast.success(t("preview_apps_wopi_discovery_success"));
 				return response.value ?? value;
 			} catch (error) {
 				handleApiError(error);
 				throw error;
 			}
 		},
-		[],
+		[t],
 	);
 
 	const load = useCallback(async (options?: { showLoading?: boolean }) => {

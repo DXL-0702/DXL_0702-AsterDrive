@@ -1,10 +1,10 @@
-import { expect, type APIRequestContext, type Page } from "@playwright/test";
+import { type APIRequestContext, expect, type Page } from "@playwright/test";
+import { fileDropZone } from "./files";
 import {
 	ADMIN,
 	DEFAULT_STORAGE_STATE,
 	PREVIEW_APPS_CACHE_KEY,
 } from "./fixtures";
-import { fileDropZone } from "./files";
 
 export async function seedClientState(
 	page: Page,
@@ -67,10 +67,7 @@ export async function hasUsers(request: APIRequestContext) {
 	return payload.data?.has_users ?? false;
 }
 
-export async function authenticate(
-	page: Page,
-	request: APIRequestContext,
-) {
+export async function authenticate(page: Page, request: APIRequestContext) {
 	if (await hasUsers(request)) {
 		await loginAsAdmin(page);
 		return;
@@ -91,14 +88,28 @@ export async function setupAdmin(page: Page) {
 }
 
 export async function loginAsAdmin(page: Page) {
+	await loginWithCredentials(page, ADMIN.email, ADMIN.password);
+}
+
+export async function loginWithCredentials(
+	page: Page,
+	identifier: string,
+	password: string,
+) {
 	await page.goto("/login");
-	await page.locator("#identifier").fill(ADMIN.email);
-	await page.locator("#password").fill(ADMIN.password);
+	await page.locator("#identifier").fill(identifier);
+	await page.locator("#password").fill(password);
 	await page.locator("form button[type='submit']").click();
 	await expect(page).toHaveURL(/\/$/);
 	await expect(fileDropZone(page)).toBeVisible();
 }
 
-export async function openUserMenu(page: Page) {
-	await page.getByRole("button", { name: ADMIN.username }).click();
+export async function openUserMenu(page: Page, userName = ADMIN.username) {
+	await page.getByRole("button", { name: userName }).click();
+}
+
+export async function logout(page: Page, userName = ADMIN.username) {
+	await openUserMenu(page, userName);
+	await page.getByRole("button", { name: "Logout" }).click();
+	await expect(page).toHaveURL(/\/login$/);
 }
