@@ -27,7 +27,9 @@ pub async fn find_with_filters<C: ConnectionTrait>(
     limit: u64,
     offset: u64,
 ) -> Result<(Vec<audit_log::Model>, u64)> {
-    let mut q = AuditLog::find().order_by_desc(audit_log::Column::CreatedAt);
+    let mut q = AuditLog::find()
+        .order_by_desc(audit_log::Column::CreatedAt)
+        .order_by_desc(audit_log::Column::Id);
 
     if let Some(uid) = user_id {
         q = q.filter(audit_log::Column::UserId.eq(uid));

@@ -24,18 +24,6 @@ export function useKeyboardShortcuts() {
 			const mod = e.metaKey || e.ctrlKey;
 			const key = e.key.toLowerCase();
 
-			// / or Ctrl+K: Focus search input
-			if (e.key === "/" || (mod && key === "k")) {
-				e.preventDefault();
-				const searchInput = document.querySelector<HTMLInputElement>(
-					"[data-search-input]",
-				);
-				if (searchInput) {
-					searchInput.focus();
-				}
-				return;
-			}
-
 			// Ctrl+C: Copy selection to clipboard
 			if (mod && key === "c") {
 				const count = useFileStore.getState().clipboardCopy();

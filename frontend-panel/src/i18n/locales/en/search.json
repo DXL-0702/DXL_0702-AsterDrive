@@ -1,9 +1,18 @@
 {
+	"dialog_title": "Search",
+	"open_search": "Open search",
 	"placeholder": "Search files and folders...",
 	"all": "All",
 	"files_only": "Files only",
 	"folders_only": "Folders only",
 	"results": "Found {{files}} file(s) and {{folders}} folder(s)",
+	"start_typing": "Start typing to search",
+	"start_typing_desc": "Search across files and folders in the current workspace.",
+	"navigate_results": "Navigate with the keyboard",
+	"navigate_results_desc": "Use Arrow keys to move through results, then press Enter to open.",
+	"open_selected_desc": "Enter opens the active result. Esc closes search.",
+	"searching": "Searching...",
+	"search_error": "Search failed",
 	"no_results": "No results found",
 	"no_results_desc": "Try a different search term."
 }

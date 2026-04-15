@@ -128,26 +128,6 @@ describe("useKeyboardShortcuts", () => {
 		});
 	});
 
-	it("focuses the search input for slash and Ctrl+K", async () => {
-		const { useKeyboardShortcuts } = await import(
-			"@/hooks/useKeyboardShortcuts"
-		);
-		const searchInput = document.createElement("input");
-		searchInput.setAttribute("data-search-input", "true");
-		document.body.appendChild(searchInput);
-		const focusSpy = vi.spyOn(searchInput, "focus");
-
-		renderHook(() => useKeyboardShortcuts());
-
-		fireEvent.keyDown(document, { key: "/" });
-		fireEvent.keyDown(document, {
-			ctrlKey: true,
-			key: "k",
-		});
-
-		expect(focusSpy).toHaveBeenCalledTimes(2);
-	});
-
 	it("handles clipboard copy and cut shortcuts", async () => {
 		const { useKeyboardShortcuts } = await import(
 			"@/hooks/useKeyboardShortcuts"

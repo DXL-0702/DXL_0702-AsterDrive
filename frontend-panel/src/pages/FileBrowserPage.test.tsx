@@ -19,6 +19,11 @@ const mockState = vi.hoisted(() => ({
 	fileBrowserContext: null as Record<string, unknown> | null,
 	formatBatchToast: vi.fn(),
 	handleApiError: vi.fn(),
+	location: {
+		pathname: "/folder/12",
+		search: "?name=Projects",
+		state: null as Record<string, unknown> | null,
+	},
 	navigate: vi.fn(),
 	params: { folderId: "12" as string | undefined },
 	previewAppStore: {
@@ -130,6 +135,7 @@ vi.mock("react-i18next", () => ({
 }));
 
 vi.mock("react-router-dom", () => ({
+	useLocation: () => mockState.location,
 	useNavigate: () => mockState.navigate,
 	useParams: () => mockState.params,
 	useSearchParams: () => [mockState.searchParams, vi.fn()],
@@ -746,6 +752,11 @@ describe("FileBrowserPage", () => {
 		mockState.fileBrowserContext = null;
 		mockState.formatBatchToast.mockReset();
 		mockState.handleApiError.mockReset();
+		mockState.location = {
+			pathname: "/folder/12",
+			search: "?name=Projects",
+			state: null,
+		};
 		mockState.navigate.mockReset();
 		mockState.previewAppStore.load.mockReset();
 		mockState.readInternalDragData.mockReset();
@@ -869,6 +880,7 @@ describe("FileBrowserPage", () => {
 
 	it("uses a house icon at root and a folder icon in child folders", async () => {
 		mockState.params = { folderId: undefined };
+		mockState.location = { pathname: "/", search: "", state: null };
 		mockState.searchParams = new URLSearchParams();
 		mockState.store.breadcrumb = [{ id: null, name: "Root" }];
 
@@ -887,6 +899,11 @@ describe("FileBrowserPage", () => {
 		expect(within(leftSlot).getByText("House")).toBeInTheDocument();
 
 		mockState.params = { folderId: "12" };
+		mockState.location = {
+			pathname: "/folder/12",
+			search: "?name=Projects",
+			state: null,
+		};
 		mockState.searchParams = new URLSearchParams("name=Projects");
 		mockState.store.breadcrumb = [
 			{ id: null, name: "Root" },

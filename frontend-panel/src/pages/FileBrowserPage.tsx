@@ -8,7 +8,12 @@ import {
 	useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import {
+	useLocation,
+	useNavigate,
+	useParams,
+	useSearchParams,
+} from "react-router-dom";
 import { toast } from "sonner";
 import { BatchActionBar } from "@/components/common/BatchActionBar";
 import type { FileBrowserContextValue } from "@/components/files/FileBrowserContext";
@@ -63,8 +68,13 @@ import { usePreviewAppStore } from "@/stores/previewAppStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type { FileInfo, FileListItem } from "@/types/api";
 
+interface FileBrowserLocationState {
+	searchPreviewFile?: FileListItem;
+}
+
 export default function FileBrowserPage() {
 	const { t } = useTranslation(["files", "tasks"]);
+	const location = useLocation();
 	const navigate = useNavigate();
 	const workspace = useWorkspaceStore((s) => s.workspace);
 	const params = useParams<{ folderId?: string }>();
@@ -212,6 +222,26 @@ export default function FileBrowserPage() {
 			}
 		}
 	}, [displayFiles, displayFolders, infoPanelOpen, infoTarget]);
+
+	useEffect(() => {
+		const locationState = location.state as FileBrowserLocationState | null;
+		const previewFile = locationState?.searchPreviewFile;
+		if (!previewFile) {
+			return;
+		}
+
+		setPreviewState({ file: previewFile, openMode: "auto" });
+		navigate(
+			{
+				pathname: location.pathname,
+				search: location.search,
+			},
+			{
+				replace: true,
+				state: null,
+			},
+		);
+	}, [location.pathname, location.search, location.state, navigate]);
 
 	useEffect(() => {
 		function onRenameRequest(event: Event) {

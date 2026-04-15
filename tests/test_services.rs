@@ -3,6 +3,25 @@ mod common;
 
 use std::collections::BTreeSet;
 
+async fn set_foreign_key_checks(
+    db: &sea_orm::DatabaseConnection,
+    enabled: bool,
+) -> Result<(), sea_orm::DbErr> {
+    use sea_orm::ConnectionTrait;
+
+    let sql = match (db.get_database_backend(), enabled) {
+        (sea_orm::DbBackend::Sqlite, true) => "PRAGMA foreign_keys=ON;",
+        (sea_orm::DbBackend::Sqlite, false) => "PRAGMA foreign_keys=OFF;",
+        (sea_orm::DbBackend::Postgres, true) => "SET session_replication_role = origin;",
+        (sea_orm::DbBackend::Postgres, false) => "SET session_replication_role = replica;",
+        (sea_orm::DbBackend::MySql, true) => "SET FOREIGN_KEY_CHECKS = 1;",
+        (sea_orm::DbBackend::MySql, false) => "SET FOREIGN_KEY_CHECKS = 0;",
+        _ => return Ok(()),
+    };
+
+    db.execute_unprepared(sql).await.map(|_| ())
+}
+
 fn write_service_fixture(name: &str, contents: &str) -> String {
     let dir = format!("/tmp/asterdrive-services-test-{}", uuid::Uuid::new_v4());
     std::fs::create_dir_all(&dir).unwrap();
@@ -1670,7 +1689,7 @@ async fn test_team_service_rejects_create_without_default_policy_group() {
 
     state
         .db
-        .execute_unprepared("UPDATE storage_policy_groups SET is_default = 0;")
+        .execute_unprepared("UPDATE storage_policy_groups SET is_default = FALSE;")
         .await
         .unwrap();
     state.policy_snapshot.reload(&state.db).await.unwrap();
@@ -1695,7 +1714,7 @@ async fn test_team_service_rejects_create_without_default_policy_group() {
 
 #[actix_web::test]
 async fn test_team_service_degrades_missing_creator_rows() {
-    use sea_orm::{ConnectionTrait, IntoActiveModel, Set};
+    use sea_orm::{IntoActiveModel, Set};
 
     let state = common::setup().await;
     let owner = aster_drive::services::auth_service::register(
@@ -1739,11 +1758,7 @@ async fn test_team_service_degrades_missing_creator_rows() {
     .await
     .unwrap();
 
-    state
-        .db
-        .execute_unprepared("PRAGMA foreign_keys=OFF;")
-        .await
-        .unwrap();
+    set_foreign_key_checks(&state.db, false).await.unwrap();
     let mut broken_team = aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
         .await
         .unwrap()
@@ -1752,11 +1767,7 @@ async fn test_team_service_degrades_missing_creator_rows() {
     aster_drive::db::repository::team_repo::update(&state.db, broken_team)
         .await
         .unwrap();
-    state
-        .db
-        .execute_unprepared("PRAGMA foreign_keys=ON;")
-        .await
-        .unwrap();
+    set_foreign_key_checks(&state.db, true).await.unwrap();
 
     let loaded = aster_drive::services::team_service::get_team(&state, team.id, owner.id)
         .await

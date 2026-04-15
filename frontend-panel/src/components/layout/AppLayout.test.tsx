@@ -1,20 +1,33 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AppLayout } from "@/components/layout/AppLayout";
+
+const mockState = vi.hoisted(() => ({
+	shouldIgnoreKeyboardTarget: vi.fn(() => false),
+}));
+
+vi.mock("@/hooks/useSelectionShortcuts", () => ({
+	shouldIgnoreKeyboardTarget: mockState.shouldIgnoreKeyboardTarget,
+}));
 
 vi.mock("@/components/layout/TopBar", () => ({
 	TopBar: ({
 		onSidebarToggle,
 		mobileOpen,
 		actions,
+		onSearchOpen,
 	}: {
 		onSidebarToggle: () => void;
 		mobileOpen: boolean;
 		actions?: React.ReactNode;
+		onSearchOpen: () => void;
 	}) => (
 		<div data-testid="topbar" data-mobile-open={String(mobileOpen)}>
 			<button type="button" onClick={onSidebarToggle}>
 				Toggle Sidebar
+			</button>
+			<button type="button" onClick={onSearchOpen}>
+				Open Search
 			</button>
 			{actions}
 		</div>
@@ -46,7 +59,21 @@ vi.mock("@/components/layout/Sidebar", () => ({
 	),
 }));
 
+vi.mock("@/components/layout/GlobalSearchDialog", () => ({
+	GlobalSearchDialog: ({
+		open,
+	}: {
+		open: boolean;
+		onOpenChange: (open: boolean) => void;
+	}) => <div data-testid="global-search-dialog" data-open={String(open)} />,
+}));
+
 describe("AppLayout", () => {
+	beforeEach(() => {
+		mockState.shouldIgnoreKeyboardTarget.mockReset();
+		mockState.shouldIgnoreKeyboardTarget.mockReturnValue(false);
+	});
+
 	it("renders children and forwards actions and drag handlers", () => {
 		const onTrashDrop = vi.fn();
 		const onMoveToFolder = vi.fn();
@@ -74,6 +101,10 @@ describe("AppLayout", () => {
 		expect(screen.getByTestId("sidebar")).toHaveAttribute(
 			"data-has-move",
 			"true",
+		);
+		expect(screen.getByTestId("global-search-dialog")).toHaveAttribute(
+			"data-open",
+			"false",
 		);
 	});
 
@@ -107,6 +138,22 @@ describe("AppLayout", () => {
 		expect(screen.getByTestId("topbar")).toHaveAttribute(
 			"data-mobile-open",
 			"false",
+		);
+	});
+
+	it("opens the global search dialog from the top bar and keyboard shortcuts", () => {
+		render(<AppLayout>Page Content</AppLayout>);
+
+		fireEvent.click(screen.getByRole("button", { name: "Open Search" }));
+		expect(screen.getByTestId("global-search-dialog")).toHaveAttribute(
+			"data-open",
+			"true",
+		);
+
+		fireEvent.keyDown(document, { key: "/" });
+		expect(screen.getByTestId("global-search-dialog")).toHaveAttribute(
+			"data-open",
+			"true",
 		);
 	});
 });

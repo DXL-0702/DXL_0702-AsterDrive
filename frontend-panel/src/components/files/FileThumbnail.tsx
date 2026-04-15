@@ -7,7 +7,7 @@ import { FileTypeIcon } from "./FileTypeIcon";
 
 interface FileThumbnailProps {
 	file: FileInfo | FileListItem;
-	size?: "sm" | "lg";
+	size?: "sm" | "md" | "lg";
 	thumbnailPath?: string;
 }
 
@@ -57,6 +57,51 @@ export function FileThumbnail({
 						className="h-full w-full object-cover"
 					/>
 				)}
+			</div>
+		);
+	}
+
+	if (size === "md") {
+		if (isImage && loading && !error && !blobUrl) {
+			return (
+				<div
+					ref={ref}
+					className="flex h-full w-full items-center justify-center text-muted-foreground"
+				>
+					<Icon
+						name="Spinner"
+						className="h-4 w-4 animate-spin"
+						data-testid="thumbnail-loading"
+					/>
+				</div>
+			);
+		}
+
+		if (!isImage || error || !blobUrl) {
+			return (
+				<div
+					ref={ref}
+					className="flex h-full w-full items-center justify-center"
+				>
+					<FileTypeIcon
+						mimeType={file.mime_type}
+						fileName={file.name}
+						className="h-5 w-5"
+					/>
+				</div>
+			);
+		}
+
+		return (
+			<div ref={ref} className="flex h-full w-full items-center justify-center">
+				<img
+					src={blobUrl}
+					alt=""
+					loading="lazy"
+					decoding="async"
+					draggable={false}
+					className="h-full w-full object-cover"
+				/>
 			</div>
 		);
 	}

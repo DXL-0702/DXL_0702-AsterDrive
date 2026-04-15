@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { GlobalSearchDialog } from "@/components/layout/GlobalSearchDialog";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { TopBar } from "@/components/layout/TopBar";
+import { shouldIgnoreKeyboardTarget } from "@/hooks/useSelectionShortcuts";
 import type { InternalDragData } from "@/lib/dragDrop";
 
 interface AppLayoutProps {
@@ -22,6 +24,7 @@ export function AppLayout({
 	onMoveToFolder,
 }: AppLayoutProps) {
 	const [mobileOpen, setMobileOpen] = useState(false);
+	const [searchOpen, setSearchOpen] = useState(false);
 
 	const handleMobileToggle = useCallback(() => {
 		setMobileOpen((prev) => !prev);
@@ -31,12 +34,34 @@ export function AppLayout({
 		setMobileOpen(false);
 	}, []);
 
+	const handleSearchOpen = useCallback(() => {
+		setSearchOpen(true);
+	}, []);
+
+	useEffect(() => {
+		function handleKeyDown(event: KeyboardEvent) {
+			if (shouldIgnoreKeyboardTarget(event.target)) {
+				return;
+			}
+
+			const mod = event.metaKey || event.ctrlKey;
+			if (event.key === "/" || (mod && event.key.toLowerCase() === "k")) {
+				event.preventDefault();
+				setSearchOpen(true);
+			}
+		}
+
+		document.addEventListener("keydown", handleKeyDown);
+		return () => document.removeEventListener("keydown", handleKeyDown);
+	}, []);
+
 	return (
 		<div className="h-screen flex flex-col">
 			<TopBar
 				onSidebarToggle={handleMobileToggle}
 				mobileOpen={mobileOpen}
 				actions={actions}
+				onSearchOpen={handleSearchOpen}
 			/>
 			<div className="flex flex-1 overflow-hidden">
 				<Sidebar
@@ -49,6 +74,7 @@ export function AppLayout({
 					{children}
 				</main>
 			</div>
+			<GlobalSearchDialog open={searchOpen} onOpenChange={setSearchOpen} />
 		</div>
 	);
 }

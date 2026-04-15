@@ -15,6 +15,10 @@ async fn explain_query_plan(db: &DatabaseConnection, sql: &str) -> Vec<String> {
     .collect()
 }
 
+fn skip_unless_sqlite(db: &DatabaseConnection) -> bool {
+    db.get_database_backend() == DbBackend::Sqlite
+}
+
 fn assert_uses_index(plan: &[String], index: &str, table: &str) {
     assert!(
         plan.iter().any(|detail| detail.contains(index)),
@@ -55,6 +59,9 @@ fn assert_uses_virtual_table(plan: &[String], virtual_table: &str, base_table: &
 #[actix_web::test]
 async fn test_directory_lookup_indexes_cover_listing_and_duplicate_name_queries() {
     let state = common::setup().await;
+    if !skip_unless_sqlite(&state.db) {
+        return;
+    }
 
     let folder_listing = explain_query_plan(
         &state.db,
@@ -108,6 +115,9 @@ async fn test_directory_lookup_indexes_cover_listing_and_duplicate_name_queries(
 #[actix_web::test]
 async fn test_trash_pagination_indexes_cover_deleted_item_queries() {
     let state = common::setup().await;
+    if !skip_unless_sqlite(&state.db) {
+        return;
+    }
 
     let folder_trash = explain_query_plan(
         &state.db,
@@ -145,6 +155,9 @@ async fn test_trash_pagination_indexes_cover_deleted_item_queries() {
 #[actix_web::test]
 async fn test_sqlite_search_fts_objects_exist() {
     let state = common::setup().await;
+    if !skip_unless_sqlite(&state.db) {
+        return;
+    }
 
     let objects = state
         .db
@@ -206,6 +219,9 @@ async fn test_sqlite_search_fts_objects_exist() {
 #[actix_web::test]
 async fn test_sqlite_search_fts_query_plan_uses_virtual_tables() {
     let state = common::setup().await;
+    if !skip_unless_sqlite(&state.db) {
+        return;
+    }
 
     let file_search_count_plan = explain_query_plan(
         &state.db,

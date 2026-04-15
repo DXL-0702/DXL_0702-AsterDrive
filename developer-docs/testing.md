@@ -1,0 +1,121 @@
+# 测试与数据库后端
+
+本文描述的是当前仓库已经落地的测试后端切换机制，不是未来规划。
+
+## 先说结论
+
+- 默认集成测试仍然跑内存 SQLite
+- 现在可以通过 `ASTER_TEST_DATABASE_BACKEND` 把 `tests/common/mod.rs` 里的通用 `common::setup()` 切到 PostgreSQL 或 MySQL
+- PostgreSQL / MySQL 不是要求你手填数据库 URL；测试会自动用 `testcontainers` 起容器
+- 为了支持并行测试，PostgreSQL / MySQL 下每个测试实例都会分配独立数据库，不共用同一个 schema
+
+## 环境变量
+
+支持三个值：
+
+- `sqlite`
+- `postgres`
+- `mysql`
+
+未设置时等价于：
+
+```bash
+ASTER_TEST_DATABASE_BACKEND=sqlite
+```
+
+## 运行方式
+
+默认 SQLite：
+
+```bash
+cargo test
+```
+
+切到 PostgreSQL：
+
+```bash
+ASTER_TEST_DATABASE_BACKEND=postgres cargo test
+```
+
+切到 MySQL：
+
+```bash
+ASTER_TEST_DATABASE_BACKEND=mysql cargo test
+```
+
+如果你只想复现某一组用例，和平时一样筛测试名即可：
+
+```bash
+ASTER_TEST_DATABASE_BACKEND=postgres cargo test --test test_search test_search_by_name
+ASTER_TEST_DATABASE_BACKEND=mysql cargo test --test test_admin test_admin_team_crud
+```
+
+## 现在的行为
+
+`tests/common/mod.rs` 里的 `common::setup()` 会按下面的规则工作：
+
+1. 读取 `ASTER_TEST_DATABASE_BACKEND`
+2. 如果是 `sqlite`，直接返回内存 SQLite 的 `AppState`
+3. 如果是 `postgres` 或 `mysql`，通过 `testcontainers` 启动一个共享容器
+4. 基于容器里的基础数据库，为当前测试实例创建一个唯一数据库名
+5. 用这个唯一数据库跑 migration、初始化默认策略和运行时配置，再返回 `AppState`
+
+这意味着：
+
+- 同一轮测试里，PostgreSQL / MySQL 容器会复用，不会每个测试都单独拉一个容器
+- 但数据库实例不会复用，所以并行集成测试不会互相污染数据
+
+## PostgreSQL / MySQL 的差异
+
+### PostgreSQL
+
+- 使用容器内的 `postgres` 管理账号启动基础库
+- 测试实例数据库也由这个管理连接创建
+- 业务测试连接直接使用对应的测试数据库
+
+### MySQL
+
+- 业务测试默认仍使用容器内的 `aster` 用户
+- 但独立数据库的创建和授权由 `root` 连接负责
+- 原因很简单：`MYSQL_USER` 生成的普通用户默认只有初始 `asterdrive` 库权限，不能自己建新库
+
+## 什么时候该切后端
+
+下面这些情况，别只拿 SQLite 自我安慰：
+
+- 你刚改了 repo 层查询，而且里面有数据库分支逻辑
+- 你刚改了全文搜索、索引、分页、排序、大小写匹配
+- 你怀疑某段 SQL / SeaORM builder 在 PostgreSQL 或 MySQL 上行为不一致
+- 你要修的是“SQLite 绿，生产库炸”的问题
+
+更实际一点的建议：
+
+- 先用默认 SQLite 快速迭代
+- 改到数据库相关逻辑后，至少再补跑一次 `postgres`
+- 如果代码里还有 MySQL 分支，再补跑一次 `mysql`
+
+## 和现有 smoke tests 的关系
+
+仓库里原本就有 [tests/test_database_backends.rs](../tests/test_database_backends.rs)，它的定位没有变：
+
+- 主要负责生产数据库相关的 smoke coverage
+- 会显式验证 PostgreSQL / MySQL 搜索索引、搜索链路和跨库迁移路径
+
+新的 `ASTER_TEST_DATABASE_BACKEND` 机制解决的是另一件事：
+
+- 让原本默认写成 `common::setup()` 的大部分集成测试，可以在不改测试主体的情况下切到其他后端复跑
+
+## 限制和注意事项
+
+- PostgreSQL / MySQL 依赖本机可用的 Docker / 容器运行时
+- 第一次跑会拉镜像，明显比 SQLite 慢
+- 如果某个测试没有走 `common::setup()`，而是自己手写数据库初始化逻辑，那它不会自动吃到这个开关
+- `common::setup_with_database_url(...)` 仍然保留给需要显式控制数据库地址的场景，它不会替你解读 `ASTER_TEST_DATABASE_BACKEND`
+
+## 排查建议
+
+如果你怀疑测试没有按预期切后端，优先看三件事：
+
+1. 当前用例是不是走的 `common::setup()`
+2. shell 里是否真的导出了 `ASTER_TEST_DATABASE_BACKEND`
+3. 本机 Docker 是否可用，以及对应镜像能否拉起

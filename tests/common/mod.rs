@@ -20,6 +20,26 @@ fn lock_csrf_registry() -> std::sync::MutexGuard<'static, HashMap<String, String
         .unwrap_or_else(|error| error.into_inner())
 }
 
+const TEST_DATABASE_BACKEND_ENV: &str = "ASTER_TEST_DATABASE_BACKEND";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum TestDatabaseBackend {
+    Sqlite,
+    Postgres,
+    MySql,
+}
+
+struct SharedTestDatabaseContainer {
+    _container: testcontainers::ContainerAsync<testcontainers::GenericImage>,
+    admin_database_url: String,
+    database_url: String,
+}
+
+static POSTGRES_TEST_CONTAINER: tokio::sync::OnceCell<SharedTestDatabaseContainer> =
+    tokio::sync::OnceCell::const_new();
+static MYSQL_TEST_CONTAINER: tokio::sync::OnceCell<SharedTestDatabaseContainer> =
+    tokio::sync::OnceCell::const_new();
+
 #[allow(dead_code)]
 pub fn remember_csrf_token(session_token: &str, csrf_token: &str) {
     if session_token.is_empty() || csrf_token.is_empty() {
@@ -99,10 +119,250 @@ pub fn csrf_header_for(session_token: impl AsRef<str>) -> (&'static str, String)
     ("X-CSRF-Token", csrf_token_for(session_token))
 }
 
-/// 构建一个干净的测试 AppState（内存 SQLite）
+fn configured_test_database_backend() -> TestDatabaseBackend {
+    match std::env::var(TEST_DATABASE_BACKEND_ENV)
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .as_deref()
+    {
+        None | Some("") | Some("sqlite") => TestDatabaseBackend::Sqlite,
+        Some("postgres") | Some("postgresql") => TestDatabaseBackend::Postgres,
+        Some("mysql") => TestDatabaseBackend::MySql,
+        Some(other) => panic!(
+            "unsupported {TEST_DATABASE_BACKEND_ENV} value '{other}', expected sqlite/postgres/mysql"
+        ),
+    }
+}
+
+async fn wait_for_database(database_url: &str) {
+    let mut last_err: Option<String> = None;
+    let ready = tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        loop {
+            let cfg = aster_drive::config::DatabaseConfig {
+                url: database_url.to_string(),
+                pool_size: 1,
+                retry_count: 0,
+            };
+            match aster_drive::db::connect(&cfg).await {
+                Ok(_) => break,
+                Err(err) => {
+                    last_err = Some(err.to_string());
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                }
+            }
+        }
+    })
+    .await;
+
+    if ready.is_err() {
+        panic!(
+            "timed out waiting for database {database_url}: {}",
+            last_err.unwrap_or_else(|| "unknown error".to_string())
+        );
+    }
+}
+
+async fn start_postgres_test_container() -> SharedTestDatabaseContainer {
+    use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
+
+    let container = GenericImage::new("postgres", "16")
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(5432))
+        .with_env_var("POSTGRES_USER", "postgres")
+        .with_env_var("POSTGRES_PASSWORD", "postgres")
+        .with_env_var("POSTGRES_DB", "asterdrive")
+        .start()
+        .await
+        .expect("failed to start postgres test container");
+    let port = container
+        .get_host_port_ipv4(testcontainers::core::IntoContainerPort::tcp(5432))
+        .await
+        .expect("postgres test port should be exposed");
+    let database_url = format!("postgres://postgres:postgres@127.0.0.1:{port}/asterdrive");
+
+    wait_for_database(&database_url).await;
+
+    SharedTestDatabaseContainer {
+        _container: container,
+        admin_database_url: database_url.clone(),
+        database_url,
+    }
+}
+
+async fn start_mysql_test_container() -> SharedTestDatabaseContainer {
+    use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
+
+    let container = GenericImage::new("mysql", "8.4")
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(3306))
+        .with_env_var("MYSQL_DATABASE", "asterdrive")
+        .with_env_var("MYSQL_USER", "aster")
+        .with_env_var("MYSQL_PASSWORD", "asterpass")
+        .with_env_var("MYSQL_ROOT_PASSWORD", "rootpass")
+        .start()
+        .await
+        .expect("failed to start mysql test container");
+    let port = container
+        .get_host_port_ipv4(testcontainers::core::IntoContainerPort::tcp(3306))
+        .await
+        .expect("mysql test port should be exposed");
+    let database_url = format!("mysql://aster:asterpass@127.0.0.1:{port}/asterdrive");
+    let admin_database_url = format!("mysql://root:rootpass@127.0.0.1:{port}/asterdrive");
+
+    wait_for_database(&database_url).await;
+
+    SharedTestDatabaseContainer {
+        _container: container,
+        admin_database_url,
+        database_url,
+    }
+}
+
+async fn shared_test_database_urls(backend: TestDatabaseBackend) -> (String, String) {
+    match backend {
+        TestDatabaseBackend::Sqlite => {
+            ("sqlite::memory:".to_string(), "sqlite::memory:".to_string())
+        }
+        TestDatabaseBackend::Postgres => {
+            let container = POSTGRES_TEST_CONTAINER
+                .get_or_init(start_postgres_test_container)
+                .await;
+            (
+                container.admin_database_url.clone(),
+                container.database_url.clone(),
+            )
+        }
+        TestDatabaseBackend::MySql => {
+            let container = MYSQL_TEST_CONTAINER
+                .get_or_init(start_mysql_test_container)
+                .await;
+            (
+                container.admin_database_url.clone(),
+                container.database_url.clone(),
+            )
+        }
+    }
+}
+
+fn sanitized_database_name_prefix(name: &str) -> String {
+    let sanitized: String = name
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+
+    let trimmed = sanitized.trim_matches('_');
+    if trimmed.is_empty() {
+        "asterdrive".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn isolated_database_name(base_name: &str, max_len: usize) -> String {
+    let suffix = uuid::Uuid::new_v4().simple().to_string();
+    let reserved = "_it_".len() + suffix.len();
+    let max_prefix_len = max_len.saturating_sub(reserved).max(1);
+    let prefix: String = sanitized_database_name_prefix(base_name)
+        .chars()
+        .take(max_prefix_len)
+        .collect();
+
+    format!("{prefix}_it_{suffix}")
+}
+
+fn database_name_from_url(url: &reqwest::Url) -> Option<String> {
+    url.path_segments()
+        .and_then(|segments| {
+            segments
+                .filter(|segment| !segment.is_empty())
+                .next_back()
+                .map(str::to_string)
+        })
+        .filter(|value| !value.is_empty())
+}
+
+fn replace_database_name(mut url: reqwest::Url, database_name: &str) -> String {
+    url.set_path(&format!("/{database_name}"));
+    url.to_string()
+}
+
+fn quote_database_identifier(backend: sea_orm::DbBackend, database_name: &str) -> String {
+    match backend {
+        sea_orm::DbBackend::Postgres => format!("\"{}\"", database_name.replace('"', "\"\"")),
+        sea_orm::DbBackend::MySql => format!("`{}`", database_name.replace('`', "``")),
+        _ => database_name.to_string(),
+    }
+}
+
+fn quote_mysql_string(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+async fn provision_isolated_test_database_url(
+    admin_database_url: &str,
+    database_url: &str,
+) -> String {
+    if database_url == "sqlite::memory:" || database_url.starts_with("sqlite://") {
+        return database_url.to_string();
+    }
+
+    use sea_orm::ConnectionTrait;
+
+    let admin_cfg = aster_drive::config::DatabaseConfig {
+        url: admin_database_url.to_string(),
+        pool_size: 1,
+        retry_count: 0,
+    };
+    let admin_db = aster_drive::db::connect(&admin_cfg).await.unwrap();
+    let backend = admin_db.get_database_backend();
+    let parsed_url = reqwest::Url::parse(database_url).unwrap();
+    let base_name = database_name_from_url(&parsed_url).unwrap_or_else(|| "asterdrive".to_string());
+
+    let isolated_name = match backend {
+        sea_orm::DbBackend::Postgres => isolated_database_name(&base_name, 63),
+        sea_orm::DbBackend::MySql => isolated_database_name(&base_name, 64),
+        _ => return database_url.to_string(),
+    };
+
+    let create_sql = format!(
+        "CREATE DATABASE {}",
+        quote_database_identifier(backend, &isolated_name)
+    );
+    admin_db.execute_unprepared(&create_sql).await.unwrap();
+
+    if backend == sea_orm::DbBackend::MySql {
+        let username = parsed_url.username();
+        if !username.is_empty() {
+            let grant_sql = format!(
+                "GRANT ALL PRIVILEGES ON {}.* TO {}@'%'",
+                quote_database_identifier(backend, &isolated_name),
+                quote_mysql_string(username),
+            );
+            admin_db.execute_unprepared(&grant_sql).await.unwrap();
+        }
+    }
+
+    replace_database_name(parsed_url, &isolated_name)
+}
+
+async fn resolve_test_database_url() -> String {
+    let backend = configured_test_database_backend();
+    let (admin_database_url, database_url) = shared_test_database_urls(backend).await;
+    provision_isolated_test_database_url(&admin_database_url, &database_url).await
+}
+
+/// 构建一个干净的测试 AppState。
+///
+/// 默认使用内存 SQLite。若设置 `ASTER_TEST_DATABASE_BACKEND=postgres|mysql`，
+/// 会自动启动一个共享 testcontainers 容器，并为当前测试实例分配独立数据库。
 #[allow(dead_code)]
 pub async fn setup() -> AppState {
-    setup_with_database_url("sqlite::memory:").await
+    let database_url = resolve_test_database_url().await;
+    setup_with_database_url(&database_url).await
 }
 
 /// 构建一个干净的测试 AppState（指定数据库 URL）

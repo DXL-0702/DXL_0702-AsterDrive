@@ -3,30 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TopBar } from "@/components/layout/TopBar";
 
 const mockState = vi.hoisted(() => ({
-	navigate: vi.fn(),
-	fileStore: {
-		search: vi.fn(),
-		clearSearch: vi.fn(),
-		searchQuery: null as string | null,
-	},
+	onSearchOpen: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string) => `translated:${key}`,
 	}),
-}));
-
-vi.mock("react-router-dom", () => ({
-	useNavigate: () => mockState.navigate,
-	useLocation: () => ({
-		pathname: window.location.pathname,
-	}),
-}));
-
-vi.mock("@/stores/fileStore", () => ({
-	useFileStore: (selector: (state: typeof mockState.fileStore) => unknown) =>
-		selector(mockState.fileStore),
 }));
 
 vi.mock("@/components/layout/HeaderControls", () => ({
@@ -74,51 +57,27 @@ vi.mock("@/components/ui/icon", () => ({
 	),
 }));
 
-vi.mock("@/components/ui/input", () => ({
-	Input: ({
-		value,
-		onChange,
-		onKeyDown,
-		placeholder,
-		className,
-	}: {
-		value?: string;
-		onChange?: (event: React.ChangeEvent<HTMLInputElement>) => void;
-		onKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
-		placeholder?: string;
-		className?: string;
-	}) => (
-		<input
-			value={value}
-			onChange={onChange}
-			onKeyDown={onKeyDown}
-			placeholder={placeholder}
-			className={className}
-		/>
-	),
-}));
-
 describe("TopBar", () => {
 	beforeEach(() => {
-		mockState.navigate.mockReset();
-		mockState.fileStore.search.mockReset();
-		mockState.fileStore.clearSearch.mockReset();
-		mockState.fileStore.searchQuery = null;
-		window.history.replaceState({}, "", "/");
+		mockState.onSearchOpen.mockReset();
 	});
 
-	it("renders the logo, search input, and forwarded actions", () => {
+	it("renders the logo, search trigger, and forwarded actions", () => {
 		render(
 			<TopBar
 				onSidebarToggle={vi.fn()}
 				mobileOpen={false}
 				actions={<button type="button">Extra</button>}
+				onSearchOpen={mockState.onSearchOpen}
 			/>,
 		);
 
 		expect(screen.getByAltText("translated:app_name")).toBeInTheDocument();
 		expect(
-			screen.getByPlaceholderText("translated:search_placeholder"),
+			screen.getAllByRole("button", { name: "translated:search:open_search" }),
+		).toHaveLength(2);
+		expect(
+			screen.getByText("translated:search:placeholder"),
 		).toBeInTheDocument();
 		expect(screen.getByText("HeaderControls")).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Extra" })).toBeInTheDocument();
@@ -140,63 +99,21 @@ describe("TopBar", () => {
 		);
 	});
 
-	it("searches trimmed input and navigates to the root route when needed", () => {
-		window.history.replaceState({}, "", "/trash");
-
-		render(<TopBar onSidebarToggle={vi.fn()} mobileOpen={false} />);
-
-		const input = screen.getByPlaceholderText(
-			"translated:search_placeholder",
-		) as HTMLInputElement;
-		fireEvent.change(input, { target: { value: "  report  " } });
-		fireEvent.keyDown(input, { key: "Enter" });
-
-		expect(mockState.navigate).toHaveBeenCalledWith("/");
-		expect(mockState.fileStore.search).toHaveBeenCalledWith("report");
-	});
-
-	it("does not search for blank input and skips redundant navigation on root", () => {
-		render(<TopBar onSidebarToggle={vi.fn()} mobileOpen={false} />);
-
-		const input = screen.getByPlaceholderText(
-			"translated:search_placeholder",
-		) as HTMLInputElement;
-		fireEvent.change(input, { target: { value: "   " } });
-		fireEvent.keyDown(input, { key: "Enter" });
-
-		expect(mockState.navigate).not.toHaveBeenCalled();
-		expect(mockState.fileStore.search).not.toHaveBeenCalled();
-	});
-
-	it("clears active searches with escape and the clear button", () => {
-		mockState.fileStore.searchQuery = "report";
-
-		const { rerender } = render(
-			<TopBar onSidebarToggle={vi.fn()} mobileOpen={true} />,
-		);
-		const input = screen.getByPlaceholderText(
-			"translated:search_placeholder",
-		) as HTMLInputElement;
-
-		fireEvent.change(input, { target: { value: "report" } });
-		fireEvent.keyDown(input, { key: "Escape" });
-
-		expect(mockState.fileStore.clearSearch).toHaveBeenCalledTimes(1);
-		expect(input.value).toBe("");
-
-		fireEvent.change(input, { target: { value: "report" } });
-		fireEvent.click(
-			screen.getByRole("button", { name: "translated:clear_search" }),
+	it("opens the search dialog from both desktop and mobile triggers", () => {
+		render(
+			<TopBar
+				onSidebarToggle={vi.fn()}
+				mobileOpen={true}
+				onSearchOpen={mockState.onSearchOpen}
+			/>,
 		);
 
-		expect(mockState.fileStore.clearSearch).toHaveBeenCalledTimes(2);
-		expect(input.value).toBe("");
+		const buttons = screen.getAllByRole("button", {
+			name: "translated:search:open_search",
+		});
+		fireEvent.click(buttons[0]);
+		fireEvent.click(buttons[1]);
 
-		mockState.fileStore.searchQuery = null;
-		rerender(<TopBar onSidebarToggle={vi.fn()} mobileOpen={false} />);
-		expect(input.value).toBe("");
-		expect(
-			screen.queryByRole("button", { name: "translated:clear_search" }),
-		).not.toBeInTheDocument();
+		expect(mockState.onSearchOpen).toHaveBeenCalledTimes(2);
 	});
 });

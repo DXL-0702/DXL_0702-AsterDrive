@@ -1,50 +1,45 @@
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useLocation, useNavigate } from "react-router-dom";
 import { AsterDriveWordmark } from "@/components/common/AsterDriveWordmark";
 import { HeaderControls } from "@/components/layout/HeaderControls";
 import { TopBarShell } from "@/components/layout/TopBarShell";
+import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { workspaceRootPath } from "@/lib/workspace";
-import { useFileStore } from "@/stores/fileStore";
-import { useWorkspaceStore } from "@/stores/workspaceStore";
 
 interface TopBarProps {
 	onSidebarToggle: () => void;
 	mobileOpen: boolean;
 	actions?: ReactNode;
+	onSearchOpen: () => void;
 }
 
-export function TopBar({ onSidebarToggle, mobileOpen, actions }: TopBarProps) {
-	const { t } = useTranslation();
-	const navigate = useNavigate();
-	const location = useLocation();
-	const workspace = useWorkspaceStore((s) => s.workspace);
-	const search = useFileStore((s) => s.search);
-	const clearSearch = useFileStore((s) => s.clearSearch);
-	const activeQuery = useFileStore((s) => s.searchQuery);
-	const [searchInput, setSearchInput] = useState("");
+export function TopBar({
+	onSidebarToggle,
+	mobileOpen,
+	actions,
+	onSearchOpen,
+}: TopBarProps) {
+	const { t } = useTranslation(["core", "search"]);
 
-	// Clear input when search is cleared (e.g., by navigating to a folder)
-	useEffect(() => {
-		if (activeQuery === null) setSearchInput("");
-	}, [activeQuery]);
-
-	const handleSearch = (e: React.KeyboardEvent) => {
-		if (e.key === "Enter" && searchInput.trim()) {
-			const rootPath = workspaceRootPath(workspace);
-			if (location.pathname !== rootPath) {
-				navigate(rootPath);
-			}
-			search(searchInput.trim());
-		}
-		if (e.key === "Escape" && activeQuery) {
-			setSearchInput("");
-			clearSearch();
-		}
-	};
+	const searchButton = (
+		<Button
+			type="button"
+			variant="outline"
+			size="sm"
+			onClick={onSearchOpen}
+			aria-label={t("search:open_search")}
+			className="h-9 w-full justify-between rounded-full border-border/50 bg-muted/35 px-3 text-muted-foreground shadow-none hover:bg-muted/55 hover:text-foreground"
+		>
+			<span className="flex min-w-0 items-center gap-2">
+				<Icon name="MagnifyingGlass" className="h-4 w-4 shrink-0" />
+				<span className="truncate text-sm">{t("search:placeholder")}</span>
+			</span>
+			<span className="hidden items-center gap-1 rounded-full border border-border/60 bg-background/80 px-2 py-0.5 text-[11px] font-medium text-muted-foreground md:inline-flex">
+				<kbd className="font-sans">Ctrl</kbd>
+				<span>K</span>
+			</span>
+		</Button>
+	);
 
 	return (
 		<TopBarShell
@@ -61,37 +56,28 @@ export function TopBar({ onSidebarToggle, mobileOpen, actions }: TopBarProps) {
 				/>
 			}
 			center={
-				<div className="flex max-w-md items-center">
-					<div className="relative w-full">
-						<Icon
-							name="MagnifyingGlass"
-							className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
-						/>
-						<Input
-							value={searchInput}
-							onChange={(e) => setSearchInput(e.target.value)}
-							onKeyDown={handleSearch}
-							placeholder={t("search_placeholder")}
-							className="h-8 border-transparent bg-muted/50 pl-8 pr-8 text-sm focus-visible:border-border"
-						/>
-						{activeQuery ? (
-							<button
-								type="button"
-								title={t("clear_search")}
-								aria-label={t("clear_search")}
-								className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-								onClick={() => {
-									setSearchInput("");
-									clearSearch();
-								}}
-							>
-								<Icon name="X" className="h-3.5 w-3.5" />
-							</button>
-						) : null}
-					</div>
-				</div>
+				<div className="flex w-full max-w-xl items-center">{searchButton}</div>
 			}
-			right={<HeaderControls actions={actions} showAdminEntry />}
+			right={
+				<HeaderControls
+					actions={
+						<>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon-sm"
+								onClick={onSearchOpen}
+								aria-label={t("search:open_search")}
+								className="sm:hidden"
+							>
+								<Icon name="MagnifyingGlass" className="h-4 w-4" />
+							</Button>
+							{actions}
+						</>
+					}
+					showAdminEntry
+				/>
+			}
 		/>
 	);
 }
