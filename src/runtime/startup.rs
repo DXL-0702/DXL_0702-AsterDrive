@@ -129,8 +129,8 @@ async fn ensure_default_policy(db: &sea_orm::DatabaseConnection) -> Result<()> {
         secret_key: Set(String::new()),
         base_path: Set(data_dir.to_string()),
         max_file_size: Set(0), // 无限制
-        allowed_types: Set("[]".to_string()),
-        options: Set("{}".to_string()),
+        allowed_types: Set(crate::types::StoredStoragePolicyAllowedTypes::empty()),
+        options: Set(crate::types::StoredStoragePolicyOptions::empty()),
         is_default: Set(true),
         chunk_size: Set(5_242_880), // 5MB default
         created_at: Set(now),

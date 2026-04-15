@@ -42,6 +42,7 @@ async fn test_user_default_policy_switch_updates_snapshot_immediately() {
             max_file_size: 0,
             chunk_size: None,
             is_default: false,
+            allowed_types: None,
             options: None,
         },
     )
@@ -160,8 +161,8 @@ async fn test_policy_crud() {
             "max_file_size": 104857600,
             "chunk_size": 8388608,
             "options": serde_json::json!({
-                "presigned_upload": true
-            }).to_string()
+                "s3_upload_strategy": "presigned"
+            })
         }))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -169,7 +170,7 @@ async fn test_policy_crud() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["name"], "Test S3");
     assert_eq!(body["data"]["chunk_size"], 8_388_608);
-    assert_eq!(body["data"]["options"], r#"{"presigned_upload":true}"#);
+    assert_eq!(body["data"]["options"]["s3_upload_strategy"], "presigned");
     let policy_id = body["data"]["id"].as_i64().unwrap();
 
     // 获取单个
@@ -1262,6 +1263,7 @@ async fn test_resolve_policy_fails_when_policy_group_has_no_matching_rule() {
             max_file_size: 0,
             chunk_size: None,
             is_default: false,
+            allowed_types: None,
             options: None,
         },
     )

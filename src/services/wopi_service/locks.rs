@@ -4,7 +4,7 @@ use sea_orm::{ActiveModelTrait, Set};
 use crate::config::wopi;
 use crate::db::repository::lock_repo;
 use crate::entities::{file, resource_lock};
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::lock_service;
 use crate::types::EntityType;
@@ -234,7 +234,7 @@ pub(crate) async fn load_active_lock(
     }
 
     Ok(Some(ActiveWopiLock {
-        payload: parse_wopi_lock_payload(lock.owner_info.as_deref()),
+        payload: parse_wopi_lock_payload(&lock)?,
         lock,
     }))
 }
@@ -255,7 +255,10 @@ async fn create_wopi_lock(
     let path = lock_service::resolve_entity_path(&state.db, EntityType::File, file.id).await?;
     let now = Utc::now();
     let timeout_at = now + Duration::seconds(wopi::lock_ttl_secs(&state.runtime_config));
-    let owner_info = encode_wopi_lock_payload(payload, requested_lock)?;
+    let owner_info = lock_service::ResourceLockOwnerInfo::Wopi(lock_service::WopiLockOwnerInfo {
+        app_key: payload.app_key.clone(),
+        lock: requested_lock.to_string(),
+    });
 
     let model = resource_lock::ActiveModel {
         token: Set(format!("wopi:{}", uuid::Uuid::new_v4())),
@@ -263,7 +266,9 @@ async fn create_wopi_lock(
         entity_id: Set(file.id),
         path: Set(path),
         owner_id: Set(Some(payload.actor_user_id)),
-        owner_info: Set(Some(owner_info)),
+        owner_info: Set(lock_service::serialize_resource_lock_owner_info(Some(
+            &owner_info,
+        ))?),
         timeout_at: Set(Some(timeout_at)),
         shared: Set(false),
         deep: Set(false),
@@ -292,7 +297,13 @@ async fn replace_wopi_lock_model(
     requested_lock: &str,
 ) -> Result<()> {
     let mut active: resource_lock::ActiveModel = lock.into();
-    active.owner_info = Set(Some(encode_wopi_lock_payload(payload, requested_lock)?));
+    let owner_info = lock_service::ResourceLockOwnerInfo::Wopi(lock_service::WopiLockOwnerInfo {
+        app_key: payload.app_key.clone(),
+        lock: requested_lock.to_string(),
+    });
+    active.owner_info = Set(lock_service::serialize_resource_lock_owner_info(Some(
+        &owner_info,
+    ))?);
     active.timeout_at = Set(Some(
         Utc::now() + Duration::seconds(wopi::lock_ttl_secs(&state.runtime_config)),
     ));
@@ -300,25 +311,16 @@ async fn replace_wopi_lock_model(
     Ok(())
 }
 
-fn encode_wopi_lock_payload(
-    payload: &WopiAccessTokenPayload,
-    requested_lock: &str,
-) -> Result<String> {
-    serde_json::to_string(&WopiLockPayload {
-        kind: "wopi".to_string(),
-        app_key: payload.app_key.clone(),
-        lock: requested_lock.to_string(),
-    })
-    .map_aster_err_ctx(
-        "failed to encode WOPI lock payload",
-        AsterError::internal_error,
-    )
-}
-
-fn parse_wopi_lock_payload(raw: Option<&str>) -> Option<WopiLockPayload> {
-    let raw = raw?;
-    let payload = serde_json::from_str::<WopiLockPayload>(raw).ok()?;
-    (payload.kind == "wopi").then_some(payload)
+fn parse_wopi_lock_payload(lock: &resource_lock::Model) -> Result<Option<WopiLockPayload>> {
+    match lock_service::deserialize_resource_lock_owner_info(lock)? {
+        Some(lock_service::ResourceLockOwnerInfo::Wopi(payload)) => Ok(Some(WopiLockPayload {
+            kind: "wopi".to_string(),
+            app_key: payload.app_key,
+            lock: payload.lock,
+        })),
+        Some(_) => Ok(None),
+        None => Ok(None),
+    }
 }
 
 fn normalize_wopi_lock_header(header_name: &str, value: &str) -> Result<String> {

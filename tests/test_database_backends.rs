@@ -247,7 +247,9 @@ async fn exercise_backend_smoke(database_url: &str, backend: DbBackend) {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "file_id": share_file_id }))
+        .set_json(serde_json::json!({
+            "target": { "type": "file", "id": share_file_id }
+        }))
         .to_request();
     let create_share_resp = test::call_service(&app, create_share_req).await;
     let create_share_status = create_share_resp.status();

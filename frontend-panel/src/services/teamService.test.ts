@@ -30,7 +30,7 @@ describe("teamService", () => {
 		teamService.list();
 		teamService.listAuditLogs(7, {
 			user_id: 9,
-			action: "team.member.add",
+			action: "team_member_add",
 			after: "2026-04-01T00:00:00Z",
 			before: "2026-04-02T00:00:00Z",
 			limit: 20,
@@ -50,7 +50,7 @@ describe("teamService", () => {
 		expect(mockState.get).toHaveBeenNthCalledWith(2, "/teams");
 		expect(mockState.get).toHaveBeenNthCalledWith(
 			3,
-			"/teams/7/audit-logs?limit=20&offset=40&user_id=9&action=team.member.add&after=2026-04-01T00%3A00%3A00Z&before=2026-04-02T00%3A00%3A00Z",
+			"/teams/7/audit-logs?limit=20&offset=40&user_id=9&action=team_member_add&after=2026-04-01T00%3A00%3A00Z&before=2026-04-02T00%3A00%3A00Z",
 		);
 		expect(mockState.get).toHaveBeenNthCalledWith(4, "/teams/7/audit-logs");
 		expect(mockState.get).toHaveBeenNthCalledWith(

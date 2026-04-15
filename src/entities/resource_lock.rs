@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::types::EntityType;
+use crate::types::{EntityType, StoredLockOwnerInfo};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -19,7 +19,8 @@ pub struct Model {
     pub path: String,
     pub owner_id: Option<i64>,
     #[sea_orm(column_type = "Text", nullable)]
-    pub owner_info: Option<String>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub owner_info: Option<StoredLockOwnerInfo>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub timeout_at: Option<DateTimeUtc>,
     pub shared: bool,

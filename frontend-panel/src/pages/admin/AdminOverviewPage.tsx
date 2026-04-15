@@ -38,7 +38,7 @@ import {
 import { formatBytes, formatDateAbsolute } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { adminOverviewService } from "@/services/adminService";
-import type { AdminOverview } from "@/types/api";
+import type { AdminOverview, AuditAction } from "@/types/api";
 
 const COUNT_FORMATTER = new Intl.NumberFormat();
 const DECIMAL_FORMATTER = new Intl.NumberFormat(undefined, {
@@ -116,7 +116,7 @@ function StatCardSkeleton() {
 	);
 }
 
-function getActionBadgeClass(action: string) {
+function getActionBadgeClass(action: AuditAction) {
 	if (action.includes("delete")) {
 		return "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-300";
 	}

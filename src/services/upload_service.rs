@@ -254,7 +254,7 @@ async fn init_upload_for_scope(
     workspace_storage_service::check_quota(db, scope, total_size).await?;
 
     if policy.driver_type == DriverType::S3 {
-        let opts = parse_storage_policy_options(&policy.options);
+        let opts = parse_storage_policy_options(policy.options.as_ref());
         let strategy = opts.effective_s3_upload_strategy();
         if strategy == S3UploadStrategy::Presigned {
             let driver = state.driver_registry.get_driver(&policy)?;
@@ -1402,7 +1402,10 @@ async fn get_progress_impl(
     let chunks_on_disk = if let Some(multipart_id) = session.s3_multipart_id.as_deref() {
         let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
         let strategy = if policy.driver_type == DriverType::S3 {
-            Some(parse_storage_policy_options(&policy.options).effective_s3_upload_strategy())
+            Some(
+                parse_storage_policy_options(policy.options.as_ref())
+                    .effective_s3_upload_strategy(),
+            )
         } else {
             None
         };

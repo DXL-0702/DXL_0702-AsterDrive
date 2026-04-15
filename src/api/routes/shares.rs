@@ -38,8 +38,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
 #[derive(Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct CreateShareReq {
-    pub file_id: Option<i64>,
-    pub folder_id: Option<i64>,
+    pub target: crate::services::share_service::ShareTarget,
     pub password: Option<String>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -231,8 +230,7 @@ pub(crate) async fn create_share_response(
     let share = share_service::create_share_in_scope(
         state,
         scope,
-        body.file_id,
-        body.folder_id,
+        body.target,
         body.password.clone(),
         body.expires_at,
         body.max_downloads,

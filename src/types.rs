@@ -1,5 +1,7 @@
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::fmt;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
@@ -137,6 +139,36 @@ impl MailTemplateCode {
     }
 }
 
+/// Raw JSON payload stored in `mail_outbox.payload_json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
+pub struct StoredMailPayload(pub String);
+
+impl StoredMailPayload {
+    pub const CLEARED_JSON: &str = "{}";
+
+    pub fn cleared() -> Self {
+        Self(Self::CLEARED_JSON.to_string())
+    }
+}
+
+impl AsRef<str> for StoredMailPayload {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for StoredMailPayload {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<StoredMailPayload> for String {
+    fn from(value: StoredMailPayload) -> Self {
+        value.0
+    }
+}
+
 /// 邮件 outbox 状态
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -158,6 +190,94 @@ pub enum MailOutboxStatus {
 impl MailOutboxStatus {
     pub fn is_terminal(self) -> bool {
         matches!(self, Self::Sent | Self::Failed)
+    }
+}
+
+/// Raw JSON payload stored in `background_tasks.payload_json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
+pub struct StoredTaskPayload(pub String);
+
+impl AsRef<str> for StoredTaskPayload {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for StoredTaskPayload {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<StoredTaskPayload> for String {
+    fn from(value: StoredTaskPayload) -> Self {
+        value.0
+    }
+}
+
+/// Raw JSON payload stored in `background_tasks.result_json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
+pub struct StoredTaskResult(pub String);
+
+impl AsRef<str> for StoredTaskResult {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for StoredTaskResult {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<StoredTaskResult> for String {
+    fn from(value: StoredTaskResult) -> Self {
+        value.0
+    }
+}
+
+/// Raw JSON payload stored in `background_tasks.steps_json`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
+pub struct StoredTaskSteps(pub String);
+
+impl AsRef<str> for StoredTaskSteps {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for StoredTaskSteps {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<StoredTaskSteps> for String {
+    fn from(value: StoredTaskSteps) -> Self {
+        value.0
+    }
+}
+
+/// Raw mixed owner payload stored in `resource_locks.owner_info`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
+pub struct StoredLockOwnerInfo(pub String);
+
+impl AsRef<str> for StoredLockOwnerInfo {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for StoredLockOwnerInfo {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<StoredLockOwnerInfo> for String {
+    fn from(value: StoredLockOwnerInfo) -> Self {
+        value.0
     }
 }
 
@@ -237,6 +357,459 @@ pub enum AvatarSource {
     Upload,
 }
 
+/// Theme mode for the UI.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeMode {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+/// Color preset for the UI accent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum ColorPreset {
+    #[default]
+    Blue,
+    Green,
+    Purple,
+    Orange,
+}
+
+/// File browser view mode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum PrefViewMode {
+    #[default]
+    List,
+    Grid,
+}
+
+/// Preferred gesture for opening items in the browser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserOpenMode {
+    #[default]
+    SingleClick,
+    DoubleClick,
+}
+
+/// Interface display language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum Language {
+    #[default]
+    En,
+    Zh,
+}
+
+/// Stored user preferences (serialized as JSON in `users.config`).
+/// Empty struct (all fields None) is treated as null by `get_preferences`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct UserPreferences {
+    pub theme_mode: Option<ThemeMode>,
+    pub color_preset: Option<ColorPreset>,
+    pub view_mode: Option<PrefViewMode>,
+    pub browser_open_mode: Option<BrowserOpenMode>,
+    pub sort_by: Option<crate::api::pagination::SortBy>,
+    pub sort_order: Option<crate::api::pagination::SortOrder>,
+    pub language: Option<Language>,
+    pub storage_event_stream_enabled: Option<bool>,
+}
+
+impl UserPreferences {
+    pub fn is_empty(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// Open-ended `users.config` payload:
+/// structured built-in preferences + arbitrary custom frontend keys.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct UserConfig {
+    #[serde(flatten, default)]
+    pub preferences: UserPreferences,
+    #[serde(flatten, default)]
+    pub extra: BTreeMap<String, serde_json::Value>,
+}
+
+impl UserConfig {
+    pub fn is_empty(&self) -> bool {
+        self.preferences.is_empty() && self.extra.is_empty()
+    }
+}
+
+/// Raw JSON string wrapper stored in `users.config`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
+pub struct StoredUserConfig(pub String);
+
+impl StoredUserConfig {
+    pub fn parse(&self) -> serde_json::Result<UserConfig> {
+        serde_json::from_str(&self.0)
+    }
+
+    pub fn from_config(config: &UserConfig) -> serde_json::Result<Self> {
+        serde_json::to_string(config).map(Self)
+    }
+}
+
+impl AsRef<str> for StoredUserConfig {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for StoredUserConfig {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<StoredUserConfig> for String {
+    fn from(value: StoredUserConfig) -> Self {
+        value.0
+    }
+}
+
+/// 审计日志动作
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(64))")]
+#[serde(rename_all = "snake_case")]
+pub enum AuditAction {
+    #[sea_orm(string_value = "admin_create_user")]
+    AdminCreateUser,
+    #[sea_orm(string_value = "admin_create_team")]
+    AdminCreateTeam,
+    #[sea_orm(string_value = "admin_create_policy_group")]
+    AdminCreatePolicyGroup,
+    #[sea_orm(string_value = "admin_archive_team")]
+    AdminArchiveTeam,
+    #[sea_orm(string_value = "admin_restore_team")]
+    AdminRestoreTeam,
+    #[sea_orm(string_value = "admin_revoke_user_sessions")]
+    AdminRevokeUserSessions,
+    #[sea_orm(string_value = "admin_reset_user_password")]
+    AdminResetUserPassword,
+    #[sea_orm(string_value = "admin_update_team")]
+    AdminUpdateTeam,
+    #[sea_orm(string_value = "admin_update_user")]
+    AdminUpdateUser,
+    #[sea_orm(string_value = "admin_delete_policy_group")]
+    AdminDeletePolicyGroup,
+    #[sea_orm(string_value = "admin_migrate_policy_group_users")]
+    AdminMigratePolicyGroupUsers,
+    #[sea_orm(string_value = "admin_update_policy_group")]
+    AdminUpdatePolicyGroup,
+    #[sea_orm(string_value = "batch_copy")]
+    BatchCopy,
+    #[sea_orm(string_value = "batch_delete")]
+    BatchDelete,
+    #[sea_orm(string_value = "batch_move")]
+    BatchMove,
+    #[sea_orm(string_value = "config_action_execute")]
+    ConfigActionExecute,
+    #[sea_orm(string_value = "config_update")]
+    ConfigUpdate,
+    #[sea_orm(string_value = "file_copy")]
+    FileCopy,
+    #[sea_orm(string_value = "file_delete")]
+    FileDelete,
+    #[sea_orm(string_value = "file_download")]
+    FileDownload,
+    #[sea_orm(string_value = "file_edit")]
+    FileEdit,
+    #[sea_orm(string_value = "file_move")]
+    FileMove,
+    #[sea_orm(string_value = "file_rename")]
+    FileRename,
+    #[sea_orm(string_value = "file_upload")]
+    FileUpload,
+    #[sea_orm(string_value = "folder_copy")]
+    FolderCopy,
+    #[sea_orm(string_value = "folder_create")]
+    FolderCreate,
+    #[sea_orm(string_value = "folder_delete")]
+    FolderDelete,
+    #[sea_orm(string_value = "folder_move")]
+    FolderMove,
+    #[sea_orm(string_value = "folder_policy_change")]
+    FolderPolicyChange,
+    #[sea_orm(string_value = "folder_rename")]
+    FolderRename,
+    #[sea_orm(string_value = "share_batch_delete")]
+    ShareBatchDelete,
+    #[sea_orm(string_value = "share_create")]
+    ShareCreate,
+    #[sea_orm(string_value = "share_delete")]
+    ShareDelete,
+    #[sea_orm(string_value = "share_update")]
+    ShareUpdate,
+    #[sea_orm(string_value = "system_setup")]
+    SystemSetup,
+    #[sea_orm(string_value = "team_archive")]
+    TeamArchive,
+    #[sea_orm(string_value = "team_cleanup_expired")]
+    TeamCleanupExpired,
+    #[sea_orm(string_value = "team_create")]
+    TeamCreate,
+    #[sea_orm(string_value = "team_member_add")]
+    TeamMemberAdd,
+    #[sea_orm(string_value = "team_member_remove")]
+    TeamMemberRemove,
+    #[sea_orm(string_value = "team_member_update")]
+    TeamMemberUpdate,
+    #[sea_orm(string_value = "team_restore")]
+    TeamRestore,
+    #[sea_orm(string_value = "team_update")]
+    TeamUpdate,
+    #[sea_orm(string_value = "user_change_password")]
+    UserChangePassword,
+    #[sea_orm(string_value = "user_confirm_password_reset")]
+    UserConfirmPasswordReset,
+    #[sea_orm(string_value = "user_confirm_email_change")]
+    UserConfirmEmailChange,
+    #[sea_orm(string_value = "user_confirm_registration")]
+    UserConfirmRegistration,
+    #[sea_orm(string_value = "user_login")]
+    UserLogin,
+    #[sea_orm(string_value = "user_logout")]
+    UserLogout,
+    #[sea_orm(string_value = "user_request_email_change")]
+    UserRequestEmailChange,
+    #[sea_orm(string_value = "user_request_password_reset")]
+    UserRequestPasswordReset,
+    #[sea_orm(string_value = "user_register")]
+    UserRegister,
+    #[sea_orm(string_value = "user_resend_email_change")]
+    UserResendEmailChange,
+    #[sea_orm(string_value = "user_resend_registration")]
+    UserResendRegistration,
+}
+
+impl AuditAction {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AdminCreateUser => "admin_create_user",
+            Self::AdminCreateTeam => "admin_create_team",
+            Self::AdminCreatePolicyGroup => "admin_create_policy_group",
+            Self::AdminArchiveTeam => "admin_archive_team",
+            Self::AdminRestoreTeam => "admin_restore_team",
+            Self::AdminRevokeUserSessions => "admin_revoke_user_sessions",
+            Self::AdminResetUserPassword => "admin_reset_user_password",
+            Self::AdminUpdateTeam => "admin_update_team",
+            Self::AdminUpdateUser => "admin_update_user",
+            Self::AdminDeletePolicyGroup => "admin_delete_policy_group",
+            Self::AdminMigratePolicyGroupUsers => "admin_migrate_policy_group_users",
+            Self::AdminUpdatePolicyGroup => "admin_update_policy_group",
+            Self::BatchCopy => "batch_copy",
+            Self::BatchDelete => "batch_delete",
+            Self::BatchMove => "batch_move",
+            Self::ConfigActionExecute => "config_action_execute",
+            Self::ConfigUpdate => "config_update",
+            Self::FileCopy => "file_copy",
+            Self::FileDelete => "file_delete",
+            Self::FileDownload => "file_download",
+            Self::FileEdit => "file_edit",
+            Self::FileMove => "file_move",
+            Self::FileRename => "file_rename",
+            Self::FileUpload => "file_upload",
+            Self::FolderCopy => "folder_copy",
+            Self::FolderCreate => "folder_create",
+            Self::FolderDelete => "folder_delete",
+            Self::FolderMove => "folder_move",
+            Self::FolderPolicyChange => "folder_policy_change",
+            Self::FolderRename => "folder_rename",
+            Self::ShareBatchDelete => "share_batch_delete",
+            Self::ShareCreate => "share_create",
+            Self::ShareDelete => "share_delete",
+            Self::ShareUpdate => "share_update",
+            Self::SystemSetup => "system_setup",
+            Self::TeamArchive => "team_archive",
+            Self::TeamCleanupExpired => "team_cleanup_expired",
+            Self::TeamCreate => "team_create",
+            Self::TeamMemberAdd => "team_member_add",
+            Self::TeamMemberRemove => "team_member_remove",
+            Self::TeamMemberUpdate => "team_member_update",
+            Self::TeamRestore => "team_restore",
+            Self::TeamUpdate => "team_update",
+            Self::UserChangePassword => "user_change_password",
+            Self::UserConfirmPasswordReset => "user_confirm_password_reset",
+            Self::UserConfirmEmailChange => "user_confirm_email_change",
+            Self::UserConfirmRegistration => "user_confirm_registration",
+            Self::UserLogin => "user_login",
+            Self::UserLogout => "user_logout",
+            Self::UserRequestEmailChange => "user_request_email_change",
+            Self::UserRequestPasswordReset => "user_request_password_reset",
+            Self::UserRegister => "user_register",
+            Self::UserResendEmailChange => "user_resend_email_change",
+            Self::UserResendRegistration => "user_resend_registration",
+        }
+    }
+
+    pub fn from_str_name(value: &str) -> Option<Self> {
+        match value {
+            "admin_create_user" => Some(Self::AdminCreateUser),
+            "admin_create_team" => Some(Self::AdminCreateTeam),
+            "admin_create_policy_group" => Some(Self::AdminCreatePolicyGroup),
+            "admin_archive_team" => Some(Self::AdminArchiveTeam),
+            "admin_restore_team" => Some(Self::AdminRestoreTeam),
+            "admin_revoke_user_sessions" => Some(Self::AdminRevokeUserSessions),
+            "admin_reset_user_password" => Some(Self::AdminResetUserPassword),
+            "admin_update_team" => Some(Self::AdminUpdateTeam),
+            "admin_update_user" => Some(Self::AdminUpdateUser),
+            "admin_delete_policy_group" => Some(Self::AdminDeletePolicyGroup),
+            "admin_migrate_policy_group_users" => Some(Self::AdminMigratePolicyGroupUsers),
+            "admin_update_policy_group" => Some(Self::AdminUpdatePolicyGroup),
+            "batch_copy" => Some(Self::BatchCopy),
+            "batch_delete" => Some(Self::BatchDelete),
+            "batch_move" => Some(Self::BatchMove),
+            "config_action_execute" => Some(Self::ConfigActionExecute),
+            "config_update" => Some(Self::ConfigUpdate),
+            "file_copy" => Some(Self::FileCopy),
+            "file_delete" => Some(Self::FileDelete),
+            "file_download" => Some(Self::FileDownload),
+            "file_edit" => Some(Self::FileEdit),
+            "file_move" => Some(Self::FileMove),
+            "file_rename" => Some(Self::FileRename),
+            "file_upload" => Some(Self::FileUpload),
+            "folder_copy" => Some(Self::FolderCopy),
+            "folder_create" => Some(Self::FolderCreate),
+            "folder_delete" => Some(Self::FolderDelete),
+            "folder_move" => Some(Self::FolderMove),
+            "folder_policy_change" => Some(Self::FolderPolicyChange),
+            "folder_rename" => Some(Self::FolderRename),
+            "share_batch_delete" => Some(Self::ShareBatchDelete),
+            "share_create" => Some(Self::ShareCreate),
+            "share_delete" => Some(Self::ShareDelete),
+            "share_update" => Some(Self::ShareUpdate),
+            "system_setup" => Some(Self::SystemSetup),
+            "team_archive" => Some(Self::TeamArchive),
+            "team_cleanup_expired" => Some(Self::TeamCleanupExpired),
+            "team_create" => Some(Self::TeamCreate),
+            "team_member_add" => Some(Self::TeamMemberAdd),
+            "team_member_remove" => Some(Self::TeamMemberRemove),
+            "team_member_update" => Some(Self::TeamMemberUpdate),
+            "team_restore" => Some(Self::TeamRestore),
+            "team_update" => Some(Self::TeamUpdate),
+            "user_change_password" => Some(Self::UserChangePassword),
+            "user_confirm_password_reset" => Some(Self::UserConfirmPasswordReset),
+            "user_confirm_email_change" => Some(Self::UserConfirmEmailChange),
+            "user_confirm_registration" => Some(Self::UserConfirmRegistration),
+            "user_login" => Some(Self::UserLogin),
+            "user_logout" => Some(Self::UserLogout),
+            "user_request_email_change" => Some(Self::UserRequestEmailChange),
+            "user_request_password_reset" => Some(Self::UserRequestPasswordReset),
+            "user_register" => Some(Self::UserRegister),
+            "user_resend_email_change" => Some(Self::UserResendEmailChange),
+            "user_resend_registration" => Some(Self::UserResendRegistration),
+            _ => None,
+        }
+    }
+}
+
+impl AsRef<str> for AuditAction {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl fmt::Display for AuditAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// 运行时配置值类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(32))")]
+#[serde(rename_all = "snake_case")]
+pub enum SystemConfigValueType {
+    #[sea_orm(string_value = "string")]
+    String,
+    #[sea_orm(string_value = "multiline")]
+    Multiline,
+    #[sea_orm(string_value = "number")]
+    Number,
+    #[sea_orm(string_value = "boolean")]
+    Boolean,
+}
+
+impl SystemConfigValueType {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::String => "string",
+            Self::Multiline => "multiline",
+            Self::Number => "number",
+            Self::Boolean => "boolean",
+        }
+    }
+
+    pub fn from_str_name(value: &str) -> Option<Self> {
+        match value {
+            "string" => Some(Self::String),
+            "multiline" => Some(Self::Multiline),
+            "number" => Some(Self::Number),
+            "boolean" => Some(Self::Boolean),
+            _ => None,
+        }
+    }
+
+    pub const fn is_multiline(self) -> bool {
+        matches!(self, Self::Multiline)
+    }
+}
+
+impl fmt::Display for SystemConfigValueType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// 运行时配置来源
+#[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[sea_orm(rs_type = "String", db_type = "String(StringLen::N(16))")]
+#[serde(rename_all = "snake_case")]
+pub enum SystemConfigSource {
+    #[sea_orm(string_value = "system")]
+    System,
+    #[sea_orm(string_value = "custom")]
+    Custom,
+}
+
+impl SystemConfigSource {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::Custom => "custom",
+        }
+    }
+
+    pub fn from_str_name(value: &str) -> Option<Self> {
+        match value {
+            "system" => Some(Self::System),
+            "custom" => Some(Self::Custom),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for SystemConfigSource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// 存储驱动类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, EnumIter, DeriveActiveEnum, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -280,6 +853,7 @@ pub enum UploadMode {
 
 /// S3 上传传输策略（存储策略 options JSON）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum S3UploadStrategy {
     /// 服务端将请求体直接中继到 S3，不落本地临时文件
@@ -288,23 +862,79 @@ pub enum S3UploadStrategy {
     Presigned,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+/// Raw JSON array stored in `storage_policies.allowed_types`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
+pub struct StoredStoragePolicyAllowedTypes(pub String);
+
+impl StoredStoragePolicyAllowedTypes {
+    pub const EMPTY_JSON: &str = "[]";
+
+    pub fn empty() -> Self {
+        Self(Self::EMPTY_JSON.to_string())
+    }
+}
+
+impl AsRef<str> for StoredStoragePolicyAllowedTypes {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for StoredStoragePolicyAllowedTypes {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<StoredStoragePolicyAllowedTypes> for String {
+    fn from(value: StoredStoragePolicyAllowedTypes) -> Self {
+        value.0
+    }
+}
+
+/// Raw JSON object stored in `storage_policies.options`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
+pub struct StoredStoragePolicyOptions(pub String);
+
+impl StoredStoragePolicyOptions {
+    pub const EMPTY_JSON: &str = "{}";
+
+    pub fn empty() -> Self {
+        Self(Self::EMPTY_JSON.to_string())
+    }
+}
+
+impl AsRef<str> for StoredStoragePolicyOptions {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<String> for StoredStoragePolicyOptions {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl From<StoredStoragePolicyOptions> for String {
+    fn from(value: StoredStoragePolicyOptions) -> Self {
+        value.0
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct StoragePolicyOptions {
-    #[serde(default)]
-    pub presigned_upload: bool,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub s3_upload_strategy: Option<S3UploadStrategy>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_dedup: Option<bool>,
 }
 
 impl StoragePolicyOptions {
     pub fn effective_s3_upload_strategy(&self) -> S3UploadStrategy {
-        match self.s3_upload_strategy {
-            Some(strategy) => strategy,
-            None if self.presigned_upload => S3UploadStrategy::Presigned,
-            None => S3UploadStrategy::RelayStream,
-        }
+        self.s3_upload_strategy
+            .unwrap_or(S3UploadStrategy::RelayStream)
     }
 }
 
@@ -315,6 +945,27 @@ pub fn parse_storage_policy_options(options: &str) -> StoragePolicyOptions {
         }
         StoragePolicyOptions::default()
     })
+}
+
+pub fn serialize_storage_policy_options(
+    options: &StoragePolicyOptions,
+) -> std::result::Result<StoredStoragePolicyOptions, serde_json::Error> {
+    serde_json::to_string(options).map(StoredStoragePolicyOptions)
+}
+
+pub fn parse_storage_policy_allowed_types(raw: &str) -> Vec<String> {
+    serde_json::from_str(raw).unwrap_or_else(|error| {
+        if !raw.is_empty() && raw != StoredStoragePolicyAllowedTypes::EMPTY_JSON {
+            tracing::warn!("invalid storage policy allowed_types JSON '{raw}': {error}");
+        }
+        Vec::new()
+    })
+}
+
+pub fn serialize_storage_policy_allowed_types(
+    allowed_types: &[String],
+) -> std::result::Result<StoredStoragePolicyAllowedTypes, serde_json::Error> {
+    serde_json::to_string(allowed_types).map(StoredStoragePolicyAllowedTypes)
 }
 
 pub const S3_MULTIPART_MIN_PART_SIZE: i64 = 5 * 1024 * 1024;
@@ -371,8 +1022,8 @@ mod tests {
     }
 
     #[test]
-    fn legacy_presigned_flag_still_maps_to_presigned() {
-        let options = parse_storage_policy_options(r#"{"presigned_upload":true}"#);
+    fn explicit_presigned_strategy_maps_to_presigned() {
+        let options = parse_storage_policy_options(r#"{"s3_upload_strategy":"presigned"}"#);
         assert_eq!(
             options.effective_s3_upload_strategy(),
             S3UploadStrategy::Presigned
@@ -386,5 +1037,18 @@ mod tests {
             options.effective_s3_upload_strategy(),
             S3UploadStrategy::RelayStream
         );
+    }
+
+    #[test]
+    fn serialize_storage_policy_options_omits_default_fields() {
+        let json = serde_json::to_string(&StoragePolicyOptions::default()).unwrap();
+        assert_eq!(json, "{}");
+
+        let json = serde_json::to_string(&StoragePolicyOptions {
+            s3_upload_strategy: Some(S3UploadStrategy::Presigned),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(json, r#"{"s3_upload_strategy":"presigned"}"#);
     }
 }

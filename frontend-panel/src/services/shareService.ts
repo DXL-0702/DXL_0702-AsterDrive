@@ -10,6 +10,7 @@ import type {
 	ShareInfo,
 	SharePage,
 	SharePublicInfo,
+	ShareTarget,
 } from "@/types/api";
 import type { FolderListParams } from "./fileService";
 import { api } from "./http";
@@ -25,8 +26,7 @@ export function createShareService(workspace: Workspace) {
 
 	return {
 		create: (data: {
-			file_id?: number;
-			folder_id?: number;
+			target: ShareTarget;
 			password?: string;
 			expires_at?: string;
 			max_downloads?: number;

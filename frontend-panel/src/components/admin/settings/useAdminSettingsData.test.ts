@@ -5,7 +5,11 @@ import {
 	PREVIEW_APPS_CONFIG_KEY,
 } from "@/components/admin/previewAppsConfigEditorShared";
 import { useAdminSettingsData } from "@/components/admin/settings/useAdminSettingsData";
-import type { SystemConfig } from "@/types/api";
+import type {
+	SystemConfig,
+	SystemConfigSource,
+	SystemConfigValueType,
+} from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	actionConfig: vi.fn(),
@@ -69,14 +73,17 @@ function createConfig(overrides: Partial<SystemConfig> = {}): SystemConfig {
 	return {
 		category: "general",
 		description: "",
+		id: 1,
 		is_sensitive: false,
 		key: "public_site_url",
 		requires_restart: false,
 		source: "system",
+		updated_at: "2026-04-15T00:00:00Z",
+		updated_by: null,
 		value: "https://old.example.com",
 		value_type: "string",
 		...overrides,
-	} as SystemConfig;
+	};
 }
 
 function createValidPreviewAppsConfig(
@@ -126,6 +133,14 @@ function getConfigCategory(key: string) {
 	return "general";
 }
 
+function getMockConfigSource(key: string): SystemConfigSource {
+	return key.startsWith("custom") ? "custom" : "system";
+}
+
+function getMockConfigValueType(key: string): SystemConfigValueType {
+	return key === PREVIEW_APPS_CONFIG_KEY ? "multiline" : "string";
+}
+
 function renderUseAdminSettingsData() {
 	const onPublicSiteUrlChanged = vi.fn();
 	const hook = renderHook(() =>
@@ -168,9 +183,9 @@ describe("useAdminSettingsData", () => {
 				createConfig({
 					category: getConfigCategory(key),
 					key,
-					source: key.startsWith("custom") ? "custom" : "system",
+					source: getMockConfigSource(key),
 					value,
-					value_type: key === PREVIEW_APPS_CONFIG_KEY ? "multiline" : "string",
+					value_type: getMockConfigValueType(key),
 				}),
 			),
 		);

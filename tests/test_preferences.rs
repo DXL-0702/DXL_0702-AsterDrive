@@ -2,6 +2,9 @@
 mod common;
 
 use actix_web::test;
+use aster_drive::db::repository::user_repo;
+use aster_drive::types::StoredUserConfig;
+use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 use serde_json::Value;
 
 // ── /me 不泄漏 password_hash 和 config ─────────────────────
@@ -135,6 +138,45 @@ async fn test_preferences_empty_patch_noop() {
         "empty patch preserves existing"
     );
     assert!(body["data"]["storage_event_stream_enabled"].is_null());
+}
+
+// ── 偏好设置：PATCH 内置字段时保留自定义 config key ──────────────
+
+#[actix_web::test]
+async fn test_preferences_patch_preserves_custom_user_config_keys() {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let user = user_repo::find_by_email(&db, "test@example.com")
+        .await
+        .unwrap()
+        .expect("registered user should exist");
+    let mut active = user.clone().into_active_model();
+    active.config = Set(Some(StoredUserConfig(
+        r#"{"theme_mode":"light","custom_ui":"nebula","sidebar":{"collapsed":true}}"#.to_string(),
+    )));
+    active.updated_at = Set(chrono::Utc::now());
+    active.update(&db).await.unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/preferences")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "language": "zh" }))
+        .to_request();
+    let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
+    assert_eq!(body["data"]["theme_mode"], "light");
+    assert_eq!(body["data"]["language"], "zh");
+
+    let updated = user_repo::find_by_id(&db, user.id).await.unwrap();
+    let stored = updated.config.expect("config should still be stored");
+    let json: Value = serde_json::from_str(stored.as_ref()).unwrap();
+    assert_eq!(json["theme_mode"], "light");
+    assert_eq!(json["language"], "zh");
+    assert_eq!(json["custom_ui"], "nebula");
+    assert_eq!(json["sidebar"]["collapsed"], true);
 }
 
 // ── 偏好设置：非法值被拒绝 ────────────────────────────────

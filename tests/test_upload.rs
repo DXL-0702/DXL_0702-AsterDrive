@@ -28,12 +28,14 @@ async fn set_default_local_content_dedup(state: &aster_drive::runtime::AppState,
         .unwrap()
         .expect("default policy should exist in test setup");
     let mut active: aster_drive::entities::storage_policy::ActiveModel = policy.into();
-    active.options = Set(if enabled {
-        r#"{"content_dedup":true}"#
-    } else {
-        "{}"
-    }
-    .to_string());
+    active.options = Set(aster_drive::types::StoredStoragePolicyOptions::from(
+        if enabled {
+            r#"{"content_dedup":true}"#
+        } else {
+            "{}"
+        }
+        .to_string(),
+    ));
     active.update(&state.db).await.unwrap();
     reload_policy_snapshot(state).await;
 }
@@ -291,8 +293,10 @@ async fn create_s3_default_policy(
             secret_key: Set("rustfsadmin123".to_string()),
             base_path: Set("uploads".to_string()),
             max_file_size: Set(0),
-            allowed_types: Set("[]".to_string()),
-            options: Set(options.to_string()),
+            allowed_types: Set(aster_drive::types::StoredStoragePolicyAllowedTypes::empty()),
+            options: Set(aster_drive::types::StoredStoragePolicyOptions::from(
+                options.to_string(),
+            )),
             is_default: Set(false),
             chunk_size: Set(chunk_size),
             created_at: Set(now),
@@ -1412,7 +1416,7 @@ async fn test_presigned_upload_s3_e2e() {
         "Test S3 Presigned",
         &endpoint,
         bucket,
-        r#"{"presigned_upload":true}"#,
+        r#"{"s3_upload_strategy":"presigned"}"#,
         5_242_880,
     )
     .await;
@@ -1532,7 +1536,7 @@ async fn test_presigned_multipart_upload_s3_e2e() {
         "Test S3 Multipart",
         &endpoint,
         bucket,
-        r#"{"presigned_upload":true}"#,
+        r#"{"s3_upload_strategy":"presigned"}"#,
         5_242_880,
     )
     .await;

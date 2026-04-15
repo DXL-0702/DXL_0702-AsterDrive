@@ -4,7 +4,7 @@ use utoipa::ToSchema;
 
 use crate::config::{RuntimeConfig, mail, site_url};
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::types::MailTemplateCode;
+use crate::types::{MailTemplateCode, StoredMailPayload};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RenderedMail {
@@ -115,13 +115,39 @@ impl MailTemplatePayload {
         }
     }
 
-    pub fn serialize_payload(&self) -> Result<String> {
+    pub fn to_stored(&self) -> Result<StoredMailPayload> {
         match self {
-            Self::RegisterActivation(payload) => serialize_payload(payload),
-            Self::ContactChangeConfirmation(payload) => serialize_payload(payload),
-            Self::PasswordReset(payload) => serialize_payload(payload),
-            Self::PasswordResetNotice(payload) => serialize_payload(payload),
-            Self::ContactChangeNotice(payload) => serialize_payload(payload),
+            Self::RegisterActivation(payload) => serialize_payload(payload).map(StoredMailPayload),
+            Self::ContactChangeConfirmation(payload) => {
+                serialize_payload(payload).map(StoredMailPayload)
+            }
+            Self::PasswordReset(payload) => serialize_payload(payload).map(StoredMailPayload),
+            Self::PasswordResetNotice(payload) => serialize_payload(payload).map(StoredMailPayload),
+            Self::ContactChangeNotice(payload) => serialize_payload(payload).map(StoredMailPayload),
+        }
+    }
+
+    pub fn from_stored(
+        template_code: MailTemplateCode,
+        payload: &StoredMailPayload,
+    ) -> Result<Self> {
+        match template_code {
+            MailTemplateCode::RegisterActivation => Ok(Self::RegisterActivation(
+                deserialize_payload(template_code, payload.as_ref())?,
+            )),
+            MailTemplateCode::ContactChangeConfirmation => Ok(Self::ContactChangeConfirmation(
+                deserialize_payload(template_code, payload.as_ref())?,
+            )),
+            MailTemplateCode::PasswordReset => Ok(Self::PasswordReset(deserialize_payload(
+                template_code,
+                payload.as_ref(),
+            )?)),
+            MailTemplateCode::PasswordResetNotice => Ok(Self::PasswordResetNotice(
+                deserialize_payload(template_code, payload.as_ref())?,
+            )),
+            MailTemplateCode::ContactChangeNotice => Ok(Self::ContactChangeNotice(
+                deserialize_payload(template_code, payload.as_ref())?,
+            )),
         }
     }
 }
@@ -207,12 +233,10 @@ pub fn list_template_variable_groups() -> Vec<TemplateVariableGroup> {
 pub fn render(
     runtime_config: &RuntimeConfig,
     template_code: MailTemplateCode,
-    payload_json: &str,
+    payload: &StoredMailPayload,
 ) -> Result<RenderedMail> {
-    let placeholders = match template_code {
-        MailTemplateCode::RegisterActivation => {
-            let payload: RegisterActivationPayload =
-                deserialize_payload(template_code, payload_json)?;
+    let placeholders = match MailTemplatePayload::from_stored(template_code, payload)? {
+        MailTemplatePayload::RegisterActivation(payload) => {
             let verification_url = verification_link(runtime_config, &payload.token);
             PlaceholderSet {
                 text_values: vec![
@@ -225,9 +249,7 @@ pub fn render(
                 ],
             }
         }
-        MailTemplateCode::ContactChangeConfirmation => {
-            let payload: ContactChangeConfirmationPayload =
-                deserialize_payload(template_code, payload_json)?;
+        MailTemplatePayload::ContactChangeConfirmation(payload) => {
             let verification_url = verification_link(runtime_config, &payload.token);
             PlaceholderSet {
                 text_values: vec![
@@ -240,8 +262,7 @@ pub fn render(
                 ],
             }
         }
-        MailTemplateCode::PasswordReset => {
-            let payload: PasswordResetPayload = deserialize_payload(template_code, payload_json)?;
+        MailTemplatePayload::PasswordReset(payload) => {
             let reset_url = password_reset_link(runtime_config, &payload.token);
             PlaceholderSet {
                 text_values: vec![
@@ -254,30 +275,22 @@ pub fn render(
                 ],
             }
         }
-        MailTemplateCode::PasswordResetNotice => {
-            let payload: PasswordResetNoticePayload =
-                deserialize_payload(template_code, payload_json)?;
-            PlaceholderSet {
-                text_values: vec![("username", payload.username.clone())],
-                html_values: vec![("username", escape_html(&payload.username))],
-            }
-        }
-        MailTemplateCode::ContactChangeNotice => {
-            let payload: ContactChangeNoticePayload =
-                deserialize_payload(template_code, payload_json)?;
-            PlaceholderSet {
-                text_values: vec![
-                    ("username", payload.username.clone()),
-                    ("previous_email", payload.previous_email.clone()),
-                    ("new_email", payload.new_email.clone()),
-                ],
-                html_values: vec![
-                    ("username", escape_html(&payload.username)),
-                    ("previous_email", escape_html(&payload.previous_email)),
-                    ("new_email", escape_html(&payload.new_email)),
-                ],
-            }
-        }
+        MailTemplatePayload::PasswordResetNotice(payload) => PlaceholderSet {
+            text_values: vec![("username", payload.username.clone())],
+            html_values: vec![("username", escape_html(&payload.username))],
+        },
+        MailTemplatePayload::ContactChangeNotice(payload) => PlaceholderSet {
+            text_values: vec![
+                ("username", payload.username.clone()),
+                ("previous_email", payload.previous_email.clone()),
+                ("new_email", payload.new_email.clone()),
+            ],
+            html_values: vec![
+                ("username", escape_html(&payload.username)),
+                ("previous_email", escape_html(&payload.previous_email)),
+                ("new_email", escape_html(&payload.new_email)),
+            ],
+        },
     };
 
     let subject = render_placeholders(
@@ -556,10 +569,10 @@ mod tests {
             id: 1,
             key: key.to_string(),
             value: value.to_string(),
-            value_type: "multiline".to_string(),
+            value_type: crate::types::SystemConfigValueType::Multiline,
             requires_restart: false,
             is_sensitive: false,
-            source: "system".to_string(),
+            source: crate::types::SystemConfigSource::System,
             namespace: String::new(),
             category: "mail".to_string(),
             description: "test".to_string(),
@@ -572,16 +585,33 @@ mod tests {
     fn render_register_activation_builds_link_and_escapes_html() {
         let runtime_config = RuntimeConfig::new();
         let payload = MailTemplatePayload::register_activation("A&B", "token-123");
+        let stored = payload.to_stored().unwrap();
         let rendered = render(
             &runtime_config,
             MailTemplateCode::RegisterActivation,
-            &payload.serialize_payload().unwrap(),
+            &stored,
         )
         .unwrap();
 
         assert!(rendered.text_body.contains("token=token-123"));
         assert!(rendered.html_body.starts_with("<!doctype html>"));
         assert!(rendered.html_body.contains("A&amp;B"));
+    }
+
+    #[test]
+    fn stored_mail_payload_round_trips_with_template_code() {
+        let payload = MailTemplatePayload::contact_change_notice(
+            "Alice",
+            "old@example.com",
+            "new@example.com",
+        );
+        let stored = payload.to_stored().unwrap();
+
+        let decoded =
+            MailTemplatePayload::from_stored(MailTemplateCode::ContactChangeNotice, &stored)
+                .unwrap();
+
+        assert_eq!(decoded, payload);
     }
 
     #[test]
@@ -610,12 +640,8 @@ mod tests {
         ));
 
         let payload = MailTemplatePayload::password_reset("Alice", "token-123");
-        let rendered = render(
-            &runtime_config,
-            MailTemplateCode::PasswordReset,
-            &payload.serialize_payload().unwrap(),
-        )
-        .unwrap();
+        let stored = payload.to_stored().unwrap();
+        let rendered = render(&runtime_config, MailTemplateCode::PasswordReset, &stored).unwrap();
 
         assert_eq!(rendered.html_body.matches("<html").count(), 1);
         assert!(rendered.html_body.contains("<p>Hello Alice</p>"));

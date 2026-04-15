@@ -21,7 +21,9 @@ use crate::services::{
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 use crate::storage::{DriverRegistry, PolicySnapshot};
-use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
+use crate::types::{
+    BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload, StoredTaskResult, StoredTaskSteps,
+};
 
 const DEFAULT_TASK_RETENTION_HOURS: i64 = 24;
 const TASK_DISPATCH_BATCH_SIZE: u64 = 8;
@@ -72,39 +74,6 @@ pub struct TaskStepInfo {
     pub finished_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct TaskInfo {
-    pub id: i64,
-    pub kind: BackgroundTaskKind,
-    pub status: BackgroundTaskStatus,
-    pub display_name: String,
-    pub creator_user_id: Option<i64>,
-    pub team_id: Option<i64>,
-    pub share_id: Option<i64>,
-    pub progress_current: i64,
-    pub progress_total: i64,
-    pub progress_percent: i32,
-    pub status_text: Option<String>,
-    pub attempt_count: i32,
-    pub max_attempts: i32,
-    pub last_error: Option<String>,
-    pub payload_json: String,
-    pub result_json: Option<String>,
-    pub steps: Vec<TaskStepInfo>,
-    pub can_retry: bool,
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
-    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
-    pub finished_at: Option<chrono::DateTime<chrono::Utc>>,
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
-    pub expires_at: chrono::DateTime<chrono::Utc>,
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
-    pub created_at: chrono::DateTime<chrono::Utc>,
-    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
-    pub updated_at: chrono::DateTime<chrono::Utc>,
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateArchiveTaskParams {
     pub file_ids: Vec<i64>,
@@ -130,37 +99,90 @@ pub struct CreateArchiveExtractTaskParams {
     pub output_folder_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ArchiveCompressTaskPayload {
-    file_ids: Vec<i64>,
-    folder_ids: Vec<i64>,
-    archive_name: String,
-    target_folder_id: Option<i64>,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ArchiveCompressTaskPayload {
+    pub file_ids: Vec<i64>,
+    pub folder_ids: Vec<i64>,
+    pub archive_name: String,
+    pub target_folder_id: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ArchiveExtractTaskPayload {
-    file_id: i64,
-    source_file_name: String,
-    target_folder_id: Option<i64>,
-    output_folder_name: String,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ArchiveExtractTaskPayload {
+    pub file_id: i64,
+    pub source_file_name: String,
+    pub target_folder_id: Option<i64>,
+    pub output_folder_name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ArchiveCompressTaskResult {
-    target_file_id: i64,
-    target_file_name: String,
-    target_folder_id: Option<i64>,
-    target_path: String,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ArchiveCompressTaskResult {
+    pub target_file_id: i64,
+    pub target_file_name: String,
+    pub target_folder_id: Option<i64>,
+    pub target_path: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct ArchiveExtractTaskResult {
-    target_folder_id: i64,
-    target_folder_name: String,
-    target_path: String,
-    extracted_file_count: i64,
-    extracted_folder_count: i64,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ArchiveExtractTaskResult {
+    pub target_folder_id: i64,
+    pub target_folder_name: String,
+    pub target_path: String,
+    pub extracted_file_count: i64,
+    pub extracted_folder_count: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TaskPayload {
+    ArchiveCompress(ArchiveCompressTaskPayload),
+    ArchiveExtract(ArchiveExtractTaskPayload),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TaskResult {
+    ArchiveCompress(ArchiveCompressTaskResult),
+    ArchiveExtract(ArchiveExtractTaskResult),
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct TaskInfo {
+    pub id: i64,
+    pub kind: BackgroundTaskKind,
+    pub status: BackgroundTaskStatus,
+    pub display_name: String,
+    pub creator_user_id: Option<i64>,
+    pub team_id: Option<i64>,
+    pub share_id: Option<i64>,
+    pub progress_current: i64,
+    pub progress_total: i64,
+    pub progress_percent: i32,
+    pub status_text: Option<String>,
+    pub attempt_count: i32,
+    pub max_attempts: i32,
+    pub last_error: Option<String>,
+    pub payload: TaskPayload,
+    pub result: Option<TaskResult>,
+    pub steps: Vec<TaskStepInfo>,
+    pub can_retry: bool,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub started_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub finished_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -254,8 +276,13 @@ pub(crate) async fn retry_task_in_scope(
     let steps_json = serialize_task_steps(&initial_task_steps(task.kind))?;
 
     let now = Utc::now();
-    if !background_task_repo::reset_for_manual_retry(&state.db, task.id, now, Some(&steps_json))
-        .await?
+    if !background_task_repo::reset_for_manual_retry(
+        &state.db,
+        task.id,
+        now,
+        Some(steps_json.as_ref()),
+    )
+    .await?
     {
         return Err(AsterError::internal_error(format!(
             "failed to reset task #{} for retry",
@@ -499,12 +526,13 @@ async fn build_failed_task_steps_json(
     let latest = background_task_repo::find_by_id(&state.db, task_id)
         .await
         .ok()?;
-    let mut steps = parse_task_steps_json(latest.steps_json.as_deref(), kind).ok()?;
+    let mut steps =
+        parse_task_steps_json(latest.steps_json.as_ref().map(|raw| raw.as_ref()), kind).ok()?;
     if steps.is_empty() {
         return None;
     }
     mark_active_step_failed(&mut steps, Some(error_message));
-    serialize_task_steps(&steps).ok()
+    serialize_task_steps(&steps).ok().map(Into::into)
 }
 
 pub async fn drain(state: &AppState) -> Result<DispatchStats> {
@@ -557,7 +585,9 @@ async fn build_task_info(_state: &AppState, task: background_task::Model) -> Res
         ((task.progress_current.saturating_mul(100)) / task.progress_total).clamp(0, 100) as i32
     };
     let kind = task.kind;
-    let steps = parse_task_steps_json(task.steps_json.as_deref(), kind)?;
+    let payload = parse_task_payload_info(&task)?;
+    let result = parse_task_result_info(&task)?;
+    let steps = parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), kind)?;
 
     Ok(TaskInfo {
         id: task.id,
@@ -574,8 +604,8 @@ async fn build_task_info(_state: &AppState, task: background_task::Model) -> Res
         attempt_count: task.attempt_count,
         max_attempts: task.max_attempts,
         last_error: task.last_error,
-        payload_json: task.payload_json,
-        result_json: task.result_json,
+        payload,
+        result,
         steps,
         can_retry: task.status == BackgroundTaskStatus::Failed,
         started_at: task.started_at,
@@ -594,8 +624,7 @@ async fn create_task_record<T: Serialize>(
     payload: &T,
 ) -> Result<background_task::Model> {
     let now = Utc::now();
-    let payload_json = serde_json::to_string(payload)
-        .map_err(|error| AsterError::internal_error(format!("serialize task payload: {error}")))?;
+    let payload_json = serialize_task_payload(payload)?;
     let steps_json = serialize_task_steps(&initial_task_steps(kind))?;
 
     background_task_repo::create(
@@ -642,7 +671,8 @@ async fn process_archive_compress_task(
 ) -> Result<()> {
     let scope = task_scope(task)?;
     let payload: ArchiveCompressTaskPayload = parse_task_payload(task)?;
-    let mut steps = parse_task_steps_json(task.steps_json.as_deref(), task.kind)?;
+    let mut steps =
+        parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
     set_task_step_succeeded(
         &mut steps,
         TASK_STEP_WAITING,
@@ -822,7 +852,8 @@ async fn process_archive_extract_task(
 ) -> Result<()> {
     let scope = task_scope(task)?;
     let payload: ArchiveExtractTaskPayload = parse_task_payload(task)?;
-    let mut steps = parse_task_steps_json(task.steps_json.as_deref(), task.kind)?;
+    let mut steps =
+        parse_task_steps_json(task.steps_json.as_ref().map(|raw| raw.as_ref()), task.kind)?;
     set_task_step_succeeded(
         &mut steps,
         TASK_STEP_WAITING,
@@ -998,7 +1029,7 @@ fn parse_task_payload<T>(task: &background_task::Model) -> Result<T>
 where
     T: for<'de> Deserialize<'de>,
 {
-    serde_json::from_str(&task.payload_json).map_err(|error| {
+    serde_json::from_str(task.payload_json.as_ref()).map_err(|error| {
         AsterError::internal_error(format!(
             "parse payload for task #{} ({}): {error}",
             task.id,
@@ -1007,8 +1038,54 @@ where
     })
 }
 
-fn serialize_task_result<T: Serialize>(result: &T) -> Result<String> {
+fn parse_task_payload_info(task: &background_task::Model) -> Result<TaskPayload> {
+    match task.kind {
+        BackgroundTaskKind::ArchiveCompress => {
+            Ok(TaskPayload::ArchiveCompress(parse_task_payload(task)?))
+        }
+        BackgroundTaskKind::ArchiveExtract => {
+            Ok(TaskPayload::ArchiveExtract(parse_task_payload(task)?))
+        }
+    }
+}
+
+fn parse_task_result_info(task: &background_task::Model) -> Result<Option<TaskResult>> {
+    let raw = match task.result_json.as_ref() {
+        Some(raw) => raw,
+        None => return Ok(None),
+    };
+
+    match task.kind {
+        BackgroundTaskKind::ArchiveCompress => Ok(Some(TaskResult::ArchiveCompress(
+            serde_json::from_str(raw.as_ref()).map_err(|error| {
+                AsterError::internal_error(format!(
+                    "parse result for task #{} ({}): {error}",
+                    task.id,
+                    task.kind.to_value()
+                ))
+            })?,
+        ))),
+        BackgroundTaskKind::ArchiveExtract => Ok(Some(TaskResult::ArchiveExtract(
+            serde_json::from_str(raw.as_ref()).map_err(|error| {
+                AsterError::internal_error(format!(
+                    "parse result for task #{} ({}): {error}",
+                    task.id,
+                    task.kind.to_value()
+                ))
+            })?,
+        ))),
+    }
+}
+
+fn serialize_task_payload<T: Serialize>(payload: &T) -> Result<StoredTaskPayload> {
+    serde_json::to_string(payload)
+        .map(StoredTaskPayload)
+        .map_err(|error| AsterError::internal_error(format!("serialize task payload: {error}")))
+}
+
+fn serialize_task_result<T: Serialize>(result: &T) -> Result<StoredTaskResult> {
     serde_json::to_string(result)
+        .map(StoredTaskResult)
         .map_err(|error| AsterError::internal_error(format!("serialize task result: {error}")))
 }
 
@@ -1098,8 +1175,9 @@ fn parse_task_steps_json(
     }
 }
 
-fn serialize_task_steps(steps: &[TaskStepInfo]) -> Result<String> {
+fn serialize_task_steps(steps: &[TaskStepInfo]) -> Result<StoredTaskSteps> {
     serde_json::to_string(steps)
+        .map(StoredTaskSteps)
         .map_err(|error| AsterError::internal_error(format!("serialize task steps: {error}")))
 }
 
@@ -1210,7 +1288,7 @@ async fn update_task_progress_db(
         current,
         total,
         status_text.as_deref(),
-        Some(&steps_json),
+        Some(steps_json.as_ref()),
     )
     .await?
     {
@@ -1226,7 +1304,7 @@ async fn update_task_progress_db(
 async fn mark_task_succeeded(
     state: &AppState,
     task_id: i64,
-    result_json: Option<&str>,
+    result_json: Option<&StoredTaskResult>,
     current: i64,
     total: i64,
     status_text: Option<&str>,
@@ -1238,8 +1316,8 @@ async fn mark_task_succeeded(
     if background_task_repo::mark_succeeded(
         &state.db,
         task_id,
-        result_json,
-        Some(&steps_json),
+        result_json.map(AsRef::as_ref),
+        Some(steps_json.as_ref()),
         current,
         total,
         status_text.as_deref(),

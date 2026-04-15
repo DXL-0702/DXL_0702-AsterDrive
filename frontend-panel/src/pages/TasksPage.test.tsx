@@ -355,6 +355,22 @@ function createTaskSteps(
 function createTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
 	const kind = overrides.kind ?? "archive_extract";
 	const status = overrides.status ?? "processing";
+	const payload =
+		kind === "archive_compress"
+			? {
+					kind: "archive_compress" as const,
+					file_ids: [],
+					folder_ids: [],
+					archive_name: "bundle-export.zip",
+					target_folder_id: null,
+				}
+			: {
+					kind: "archive_extract" as const,
+					file_id: 99,
+					source_file_name: "bundle.zip",
+					target_folder_id: null,
+					output_folder_name: "bundle",
+				};
 
 	return {
 		attempt_count: 0,
@@ -368,11 +384,11 @@ function createTask(overrides: Partial<TaskInfo> = {}): TaskInfo {
 		kind: "archive_extract",
 		last_error: null,
 		max_attempts: 3,
-		payload_json: "{}",
+		payload,
 		progress_current: 20,
 		progress_percent: 40,
 		progress_total: 50,
-		result_json: null,
+		result: null,
 		share_id: null,
 		started_at: "2026-04-10T00:01:00Z",
 		status,
@@ -491,8 +507,13 @@ describe("TasksPage", () => {
 					kind: "archive_compress",
 					progress_current: 50,
 					progress_percent: 100,
-					result_json:
-						'{"target_folder_id":42,"target_path":"/Archives/bundle"}',
+					result: {
+						kind: "archive_compress",
+						target_file_id: 100,
+						target_file_name: "bundle.zip",
+						target_folder_id: 42,
+						target_path: "/Archives/bundle",
+					},
 					status: "succeeded",
 					status_text: null,
 				}),

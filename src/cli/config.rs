@@ -6,6 +6,7 @@ use crate::db::repository::config_repo;
 use crate::entities::system_config;
 use crate::errors::{AsterError, Result};
 use crate::services::config_service::SystemConfig;
+use crate::types::{SystemConfigSource, SystemConfigValueType};
 use chrono::Utc;
 use clap::{Args, Subcommand};
 use sea_orm::TransactionTrait;
@@ -282,7 +283,7 @@ fn render_config_list_human(
         let rendered_value = format_config_list_value(config, palette);
         lines.push(format!(
             "  {} {} = {}",
-            palette.source_badge(&config.source),
+            palette.source_badge(config.source),
             palette.accent(&config.key),
             rendered_value
         ));
@@ -307,7 +308,7 @@ fn format_config_list_value(config: &SystemConfig, palette: &CliTerminalPalette)
         };
     }
 
-    if config.value_type == "multiline" || config.value.contains('\n') {
+    if config.value_type.is_multiline() || config.value.contains('\n') {
         return palette.dim(&summarize_multiline_value(&config.value));
     }
 
@@ -350,7 +351,7 @@ fn render_config_entry_human(
         format!(
             "{} {} {}",
             human_key("Source", palette),
-            palette.source_badge(&payload.source),
+            palette.source_badge(payload.source),
             payload.source
         ),
         format!(
@@ -560,10 +561,10 @@ fn preview_system_config(key: &str, value: &str) -> SystemConfig {
             id: 0,
             key: key.to_string(),
             value: value.to_string(),
-            value_type: def.value_type.to_string(),
+            value_type: def.value_type,
             requires_restart: def.requires_restart,
             is_sensitive: def.is_sensitive,
-            source: "system".to_string(),
+            source: SystemConfigSource::System,
             namespace: String::new(),
             category: def.category.to_string(),
             description: def.description.to_string(),
@@ -575,10 +576,10 @@ fn preview_system_config(key: &str, value: &str) -> SystemConfig {
             id: 0,
             key: key.to_string(),
             value: value.to_string(),
-            value_type: "string".to_string(),
+            value_type: SystemConfigValueType::String,
             requires_restart: false,
             is_sensitive: false,
-            source: "custom".to_string(),
+            source: SystemConfigSource::Custom,
             namespace: String::new(),
             category: String::new(),
             description: String::new(),

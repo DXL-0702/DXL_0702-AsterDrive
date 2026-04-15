@@ -193,9 +193,9 @@ function createShare(overrides: Record<string, unknown> = {}) {
 	return {
 		created_at: "2026-03-28T00:00:00Z",
 		download_count: 1,
-		file_id: 5,
 		id: 11,
 		max_downloads: 0,
+		target: { type: "file", id: 5 },
 		token: "share-token",
 		user_id: 9,
 		expires_at: null,

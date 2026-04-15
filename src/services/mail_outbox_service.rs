@@ -51,7 +51,7 @@ pub(crate) async fn enqueue<C: ConnectionTrait>(
             template_code: Set(payload.template_code()),
             to_address: Set(to_address.to_string()),
             to_name: Set(to_name.map(str::to_string)),
-            payload_json: Set(payload.serialize_payload()?),
+            payload_json: Set(payload.to_stored()?),
             status: Set(MailOutboxStatus::Pending),
             attempt_count: Set(0),
             next_attempt_at: Set(now),

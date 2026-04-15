@@ -967,7 +967,7 @@ async fn test_password_reset_rotates_session_and_sends_notice_and_records_audit_
         .await
         .unwrap()
         .into_iter()
-        .map(|entry| entry.action)
+        .map(|entry| entry.action.to_string())
         .collect();
     assert!(actions.contains(&"user_request_password_reset".to_string()));
     assert!(actions.contains(&"user_confirm_password_reset".to_string()));

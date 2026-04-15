@@ -1552,8 +1552,7 @@ async fn test_share_download_failure_rolls_back_download_quota() {
     let share = aster_drive::services::share_service::create_share(
         &state,
         user.id,
-        Some(file_id),
-        None,
+        aster_drive::services::share_service::ShareTarget::file(file_id),
         None,
         None,
         1,
@@ -1595,6 +1594,68 @@ async fn test_share_download_failure_rolls_back_download_quota() {
         .await
         .unwrap();
     assert_eq!(reloaded.download_count, 0);
+}
+
+#[actix_web::test]
+async fn test_share_target_check_constraint_rejects_zero_or_multiple_targets() {
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let state = common::setup().await;
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "shareconstraint",
+        "shareconstraint@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let file_id = store_service_file(&state, user.id, None, "check.txt", "check-body").await;
+    let folder =
+        aster_drive::services::folder_service::create(&state, user.id, "CheckFolder", None)
+            .await
+            .unwrap();
+    let now = chrono::Utc::now();
+
+    let err = aster_drive::entities::share::ActiveModel {
+        token: Set(format!("share-none-{}", uuid::Uuid::new_v4())),
+        user_id: Set(user.id),
+        team_id: Set(None),
+        file_id: Set(None),
+        folder_id: Set(None),
+        password: Set(None),
+        expires_at: Set(None),
+        max_downloads: Set(0),
+        download_count: Set(0),
+        view_count: Set(0),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await
+    .unwrap_err();
+    assert!(err.to_string().contains("chk_shares_exactly_one_target"));
+
+    let err = aster_drive::entities::share::ActiveModel {
+        token: Set(format!("share-both-{}", uuid::Uuid::new_v4())),
+        user_id: Set(user.id),
+        team_id: Set(None),
+        file_id: Set(Some(file_id)),
+        folder_id: Set(Some(folder.id)),
+        password: Set(None),
+        expires_at: Set(None),
+        max_downloads: Set(0),
+        download_count: Set(0),
+        view_count: Set(0),
+        created_at: Set(now),
+        updated_at: Set(now),
+        ..Default::default()
+    }
+    .insert(&state.db)
+    .await
+    .unwrap_err();
+    assert!(err.to_string().contains("chk_shares_exactly_one_target"));
 }
 
 #[actix_web::test]

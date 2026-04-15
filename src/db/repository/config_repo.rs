@@ -2,6 +2,7 @@ use crate::config::definitions::{ALL_CONFIGS, ConfigDef};
 use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::system_config::{self, Entity as SystemConfig};
 use crate::errors::{AsterError, Result};
+use crate::types::{SystemConfigSource, SystemConfigValueType};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,
@@ -21,10 +22,10 @@ fn build_system_active_model(
     system_config::ActiveModel {
         key: Set(def.key.to_string()),
         value: Set(value),
-        value_type: Set(def.value_type.to_string()),
+        value_type: Set(def.value_type),
         requires_restart: Set(def.requires_restart),
         is_sensitive: Set(def.is_sensitive),
-        source: Set("system".to_string()),
+        source: Set(SystemConfigSource::System),
         namespace: Set(String::new()),
         category: Set(def.category.to_string()),
         description: Set(def.description.to_string()),
@@ -43,10 +44,10 @@ fn build_custom_active_model(
     system_config::ActiveModel {
         key: Set(key.to_string()),
         value: Set(value),
-        value_type: Set("string".to_string()),
+        value_type: Set(SystemConfigValueType::String),
         requires_restart: Set(false),
         is_sensitive: Set(false),
-        source: Set("custom".to_string()),
+        source: Set(SystemConfigSource::Custom),
         namespace: Set(String::new()),
         category: Set(String::new()),
         description: Set(String::new()),
@@ -145,7 +146,7 @@ pub async fn delete_by_key<C: ConnectionTrait>(db: &C, key: &str) -> Result<()> 
         .ok_or_else(|| AsterError::record_not_found(format!("config key '{key}'")))?;
 
     // 系统配置不允许删除
-    if existing.source == "system" {
+    if existing.source == SystemConfigSource::System {
         return Err(AsterError::auth_forbidden(
             "cannot delete system configuration",
         ));
@@ -218,8 +219,8 @@ pub async fn ensure_defaults<C: ConnectionTrait>(db: &C) -> Result<usize> {
             .await?
             .ok_or_else(|| AsterError::record_not_found(format!("config key '{}'", def.key)))?;
         let mut active: system_config::ActiveModel = existing.into();
-        active.source = Set("system".to_string());
-        active.value_type = Set(def.value_type.to_string());
+        active.source = Set(SystemConfigSource::System);
+        active.value_type = Set(def.value_type);
         active.requires_restart = Set(def.requires_restart);
         active.is_sensitive = Set(def.is_sensitive);
         active.category = Set(def.category.to_string());

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use chrono::Utc;
 use sea_orm::{DatabaseConnection, Set, TransactionTrait};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
@@ -30,6 +30,37 @@ pub enum ShareStatus {
     Deleted,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ShareTarget {
+    #[serde(rename = "type")]
+    pub r#type: EntityType,
+    pub id: i64,
+}
+
+impl ShareTarget {
+    pub const fn file(id: i64) -> Self {
+        Self {
+            r#type: EntityType::File,
+            id,
+        }
+    }
+
+    pub const fn folder(id: i64) -> Self {
+        Self {
+            r#type: EntityType::Folder,
+            id,
+        }
+    }
+
+    fn into_ids(self) -> (Option<i64>, Option<i64>) {
+        match self.r#type {
+            EntityType::File => (Some(self.id), None),
+            EntityType::Folder => (None, Some(self.id)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct ShareInfo {
@@ -37,8 +68,7 @@ pub struct ShareInfo {
     pub token: String,
     pub user_id: i64,
     pub team_id: Option<i64>,
-    pub file_id: Option<i64>,
-    pub folder_id: Option<i64>,
+    pub target: ShareTarget,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub expires_at: Option<chrono::DateTime<Utc>>,
     pub max_downloads: i64,
@@ -50,23 +80,44 @@ pub struct ShareInfo {
     pub updated_at: chrono::DateTime<Utc>,
 }
 
-impl From<share::Model> for ShareInfo {
-    fn from(model: share::Model) -> Self {
-        Self {
-            id: model.id,
-            token: model.token,
-            user_id: model.user_id,
-            team_id: model.team_id,
-            file_id: model.file_id,
-            folder_id: model.folder_id,
-            expires_at: model.expires_at,
-            max_downloads: model.max_downloads,
-            download_count: model.download_count,
-            view_count: model.view_count,
-            created_at: model.created_at,
-            updated_at: model.updated_at,
-        }
+fn share_target_from_columns(file_id: Option<i64>, folder_id: Option<i64>) -> Option<ShareTarget> {
+    match (file_id, folder_id) {
+        (Some(file_id), None) => Some(ShareTarget::file(file_id)),
+        (None, Some(folder_id)) => Some(ShareTarget::folder(folder_id)),
+        _ => None,
     }
+}
+
+fn share_target_for_share(share: &share::Model) -> Result<ShareTarget> {
+    share_target_from_columns(share.file_id, share.folder_id).ok_or_else(|| {
+        AsterError::internal_error(format!(
+            "share #{} has invalid target columns: file_id={:?}, folder_id={:?}",
+            share.id, share.file_id, share.folder_id
+        ))
+    })
+}
+
+fn share_info_from_model(model: share::Model) -> Result<ShareInfo> {
+    let target = share_target_from_columns(model.file_id, model.folder_id).ok_or_else(|| {
+        AsterError::internal_error(format!(
+            "share #{} has invalid target columns: file_id={:?}, folder_id={:?}",
+            model.id, model.file_id, model.folder_id
+        ))
+    })?;
+
+    Ok(ShareInfo {
+        id: model.id,
+        token: model.token,
+        user_id: model.user_id,
+        team_id: model.team_id,
+        target,
+        expires_at: model.expires_at,
+        max_downloads: model.max_downloads,
+        download_count: model.download_count,
+        view_count: model.view_count,
+        created_at: model.created_at,
+        updated_at: model.updated_at,
+    })
 }
 
 pub(crate) struct ShareUpdateOutcome {
@@ -176,17 +227,16 @@ async fn lock_share_resource_in_scope<C: sea_orm::ConnectionTrait>(
 pub(crate) async fn create_share_in_scope(
     state: &AppState,
     scope: WorkspaceStorageScope,
-    file_id: Option<i64>,
-    folder_id: Option<i64>,
+    target: ShareTarget,
     password: Option<String>,
     expires_at: Option<chrono::DateTime<Utc>>,
     max_downloads: i64,
 ) -> Result<ShareInfo> {
     let db = &state.db;
+    let (file_id, folder_id) = target.into_ids();
     tracing::debug!(
         scope = ?scope,
-        file_id,
-        folder_id,
+        target = ?target,
         has_password = password.as_ref().is_some_and(|value| !value.is_empty()),
         has_expiry = expires_at.is_some(),
         max_downloads,
@@ -195,17 +245,6 @@ pub(crate) async fn create_share_in_scope(
     workspace_storage_service::require_scope_access(state, scope).await?;
 
     validate_max_downloads(max_downloads)?;
-
-    if file_id.is_none() && folder_id.is_none() {
-        return Err(AsterError::validation_error(
-            "file_id or folder_id is required",
-        ));
-    }
-    if file_id.is_some() && folder_id.is_some() {
-        return Err(AsterError::validation_error(
-            "only one of file_id or folder_id is allowed",
-        ));
-    }
 
     let password_hash = match password {
         Some(ref p) if !p.is_empty() => Some(hash::hash_password(p)?),
@@ -255,18 +294,16 @@ pub(crate) async fn create_share_in_scope(
     tracing::debug!(
         scope = ?scope,
         share_id = created.id,
-        file_id = created.file_id,
-        folder_id = created.folder_id,
+        target = ?target,
         "created share"
     );
-    Ok(created.into())
+    share_info_from_model(created)
 }
 
 pub async fn create_share(
     state: &AppState,
     user_id: i64,
-    file_id: Option<i64>,
-    folder_id: Option<i64>,
+    target: ShareTarget,
     password: Option<String>,
     expires_at: Option<chrono::DateTime<Utc>>,
     max_downloads: i64,
@@ -274,8 +311,7 @@ pub async fn create_share(
     create_share_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
-        file_id,
-        folder_id,
+        target,
         password,
         expires_at,
         max_downloads,
@@ -619,7 +655,7 @@ pub(crate) async fn update_share_in_scope(
 
     let updated: ShareInfo = share_repo::update(&state.db, active)
         .await
-        .map(Into::into)?;
+        .and_then(share_info_from_model)?;
     tracing::debug!(
         scope = ?scope,
         share_id = updated.id,
@@ -847,7 +883,11 @@ pub async fn list_paginated(
 ) -> Result<OffsetPage<ShareInfo>> {
     load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (items, total) = share_repo::find_paginated(&state.db, limit, offset).await?;
-        Ok((items.into_iter().map(Into::into).collect(), total))
+        let items = items
+            .into_iter()
+            .map(share_info_from_model)
+            .collect::<Result<Vec<_>>>()?;
+        Ok((items, total))
     })
     .await
 }
@@ -861,8 +901,20 @@ async fn build_my_share_infos(
     db: &DatabaseConnection,
     shares: Vec<share::Model>,
 ) -> Result<Vec<MyShareInfo>> {
-    let file_ids: Vec<i64> = shares.iter().filter_map(|share| share.file_id).collect();
-    let folder_ids: Vec<i64> = shares.iter().filter_map(|share| share.folder_id).collect();
+    let mut file_ids = Vec::new();
+    let mut folder_ids = Vec::new();
+    for share in &shares {
+        match share_target_for_share(share)? {
+            ShareTarget {
+                r#type: EntityType::File,
+                id,
+            } => file_ids.push(id),
+            ShareTarget {
+                r#type: EntityType::Folder,
+                id,
+            } => folder_ids.push(id),
+        }
+    }
 
     let files = file_repo::find_by_ids(db, &file_ids).await?;
     let folders = folder_repo::find_by_ids(db, &folder_ids).await?;
@@ -877,7 +929,7 @@ async fn build_my_share_infos(
     let mut items = Vec::with_capacity(shares.len());
     for share in shares {
         let (resource_id, resource_name, resource_type, resource_deleted) =
-            resolve_share_resource(&share, &file_map, &folder_map);
+            resolve_share_resource(&share, &file_map, &folder_map)?;
         let status = resolve_share_status(&share, resource_deleted);
         let remaining_downloads = remaining_downloads(share.max_downloads, share.download_count);
 
@@ -1072,9 +1124,20 @@ async fn load_share_file_resource(
     state: &AppState,
     share: &share::Model,
 ) -> Result<crate::entities::file::Model> {
-    let file_id = share
-        .file_id
-        .ok_or_else(|| AsterError::validation_error("this share is for a folder, not a file"))?;
+    let file_id = match share_target_for_share(share)? {
+        ShareTarget {
+            r#type: EntityType::File,
+            id,
+        } => id,
+        ShareTarget {
+            r#type: EntityType::Folder,
+            ..
+        } => {
+            return Err(AsterError::validation_error(
+                "this share is for a folder, not a file",
+            ));
+        }
+    };
     let file = file_repo::find_by_id(&state.db, file_id).await?;
     ensure_share_matches_file(share, &file)?;
     if file.deleted_at.is_some() {
@@ -1089,9 +1152,20 @@ async fn load_share_folder_resource(
     state: &AppState,
     share: &share::Model,
 ) -> Result<crate::entities::folder::Model> {
-    let folder_id = share
-        .folder_id
-        .ok_or_else(|| AsterError::validation_error("this share is for a file, not a folder"))?;
+    let folder_id = match share_target_for_share(share)? {
+        ShareTarget {
+            r#type: EntityType::Folder,
+            id,
+        } => id,
+        ShareTarget {
+            r#type: EntityType::File,
+            ..
+        } => {
+            return Err(AsterError::validation_error(
+                "this share is for a file, not a folder",
+            ));
+        }
+    };
     let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
     ensure_share_matches_folder(share, &folder)?;
     if folder.deleted_at.is_some() {
@@ -1235,6 +1309,8 @@ async fn download_share_resource_with_disposition(
 }
 
 fn validate_share(share: &share::Model) -> Result<()> {
+    share_target_for_share(share)?;
+
     // 检查过期
     if let Some(exp) = share.expires_at
         && exp < Utc::now()
@@ -1257,37 +1333,42 @@ fn resolve_share_resource(
     share: &share::Model,
     file_map: &HashMap<i64, crate::entities::file::Model>,
     folder_map: &HashMap<i64, crate::entities::folder::Model>,
-) -> (i64, String, EntityType, bool) {
-    if let Some(file_id) = share.file_id {
-        if let Some(file) = file_map.get(&file_id) {
-            return (
-                file_id,
-                file.name.clone(),
-                EntityType::File,
-                file.deleted_at.is_some(),
-            );
+) -> Result<(i64, String, EntityType, bool)> {
+    match share_target_for_share(share)? {
+        ShareTarget {
+            r#type: EntityType::File,
+            id: file_id,
+        } => {
+            if let Some(file) = file_map.get(&file_id) {
+                return Ok((
+                    file_id,
+                    file.name.clone(),
+                    EntityType::File,
+                    file.deleted_at.is_some(),
+                ));
+            }
+            Ok((file_id, "Unknown file".to_string(), EntityType::File, true))
         }
-        return (file_id, "Unknown file".to_string(), EntityType::File, true);
-    }
-
-    if let Some(folder_id) = share.folder_id {
-        if let Some(folder) = folder_map.get(&folder_id) {
-            return (
+        ShareTarget {
+            r#type: EntityType::Folder,
+            id: folder_id,
+        } => {
+            if let Some(folder) = folder_map.get(&folder_id) {
+                return Ok((
+                    folder_id,
+                    folder.name.clone(),
+                    EntityType::Folder,
+                    folder.deleted_at.is_some(),
+                ));
+            }
+            Ok((
                 folder_id,
-                folder.name.clone(),
+                "Unknown folder".to_string(),
                 EntityType::Folder,
-                folder.deleted_at.is_some(),
-            );
+                true,
+            ))
         }
-        return (
-            folder_id,
-            "Unknown folder".to_string(),
-            EntityType::Folder,
-            true,
-        );
     }
-
-    (0, "Unknown resource".to_string(), EntityType::File, true)
 }
 
 fn resolve_share_status(share: &share::Model, resource_deleted: bool) -> ShareStatus {
@@ -1314,25 +1395,32 @@ async fn resolve_share_name(
     db: &DatabaseConnection,
     share: &share::Model,
 ) -> Result<(String, String, Option<String>, Option<i64>)> {
-    if let Some(file_id) = share.file_id {
-        let f = file_repo::find_by_id(db, file_id).await?;
-        ensure_share_matches_file(share, &f)?;
-        if f.deleted_at.is_some() {
-            return Err(AsterError::file_not_found(format!(
-                "file #{file_id} is in trash"
-            )));
+    match share_target_for_share(share)? {
+        ShareTarget {
+            r#type: EntityType::File,
+            id: file_id,
+        } => {
+            let f = file_repo::find_by_id(db, file_id).await?;
+            ensure_share_matches_file(share, &f)?;
+            if f.deleted_at.is_some() {
+                return Err(AsterError::file_not_found(format!(
+                    "file #{file_id} is in trash"
+                )));
+            }
+            Ok((f.name, "file".to_string(), Some(f.mime_type), Some(f.size)))
         }
-        Ok((f.name, "file".to_string(), Some(f.mime_type), Some(f.size)))
-    } else if let Some(folder_id) = share.folder_id {
-        let f = folder_repo::find_by_id(db, folder_id).await?;
-        ensure_share_matches_folder(share, &f)?;
-        if f.deleted_at.is_some() {
-            return Err(AsterError::folder_not_found(format!(
-                "folder #{folder_id} is in trash"
-            )));
+        ShareTarget {
+            r#type: EntityType::Folder,
+            id: folder_id,
+        } => {
+            let f = folder_repo::find_by_id(db, folder_id).await?;
+            ensure_share_matches_folder(share, &f)?;
+            if f.deleted_at.is_some() {
+                return Err(AsterError::folder_not_found(format!(
+                    "folder #{folder_id} is in trash"
+                )));
+            }
+            Ok((f.name, "folder".to_string(), None, None))
         }
-        Ok((f.name, "folder".to_string(), None, None))
-    } else {
-        Ok(("Unknown".to_string(), "unknown".to_string(), None, None))
     }
 }

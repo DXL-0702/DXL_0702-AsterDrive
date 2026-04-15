@@ -82,9 +82,17 @@ export function ShareDialog({
 				forceDownloadUrl = fileService.forceDownloadUrl(directLink.token, name);
 			} else {
 				const expiresAt = computeShareExpiry(expiry);
+				const target =
+					fileId != null
+						? { type: "file" as const, id: fileId }
+						: folderId != null
+							? { type: "folder" as const, id: folderId }
+							: null;
+				if (target == null) {
+					throw new Error("share target is required");
+				}
 				const share = await shareService.create({
-					file_id: fileId,
-					folder_id: folderId,
+					target,
 					password: password || undefined,
 					expires_at: expiresAt ?? undefined,
 					max_downloads: normalizeMaxDownloads(maxDownloads),

@@ -273,29 +273,23 @@ export default function TasksPage() {
 	};
 
 	const parseTaskResult = (task: TaskInfo) => {
-		if (!task.result_json) {
+		if (!task.result) {
 			return null;
 		}
 
-		try {
-			const parsed = JSON.parse(task.result_json) as {
-				target_folder_id?: number | null;
-				target_path?: string;
-			};
-			if (
-				typeof parsed !== "object" ||
-				parsed === null ||
-				typeof parsed.target_path !== "string" ||
-				!(
-					parsed.target_folder_id === null ||
-					typeof parsed.target_folder_id === "number"
-				)
-			) {
+		switch (task.result.kind) {
+			case "archive_compress":
+				return {
+					target_folder_id: task.result.target_folder_id ?? null,
+					target_path: task.result.target_path,
+				};
+			case "archive_extract":
+				return {
+					target_folder_id: task.result.target_folder_id,
+					target_path: task.result.target_path,
+				};
+			default:
 				return null;
-			}
-			return parsed;
-		} catch {
-			return null;
 		}
 	};
 

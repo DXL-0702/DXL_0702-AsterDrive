@@ -209,7 +209,7 @@ async fn test_config_schema_returns_non_empty_with_required_fields() {
             "description_i18n_key should not be empty"
         );
         assert!(
-            !item.value_type.is_empty(),
+            !item.value_type.as_str().is_empty(),
             "value_type should not be empty"
         );
         assert!(!item.category.is_empty(), "category should not be empty");

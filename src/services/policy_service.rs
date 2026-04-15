@@ -13,9 +13,25 @@ use crate::entities::{storage_policy, storage_policy_group, storage_policy_group
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::storage::s3_config::normalize_s3_endpoint_and_bucket;
-use crate::types::DriverType;
+use crate::types::{
+    DriverType, StoragePolicyOptions, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
+    parse_storage_policy_allowed_types, parse_storage_policy_options,
+    serialize_storage_policy_allowed_types, serialize_storage_policy_options,
+};
 
 const SYSTEM_STORAGE_POLICY_ID: i64 = 1;
+
+fn serialize_allowed_types(allowed_types: &[String]) -> Result<StoredStoragePolicyAllowedTypes> {
+    serialize_storage_policy_allowed_types(allowed_types).map_err(|error| {
+        AsterError::internal_error(format!("serialize storage policy allowed_types: {error}"))
+    })
+}
+
+fn serialize_options(options: &StoragePolicyOptions) -> Result<StoredStoragePolicyOptions> {
+    serialize_storage_policy_options(options).map_err(|error| {
+        AsterError::internal_error(format!("serialize storage policy options: {error}"))
+    })
+}
 
 fn format_group_assignment_blocker(
     action: &str,
@@ -97,8 +113,8 @@ pub struct StoragePolicy {
     pub bucket: String,
     pub base_path: String,
     pub max_file_size: i64,
-    pub allowed_types: String,
-    pub options: String,
+    pub allowed_types: Vec<String>,
+    pub options: StoragePolicyOptions,
     pub is_default: bool,
     pub chunk_size: i64,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -117,8 +133,8 @@ impl From<storage_policy::Model> for StoragePolicy {
             bucket: model.bucket,
             base_path: model.base_path,
             max_file_size: model.max_file_size,
-            allowed_types: model.allowed_types,
-            options: model.options,
+            allowed_types: parse_storage_policy_allowed_types(model.allowed_types.as_ref()),
+            options: parse_storage_policy_options(model.options.as_ref()),
             is_default: model.is_default,
             chunk_size: model.chunk_size,
             created_at: model.created_at,
@@ -153,7 +169,8 @@ pub struct CreateStoragePolicyInput {
     pub max_file_size: i64,
     pub chunk_size: Option<i64>,
     pub is_default: bool,
-    pub options: Option<String>,
+    pub allowed_types: Option<Vec<String>>,
+    pub options: Option<StoragePolicyOptions>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -167,7 +184,8 @@ pub struct UpdateStoragePolicyInput {
     pub max_file_size: Option<i64>,
     pub chunk_size: Option<i64>,
     pub is_default: Option<bool>,
-    pub options: Option<String>,
+    pub allowed_types: Option<Vec<String>>,
+    pub options: Option<StoragePolicyOptions>,
 }
 
 #[derive(Debug, Clone)]
@@ -211,6 +229,7 @@ pub async fn create(state: &AppState, input: CreateStoragePolicyInput) -> Result
         max_file_size,
         chunk_size,
         is_default,
+        allowed_types,
         options,
     } = input;
     let StoragePolicyConnectionInput {
@@ -222,6 +241,8 @@ pub async fn create(state: &AppState, input: CreateStoragePolicyInput) -> Result
         base_path,
     } = connection;
     let (endpoint, bucket) = normalize_connection_fields(driver_type, &endpoint, &bucket)?;
+    let allowed_types = allowed_types.unwrap_or_default();
+    let options = options.unwrap_or_default();
 
     let txn = state.db.begin().await.map_err(AsterError::from)?;
     let now = Utc::now();
@@ -234,8 +255,8 @@ pub async fn create(state: &AppState, input: CreateStoragePolicyInput) -> Result
         secret_key: Set(secret_key),
         base_path: Set(base_path),
         max_file_size: Set(max_file_size),
-        allowed_types: Set("[]".to_string()),
-        options: Set(options.unwrap_or_else(|| "{}".to_string())),
+        allowed_types: Set(serialize_allowed_types(&allowed_types)?),
+        options: Set(serialize_options(&options)?),
         is_default: Set(false),
         chunk_size: Set(chunk_size.unwrap_or(5_242_880)), // 5MB default
         created_at: Set(now),
@@ -323,6 +344,7 @@ pub async fn update(
         max_file_size,
         chunk_size,
         is_default,
+        allowed_types,
         options,
     } = input;
     let txn = state.db.begin().await.map_err(AsterError::from)?;
@@ -378,8 +400,11 @@ pub async fn update(
     if let Some(v) = is_default {
         active.is_default = Set(v && existing_is_default);
     }
+    if let Some(v) = allowed_types {
+        active.allowed_types = Set(serialize_allowed_types(&v)?);
+    }
     if let Some(v) = options {
-        active.options = Set(v);
+        active.options = Set(serialize_options(&v)?);
     }
     active.updated_at = Set(Utc::now());
     let result = active.update(&txn).await.map_err(AsterError::from)?;
@@ -449,8 +474,8 @@ pub async fn test_connection_params(input: StoragePolicyConnectionInput) -> Resu
         secret_key,
         base_path,
         max_file_size: 0,
-        allowed_types: String::new(),
-        options: String::new(),
+        allowed_types: StoredStoragePolicyAllowedTypes::empty(),
+        options: StoredStoragePolicyOptions::empty(),
         is_default: false,
         chunk_size: 0,
         created_at: chrono::Utc::now(),

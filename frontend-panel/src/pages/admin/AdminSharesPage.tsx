@@ -107,7 +107,7 @@ export default function AdminSharesPage() {
 							<TableCell className="text-xs">#{s.user_id}</TableCell>
 							<TableCell>
 								<Badge variant="outline">
-									{s.file_id != null ? t("core:file") : t("core:folder")}
+									{s.target.type === "file" ? t("core:file") : t("core:folder")}
 								</Badge>
 							</TableCell>
 							<TableCell>

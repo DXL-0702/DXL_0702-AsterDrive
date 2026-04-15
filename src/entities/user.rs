@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::types::{UserRole, UserStatus};
+use crate::types::{StoredUserConfig, UserRole, UserStatus};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -33,7 +33,8 @@ pub struct Model {
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: DateTimeUtc,
     #[serde(skip_serializing)]
-    pub config: Option<String>, // JSON blob, nullable
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub config: Option<StoredUserConfig>, // JSON blob, nullable
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

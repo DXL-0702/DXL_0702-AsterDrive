@@ -3,6 +3,7 @@ use std::io::{self, IsTerminal};
 use crate::db;
 use crate::db::repository::config_repo;
 use crate::errors::{AsterError, Result};
+use crate::types::SystemConfigSource;
 use clap::ValueEnum;
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 use serde::Serialize;
@@ -86,7 +87,6 @@ pub(super) fn render_error_json(err: &AsterError, pretty: bool) -> String {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
 pub(super) struct CliTerminalPalette {
     enabled: bool,
 }
@@ -142,11 +142,10 @@ impl CliTerminalPalette {
         }
     }
 
-    pub(super) fn source_badge(&self, source: &str) -> String {
+    pub(super) fn source_badge(&self, source: SystemConfigSource) -> String {
         match source {
-            "system" => self.good("[system]"),
-            "custom" => self.warn("[custom]"),
-            _ => self.accent("[config]"),
+            SystemConfigSource::System => self.good("[system]"),
+            SystemConfigSource::Custom => self.warn("[custom]"),
         }
     }
 }

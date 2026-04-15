@@ -14,6 +14,7 @@ use crate::config::wopi;
 use crate::entities::system_config;
 use crate::errors::{AsterError, Result};
 use crate::services::preview_app_service;
+use crate::types::{SystemConfigSource, SystemConfigValueType};
 
 pub trait SystemConfigValueLookup {
     fn get_config_value(&self, key: &str) -> Option<String>;
@@ -50,25 +51,24 @@ pub fn get_definition(key: &str) -> Option<&'static ConfigDef> {
     ALL_CONFIGS.iter().find(|def| def.key == key)
 }
 
-pub fn validate_value_type(value_type: &str, value: &str) -> Result<()> {
+pub fn validate_value_type(value_type: SystemConfigValueType, value: &str) -> Result<()> {
     let trimmed = value.trim();
     match value_type {
-        "boolean" => {
+        SystemConfigValueType::Boolean => {
             if trimmed != "true" && trimmed != "false" {
                 return Err(AsterError::validation_error(
                     "boolean config must be 'true' or 'false'",
                 ));
             }
         }
-        "number" => {
+        SystemConfigValueType::Number => {
             if trimmed.parse::<f64>().is_err() {
                 return Err(AsterError::validation_error(
                     "number config must be a valid number",
                 ));
             }
         }
-        "string" | "multiline" => {}
-        _ => {}
+        SystemConfigValueType::String | SystemConfigValueType::Multiline => {}
     }
     Ok(())
 }
@@ -172,7 +172,7 @@ where
 }
 
 pub fn apply_definition(mut config: system_config::Model) -> system_config::Model {
-    if config.source != "system" {
+    if config.source != SystemConfigSource::System {
         return config;
     }
 
@@ -180,7 +180,7 @@ pub fn apply_definition(mut config: system_config::Model) -> system_config::Mode
         return config;
     };
 
-    config.value_type = def.value_type.to_string();
+    config.value_type = def.value_type;
     config.requires_restart = def.requires_restart;
     config.is_sensitive = def.is_sensitive;
     config.category = def.category.to_string();
@@ -200,18 +200,19 @@ fn parse_bool_like(value: &str) -> Option<bool> {
 mod tests {
     use super::{apply_definition, normalize_system_value, validate_value_type};
     use crate::entities::system_config;
+    use crate::types::{SystemConfigSource, SystemConfigValueType};
     use chrono::Utc;
     use std::collections::HashMap;
 
-    fn model(key: &str, value: &str, source: &str) -> system_config::Model {
+    fn model(key: &str, value: &str, source: SystemConfigSource) -> system_config::Model {
         system_config::Model {
             id: 1,
             key: key.to_string(),
             value: value.to_string(),
-            value_type: "string".to_string(),
+            value_type: SystemConfigValueType::String,
             requires_restart: false,
             is_sensitive: false,
-            source: source.to_string(),
+            source,
             namespace: String::new(),
             category: String::new(),
             description: String::new(),
@@ -222,10 +223,10 @@ mod tests {
 
     #[test]
     fn validate_value_type_enforces_declared_types() {
-        assert!(validate_value_type("boolean", "true").is_ok());
-        assert!(validate_value_type("boolean", " yes ").is_err());
-        assert!(validate_value_type("number", "42").is_ok());
-        assert!(validate_value_type("number", "nope").is_err());
+        assert!(validate_value_type(SystemConfigValueType::Boolean, "true").is_ok());
+        assert!(validate_value_type(SystemConfigValueType::Boolean, " yes ").is_err());
+        assert!(validate_value_type(SystemConfigValueType::Number, "42").is_ok());
+        assert!(validate_value_type(SystemConfigValueType::Number, "nope").is_err());
     }
 
     #[test]
@@ -244,9 +245,9 @@ mod tests {
         let config = apply_definition(model(
             "public_site_url",
             "https://drive.example.com",
-            "system",
+            SystemConfigSource::System,
         ));
-        assert_eq!(config.value_type, "string");
+        assert_eq!(config.value_type, SystemConfigValueType::String);
         assert_eq!(config.category, "general");
         assert!(
             config
@@ -254,7 +255,7 @@ mod tests {
                 .contains("share, preview, and callback URLs")
         );
 
-        let custom = apply_definition(model("custom.demo", "value", "custom"));
+        let custom = apply_definition(model("custom.demo", "value", SystemConfigSource::Custom));
         assert_eq!(custom.category, "");
     }
 }

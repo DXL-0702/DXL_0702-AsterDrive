@@ -219,7 +219,10 @@ function createLock(overrides: Record<string, unknown> = {}) {
 		deep: false,
 		id: 21,
 		owner_id: 8,
-		owner_info: "user@example.com",
+		owner_info: {
+			kind: "text",
+			value: "user@example.com",
+		},
 		path: "/docs/report.pdf",
 		shared: false,
 		timeout_at: null,

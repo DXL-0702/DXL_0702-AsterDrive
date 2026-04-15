@@ -677,8 +677,8 @@ pub async fn setup_with_database_url(database_url: &str) -> AppState {
             secret_key: Set(String::new()),
             base_path: Set(test_dir),
             max_file_size: Set(0),
-            allowed_types: Set("[]".to_string()),
-            options: Set("{}".to_string()),
+            allowed_types: Set(aster_drive::types::StoredStoragePolicyAllowedTypes::empty()),
+            options: Set(aster_drive::types::StoredStoragePolicyOptions::empty()),
             is_default: Set(true),
             chunk_size: Set(5_242_880),
             created_at: Set(now),
@@ -863,7 +863,7 @@ pub async fn extract_verification_token_from_mail_sender_or_outbox(
         .await
         .expect("mail outbox lookup should succeed")?;
 
-    serde_json::from_str::<serde_json::Value>(&row.payload_json)
+    serde_json::from_str::<serde_json::Value>(row.payload_json.as_ref())
         .expect("mail outbox payload should be valid json")
         .get("token")
         .and_then(|value| value.as_str())
@@ -876,10 +876,10 @@ pub fn system_config_model(key: &str, value: &str) -> aster_drive::entities::sys
         id: 0,
         key: key.to_string(),
         value: value.to_string(),
-        value_type: "string".to_string(),
+        value_type: aster_drive::types::SystemConfigValueType::String,
         requires_restart: false,
         is_sensitive: false,
-        source: "system".to_string(),
+        source: aster_drive::types::SystemConfigSource::System,
         namespace: String::new(),
         category: "test".to_string(),
         description: "test".to_string(),

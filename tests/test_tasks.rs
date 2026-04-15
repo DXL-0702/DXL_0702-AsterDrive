@@ -105,11 +105,8 @@ fn read_archive_download_path(body: &Value) -> String {
         .to_string()
 }
 
-fn read_task_result_json(body: &Value) -> Value {
-    let raw = body["data"]["result_json"]
-        .as_str()
-        .expect("task result_json should exist");
-    serde_json::from_str(raw).expect("task result_json should be valid JSON")
+fn read_task_result(body: &Value) -> Value {
+    body["data"]["result"].clone()
 }
 
 fn read_task_steps(body: &Value) -> Vec<(String, String)> {
@@ -502,7 +499,8 @@ async fn test_personal_archive_compress_task_creates_workspace_file() {
         ],
     );
 
-    let result = read_task_result_json(&body);
+    let result = read_task_result(&body);
+    assert_eq!(result["kind"], "archive_compress");
     let archive_file_id = result["target_file_id"].as_i64().unwrap();
     assert_eq!(result["target_folder_id"], Value::Null);
     assert_eq!(result["target_path"], "/bundle-export.zip");
@@ -643,7 +641,8 @@ async fn test_team_archive_extract_task_creates_team_folder_tree() {
         ],
     );
 
-    let result = read_task_result_json(&body);
+    let result = read_task_result(&body);
+    assert_eq!(result["kind"], "archive_extract");
     let extracted_root_id = result["target_folder_id"].as_i64().unwrap();
     assert_eq!(result["target_folder_name"], "bundle");
     assert_eq!(result["target_path"], "/bundle");

@@ -270,8 +270,7 @@ describe("ShareDialog", () => {
 		});
 		expect(mockState.create).toHaveBeenCalledWith(
 			expect.objectContaining({
-				file_id: 42,
-				folder_id: undefined,
+				target: { type: "file", id: 42 },
 				max_downloads: 0,
 				password: "secret",
 			}),

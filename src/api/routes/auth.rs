@@ -23,10 +23,9 @@ use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::middleware::rate_limit;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 
-// Re-export preference types from user_service for OpenAPI schema registration.
-pub use crate::services::user_service::{
-    ColorPreset, Language, MeResponse, PrefViewMode, ThemeMode, UpdatePreferencesReq, UserInfo,
-    UserPreferences,
+pub use crate::services::user_service::{MeResponse, UpdatePreferencesReq, UserInfo};
+pub use crate::types::{
+    BrowserOpenMode, ColorPreset, Language, PrefViewMode, ThemeMode, UserPreferences,
 };
 
 use crate::services::auth_service::Claims;

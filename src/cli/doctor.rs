@@ -1526,6 +1526,7 @@ mod tests {
     use crate::config::RuntimeConfig;
     use crate::config::site_url::PUBLIC_SITE_URL_KEY;
     use crate::entities::system_config;
+    use crate::types::{SystemConfigSource, SystemConfigValueType};
     use chrono::Utc;
 
     fn config_model(key: &str, value: &str) -> system_config::Model {
@@ -1533,10 +1534,10 @@ mod tests {
             id: 1,
             key: key.to_string(),
             value: value.to_string(),
-            value_type: "string".to_string(),
+            value_type: SystemConfigValueType::String,
             requires_restart: false,
             is_sensitive: false,
-            source: "system".to_string(),
+            source: SystemConfigSource::System,
             namespace: String::new(),
             category: "test".to_string(),
             description: "test".to_string(),

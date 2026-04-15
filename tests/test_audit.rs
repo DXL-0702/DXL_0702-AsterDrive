@@ -394,7 +394,9 @@ async fn test_audit_log_recorded_on_share_config_and_admin_user_actions_after_re
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "file_id": file_id }))
+        .set_json(serde_json::json!({
+            "target": { "type": "file", "id": file_id }
+        }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);

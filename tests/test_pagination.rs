@@ -73,7 +73,9 @@ async fn test_folder_list_includes_share_and_lock_status() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "file_id": file_id }))
+        .set_json(serde_json::json!({
+            "target": { "type": "file", "id": file_id }
+        }))
         .to_request();
     let share_file_resp = test::call_service(&app, share_file_req).await;
     assert_eq!(share_file_resp.status(), 201);
@@ -82,7 +84,9 @@ async fn test_folder_list_includes_share_and_lock_status() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "folder_id": folder_id }))
+        .set_json(serde_json::json!({
+            "target": { "type": "folder", "id": folder_id }
+        }))
         .to_request();
     let share_folder_resp = test::call_service(&app, share_folder_req).await;
     assert_eq!(share_folder_resp.status(), 201);

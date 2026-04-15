@@ -19,8 +19,8 @@ describe("storagePolicyDialogShared", () => {
 				secret_key: "",
 				base_path: "/data/archive",
 				max_file_size: 1024,
-				allowed_types: "[]",
-				options: '{"content_dedup":true}',
+				allowed_types: [],
+				options: { content_dedup: true },
 				is_default: true,
 				chunk_size: 10 * 1024 * 1024,
 				created_at: "",
@@ -69,7 +69,7 @@ describe("storagePolicyDialogShared", () => {
 			max_file_size: 2048,
 			chunk_size: 6 * 1024 * 1024,
 			is_default: false,
-			options: '{"s3_upload_strategy":"presigned"}',
+			options: { s3_upload_strategy: "presigned" },
 		});
 	});
 
@@ -97,7 +97,7 @@ describe("storagePolicyDialogShared", () => {
 			max_file_size: undefined,
 			chunk_size: 5 * 1024 * 1024,
 			is_default: true,
-			options: '{"s3_upload_strategy":"relay_stream"}',
+			options: { s3_upload_strategy: "relay_stream" },
 		});
 	});
 });

@@ -13,82 +13,10 @@ use crate::entities::user;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{auth_service, profile_service};
-use crate::types::{UserRole, UserStatus};
-
-/// Theme mode for the UI.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum ThemeMode {
-    #[default]
-    System,
-    Light,
-    Dark,
-}
-
-/// Color preset for the UI accent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum ColorPreset {
-    #[default]
-    Blue,
-    Green,
-    Purple,
-    Orange,
-}
-
-/// File browser view mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum PrefViewMode {
-    #[default]
-    List,
-    Grid,
-}
-
-/// Preferred gesture for opening items in the browser.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum BrowserOpenMode {
-    #[default]
-    SingleClick,
-    DoubleClick,
-}
-
-/// Interface display language.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Default)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-#[serde(rename_all = "snake_case")]
-pub enum Language {
-    #[default]
-    En,
-    Zh,
-}
-
-/// Stored user preferences (serialized as JSON in `users.config`).
-/// Empty struct (all fields None) is treated as null by `get_preferences`.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
-pub struct UserPreferences {
-    pub theme_mode: Option<ThemeMode>,
-    pub color_preset: Option<ColorPreset>,
-    pub view_mode: Option<PrefViewMode>,
-    pub browser_open_mode: Option<BrowserOpenMode>,
-    pub sort_by: Option<SortBy>,
-    pub sort_order: Option<SortOrder>,
-    pub language: Option<Language>,
-    pub storage_event_stream_enabled: Option<bool>,
-}
-
-impl UserPreferences {
-    /// True if no preference fields are set (empty config).
-    fn is_empty(&self) -> bool {
-        *self == Self::default()
-    }
-}
+use crate::types::{
+    BrowserOpenMode, ColorPreset, Language, PrefViewMode, StoredUserConfig, ThemeMode, UserConfig,
+    UserPreferences, UserRole, UserStatus,
+};
 
 /// PATCH request — only non-null fields are merged into existing preferences.
 #[derive(Debug, Deserialize)]
@@ -525,15 +453,8 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
 /// 从 user Model 的 config 字段解析偏好设置。
 /// 空配置或解析失败返回 None，解析失败时记录日志。
 pub fn parse_preferences(user: &user::Model) -> Option<UserPreferences> {
-    let raw = user.config.as_deref()?;
-    match serde_json::from_str::<UserPreferences>(raw) {
-        Ok(prefs) if !prefs.is_empty() => Some(prefs),
-        Ok(_) => None,
-        Err(e) => {
-            tracing::warn!("failed to parse preferences for user #{}: {e}", user.id);
-            None
-        }
-    }
+    parse_user_config(user)
+        .and_then(|config| (!config.preferences.is_empty()).then_some(config.preferences))
 }
 
 /// 读取用户的偏好设置（按 ID 查询后解析）。
@@ -542,18 +463,27 @@ pub async fn get_preferences(state: &AppState, user_id: i64) -> Result<Option<Us
     Ok(parse_preferences(&user))
 }
 
-/// 将偏好设置写入 DB。空偏好不写 DB（视为清除）。
-async fn save_preferences(
-    state: &AppState,
-    user: user::Model,
-    prefs: &UserPreferences,
-) -> Result<()> {
-    if prefs.is_empty() {
+fn parse_user_config(user: &user::Model) -> Option<UserConfig> {
+    let raw = user.config.as_ref()?;
+    match raw.parse() {
+        Ok(config) => Some(config),
+        Err(e) => {
+            tracing::warn!("failed to parse user config for user #{}: {e}", user.id);
+            None
+        }
+    }
+}
+
+/// 将用户配置写回 DB。空配置保持现状，不主动清理历史值。
+async fn save_user_config(state: &AppState, user: user::Model, config: &UserConfig) -> Result<()> {
+    if config.is_empty() {
         return Ok(());
     }
-    let json_str = serde_json::to_string(&prefs).map_aster_err(AsterError::internal_error)?;
+
+    let stored =
+        Some(StoredUserConfig::from_config(config).map_aster_err(AsterError::internal_error)?);
     let mut active = user.into_active_model();
-    active.config = Set(Some(json_str));
+    active.config = Set(stored);
     active.updated_at = Set(Utc::now());
     active.save(&state.db).await?;
     Ok(())
@@ -566,12 +496,8 @@ pub async fn update_preferences(
     patch: UpdatePreferencesReq,
 ) -> Result<UserPreferences> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
-
-    let mut prefs: UserPreferences = user
-        .config
-        .as_deref()
-        .and_then(|s| serde_json::from_str(s).ok())
-        .unwrap_or_default();
+    let mut config = parse_user_config(&user).unwrap_or_default();
+    let prefs = &mut config.preferences;
 
     // 合并更新（只覆盖非 None 的字段）
     prefs.theme_mode = patch.theme_mode.or(prefs.theme_mode);
@@ -585,6 +511,6 @@ pub async fn update_preferences(
         .storage_event_stream_enabled
         .or(prefs.storage_event_stream_enabled);
 
-    save_preferences(state, user, &prefs).await?;
-    Ok(prefs)
+    save_user_config(state, user, &config).await?;
+    Ok(config.preferences)
 }

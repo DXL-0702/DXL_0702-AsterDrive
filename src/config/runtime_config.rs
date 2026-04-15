@@ -101,6 +101,7 @@ mod tests {
     use crate::db;
     use crate::db::repository::config_repo;
     use crate::entities::system_config;
+    use crate::types::{SystemConfigSource, SystemConfigValueType};
     use chrono::Utc;
     use migration::{Migrator, MigratorTrait};
 
@@ -122,10 +123,10 @@ mod tests {
             id: 1,
             key: key.to_string(),
             value: value.to_string(),
-            value_type: "string".to_string(),
+            value_type: SystemConfigValueType::String,
             requires_restart,
             is_sensitive: false,
-            source: "system".to_string(),
+            source: SystemConfigSource::System,
             namespace: String::new(),
             category: "test".to_string(),
             description: "test".to_string(),

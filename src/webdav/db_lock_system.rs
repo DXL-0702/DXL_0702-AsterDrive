@@ -92,6 +92,11 @@ impl DavLockSystem for DbLockSystem {
             let token = format!("urn:uuid:{}", uuid::Uuid::new_v4());
             let timeout_at =
                 timeout_dur.and_then(|d| chrono::Duration::from_std(d).ok().map(|cd| now + cd));
+            let owner_info = owner_xml.clone().map(|xml| {
+                crate::services::lock_service::ResourceLockOwnerInfo::Webdav(
+                    crate::services::lock_service::WebdavLockOwnerInfo { xml },
+                )
+            });
 
             let model = resource_lock::ActiveModel {
                 token: sea_orm::Set(token.clone()),
@@ -99,7 +104,12 @@ impl DavLockSystem for DbLockSystem {
                 entity_id: sea_orm::Set(entity_id),
                 path: sea_orm::Set(path_str),
                 owner_id: sea_orm::Set(None), // WebDAV 没有 user_id（用 principal 代替）
-                owner_info: sea_orm::Set(owner_xml),
+                owner_info: sea_orm::Set(
+                    crate::services::lock_service::serialize_resource_lock_owner_info(
+                        owner_info.as_ref(),
+                    )
+                    .map_err(|_| empty_dav_lock(&path_owned))?,
+                ),
                 timeout_at: sea_orm::Set(timeout_at),
                 shared: sea_orm::Set(shared),
                 deep: sea_orm::Set(deep),
@@ -183,16 +193,16 @@ impl DavLockSystem for DbLockSystem {
                 .await
                 .map_err(|_| ())?
                 .ok_or(())?;
+            let owner = lock_owner_xml(&lock)
+                .as_deref()
+                .and_then(deserialize_element)
+                .map(Box::new);
 
             Ok(DavLock {
                 token: lock.token,
                 path: Box::new(path_clone),
                 principal: None,
-                owner: lock
-                    .owner_info
-                    .as_deref()
-                    .and_then(deserialize_element)
-                    .map(Box::new),
+                owner,
                 timeout_at: timeout_dur.map(|d| SystemTime::now() + d),
                 timeout: timeout_dur,
                 shared: lock.shared,
@@ -382,8 +392,7 @@ fn model_to_dav_lock(lock: &resource_lock::Model) -> DavLock {
         token: lock.token.clone(),
         path: Box::new(dav_path),
         principal: lock.owner_id.map(|id| id.to_string()),
-        owner: lock
-            .owner_info
+        owner: lock_owner_xml(lock)
             .as_deref()
             .and_then(deserialize_element)
             .map(Box::new),
@@ -407,4 +416,13 @@ fn serialize_element(elem: &Element) -> String {
 
 fn deserialize_element(xml: &str) -> Option<Element> {
     Element::parse(Cursor::new(xml.as_bytes())).ok()
+}
+
+fn lock_owner_xml(lock: &resource_lock::Model) -> Option<String> {
+    match crate::services::lock_service::deserialize_resource_lock_owner_info(lock).ok()? {
+        Some(crate::services::lock_service::ResourceLockOwnerInfo::Webdav(payload)) => {
+            Some(payload.xml)
+        }
+        _ => None,
+    }
 }

@@ -3,7 +3,9 @@ use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::types::{BackgroundTaskKind, BackgroundTaskStatus};
+use crate::types::{
+    BackgroundTaskKind, BackgroundTaskStatus, StoredTaskPayload, StoredTaskResult, StoredTaskSteps,
+};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -17,9 +19,12 @@ pub struct Model {
     pub team_id: Option<i64>,
     pub share_id: Option<i64>,
     pub display_name: String,
-    pub payload_json: String,
-    pub result_json: Option<String>,
-    pub steps_json: Option<String>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub payload_json: StoredTaskPayload,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub result_json: Option<StoredTaskResult>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
+    pub steps_json: Option<StoredTaskSteps>,
     pub progress_current: i64,
     pub progress_total: i64,
     pub status_text: Option<String>,

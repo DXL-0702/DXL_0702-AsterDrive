@@ -2741,7 +2741,7 @@ export interface components {
                 key: string;
                 label_i18n_key: string;
                 requires_restart: boolean;
-                value_type: string;
+                value_type: components["schemas"]["SystemConfigValueType"];
             }[];
             msg: string;
         };
@@ -2768,13 +2768,51 @@ export interface components {
             /** Format: int64 */
             target_folder_id?: number | null;
         };
+        ArchiveCompressTaskPayload: {
+            archive_name: string;
+            file_ids: number[];
+            folder_ids: number[];
+            /** Format: int64 */
+            target_folder_id?: number | null;
+        };
+        ArchiveCompressTaskResult: {
+            /** Format: int64 */
+            target_file_id: number;
+            target_file_name: string;
+            /** Format: int64 */
+            target_folder_id?: number | null;
+            target_path: string;
+        };
         ArchiveDownloadReq: {
             archive_name?: string | null;
             file_ids?: number[];
             folder_ids?: number[];
         };
+        ArchiveExtractTaskPayload: {
+            /** Format: int64 */
+            file_id: number;
+            output_folder_name: string;
+            source_file_name: string;
+            /** Format: int64 */
+            target_folder_id?: number | null;
+        };
+        ArchiveExtractTaskResult: {
+            /** Format: int64 */
+            extracted_file_count: number;
+            /** Format: int64 */
+            extracted_folder_count: number;
+            /** Format: int64 */
+            target_folder_id: number;
+            target_folder_name: string;
+            target_path: string;
+        };
+        /**
+         * @description 审计日志动作
+         * @enum {string}
+         */
+        AuditAction: "admin_create_user" | "admin_create_team" | "admin_create_policy_group" | "admin_archive_team" | "admin_restore_team" | "admin_revoke_user_sessions" | "admin_reset_user_password" | "admin_update_team" | "admin_update_user" | "admin_delete_policy_group" | "admin_migrate_policy_group_users" | "admin_update_policy_group" | "batch_copy" | "batch_delete" | "batch_move" | "config_action_execute" | "config_update" | "file_copy" | "file_delete" | "file_download" | "file_edit" | "file_move" | "file_rename" | "file_upload" | "folder_copy" | "folder_create" | "folder_delete" | "folder_move" | "folder_policy_change" | "folder_rename" | "share_batch_delete" | "share_create" | "share_delete" | "share_update" | "system_setup" | "team_archive" | "team_cleanup_expired" | "team_create" | "team_member_add" | "team_member_remove" | "team_member_update" | "team_restore" | "team_update" | "user_change_password" | "user_confirm_password_reset" | "user_confirm_email_change" | "user_confirm_registration" | "user_login" | "user_logout" | "user_request_email_change" | "user_request_password_reset" | "user_register" | "user_resend_email_change" | "user_resend_registration";
         AuditLogEntry: {
-            action: string;
+            action: components["schemas"]["AuditAction"];
             created_at: string;
             details?: string | null;
             /** Format: int64 */
@@ -2895,7 +2933,7 @@ export interface components {
             key: string;
             label_i18n_key: string;
             requires_restart: boolean;
-            value_type: string;
+            value_type: components["schemas"]["SystemConfigValueType"];
         };
         CopyFileReq: {
             /**
@@ -2930,6 +2968,7 @@ export interface components {
         };
         CreatePolicyReq: {
             access_key?: string | null;
+            allowed_types?: string[] | null;
             base_path?: string | null;
             bucket?: string | null;
             /** Format: int64 */
@@ -2940,18 +2979,15 @@ export interface components {
             /** Format: int64 */
             max_file_size?: number | null;
             name: string;
-            options?: string | null;
+            options?: null | components["schemas"]["StoragePolicyOptions"];
             secret_key?: string | null;
         };
         CreateShareReq: {
             expires_at?: string | null;
             /** Format: int64 */
-            file_id?: number | null;
-            /** Format: int64 */
-            folder_id?: number | null;
-            /** Format: int64 */
             max_downloads?: number;
             password?: string | null;
+            target: components["schemas"]["ShareTarget"];
         };
         CreateTeamReq: {
             description?: string | null;
@@ -3248,7 +3284,7 @@ export interface components {
         };
         OffsetPage_AuditLogEntry: {
             items: {
-                action: string;
+                action: components["schemas"]["AuditAction"];
                 created_at: string;
                 details?: string | null;
                 /** Format: int64 */
@@ -3311,7 +3347,7 @@ export interface components {
                 id: number;
                 /** Format: int64 */
                 owner_id?: number | null;
-                owner_info?: string | null;
+                owner_info?: null | components["schemas"]["ResourceLockOwnerInfo"];
                 path: string;
                 shared: boolean;
                 timeout_at?: string | null;
@@ -3331,13 +3367,10 @@ export interface components {
                 download_count: number;
                 expires_at?: string | null;
                 /** Format: int64 */
-                file_id?: number | null;
-                /** Format: int64 */
-                folder_id?: number | null;
-                /** Format: int64 */
                 id: number;
                 /** Format: int64 */
                 max_downloads: number;
+                target: components["schemas"]["ShareTarget"];
                 /** Format: int64 */
                 team_id?: number | null;
                 token: string;
@@ -3356,7 +3389,7 @@ export interface components {
         };
         OffsetPage_StoragePolicy: {
             items: {
-                allowed_types: string;
+                allowed_types: string[];
                 base_path: string;
                 bucket: string;
                 /** Format: int64 */
@@ -3370,7 +3403,7 @@ export interface components {
                 /** Format: int64 */
                 max_file_size: number;
                 name: string;
-                options: string;
+                options: components["schemas"]["StoragePolicyOptions"];
                 updated_at: string;
             }[];
             /** Format: int64 */
@@ -3409,12 +3442,12 @@ export interface components {
                 key: string;
                 namespace: string;
                 requires_restart: boolean;
-                source: string;
+                source: components["schemas"]["SystemConfigSource"];
                 updated_at: string;
                 /** Format: int64 */
                 updated_by?: number | null;
                 value: string;
-                value_type: string;
+                value_type: components["schemas"]["SystemConfigValueType"];
             }[];
             /** Format: int64 */
             limit: number;
@@ -3440,14 +3473,14 @@ export interface components {
                 last_error?: string | null;
                 /** Format: int32 */
                 max_attempts: number;
-                payload_json: string;
+                payload: components["schemas"]["TaskPayload"];
                 /** Format: int64 */
                 progress_current: number;
                 /** Format: int32 */
                 progress_percent: number;
                 /** Format: int64 */
                 progress_total: number;
-                result_json?: string | null;
+                result?: null | components["schemas"]["TaskResult"];
                 /** Format: int64 */
                 share_id?: number | null;
                 started_at?: string | null;
@@ -3467,7 +3500,7 @@ export interface components {
         };
         OffsetPage_TeamAuditEntryInfo: {
             items: {
-                action: string;
+                action: components["schemas"]["AuditAction"];
                 actor_username: string;
                 created_at: string;
                 /** Format: int64 */
@@ -3562,6 +3595,7 @@ export interface components {
         };
         PatchPolicyReq: {
             access_key?: string | null;
+            allowed_types?: string[] | null;
             base_path?: string | null;
             bucket?: string | null;
             /** Format: int64 */
@@ -3571,7 +3605,7 @@ export interface components {
             /** Format: int64 */
             max_file_size?: number | null;
             name?: string | null;
-            options?: string | null;
+            options?: null | components["schemas"]["StoragePolicyOptions"];
             secret_key?: string | null;
         };
         PatchTeamMemberReq: {
@@ -3713,12 +3747,27 @@ export interface components {
             id: number;
             /** Format: int64 */
             owner_id?: number | null;
-            owner_info?: string | null;
+            owner_info?: null | components["schemas"]["ResourceLockOwnerInfo"];
             path: string;
             shared: boolean;
             timeout_at?: string | null;
             token: string;
         };
+        ResourceLockOwnerInfo: (components["schemas"]["WopiLockOwnerInfo"] & {
+            /** @enum {string} */
+            kind: "wopi";
+        }) | (components["schemas"]["WebdavLockOwnerInfo"] & {
+            /** @enum {string} */
+            kind: "webdav";
+        }) | (components["schemas"]["TextLockOwnerInfo"] & {
+            /** @enum {string} */
+            kind: "text";
+        });
+        /**
+         * @description S3 上传传输策略（存储策略 options JSON）
+         * @enum {string}
+         */
+        S3UploadStrategy: "relay_stream" | "presigned";
         SearchParams: {
             /** @description ISO 8601 datetime — only return items created after this time */
             created_after?: string | null;
@@ -3786,13 +3835,10 @@ export interface components {
             download_count: number;
             expires_at?: string | null;
             /** Format: int64 */
-            file_id?: number | null;
-            /** Format: int64 */
-            folder_id?: number | null;
-            /** Format: int64 */
             id: number;
             /** Format: int64 */
             max_downloads: number;
+            target: components["schemas"]["ShareTarget"];
             /** Format: int64 */
             team_id?: number | null;
             token: string;
@@ -3828,12 +3874,17 @@ export interface components {
         };
         /** @enum {string} */
         ShareStatus: "active" | "expired" | "exhausted" | "deleted";
+        ShareTarget: {
+            /** Format: int64 */
+            id: number;
+            type: components["schemas"]["EntityType"];
+        };
         /** @enum {string} */
         SortBy: "name" | "size" | "created_at" | "updated_at" | "type";
         /** @enum {string} */
         SortOrder: "asc" | "desc";
         StoragePolicy: {
-            allowed_types: string;
+            allowed_types: string[];
             base_path: string;
             bucket: string;
             /** Format: int64 */
@@ -3847,7 +3898,7 @@ export interface components {
             /** Format: int64 */
             max_file_size: number;
             name: string;
-            options: string;
+            options: components["schemas"]["StoragePolicyOptions"];
             updated_at: string;
         };
         StoragePolicyGroup: {
@@ -3909,6 +3960,10 @@ export interface components {
             /** Format: int32 */
             priority: number;
         };
+        StoragePolicyOptions: {
+            content_dedup?: boolean | null;
+            s3_upload_strategy?: null | components["schemas"]["S3UploadStrategy"];
+        };
         StoragePolicySummaryInfo: {
             driver_type: components["schemas"]["DriverType"];
             /** Format: int64 */
@@ -3929,13 +3984,23 @@ export interface components {
             key: string;
             namespace: string;
             requires_restart: boolean;
-            source: string;
+            source: components["schemas"]["SystemConfigSource"];
             updated_at: string;
             /** Format: int64 */
             updated_by?: number | null;
             value: string;
-            value_type: string;
+            value_type: components["schemas"]["SystemConfigValueType"];
         };
+        /**
+         * @description 运行时配置来源
+         * @enum {string}
+         */
+        SystemConfigSource: "system" | "custom";
+        /**
+         * @description 运行时配置值类型
+         * @enum {string}
+         */
+        SystemConfigValueType: "string" | "multiline" | "number" | "boolean";
         TaskInfo: {
             /** Format: int32 */
             attempt_count: number;
@@ -3952,14 +4017,14 @@ export interface components {
             last_error?: string | null;
             /** Format: int32 */
             max_attempts: number;
-            payload_json: string;
+            payload: components["schemas"]["TaskPayload"];
             /** Format: int64 */
             progress_current: number;
             /** Format: int32 */
             progress_percent: number;
             /** Format: int64 */
             progress_total: number;
-            result_json?: string | null;
+            result?: null | components["schemas"]["TaskResult"];
             /** Format: int64 */
             share_id?: number | null;
             started_at?: string | null;
@@ -3970,6 +4035,20 @@ export interface components {
             team_id?: number | null;
             updated_at: string;
         };
+        TaskPayload: (components["schemas"]["ArchiveCompressTaskPayload"] & {
+            /** @enum {string} */
+            kind: "archive_compress";
+        }) | (components["schemas"]["ArchiveExtractTaskPayload"] & {
+            /** @enum {string} */
+            kind: "archive_extract";
+        });
+        TaskResult: (components["schemas"]["ArchiveCompressTaskResult"] & {
+            /** @enum {string} */
+            kind: "archive_compress";
+        }) | (components["schemas"]["ArchiveExtractTaskResult"] & {
+            /** @enum {string} */
+            kind: "archive_extract";
+        });
         TaskStepInfo: {
             detail?: string | null;
             finished_at?: string | null;
@@ -3985,7 +4064,7 @@ export interface components {
         /** @enum {string} */
         TaskStepStatus: "pending" | "active" | "succeeded" | "failed" | "canceled";
         TeamAuditEntryInfo: {
-            action: string;
+            action: components["schemas"]["AuditAction"];
             actor_username: string;
             created_at: string;
             /** Format: int64 */
@@ -4070,6 +4149,9 @@ export interface components {
             driver_type: components["schemas"]["DriverType"];
             endpoint?: string | null;
             secret_key?: string | null;
+        };
+        TextLockOwnerInfo: {
+            value: string;
         };
         /**
          * @description Theme mode for the UI.
@@ -4305,6 +4387,9 @@ export interface components {
             updated_at: string;
             username: string;
         };
+        WebdavLockOwnerInfo: {
+            xml: string;
+        };
         WebdavSettingsInfo: {
             endpoint: string;
             prefix: string;
@@ -4321,6 +4406,10 @@ export interface components {
                 [key: string]: string;
             };
             mode?: null | components["schemas"]["PreviewOpenMode"];
+        };
+        WopiLockOwnerInfo: {
+            app_key: string;
+            lock: string;
         };
     };
     responses: never;
@@ -4359,7 +4448,7 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             items: {
-                                action: string;
+                                action: components["schemas"]["AuditAction"];
                                 created_at: string;
                                 details?: string | null;
                                 /** Format: int64 */
@@ -4430,12 +4519,12 @@ export interface operations {
                                 key: string;
                                 namespace: string;
                                 requires_restart: boolean;
-                                source: string;
+                                source: components["schemas"]["SystemConfigSource"];
                                 updated_at: string;
                                 /** Format: int64 */
                                 updated_by?: number | null;
                                 value: string;
-                                value_type: string;
+                                value_type: components["schemas"]["SystemConfigValueType"];
                             }[];
                             /** Format: int64 */
                             limit: number;
@@ -4561,12 +4650,12 @@ export interface operations {
                             key: string;
                             namespace: string;
                             requires_restart: boolean;
-                            source: string;
+                            source: components["schemas"]["SystemConfigSource"];
                             updated_at: string;
                             /** Format: int64 */
                             updated_by?: number | null;
                             value: string;
-                            value_type: string;
+                            value_type: components["schemas"]["SystemConfigValueType"];
                         };
                         msg: string;
                     };
@@ -4628,12 +4717,12 @@ export interface operations {
                             key: string;
                             namespace: string;
                             requires_restart: boolean;
-                            source: string;
+                            source: components["schemas"]["SystemConfigSource"];
                             updated_at: string;
                             /** Format: int64 */
                             updated_by?: number | null;
                             value: string;
-                            value_type: string;
+                            value_type: components["schemas"]["SystemConfigValueType"];
                         };
                         msg: string;
                     };
@@ -4797,7 +4886,7 @@ export interface operations {
                                 id: number;
                                 /** Format: int64 */
                                 owner_id?: number | null;
-                                owner_info?: string | null;
+                                owner_info?: null | components["schemas"]["ResourceLockOwnerInfo"];
                                 path: string;
                                 shared: boolean;
                                 timeout_at?: string | null;
@@ -4964,7 +5053,7 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             items: {
-                                allowed_types: string;
+                                allowed_types: string[];
                                 base_path: string;
                                 bucket: string;
                                 /** Format: int64 */
@@ -4978,7 +5067,7 @@ export interface operations {
                                 /** Format: int64 */
                                 max_file_size: number;
                                 name: string;
-                                options: string;
+                                options: components["schemas"]["StoragePolicyOptions"];
                                 updated_at: string;
                             }[];
                             /** Format: int64 */
@@ -5030,7 +5119,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            allowed_types: string;
+                            allowed_types: string[];
                             base_path: string;
                             bucket: string;
                             /** Format: int64 */
@@ -5044,7 +5133,7 @@ export interface operations {
                             /** Format: int64 */
                             max_file_size: number;
                             name: string;
-                            options: string;
+                            options: components["schemas"]["StoragePolicyOptions"];
                             updated_at: string;
                         };
                         msg: string;
@@ -5124,7 +5213,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            allowed_types: string;
+                            allowed_types: string[];
                             base_path: string;
                             bucket: string;
                             /** Format: int64 */
@@ -5138,7 +5227,7 @@ export interface operations {
                             /** Format: int64 */
                             max_file_size: number;
                             name: string;
-                            options: string;
+                            options: components["schemas"]["StoragePolicyOptions"];
                             updated_at: string;
                         };
                         msg: string;
@@ -5235,7 +5324,7 @@ export interface operations {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
-                            allowed_types: string;
+                            allowed_types: string[];
                             base_path: string;
                             bucket: string;
                             /** Format: int64 */
@@ -5249,7 +5338,7 @@ export interface operations {
                             /** Format: int64 */
                             max_file_size: number;
                             name: string;
-                            options: string;
+                            options: components["schemas"]["StoragePolicyOptions"];
                             updated_at: string;
                         };
                         msg: string;
@@ -5703,13 +5792,10 @@ export interface operations {
                                 download_count: number;
                                 expires_at?: string | null;
                                 /** Format: int64 */
-                                file_id?: number | null;
-                                /** Format: int64 */
-                                folder_id?: number | null;
-                                /** Format: int64 */
                                 id: number;
                                 /** Format: int64 */
                                 max_downloads: number;
+                                target: components["schemas"]["ShareTarget"];
                                 /** Format: int64 */
                                 team_id?: number | null;
                                 token: string;
@@ -6144,7 +6230,7 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             items: {
-                                action: string;
+                                action: components["schemas"]["AuditAction"];
                                 actor_username: string;
                                 created_at: string;
                                 /** Format: int64 */
@@ -7772,14 +7858,14 @@ export interface operations {
                             last_error?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
-                            payload_json: string;
+                            payload: components["schemas"]["TaskPayload"];
                             /** Format: int64 */
                             progress_current: number;
                             /** Format: int32 */
                             progress_percent: number;
                             /** Format: int64 */
                             progress_total: number;
-                            result_json?: string | null;
+                            result?: null | components["schemas"]["TaskResult"];
                             /** Format: int64 */
                             share_id?: number | null;
                             started_at?: string | null;
@@ -8854,14 +8940,14 @@ export interface operations {
                             last_error?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
-                            payload_json: string;
+                            payload: components["schemas"]["TaskPayload"];
                             /** Format: int64 */
                             progress_current: number;
                             /** Format: int32 */
                             progress_percent: number;
                             /** Format: int64 */
                             progress_total: number;
-                            result_json?: string | null;
+                            result?: null | components["schemas"]["TaskResult"];
                             /** Format: int64 */
                             share_id?: number | null;
                             started_at?: string | null;
@@ -10674,13 +10760,10 @@ export interface operations {
                             download_count: number;
                             expires_at?: string | null;
                             /** Format: int64 */
-                            file_id?: number | null;
-                            /** Format: int64 */
-                            folder_id?: number | null;
-                            /** Format: int64 */
                             id: number;
                             /** Format: int64 */
                             max_downloads: number;
+                            target: components["schemas"]["ShareTarget"];
                             /** Format: int64 */
                             team_id?: number | null;
                             token: string;
@@ -10816,13 +10899,10 @@ export interface operations {
                             download_count: number;
                             expires_at?: string | null;
                             /** Format: int64 */
-                            file_id?: number | null;
-                            /** Format: int64 */
-                            folder_id?: number | null;
-                            /** Format: int64 */
                             id: number;
                             /** Format: int64 */
                             max_downloads: number;
+                            target: components["schemas"]["ShareTarget"];
                             /** Format: int64 */
                             team_id?: number | null;
                             token: string;
@@ -10896,14 +10976,14 @@ export interface operations {
                                 last_error?: string | null;
                                 /** Format: int32 */
                                 max_attempts: number;
-                                payload_json: string;
+                                payload: components["schemas"]["TaskPayload"];
                                 /** Format: int64 */
                                 progress_current: number;
                                 /** Format: int32 */
                                 progress_percent: number;
                                 /** Format: int64 */
                                 progress_total: number;
-                                result_json?: string | null;
+                                result?: null | components["schemas"]["TaskResult"];
                                 /** Format: int64 */
                                 share_id?: number | null;
                                 started_at?: string | null;
@@ -10970,14 +11050,14 @@ export interface operations {
                             last_error?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
-                            payload_json: string;
+                            payload: components["schemas"]["TaskPayload"];
                             /** Format: int64 */
                             progress_current: number;
                             /** Format: int32 */
                             progress_percent: number;
                             /** Format: int64 */
                             progress_total: number;
-                            result_json?: string | null;
+                            result?: null | components["schemas"]["TaskResult"];
                             /** Format: int64 */
                             share_id?: number | null;
                             started_at?: string | null;
@@ -11044,14 +11124,14 @@ export interface operations {
                             last_error?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
-                            payload_json: string;
+                            payload: components["schemas"]["TaskPayload"];
                             /** Format: int64 */
                             progress_current: number;
                             /** Format: int32 */
                             progress_percent: number;
                             /** Format: int64 */
                             progress_total: number;
-                            result_json?: string | null;
+                            result?: null | components["schemas"]["TaskResult"];
                             /** Format: int64 */
                             share_id?: number | null;
                             started_at?: string | null;
@@ -11424,7 +11504,7 @@ export interface operations {
                         code: components["schemas"]["ErrorCode"];
                         data?: {
                             items: {
-                                action: string;
+                                action: components["schemas"]["AuditAction"];
                                 actor_username: string;
                                 created_at: string;
                                 /** Format: int64 */
@@ -11818,14 +11898,14 @@ export interface operations {
                             last_error?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
-                            payload_json: string;
+                            payload: components["schemas"]["TaskPayload"];
                             /** Format: int64 */
                             progress_current: number;
                             /** Format: int32 */
                             progress_percent: number;
                             /** Format: int64 */
                             progress_total: number;
-                            result_json?: string | null;
+                            result?: null | components["schemas"]["TaskResult"];
                             /** Format: int64 */
                             share_id?: number | null;
                             started_at?: string | null;
@@ -13104,14 +13184,14 @@ export interface operations {
                             last_error?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
-                            payload_json: string;
+                            payload: components["schemas"]["TaskPayload"];
                             /** Format: int64 */
                             progress_current: number;
                             /** Format: int32 */
                             progress_percent: number;
                             /** Format: int64 */
                             progress_total: number;
-                            result_json?: string | null;
+                            result?: null | components["schemas"]["TaskResult"];
                             /** Format: int64 */
                             share_id?: number | null;
                             started_at?: string | null;
@@ -14339,13 +14419,10 @@ export interface operations {
                             download_count: number;
                             expires_at?: string | null;
                             /** Format: int64 */
-                            file_id?: number | null;
-                            /** Format: int64 */
-                            folder_id?: number | null;
-                            /** Format: int64 */
                             id: number;
                             /** Format: int64 */
                             max_downloads: number;
+                            target: components["schemas"]["ShareTarget"];
                             /** Format: int64 */
                             team_id?: number | null;
                             token: string;
@@ -14509,13 +14586,10 @@ export interface operations {
                             download_count: number;
                             expires_at?: string | null;
                             /** Format: int64 */
-                            file_id?: number | null;
-                            /** Format: int64 */
-                            folder_id?: number | null;
-                            /** Format: int64 */
                             id: number;
                             /** Format: int64 */
                             max_downloads: number;
+                            target: components["schemas"]["ShareTarget"];
                             /** Format: int64 */
                             team_id?: number | null;
                             token: string;
@@ -14599,14 +14673,14 @@ export interface operations {
                                 last_error?: string | null;
                                 /** Format: int32 */
                                 max_attempts: number;
-                                payload_json: string;
+                                payload: components["schemas"]["TaskPayload"];
                                 /** Format: int64 */
                                 progress_current: number;
                                 /** Format: int32 */
                                 progress_percent: number;
                                 /** Format: int64 */
                                 progress_total: number;
-                                result_json?: string | null;
+                                result?: null | components["schemas"]["TaskResult"];
                                 /** Format: int64 */
                                 share_id?: number | null;
                                 started_at?: string | null;
@@ -14682,14 +14756,14 @@ export interface operations {
                             last_error?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
-                            payload_json: string;
+                            payload: components["schemas"]["TaskPayload"];
                             /** Format: int64 */
                             progress_current: number;
                             /** Format: int32 */
                             progress_percent: number;
                             /** Format: int64 */
                             progress_total: number;
-                            result_json?: string | null;
+                            result?: null | components["schemas"]["TaskResult"];
                             /** Format: int64 */
                             share_id?: number | null;
                             started_at?: string | null;
@@ -14765,14 +14839,14 @@ export interface operations {
                             last_error?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
-                            payload_json: string;
+                            payload: components["schemas"]["TaskPayload"];
                             /** Format: int64 */
                             progress_current: number;
                             /** Format: int32 */
                             progress_percent: number;
                             /** Format: int64 */
                             progress_total: number;
-                            result_json?: string | null;
+                            result?: null | components["schemas"]["TaskResult"];
                             /** Format: int64 */
                             share_id?: number | null;
                             started_at?: string | null;

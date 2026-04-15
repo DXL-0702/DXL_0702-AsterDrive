@@ -6,9 +6,7 @@ use sea_orm::{
 
 use crate::entities::mail_outbox::{self, Entity as MailOutbox};
 use crate::errors::{AsterError, Result};
-use crate::types::MailOutboxStatus;
-
-const CLEARED_PAYLOAD_JSON: &str = "{}";
+use crate::types::{MailOutboxStatus, StoredMailPayload};
 
 pub async fn create<C: ConnectionTrait>(
     db: &C,
@@ -77,7 +75,7 @@ pub async fn mark_sent<C: ConnectionTrait>(
         )
         .col_expr(
             mail_outbox::Column::PayloadJson,
-            Expr::value(CLEARED_PAYLOAD_JSON),
+            Expr::value(StoredMailPayload::CLEARED_JSON),
         )
         .col_expr(mail_outbox::Column::UpdatedAt, Expr::value(sent_at))
         .filter(mail_outbox::Column::Id.eq(id))
@@ -152,7 +150,7 @@ pub async fn mark_failed<C: ConnectionTrait>(
         )
         .col_expr(
             mail_outbox::Column::PayloadJson,
-            Expr::value(CLEARED_PAYLOAD_JSON),
+            Expr::value(StoredMailPayload::CLEARED_JSON),
         )
         .col_expr(mail_outbox::Column::UpdatedAt, Expr::value(failed_at))
         .filter(mail_outbox::Column::Id.eq(id))

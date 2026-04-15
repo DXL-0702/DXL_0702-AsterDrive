@@ -494,7 +494,7 @@ vi.mock("@/services/adminService", () => ({
 
 function createPolicy(overrides: Record<string, unknown> = {}) {
 	return {
-		allowed_types: "[]",
+		allowed_types: [],
 		base_path: "",
 		bucket: "",
 		chunk_size: 5 * MB,
@@ -505,7 +505,7 @@ function createPolicy(overrides: Record<string, unknown> = {}) {
 		is_default: false,
 		max_file_size: 0,
 		name: "Local Policy",
-		options: "{}",
+		options: {},
 		updated_at: "2026-03-28T00:00:00Z",
 		...overrides,
 	};

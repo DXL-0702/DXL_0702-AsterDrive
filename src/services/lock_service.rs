@@ -1,6 +1,8 @@
+use std::io::Cursor;
+
 use chrono::{Duration, Utc};
 use sea_orm::{ConnectionTrait, Set};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
@@ -10,7 +12,42 @@ use crate::entities::resource_lock;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::folder_service;
-use crate::types::EntityType;
+use crate::types::{EntityType, StoredLockOwnerInfo};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct WopiLockOwnerInfo {
+    pub app_key: String,
+    pub lock: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct WebdavLockOwnerInfo {
+    pub xml: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct TextLockOwnerInfo {
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LegacyWopiLockOwnerPayload {
+    kind: String,
+    app_key: String,
+    lock: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ResourceLockOwnerInfo {
+    Wopi(WopiLockOwnerInfo),
+    Webdav(WebdavLockOwnerInfo),
+    Text(TextLockOwnerInfo),
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -21,7 +58,7 @@ pub struct ResourceLock {
     pub entity_id: i64,
     pub path: String,
     pub owner_id: Option<i64>,
-    pub owner_info: Option<String>,
+    pub owner_info: Option<ResourceLockOwnerInfo>,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = Option<String>))]
     pub timeout_at: Option<chrono::DateTime<chrono::Utc>>,
     pub shared: bool,
@@ -30,21 +67,25 @@ pub struct ResourceLock {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-impl From<resource_lock::Model> for ResourceLock {
-    fn from(model: resource_lock::Model) -> Self {
-        Self {
+impl TryFrom<resource_lock::Model> for ResourceLock {
+    type Error = AsterError;
+
+    fn try_from(model: resource_lock::Model) -> Result<Self> {
+        let owner_info = deserialize_resource_lock_owner_info(&model)?;
+
+        Ok(Self {
             id: model.id,
             token: model.token,
             entity_type: model.entity_type,
             entity_id: model.entity_id,
             path: model.path,
             owner_id: model.owner_id,
-            owner_info: model.owner_info,
+            owner_info,
             timeout_at: model.timeout_at,
             shared: model.shared,
             deep: model.deep,
             created_at: model.created_at,
-        }
+        })
     }
 }
 
@@ -54,7 +95,7 @@ pub async fn lock(
     entity_type: EntityType,
     entity_id: i64,
     owner_id: Option<i64>,
-    owner_info: Option<String>,
+    owner_info: Option<ResourceLockOwnerInfo>,
     timeout: Option<Duration>,
 ) -> Result<resource_lock::Model> {
     let db = &state.db;
@@ -84,7 +125,7 @@ pub async fn lock(
         entity_id: Set(entity_id),
         path: Set(path),
         owner_id: Set(owner_id),
-        owner_info: Set(owner_info),
+        owner_info: Set(serialize_resource_lock_owner_info(owner_info.as_ref())?),
         timeout_at: Set(timeout_at),
         shared: Set(false),
         deep: Set(false),
@@ -141,7 +182,11 @@ pub async fn list_paginated(
     load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (items, total) =
             crate::db::repository::lock_repo::find_paginated(&state.db, limit, offset).await?;
-        Ok((items.into_iter().map(Into::into).collect(), total))
+        let items = items
+            .into_iter()
+            .map(ResourceLock::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        Ok((items, total))
     })
     .await
 }
@@ -184,6 +229,64 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u64> {
 }
 
 // ── Internal helpers ────────────────────────────────────────────────
+
+pub(crate) fn serialize_resource_lock_owner_info(
+    owner_info: Option<&ResourceLockOwnerInfo>,
+) -> Result<Option<StoredLockOwnerInfo>> {
+    let Some(owner_info) = owner_info else {
+        return Ok(None);
+    };
+
+    let raw = match owner_info {
+        ResourceLockOwnerInfo::Wopi(payload) => {
+            serde_json::to_string(&LegacyWopiLockOwnerPayload {
+                kind: "wopi".to_string(),
+                app_key: payload.app_key.clone(),
+                lock: payload.lock.clone(),
+            })
+            .map_err(|error| {
+                AsterError::internal_error(format!(
+                    "serialize resource lock WOPI owner payload: {error}"
+                ))
+            })?
+        }
+        ResourceLockOwnerInfo::Webdav(payload) => payload.xml.clone(),
+        ResourceLockOwnerInfo::Text(payload) => payload.value.clone(),
+    };
+
+    Ok(Some(StoredLockOwnerInfo(raw)))
+}
+
+pub(crate) fn deserialize_resource_lock_owner_info(
+    lock: &resource_lock::Model,
+) -> Result<Option<ResourceLockOwnerInfo>> {
+    let Some(raw) = lock.owner_info.as_ref() else {
+        return Ok(None);
+    };
+    let raw = raw.as_ref();
+
+    if let Some(payload) = parse_wopi_owner_payload(raw) {
+        return Ok(Some(ResourceLockOwnerInfo::Wopi(payload)));
+    }
+
+    if xmltree::Element::parse(Cursor::new(raw.as_bytes())).is_ok() {
+        return Ok(Some(ResourceLockOwnerInfo::Webdav(WebdavLockOwnerInfo {
+            xml: raw.to_string(),
+        })));
+    }
+
+    Ok(Some(ResourceLockOwnerInfo::Text(TextLockOwnerInfo {
+        value: raw.to_string(),
+    })))
+}
+
+fn parse_wopi_owner_payload(raw: &str) -> Option<WopiLockOwnerInfo> {
+    let payload = serde_json::from_str::<LegacyWopiLockOwnerPayload>(raw).ok()?;
+    (payload.kind == "wopi").then_some(WopiLockOwnerInfo {
+        app_key: payload.app_key,
+        lock: payload.lock,
+    })
+}
 
 async fn do_unlock_by_entity(
     state: &AppState,
@@ -297,5 +400,73 @@ pub async fn resolve_entity_path(
                 Ok(format!("{path}/"))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_lock(owner_info: Option<StoredLockOwnerInfo>) -> resource_lock::Model {
+        resource_lock::Model {
+            id: 42,
+            token: "urn:uuid:test".to_string(),
+            entity_type: EntityType::File,
+            entity_id: 7,
+            path: "/docs/report.txt".to_string(),
+            owner_id: Some(9),
+            owner_info,
+            timeout_at: None,
+            shared: false,
+            deep: false,
+            created_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn serializes_and_deserializes_wopi_owner_payload() {
+        let owner_info = ResourceLockOwnerInfo::Wopi(WopiLockOwnerInfo {
+            app_key: "collabora".to_string(),
+            lock: "lock-123".to_string(),
+        });
+        let stored = serialize_resource_lock_owner_info(Some(&owner_info))
+            .expect("wopi payload should serialize")
+            .expect("stored owner info should exist");
+        let parsed = deserialize_resource_lock_owner_info(&sample_lock(Some(stored)))
+            .expect("wopi payload should deserialize");
+
+        assert_eq!(parsed, Some(owner_info));
+    }
+
+    #[test]
+    fn deserializes_webdav_xml_owner_payload() {
+        let parsed = deserialize_resource_lock_owner_info(&sample_lock(Some(StoredLockOwnerInfo(
+            "<D:owner xmlns:D=\"DAV:\"><D:href>mailto:test@example.com</D:href></D:owner>"
+                .to_string(),
+        ))))
+        .expect("xml owner payload should deserialize");
+
+        assert_eq!(
+            parsed,
+            Some(ResourceLockOwnerInfo::Webdav(WebdavLockOwnerInfo {
+                xml: "<D:owner xmlns:D=\"DAV:\"><D:href>mailto:test@example.com</D:href></D:owner>"
+                    .to_string(),
+            }))
+        );
+    }
+
+    #[test]
+    fn falls_back_to_text_owner_payload() {
+        let parsed = deserialize_resource_lock_owner_info(&sample_lock(Some(StoredLockOwnerInfo(
+            "user@example.com".to_string(),
+        ))))
+        .expect("text owner payload should deserialize");
+
+        assert_eq!(
+            parsed,
+            Some(ResourceLockOwnerInfo::Text(TextLockOwnerInfo {
+                value: "user@example.com".to_string(),
+            }))
+        );
     }
 }

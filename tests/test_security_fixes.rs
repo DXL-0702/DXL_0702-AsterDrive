@@ -235,7 +235,9 @@ async fn test_share_download_304_does_not_increment_count() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "file_id": file_id }))
+        .set_json(serde_json::json!({
+            "target": { "type": "file", "id": file_id }
+        }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);

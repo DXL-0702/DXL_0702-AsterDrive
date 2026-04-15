@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::types::DriverType;
+use crate::types::{DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -21,9 +21,11 @@ pub struct Model {
     #[serde(skip_serializing)]
     pub secret_key: String,
     pub base_path: String,
-    pub max_file_size: i64,    // 0 = unlimited
-    pub allowed_types: String, // JSON array
-    pub options: String,       // JSON object
+    pub max_file_size: i64, // 0 = unlimited
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub allowed_types: StoredStoragePolicyAllowedTypes, // JSON array
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub options: StoredStoragePolicyOptions, // JSON object
     pub is_default: bool,
     pub chunk_size: i64, // 0 = single upload, >0 = chunk size in bytes
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]

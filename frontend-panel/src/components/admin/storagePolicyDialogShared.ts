@@ -5,11 +5,13 @@ import {
 import type {
 	CreatePolicyRequest,
 	DriverType,
+	S3UploadStrategy,
 	StoragePolicy,
+	StoragePolicyOptions,
 	UpdatePolicyRequest,
 } from "@/types/api";
 
-export type S3UploadStrategy = "relay_stream" | "presigned";
+export type { S3UploadStrategy } from "@/types/api";
 
 export interface PolicyFormData {
 	name: string;
@@ -26,62 +28,24 @@ export interface PolicyFormData {
 	s3_upload_strategy: S3UploadStrategy;
 }
 
-interface PolicyOptions {
-	content_dedup?: boolean;
-	presigned_upload?: boolean;
-	s3_upload_strategy?: S3UploadStrategy;
-}
-
-export function isS3UploadStrategy(value: unknown): value is S3UploadStrategy {
-	return value === "relay_stream" || value === "presigned";
-}
-
-export function parsePolicyOptions(options: string): PolicyOptions {
-	try {
-		const parsed = JSON.parse(options) as {
-			content_dedup?: unknown;
-			presigned_upload?: unknown;
-			s3_upload_strategy?: unknown;
-		};
-		return {
-			content_dedup:
-				typeof parsed.content_dedup === "boolean"
-					? parsed.content_dedup
-					: undefined,
-			presigned_upload:
-				typeof parsed.presigned_upload === "boolean"
-					? parsed.presigned_upload
-					: undefined,
-			s3_upload_strategy: isS3UploadStrategy(parsed.s3_upload_strategy)
-				? parsed.s3_upload_strategy
-				: undefined,
-		};
-	} catch {
-		return {};
-	}
-}
-
 export function getEffectiveS3UploadStrategy(
-	options: PolicyOptions,
+	options: StoragePolicyOptions,
 ): S3UploadStrategy {
-	if (options.s3_upload_strategy) {
-		return options.s3_upload_strategy;
-	}
-	return options.presigned_upload ? "presigned" : "relay_stream";
+	return options.s3_upload_strategy ?? "relay_stream";
 }
 
-export function buildPolicyOptions(form: PolicyFormData): string {
+export function buildPolicyOptions(form: PolicyFormData): StoragePolicyOptions {
 	if (form.driver_type === "local") {
-		return JSON.stringify(form.content_dedup ? { content_dedup: true } : {});
+		return form.content_dedup ? { content_dedup: true } : {};
 	}
 
-	return JSON.stringify({
+	return {
 		s3_upload_strategy: form.s3_upload_strategy,
-	});
+	};
 }
 
 export function getPolicyForm(policy: StoragePolicy): PolicyFormData {
-	const options = parsePolicyOptions(policy.options);
+	const options = policy.options;
 
 	return {
 		name: policy.name,

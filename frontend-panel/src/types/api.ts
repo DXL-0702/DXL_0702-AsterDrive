@@ -63,8 +63,10 @@ export type ShareInfo = components["schemas"]["ShareInfo"];
 export type SharePage = components["schemas"]["OffsetPage_MyShareInfo"];
 export type SharePublicInfo = components["schemas"]["SharePublicInfo"];
 export type ShareStatus = components["schemas"]["ShareStatus"];
+export type ShareTarget = components["schemas"]["ShareTarget"];
 
 // Admin, storage, and WebDAV
+export type AuditAction = components["schemas"]["AuditAction"];
 export type AuditLogEntry = components["schemas"]["AuditLogEntry"];
 export type AuditLogPage = components["schemas"]["OffsetPage_AuditLogEntry"];
 export type AdminOverview = components["schemas"]["AdminOverview"];
@@ -88,6 +90,11 @@ export type CreatePolicyGroupRequest =
 export type CreatePolicyRequest = components["schemas"]["CreatePolicyReq"];
 export type DriverType = components["schemas"]["DriverType"];
 export type LockPage = components["schemas"]["OffsetPage_ResourceLock"];
+export type ResourceLockOwnerInfo =
+	components["schemas"]["ResourceLockOwnerInfo"];
+export type S3UploadStrategy = components["schemas"]["S3UploadStrategy"];
+export type StoragePolicyOptions =
+	components["schemas"]["StoragePolicyOptions"];
 export type MigratePolicyGroupUsersRequest =
 	components["schemas"]["MigratePolicyGroupUsersReq"];
 export type PolicyGroupItemRequest =
@@ -132,6 +139,9 @@ export type PublicPreviewAppsConfig =
 	components["schemas"]["PublicPreviewAppsConfig"];
 export type SystemConfig = components["schemas"]["SystemConfig"];
 export type SystemConfigPage = components["schemas"]["OffsetPage_SystemConfig"];
+export type SystemConfigSource = components["schemas"]["SystemConfigSource"];
+export type SystemConfigValueType =
+	components["schemas"]["SystemConfigValueType"];
 export type WebdavAccount = components["schemas"]["WebdavAccount"];
 export type WebdavAccountCreated =
 	components["schemas"]["WebdavAccountCreated"];
@@ -153,6 +163,8 @@ export type UpdateTeamMemberRequest =
 export type UpdateTeamRequest = components["schemas"]["PatchTeamReq"];
 export type TaskStepStatus = components["schemas"]["TaskStepStatus"];
 export type TaskStepInfo = components["schemas"]["TaskStepInfo"];
+export type TaskPayload = components["schemas"]["TaskPayload"];
+export type TaskResult = components["schemas"]["TaskResult"];
 export type TaskInfo = components["schemas"]["TaskInfo"];
 export type TaskPage = components["schemas"]["OffsetPage_TaskInfo"];
 

@@ -17,7 +17,7 @@ describe("auditService", () => {
 	it("builds filtered audit log queries and omits empty values", () => {
 		auditService.list({
 			user_id: 7,
-			action: "login",
+			action: "user_login",
 			entity_type: "",
 			entity_id: 9,
 			after: "2026-01-01T00:00:00Z",
@@ -27,7 +27,7 @@ describe("auditService", () => {
 		});
 
 		expect(apiGet).toHaveBeenCalledWith(
-			"/admin/audit-logs?limit=20&offset=40&user_id=7&action=login&entity_id=9&after=2026-01-01T00%3A00%3A00Z",
+			"/admin/audit-logs?limit=20&offset=40&user_id=7&action=user_login&entity_id=9&after=2026-01-01T00%3A00%3A00Z",
 		);
 	});
 

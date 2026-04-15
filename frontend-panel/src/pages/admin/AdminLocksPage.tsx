@@ -27,6 +27,21 @@ import { formatDateShort } from "@/lib/format";
 import type { WebdavLock } from "@/services/adminService";
 import { adminLockService } from "@/services/adminService";
 
+function formatLockOwnerInfo(lock: WebdavLock) {
+	if (!lock.owner_info) {
+		return lock.owner_id != null ? `#${lock.owner_id}` : "-";
+	}
+
+	switch (lock.owner_info.kind) {
+		case "wopi":
+			return `WOPI (${lock.owner_info.app_key})`;
+		case "webdav":
+			return lock.owner_info.xml;
+		case "text":
+			return lock.owner_info.value;
+	}
+}
+
 export default function AdminLocksPage() {
 	const { t } = useTranslation("admin");
 	usePageTitle(t("webdav_locks"));
@@ -111,7 +126,7 @@ export default function AdminLocksPage() {
 								{l.path}
 							</TableCell>
 							<TableCell className="text-xs">
-								{l.owner_info ?? (l.owner_id != null ? `#${l.owner_id}` : "-")}
+								{formatLockOwnerInfo(l)}
 							</TableCell>
 							<TableCell>
 								<div className="flex gap-1">

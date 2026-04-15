@@ -470,7 +470,7 @@ vi.mock("@/services/adminService", () => ({
 
 function createPolicy(overrides: Record<string, unknown> = {}) {
 	return {
-		allowed_types: "",
+		allowed_types: [],
 		base_path: "",
 		bucket: "",
 		chunk_size: 5 * 1024 * 1024,
@@ -481,7 +481,7 @@ function createPolicy(overrides: Record<string, unknown> = {}) {
 		is_default: false,
 		max_file_size: 0,
 		name: "Local Policy",
-		options: "{}",
+		options: {},
 		updated_at: "2026-03-28T00:00:00Z",
 		...overrides,
 	};
@@ -670,7 +670,7 @@ describe("AdminPoliciesPage", () => {
 				is_default: true,
 				max_file_size: 2048,
 				name: "Primary Local",
-				options: JSON.stringify({}),
+				options: {},
 				secret_key: "",
 			});
 		});
@@ -883,7 +883,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "archive",
 				base_path: "tenant-a",
 				max_file_size: 4096,
-				options: JSON.stringify({ s3_upload_strategy: "presigned" }),
+				options: { s3_upload_strategy: "presigned" },
 			}),
 		];
 
@@ -965,7 +965,7 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: 4096,
 				name: "Archive S3 Updated",
-				options: JSON.stringify({ s3_upload_strategy: "relay_stream" }),
+				options: { s3_upload_strategy: "relay_stream" },
 			}),
 		);
 		expect(payload).toHaveProperty("access_key", "NEWKEY");
@@ -980,7 +980,7 @@ describe("AdminPoliciesPage", () => {
 				name: "Dedup Local",
 				driver_type: "local",
 				base_path: "/srv/dedup",
-				options: JSON.stringify({ content_dedup: true }),
+				options: { content_dedup: true },
 			}),
 		];
 
@@ -1002,7 +1002,7 @@ describe("AdminPoliciesPage", () => {
 			expect(mockState.update).toHaveBeenCalledWith(
 				11,
 				expect.objectContaining({
-					options: JSON.stringify({}),
+					options: {},
 				}),
 			);
 		});
@@ -1046,7 +1046,7 @@ describe("AdminPoliciesPage", () => {
 		).toBeInTheDocument();
 	});
 
-	it("displays legacy presigned_upload true as presigned strategy", async () => {
+	it("displays presigned strategy from structured options", async () => {
 		mockState.items = [
 			createPolicy({
 				id: 10,
@@ -1055,7 +1055,7 @@ describe("AdminPoliciesPage", () => {
 				endpoint: "https://s3.example.com",
 				bucket: "legacy-bucket",
 				base_path: "legacy-path",
-				options: JSON.stringify({ presigned_upload: true }),
+				options: { s3_upload_strategy: "presigned" },
 			}),
 		];
 
@@ -1092,7 +1092,7 @@ describe("AdminPoliciesPage", () => {
 			expect(mockState.update).toHaveBeenCalledWith(
 				10,
 				expect.objectContaining({
-					options: JSON.stringify({ s3_upload_strategy: "presigned" }),
+					options: { s3_upload_strategy: "presigned" },
 				}),
 			);
 		});
@@ -1116,7 +1116,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "relay-bucket",
 				base_path: "tenant-relay",
 				max_file_size: 4096,
-				options: JSON.stringify({ s3_upload_strategy: "relay_stream" }),
+				options: { s3_upload_strategy: "relay_stream" },
 			}),
 		];
 
@@ -1167,7 +1167,7 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: 4096,
 				name: "Relay S3",
-				options: JSON.stringify({ s3_upload_strategy: "relay_stream" }),
+				options: { s3_upload_strategy: "relay_stream" },
 			}),
 		);
 		expect(payload).not.toHaveProperty("secret_key");
@@ -1184,7 +1184,7 @@ describe("AdminPoliciesPage", () => {
 				bucket: "direct-put",
 				max_file_size: 0,
 				chunk_size: 0,
-				options: JSON.stringify({ s3_upload_strategy: "presigned" }),
+				options: { s3_upload_strategy: "presigned" },
 			}),
 		];
 
@@ -1250,7 +1250,7 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: undefined,
 				name: "Broken S3",
-				options: JSON.stringify({ s3_upload_strategy: "relay_stream" }),
+				options: { s3_upload_strategy: "relay_stream" },
 				secret_key: "",
 			});
 		});

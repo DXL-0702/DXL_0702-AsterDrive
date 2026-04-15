@@ -43,7 +43,7 @@ fn relay_stream_direct_upload_eligible(
         return false;
     }
 
-    let options = parse_storage_policy_options(&policy.options);
+    let options = parse_storage_policy_options(policy.options.as_ref());
     if options.effective_s3_upload_strategy() != S3UploadStrategy::RelayStream {
         return false;
     }

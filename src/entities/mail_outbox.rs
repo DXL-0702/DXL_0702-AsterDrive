@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
-use crate::types::{MailOutboxStatus, MailTemplateCode};
+use crate::types::{MailOutboxStatus, MailTemplateCode, StoredMailPayload};
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -14,7 +14,8 @@ pub struct Model {
     pub template_code: MailTemplateCode,
     pub to_address: String,
     pub to_name: Option<String>,
-    pub payload_json: String,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub payload_json: StoredMailPayload,
     pub status: MailOutboxStatus,
     pub attempt_count: i32,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]

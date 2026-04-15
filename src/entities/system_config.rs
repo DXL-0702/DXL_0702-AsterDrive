@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
+use crate::types::{SystemConfigSource, SystemConfigValueType};
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(as = SystemConfig))]
@@ -15,7 +17,7 @@ pub struct Model {
     pub value: String,
     /// 值类型：string / multiline / number / boolean
     #[serde(default = "default_value_type")]
-    pub value_type: String,
+    pub value_type: SystemConfigValueType,
     /// 修改后是否需要重启才生效
     #[serde(default)]
     pub requires_restart: bool,
@@ -24,7 +26,7 @@ pub struct Model {
     pub is_sensitive: bool,
     /// 来源：system（代码定义）/ custom（用户创建）
     #[serde(default = "default_source")]
-    pub source: String,
+    pub source: SystemConfigSource,
     /// 自定义配置的命名空间，系统配置为 ""
     #[serde(default)]
     pub namespace: String,
@@ -39,12 +41,12 @@ pub struct Model {
     pub updated_by: Option<i64>,
 }
 
-fn default_value_type() -> String {
-    "string".to_string()
+fn default_value_type() -> SystemConfigValueType {
+    SystemConfigValueType::String
 }
 
-fn default_source() -> String {
-    "system".to_string()
+fn default_source() -> SystemConfigSource {
+    SystemConfigSource::System
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

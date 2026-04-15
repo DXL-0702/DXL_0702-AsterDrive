@@ -231,7 +231,9 @@ async fn test_team_space_upload_browse_download_and_personal_separation() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
         .insert_header(common::csrf_header_for(&owner_token))
-        .set_json(serde_json::json!({ "file_id": file_id }))
+        .set_json(serde_json::json!({
+            "target": { "type": "file", "id": file_id }
+        }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
@@ -1361,7 +1363,7 @@ async fn test_team_shares_support_public_folder_access_and_team_management() {
         .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
         .insert_header(common::csrf_header_for(&owner_token))
         .set_json(serde_json::json!({
-            "folder_id": docs_id,
+            "target": { "type": "folder", "id": docs_id },
             "password": "secret123",
             "max_downloads": 2
         }))
@@ -2633,7 +2635,9 @@ async fn test_team_share_batch_delete_preserves_partial_failures() {
         .uri(&format!("/api/v1/teams/{team_id}/shares"))
         .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
         .insert_header(common::csrf_header_for(&owner_token))
-        .set_json(serde_json::json!({ "file_id": file_id }))
+        .set_json(serde_json::json!({
+            "target": { "type": "file", "id": file_id }
+        }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);

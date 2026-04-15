@@ -31,7 +31,7 @@ pub(crate) async fn load_storage_limits(
 
 pub(crate) fn local_content_dedup_enabled(policy: &crate::entities::storage_policy::Model) -> bool {
     policy.driver_type == DriverType::Local
-        && parse_storage_policy_options(&policy.options)
+        && parse_storage_policy_options(policy.options.as_ref())
             .content_dedup
             .unwrap_or(false)
 }

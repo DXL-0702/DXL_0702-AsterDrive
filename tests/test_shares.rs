@@ -6,6 +6,20 @@ use actix_web::test;
 use serde_json::Value;
 use std::io::Cursor;
 
+fn file_target(id: i64) -> Value {
+    serde_json::json!({
+        "type": "file",
+        "id": id,
+    })
+}
+
+fn folder_target(id: i64) -> Value {
+    serde_json::json!({
+        "type": "folder",
+        "id": id,
+    })
+}
+
 fn tiny_png() -> Vec<u8> {
     let mut buf = Cursor::new(Vec::new());
     let encoder = image::codecs::png::PngEncoder::new(&mut buf);
@@ -81,7 +95,7 @@ async fn test_shares_crud() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "file_id": file_id }))
+        .set_json(serde_json::json!({ "target": file_target(file_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -159,7 +173,7 @@ async fn test_shared_thumbnail_returns_304_for_matching_if_none_match() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "file_id": file_id }))
+        .set_json(serde_json::json!({ "target": file_target(file_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -218,7 +232,7 @@ async fn test_share_update_replaces_password_and_limits_without_changing_token()
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "file_id": file_id,
+            "target": file_target(file_id),
             "password": "secret123",
             "max_downloads": 5
         }))
@@ -315,7 +329,7 @@ async fn test_share_password() {
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "file_id": file_id,
+            "target": file_target(file_id),
             "password": "secret123"
         }))
         .to_request();
@@ -384,7 +398,7 @@ async fn test_share_verify_cookie_scoped_and_secure_when_enabled() {
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "file_id": file_id,
+            "target": file_target(file_id),
             "password": "secret123"
         }))
         .to_request();
@@ -424,7 +438,7 @@ async fn test_duplicate_active_share_rejected() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "file_id": file_id }))
+        .set_json(serde_json::json!({ "target": file_target(file_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -433,7 +447,7 @@ async fn test_duplicate_active_share_rejected() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "file_id": file_id }))
+        .set_json(serde_json::json!({ "target": file_target(file_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
@@ -452,7 +466,7 @@ async fn test_share_batch_delete_removes_multiple_shares() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "file_id": file_one }))
+        .set_json(serde_json::json!({ "target": file_target(file_one) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -464,7 +478,7 @@ async fn test_share_batch_delete_removes_multiple_shares() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "file_id": file_two }))
+        .set_json(serde_json::json!({ "target": file_target(file_two) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -518,7 +532,7 @@ async fn test_share_batch_delete_preserves_partial_failures_for_foreign_and_miss
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
         .insert_header(common::csrf_header_for(&owner_token))
-        .set_json(serde_json::json!({ "file_id": owner_file }))
+        .set_json(serde_json::json!({ "target": file_target(owner_file) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -558,7 +572,7 @@ async fn test_share_batch_delete_preserves_partial_failures_for_foreign_and_miss
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&other_token)))
         .insert_header(common::csrf_header_for(&other_token))
-        .set_json(serde_json::json!({ "file_id": other_file }))
+        .set_json(serde_json::json!({ "target": file_target(other_file) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -635,7 +649,7 @@ async fn test_share_download_limit() {
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "file_id": file_id,
+            "target": file_target(file_id),
             "max_downloads": 1
         }))
         .to_request();
@@ -696,7 +710,7 @@ async fn test_share_folder() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "folder_id": folder_id }))
+        .set_json(serde_json::json!({ "target": folder_target(folder_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -742,7 +756,7 @@ async fn test_password_protected_share_preview_link_requires_cookie_but_does_not
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "file_id": file_id,
+            "target": file_target(file_id),
             "password": "secret123"
         }))
         .to_request();
@@ -818,7 +832,7 @@ async fn test_folder_share_file_preview_link_supports_public_inline_access() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "folder_id": folder_id }))
+        .set_json(serde_json::json!({ "target": folder_target(folder_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -877,7 +891,7 @@ async fn test_public_share_info_prefers_display_name_and_exposes_gravatar_avatar
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "file_id": file_id }))
+        .set_json(serde_json::json!({ "target": file_target(file_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -928,7 +942,7 @@ async fn test_share_avatar_route_serves_uploaded_avatar_and_requires_password_co
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "file_id": file_id,
+            "target": file_target(file_id),
             "password": "secret123"
         }))
         .to_request();
@@ -989,7 +1003,7 @@ async fn test_expired_share_public_endpoints_rejected() {
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "file_id": file_id,
+            "target": file_target(file_id),
             "expires_at": "2000-01-01T00:00:00Z"
         }))
         .to_request();
@@ -1068,7 +1082,7 @@ async fn test_folder_share_deleted_child_resource_rejected() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "folder_id": root_id }))
+        .set_json(serde_json::json!({ "target": folder_target(root_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -1118,7 +1132,7 @@ async fn test_share_type_mismatch_rejected() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "file_id": file_id }))
+        .set_json(serde_json::json!({ "target": file_target(file_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -1144,7 +1158,7 @@ async fn test_share_type_mismatch_rejected() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "folder_id": folder_id }))
+        .set_json(serde_json::json!({ "target": folder_target(folder_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -1170,7 +1184,7 @@ async fn test_share_forged_cookie_rejected() {
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "file_id": file_id,
+            "target": file_target(file_id),
             "password": "secret"
         }))
         .to_request();
@@ -1232,7 +1246,7 @@ async fn test_my_shares_list_deleted_and_expired_status() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "file_id": active_file_id }))
+        .set_json(serde_json::json!({ "target": file_target(active_file_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -1252,7 +1266,7 @@ async fn test_my_shares_list_deleted_and_expired_status() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "folder_id": deleted_folder_id }))
+        .set_json(serde_json::json!({ "target": folder_target(deleted_folder_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
@@ -1271,7 +1285,7 @@ async fn test_my_shares_list_deleted_and_expired_status() {
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .set_json(serde_json::json!({
-            "file_id": expired_file_id,
+            "target": file_target(expired_file_id),
             "expires_at": "2000-01-01T00:00:00Z"
         }))
         .to_request();
@@ -1351,7 +1365,7 @@ async fn test_share_folder_deep_scope_and_outside_access() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "folder_id": root_id }))
+        .set_json(serde_json::json!({ "target": folder_target(root_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     let body: Value = test::read_body_json(resp).await;
@@ -1428,7 +1442,7 @@ async fn test_share_folder_subfolder_navigation() {
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
-        .set_json(serde_json::json!({ "folder_id": root_id }))
+        .set_json(serde_json::json!({ "target": folder_target(root_id) }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);

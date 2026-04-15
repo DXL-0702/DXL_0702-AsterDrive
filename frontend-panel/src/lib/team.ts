@@ -1,4 +1,8 @@
-import type { TeamAuditEntryInfo, TeamMemberRole } from "@/types/api";
+import type {
+	AuditAction,
+	TeamAuditEntryInfo,
+	TeamMemberRole,
+} from "@/types/api";
 
 export function isTeamManager(role: TeamMemberRole | null | undefined) {
 	return role === "owner" || role === "admin";
@@ -35,7 +39,7 @@ export function formatTeamAuditSummary(
 		return null;
 	}
 
-	if (entry.action === "team_member_update") {
+	if (entry.action === TEAM_MEMBER_UPDATE_ACTION) {
 		if (entry.previous_role && entry.next_role) {
 			return `@${entry.member_username} · ${roleLabel(entry.previous_role)} -> ${roleLabel(entry.next_role)}`;
 		}
@@ -49,3 +53,5 @@ export function formatTeamAuditSummary(
 
 	return `@${entry.member_username}`;
 }
+
+const TEAM_MEMBER_UPDATE_ACTION: AuditAction = "team_member_update";

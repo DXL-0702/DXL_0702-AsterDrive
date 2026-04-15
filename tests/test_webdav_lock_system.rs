@@ -159,7 +159,13 @@ async fn test_db_lock_system_replaces_expired_locks_and_rejects_active_conflicts
         EntityType::File,
         file.id,
         Some(user.id),
-        Some("expired".to_string()),
+        Some(
+            aster_drive::services::lock_service::ResourceLockOwnerInfo::Text(
+                aster_drive::services::lock_service::TextLockOwnerInfo {
+                    value: "expired".to_string(),
+                },
+            ),
+        ),
         Some(ChronoDuration::seconds(-1)),
     )
     .await

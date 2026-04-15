@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
+use crate::types::AuditAction;
+
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(as = AuditLogEntry))]
@@ -11,7 +13,7 @@ pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i64,
     pub user_id: i64,
-    pub action: String,
+    pub action: AuditAction,
     pub entity_type: Option<String>,
     pub entity_id: Option<i64>,
     pub entity_name: Option<String>,

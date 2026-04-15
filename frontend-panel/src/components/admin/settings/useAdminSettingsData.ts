@@ -12,6 +12,7 @@ import {
 	getMailTemplateGroupId,
 	getMailTemplateGroupOrderIndex,
 	getSubcategoryGroupKey,
+	isSystemConfigSource,
 	type NewCustomDraft,
 	normalizeCategory,
 	normalizeSubcategory,
@@ -250,7 +251,7 @@ export function useAdminSettingsData({
 	const systemConfigs = useMemo(
 		() =>
 			configs
-				.filter((config) => config.source === "system")
+				.filter((config) => isSystemConfigSource(config.source))
 				.sort(sortConfigsByKey),
 		[configs],
 	);
@@ -258,7 +259,7 @@ export function useAdminSettingsData({
 	const customConfigs = useMemo(
 		() =>
 			configs
-				.filter((config) => config.source !== "system")
+				.filter((config) => !isSystemConfigSource(config.source))
 				.sort(sortConfigsByKey),
 		[configs],
 	);

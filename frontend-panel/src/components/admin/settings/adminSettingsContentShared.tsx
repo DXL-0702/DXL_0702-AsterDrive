@@ -9,7 +9,11 @@ import {
 import { CodePreviewEditor } from "@/components/files/preview/CodePreviewEditor";
 import { Icon } from "@/components/ui/icon";
 import { cn } from "@/lib/utils";
-import type { SystemConfig } from "@/types/api";
+import type {
+	SystemConfig,
+	SystemConfigSource,
+	SystemConfigValueType,
+} from "@/types/api";
 
 const TEMPLATE_GROUP_EXPAND_DURATION_MS = 280;
 const TEMPLATE_GROUP_COLLAPSE_DURATION_MS = 240;
@@ -188,12 +192,20 @@ export function getConfigValueType(config: SystemConfig) {
 	return config.value_type ?? "string";
 }
 
-export function isNumberType(valueType: string) {
+export function isBooleanType(valueType: SystemConfigValueType) {
+	return valueType === "boolean";
+}
+
+export function isNumberType(valueType: SystemConfigValueType) {
 	return valueType === "number";
 }
 
-export function isMultilineType(valueType: string) {
+export function isMultilineType(valueType: SystemConfigValueType) {
 	return valueType === "multiline";
+}
+
+export function isSystemConfigSource(source: SystemConfigSource) {
+	return source === "system";
 }
 
 export function isBrandingAssetConfig(config: SystemConfig) {

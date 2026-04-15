@@ -13,7 +13,9 @@ use crate::entities::{contact_verification_token, user};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{mail_outbox_service, mail_service, mail_template::MailTemplatePayload};
-use crate::types::{TokenType, UserRole, UserStatus, VerificationChannel, VerificationPurpose};
+use crate::types::{
+    StoredUserConfig, TokenType, UserRole, UserStatus, VerificationChannel, VerificationPurpose,
+};
 use crate::utils::hash;
 
 pub const AUTH_SNAPSHOT_TTL: u64 = 30; // 秒
@@ -65,7 +67,7 @@ pub struct AuthUserInfo {
     pub policy_group_id: Option<i64>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
-    pub config: Option<String>,
+    pub config: Option<StoredUserConfig>,
 }
 
 impl From<user::Model> for AuthUserInfo {

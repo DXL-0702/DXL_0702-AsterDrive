@@ -2,7 +2,6 @@ use actix_web::HttpRequest;
 use chrono::{DateTime, Duration, Utc};
 use sea_orm::Set;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
@@ -12,6 +11,7 @@ use crate::entities::audit_log;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::auth_service::Claims;
+pub use crate::types::AuditAction;
 use crate::types::{TeamMemberRole, UserRole, UserStatus};
 use std::collections::{HashMap, HashSet};
 
@@ -22,137 +22,6 @@ pub struct AuditContext {
     pub user_id: i64,
     pub ip_address: Option<String>,
     pub user_agent: Option<String>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AuditAction {
-    AdminCreateUser,
-    AdminCreateTeam,
-    AdminCreatePolicyGroup,
-    AdminArchiveTeam,
-    AdminRestoreTeam,
-    AdminRevokeUserSessions,
-    AdminResetUserPassword,
-    AdminUpdateTeam,
-    AdminUpdateUser,
-    AdminDeletePolicyGroup,
-    AdminMigratePolicyGroupUsers,
-    AdminUpdatePolicyGroup,
-    BatchCopy,
-    BatchDelete,
-    BatchMove,
-    ConfigActionExecute,
-    ConfigUpdate,
-    FileCopy,
-    FileDelete,
-    FileDownload,
-    FileEdit,
-    FileMove,
-    FileRename,
-    FileUpload,
-    FolderCopy,
-    FolderCreate,
-    FolderDelete,
-    FolderMove,
-    FolderPolicyChange,
-    FolderRename,
-    ShareBatchDelete,
-    ShareCreate,
-    ShareDelete,
-    ShareUpdate,
-    SystemSetup,
-    TeamArchive,
-    TeamCleanupExpired,
-    TeamCreate,
-    TeamMemberAdd,
-    TeamMemberRemove,
-    TeamMemberUpdate,
-    TeamRestore,
-    TeamUpdate,
-    UserChangePassword,
-    UserConfirmPasswordReset,
-    UserConfirmEmailChange,
-    UserConfirmRegistration,
-    UserLogin,
-    UserLogout,
-    UserRequestEmailChange,
-    UserRequestPasswordReset,
-    UserRegister,
-    UserResendEmailChange,
-    UserResendRegistration,
-}
-
-impl AuditAction {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::AdminCreateUser => "admin_create_user",
-            Self::AdminCreateTeam => "admin_create_team",
-            Self::AdminCreatePolicyGroup => "admin_create_policy_group",
-            Self::AdminArchiveTeam => "admin_archive_team",
-            Self::AdminRestoreTeam => "admin_restore_team",
-            Self::AdminRevokeUserSessions => "admin_revoke_user_sessions",
-            Self::AdminResetUserPassword => "admin_reset_user_password",
-            Self::AdminUpdateTeam => "admin_update_team",
-            Self::AdminUpdateUser => "admin_update_user",
-            Self::AdminDeletePolicyGroup => "admin_delete_policy_group",
-            Self::AdminMigratePolicyGroupUsers => "admin_migrate_policy_group_users",
-            Self::AdminUpdatePolicyGroup => "admin_update_policy_group",
-            Self::BatchCopy => "batch_copy",
-            Self::BatchDelete => "batch_delete",
-            Self::BatchMove => "batch_move",
-            Self::ConfigActionExecute => "config_action_execute",
-            Self::ConfigUpdate => "config_update",
-            Self::FileCopy => "file_copy",
-            Self::FileDelete => "file_delete",
-            Self::FileDownload => "file_download",
-            Self::FileEdit => "file_edit",
-            Self::FileMove => "file_move",
-            Self::FileRename => "file_rename",
-            Self::FileUpload => "file_upload",
-            Self::FolderCopy => "folder_copy",
-            Self::FolderCreate => "folder_create",
-            Self::FolderDelete => "folder_delete",
-            Self::FolderMove => "folder_move",
-            Self::FolderPolicyChange => "folder_policy_change",
-            Self::FolderRename => "folder_rename",
-            Self::ShareBatchDelete => "share_batch_delete",
-            Self::ShareCreate => "share_create",
-            Self::ShareDelete => "share_delete",
-            Self::ShareUpdate => "share_update",
-            Self::SystemSetup => "system_setup",
-            Self::TeamArchive => "team_archive",
-            Self::TeamCleanupExpired => "team_cleanup_expired",
-            Self::TeamCreate => "team_create",
-            Self::TeamMemberAdd => "team_member_add",
-            Self::TeamMemberRemove => "team_member_remove",
-            Self::TeamMemberUpdate => "team_member_update",
-            Self::TeamRestore => "team_restore",
-            Self::TeamUpdate => "team_update",
-            Self::UserChangePassword => "user_change_password",
-            Self::UserConfirmPasswordReset => "user_confirm_password_reset",
-            Self::UserConfirmEmailChange => "user_confirm_email_change",
-            Self::UserConfirmRegistration => "user_confirm_registration",
-            Self::UserLogin => "user_login",
-            Self::UserLogout => "user_logout",
-            Self::UserRequestEmailChange => "user_request_email_change",
-            Self::UserRequestPasswordReset => "user_request_password_reset",
-            Self::UserRegister => "user_register",
-            Self::UserResendEmailChange => "user_resend_email_change",
-            Self::UserResendRegistration => "user_resend_registration",
-        }
-    }
-}
-
-impl AsRef<str> for AuditAction {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl fmt::Display for AuditAction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
 }
 
 #[derive(Deserialize)]
@@ -201,7 +70,7 @@ impl AuditLogFilters {
 pub struct AuditLogEntry {
     pub id: i64,
     pub user_id: i64,
-    pub action: String,
+    pub action: AuditAction,
     pub entity_type: Option<String>,
     pub entity_id: Option<i64>,
     pub entity_name: Option<String>,
@@ -361,7 +230,7 @@ pub struct TeamMemberRemoveAuditDetails<'a> {
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
 pub struct TeamAuditEntryInfo {
     pub id: i64,
-    pub action: String,
+    pub action: AuditAction,
     pub actor_username: String,
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub created_at: DateTime<Utc>,
@@ -433,7 +302,7 @@ pub async fn log(
     let model = audit_log::ActiveModel {
         id: Default::default(),
         user_id: Set(ctx.user_id),
-        action: Set(action.to_string()),
+        action: Set(action),
         entity_type: Set(entity_type.map(|s| s.to_string())),
         entity_id: Set(entity_id),
         entity_name: Set(entity_name.map(|s| s.to_string())),

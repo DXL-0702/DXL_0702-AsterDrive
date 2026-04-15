@@ -31,7 +31,7 @@ describe("shareService", () => {
 
 	it("uses the expected authenticated share routes", () => {
 		const createPayload = {
-			file_id: 7,
+			target: { type: "file" as const, id: 7 },
 			password: "secret",
 			max_downloads: 3,
 		};

@@ -13,6 +13,7 @@ import {
 	getConfigValueType,
 	getPreferredDisplayUnit,
 	getTimeConfigBaseUnit,
+	isBooleanType,
 	isBrandingAssetConfig,
 	isMultilineType,
 	isNumberType,
@@ -314,7 +315,7 @@ export function SystemConfigRow({ config }: { config: SystemConfig }) {
 	return (
 		<div className="space-y-3">
 			<FieldMeta config={config} />
-			{valueType === "boolean" ? (
+			{isBooleanType(valueType) ? (
 				<div className="flex items-center gap-3 text-sm">
 					<Switch
 						id={config.key}

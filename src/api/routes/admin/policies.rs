@@ -5,7 +5,7 @@ use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{audit_service, auth_service::Claims, policy_service};
-use crate::types::DriverType;
+use crate::types::{DriverType, StoragePolicyOptions};
 use actix_web::{HttpRequest, HttpResponse, web};
 use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -24,7 +24,8 @@ pub struct CreatePolicyReq {
     pub max_file_size: Option<i64>,
     pub chunk_size: Option<i64>,
     pub is_default: Option<bool>,
-    pub options: Option<String>,
+    pub allowed_types: Option<Vec<String>>,
+    pub options: Option<StoragePolicyOptions>,
 }
 
 fn build_policy_connection_input(
@@ -60,6 +61,7 @@ impl From<CreatePolicyReq> for policy_service::CreateStoragePolicyInput {
             max_file_size: value.max_file_size.unwrap_or(0),
             chunk_size: value.chunk_size,
             is_default: value.is_default.unwrap_or(false),
+            allowed_types: value.allowed_types,
             options: value.options,
         }
     }
@@ -77,7 +79,8 @@ pub struct PatchPolicyReq {
     pub max_file_size: Option<i64>,
     pub chunk_size: Option<i64>,
     pub is_default: Option<bool>,
-    pub options: Option<String>,
+    pub allowed_types: Option<Vec<String>>,
+    pub options: Option<StoragePolicyOptions>,
 }
 
 impl From<PatchPolicyReq> for policy_service::UpdateStoragePolicyInput {
@@ -92,6 +95,7 @@ impl From<PatchPolicyReq> for policy_service::UpdateStoragePolicyInput {
             max_file_size: value.max_file_size,
             chunk_size: value.chunk_size,
             is_default: value.is_default,
+            allowed_types: value.allowed_types,
             options: value.options,
         }
     }

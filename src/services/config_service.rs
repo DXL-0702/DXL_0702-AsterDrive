@@ -13,6 +13,7 @@ use crate::services::{
     audit_service::{self, AuditContext},
     mail_service, preview_app_service, wopi_service,
 };
+use crate::types::{SystemConfigSource, SystemConfigValueType};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -52,10 +53,10 @@ pub struct SystemConfig {
     pub id: i64,
     pub key: String,
     pub value: String,
-    pub value_type: String,
+    pub value_type: SystemConfigValueType,
     pub requires_restart: bool,
     pub is_sensitive: bool,
-    pub source: String,
+    pub source: SystemConfigSource,
     pub namespace: String,
     pub category: String,
     pub description: String,
@@ -465,7 +466,7 @@ fn slugify_preview_app_key_segment(value: &str) -> String {
 }
 
 /// 校验值是否匹配声明的类型
-fn validate_value_type(value_type: &str, value: &str) -> Result<()> {
+fn validate_value_type(value_type: SystemConfigValueType, value: &str) -> Result<()> {
     shared_system_config::validate_value_type(value_type, value)
 }
 
@@ -515,7 +516,7 @@ pub struct ConfigSchemaItem {
     pub key: String,
     pub label_i18n_key: String,
     pub description_i18n_key: String,
-    pub value_type: String,
+    pub value_type: SystemConfigValueType,
     pub category: String,
     pub description: String,
     pub requires_restart: bool,
@@ -547,7 +548,7 @@ pub fn get_schema() -> Vec<ConfigSchemaItem> {
             key: def.key.to_string(),
             label_i18n_key: def.label_i18n_key.to_string(),
             description_i18n_key: def.description_i18n_key.to_string(),
-            value_type: def.value_type.to_string(),
+            value_type: def.value_type,
             category: def.category.to_string(),
             description: def.description.to_string(),
             requires_restart: def.requires_restart,

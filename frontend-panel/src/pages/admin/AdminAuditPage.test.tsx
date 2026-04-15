@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminAuditPage from "@/pages/admin/AdminAuditPage";
+import type { AuditLogEntry } from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	handleApiError: vi.fn(),
@@ -196,14 +197,17 @@ vi.mock("@/services/auditService", () => ({
 	},
 }));
 
-function createEntry(overrides: Record<string, unknown> = {}) {
+function createEntry(overrides: Partial<AuditLogEntry> = {}): AuditLogEntry {
 	return {
-		action: "upload",
+		action: "file_upload",
 		created_at: "2026-03-28T00:00:00Z",
+		details: null,
+		entity_id: 1,
 		entity_name: "report.pdf",
 		entity_type: "file",
 		id: 1,
 		ip_address: "127.0.0.1",
+		user_agent: "Vitest",
 		user_id: 9,
 		...overrides,
 	};
@@ -258,7 +262,7 @@ describe("AdminAuditPage", () => {
 				total: 21,
 			})
 			.mockResolvedValueOnce({
-				items: [createEntry({ id: 3, action: "delete" })],
+				items: [createEntry({ id: 3, action: "file_delete" })],
 				total: 1,
 			})
 			.mockResolvedValueOnce({
@@ -293,18 +297,18 @@ describe("AdminAuditPage", () => {
 		expect(screen.getAllByText("---")).toHaveLength(2);
 
 		fireEvent.change(screen.getByPlaceholderText("audit_filter_action"), {
-			target: { value: "delete" },
+			target: { value: "file_delete" },
 		});
 
 		await waitFor(() => {
 			expect(mockState.list).toHaveBeenNthCalledWith(3, {
-				action: "delete",
+				action: "file_delete",
 				entity_type: undefined,
 				limit: 20,
 				offset: 0,
 			});
 		});
-		expect(screen.getByText("delete")).toBeInTheDocument();
+		expect(screen.getByText("file_delete")).toBeInTheDocument();
 
 		fireEvent.click(
 			screen.getAllByRole("button", { name: "select-folder" })[0],
@@ -312,7 +316,7 @@ describe("AdminAuditPage", () => {
 
 		await waitFor(() => {
 			expect(mockState.list).toHaveBeenNthCalledWith(4, {
-				action: "delete",
+				action: "file_delete",
 				entity_type: "folder",
 				limit: 20,
 				offset: 0,

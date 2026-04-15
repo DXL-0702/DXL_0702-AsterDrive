@@ -9,6 +9,13 @@ import {
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminSettingsPage from "@/pages/admin/AdminSettingsPage";
+import type {
+	ConfigSchemaItem,
+	SystemConfig,
+	SystemConfigSource,
+	SystemConfigValueType,
+	TemplateVariableGroup,
+} from "@/types/api";
 
 const mockState = vi.hoisted(() => ({
 	actionConfig: vi.fn(),
@@ -422,35 +429,42 @@ vi.mock("@/stores/themeStore", () => ({
 	) => selector({ resolvedTheme: "light" }),
 }));
 
-function createConfig(overrides: Record<string, unknown> = {}) {
+function createConfig(overrides: Partial<SystemConfig> = {}): SystemConfig {
 	return {
 		category: "storage",
 		description: "desc",
+		id: 1,
 		is_sensitive: false,
 		key: "storage.enabled",
 		requires_restart: false,
 		source: "system",
+		updated_at: "2026-04-15T00:00:00Z",
+		updated_by: null,
 		value: "true",
 		value_type: "boolean",
 		...overrides,
 	};
 }
 
-function createSchemaItem(overrides: Record<string, unknown> = {}) {
+function createSchemaItem(
+	overrides: Partial<ConfigSchemaItem> = {},
+): ConfigSchemaItem {
 	return {
 		category: "storage",
 		description: "desc",
-		description_i18n_key: undefined,
+		description_i18n_key: "",
 		is_sensitive: false,
 		key: "storage.enabled",
-		label_i18n_key: undefined,
+		label_i18n_key: "",
 		requires_restart: false,
 		value_type: "boolean",
 		...overrides,
 	};
 }
 
-function createTemplateVariableGroup(overrides: Record<string, unknown> = {}) {
+function createTemplateVariableGroup(
+	overrides: Partial<TemplateVariableGroup> = {},
+): TemplateVariableGroup {
 	return {
 		category: "mail.template",
 		label_i18n_key: "settings_mail_template_group_password_reset",
@@ -477,6 +491,24 @@ function getMockConfigCategory(key: string) {
 	if (key.startsWith("mail_template_")) return "mail.template";
 	if (key.startsWith("mail_")) return "mail.config";
 	return "storage";
+}
+
+function getMockConfigSource(key: string): SystemConfigSource {
+	return key.startsWith("custom") ? "custom" : "system";
+}
+
+function getMockConfigValueType(key: string): SystemConfigValueType {
+	if (key === "storage.enabled") {
+		return "boolean";
+	}
+	if (
+		key === "auth_access_token_ttl_secs" ||
+		key === "default_storage_quota" ||
+		key.endsWith("_bytes")
+	) {
+		return "number";
+	}
+	return "string";
 }
 
 describe("AdminSettingsPage", () => {
@@ -544,16 +576,9 @@ describe("AdminSettingsPage", () => {
 				createConfig({
 					category: getMockConfigCategory(key),
 					key,
-					source: key.startsWith("custom") ? "custom" : "system",
+					source: getMockConfigSource(key),
 					value,
-					value_type:
-						key === "storage.enabled"
-							? "boolean"
-							: key === "auth_access_token_ttl_secs" ||
-									key === "default_storage_quota" ||
-									key.endsWith("_bytes")
-								? "number"
-								: "string",
+					value_type: getMockConfigValueType(key),
 				}),
 			),
 		);
