@@ -52,6 +52,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/{id}/download", web::get().to(download))
         .route("/{id}/thumbnail", web::get().to(get_thumbnail))
         .route("/{id}/content", web::put().to(update_content))
+        .route("/{id}/extract", web::post().to(extract_archive))
         .route("/{id}/lock", web::post().to(set_lock))
         .route("/{id}/copy", web::post().to(copy_file))
         .route("/{id}/versions", web::get().to(list_versions))
@@ -118,6 +119,13 @@ pub struct CreateEmptyRequest {
     pub folder_id: Option<i64>,
 }
 
+#[derive(Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ExtractArchiveRequest {
+    pub target_folder_id: Option<i64>,
+    pub output_folder_name: Option<String>,
+}
+
 #[api_docs_macros::path(
     post,
     path = "/api/v1/files/new",
@@ -141,6 +149,38 @@ pub async fn create_empty(
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
         },
+        &body,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/files/{id}/extract",
+    tag = "files",
+    operation_id = "extract_file_archive",
+    params(("id" = i64, Path, description = "File ID")),
+    request_body = ExtractArchiveRequest,
+    responses(
+        (status = 200, description = "Archive extract task created", body = inline(ApiResponse<crate::services::task_service::TaskInfo>)),
+        (status = 400, description = "Unsupported archive format"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn extract_archive(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    body: web::Json<ExtractArchiveRequest>,
+) -> Result<HttpResponse> {
+    extract_archive_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        *path,
         &body,
     )
     .await
@@ -776,6 +816,25 @@ pub(crate) async fn create_empty_response(
     let file =
         workspace_storage_service::create_empty(state, scope, body.folder_id, &body.name).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(FileInfo::from(file))))
+}
+
+pub(crate) async fn extract_archive_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    body: &ExtractArchiveRequest,
+) -> Result<HttpResponse> {
+    let task = crate::services::task_service::create_archive_extract_task_in_scope(
+        state,
+        scope,
+        file_id,
+        crate::services::task_service::CreateArchiveExtractTaskParams {
+            target_folder_id: body.target_folder_id,
+            output_folder_name: body.output_folder_name.clone(),
+        },
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(task)))
 }
 
 pub(crate) async fn get_file_response(

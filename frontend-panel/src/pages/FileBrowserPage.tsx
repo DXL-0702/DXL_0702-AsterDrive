@@ -42,6 +42,7 @@ import { workspaceFolderPath } from "@/lib/workspace";
 import { FileBrowserToolbar } from "@/pages/file-browser/FileBrowserToolbar";
 import { FileBrowserWorkspace } from "@/pages/file-browser/FileBrowserWorkspace";
 import {
+	ArchiveTaskNameDialog,
 	BatchTargetFolderDialog,
 	CreateFileDialog,
 	CreateFolderDialog,
@@ -51,6 +52,7 @@ import {
 	VersionHistoryDialog,
 } from "@/pages/file-browser/fileBrowserLazy";
 import type {
+	FileBrowserArchiveTaskTarget,
 	FileBrowserCopyTarget,
 	FileBrowserInfoTarget,
 	FileBrowserMoveTarget,
@@ -66,10 +68,69 @@ import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
-import type { FileInfo, FileListItem } from "@/types/api";
+import type { FileInfo, FileListItem, FolderListItem } from "@/types/api";
 
 interface FileBrowserLocationState {
 	searchPreviewFile?: FileListItem;
+}
+
+function buildArchiveTimestamp() {
+	const now = new Date();
+	const pad = (value: number) => value.toString().padStart(2, "0");
+	return (
+		[
+			now.getUTCFullYear().toString(),
+			pad(now.getUTCMonth() + 1),
+			pad(now.getUTCDate()),
+		].join("") +
+		"-" +
+		[
+			pad(now.getUTCHours()),
+			pad(now.getUTCMinutes()),
+			pad(now.getUTCSeconds()),
+		].join("")
+	);
+}
+
+function ensureZipSuffix(name: string) {
+	return name.toLowerCase().endsWith(".zip") ? name : `${name}.zip`;
+}
+
+function stripZipSuffix(name: string) {
+	return name.toLowerCase().endsWith(".zip") && name.length > 4
+		? name.slice(0, -4)
+		: "";
+}
+
+function defaultArchiveCompressName(
+	fileIds: number[],
+	folderIds: number[],
+	files: FileListItem[],
+	folders: FolderListItem[],
+) {
+	if (folderIds.length === 1 && fileIds.length === 0) {
+		const folder = folders.find((entry) => entry.id === folderIds[0]);
+		if (folder) {
+			return ensureZipSuffix(folder.name);
+		}
+	}
+
+	if (fileIds.length === 1 && folderIds.length === 0) {
+		const file = files.find((entry) => entry.id === fileIds[0]);
+		if (file) {
+			return ensureZipSuffix(file.name);
+		}
+	}
+
+	return `archive-${buildArchiveTimestamp()}.zip`;
+}
+
+function defaultArchiveExtractFolderName(sourceFileName: string) {
+	const stripped = stripZipSuffix(sourceFileName);
+	if (stripped) {
+		return stripped;
+	}
+	return `extracted-${buildArchiveTimestamp()}`;
 }
 
 export default function FileBrowserPage() {
@@ -176,6 +237,8 @@ export default function FileBrowserPage() {
 	);
 	const [versionTarget, setVersionTarget] =
 		useState<FileBrowserVersionTarget | null>(null);
+	const [archiveTaskTarget, setArchiveTaskTarget] =
+		useState<FileBrowserArchiveTaskTarget | null>(null);
 	const [dragOverBreadcrumbIndex, setDragOverBreadcrumbIndex] = useState<
 		number | null
 	>(null);
@@ -361,6 +424,15 @@ export default function FileBrowserPage() {
 		[t],
 	);
 
+	const notifyTaskQueued = useCallback(
+		(displayName: string) => {
+			toast.success(t("tasks:task_created_success"), {
+				description: displayName,
+			});
+		},
+		[t],
+	);
+
 	const startArchiveDownload = useCallback(
 		async (fileIds: number[], folderIds: number[]) => {
 			if (fileIds.length === 0 && folderIds.length === 0) {
@@ -370,6 +442,75 @@ export default function FileBrowserPage() {
 			await batchService.streamArchiveDownload(fileIds, folderIds);
 		},
 		[],
+	);
+
+	const requestArchiveCompress = useCallback(
+		(
+			fileIds: number[],
+			folderIds: number[],
+			options?: { clearSelectionOnSuccess?: boolean },
+		) => {
+			if (fileIds.length === 0 && folderIds.length === 0) {
+				return;
+			}
+
+			void ArchiveTaskNameDialog.preload();
+			setArchiveTaskTarget({
+				mode: "compress",
+				fileIds,
+				folderIds,
+				initialName: defaultArchiveCompressName(
+					fileIds,
+					folderIds,
+					displayFiles,
+					displayFolders,
+				),
+				clearSelectionOnSuccess: options?.clearSelectionOnSuccess ?? false,
+			});
+		},
+		[displayFiles, displayFolders],
+	);
+
+	const requestArchiveExtract = useCallback(
+		(fileId: number) => {
+			const sourceFile = displayFiles.find((entry) => entry.id === fileId);
+			void ArchiveTaskNameDialog.preload();
+			setArchiveTaskTarget({
+				mode: "extract",
+				fileId,
+				initialName: defaultArchiveExtractFolderName(sourceFile?.name ?? ""),
+			});
+		},
+		[displayFiles],
+	);
+
+	const submitArchiveTask = useCallback(
+		async (name: string | undefined) => {
+			if (!archiveTaskTarget) {
+				return;
+			}
+
+			if (archiveTaskTarget.mode === "compress") {
+				const task = await batchService.createArchiveCompressTask(
+					archiveTaskTarget.fileIds,
+					archiveTaskTarget.folderIds,
+					name,
+				);
+				notifyTaskQueued(task.display_name);
+				if (archiveTaskTarget.clearSelectionOnSuccess) {
+					clearSelection();
+				}
+				return;
+			}
+
+			const task = await fileService.createArchiveExtractTask(
+				archiveTaskTarget.fileId,
+				undefined,
+				name,
+			);
+			notifyTaskQueued(task.display_name);
+		},
+		[archiveTaskTarget, clearSelection, notifyTaskQueued],
 	);
 
 	const handleMoveToFolder = useCallback(
@@ -597,6 +738,28 @@ export default function FileBrowserPage() {
 		},
 		[startArchiveDownload],
 	);
+	const handleBatchArchiveCompress = useCallback(
+		async (fileIds: number[], folderIds: number[]) => {
+			requestArchiveCompress(fileIds, folderIds, {
+				clearSelectionOnSuccess: true,
+			});
+		},
+		[requestArchiveCompress],
+	);
+	const handleArchiveCompress = useCallback(
+		(type: "file" | "folder", id: number) => {
+			const fileIds = type === "file" ? [id] : [];
+			const folderIds = type === "folder" ? [id] : [];
+			requestArchiveCompress(fileIds, folderIds);
+		},
+		[requestArchiveCompress],
+	);
+	const handleArchiveExtract = useCallback(
+		(fileId: number) => {
+			requestArchiveExtract(fileId);
+		},
+		[requestArchiveExtract],
+	);
 	const handleInfo = useCallback(
 		(type: "file" | "folder", id: number) => {
 			if (type === "file") {
@@ -629,6 +792,8 @@ export default function FileBrowserPage() {
 			onShare: openShareDialog,
 			onDownload: handleDownload,
 			onArchiveDownload: handleArchiveDownload,
+			onArchiveCompress: handleArchiveCompress,
+			onArchiveExtract: handleArchiveExtract,
 			onCopy: handleCopy,
 			onMove: handleMove,
 			onToggleLock: handleToggleLock,
@@ -652,6 +817,8 @@ export default function FileBrowserPage() {
 			openShareDialog,
 			handleDownload,
 			handleArchiveDownload,
+			handleArchiveCompress,
+			handleArchiveExtract,
 			handleCopy,
 			handleMove,
 			handleToggleLock,
@@ -760,7 +927,22 @@ export default function FileBrowserPage() {
 				/>
 			</Suspense>
 
-			<BatchActionBar onArchiveDownload={startArchiveDownload} />
+			<BatchActionBar
+				onArchiveCompress={handleBatchArchiveCompress}
+				onArchiveDownload={startArchiveDownload}
+			/>
+
+			<Suspense fallback={null}>
+				<ArchiveTaskNameDialog
+					open={archiveTaskTarget !== null}
+					onOpenChange={(open) => {
+						if (!open) setArchiveTaskTarget(null);
+					}}
+					mode={archiveTaskTarget?.mode ?? "compress"}
+					initialName={archiveTaskTarget?.initialName ?? ""}
+					onSubmit={submitArchiveTask}
+				/>
+			</Suspense>
 
 			<Suspense fallback={null}>
 				<ShareDialog

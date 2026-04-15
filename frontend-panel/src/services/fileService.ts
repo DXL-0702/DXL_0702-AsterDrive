@@ -12,6 +12,7 @@ import type {
 	FolderContents,
 	FolderInfo,
 	PreviewLinkInfo,
+	TaskInfo,
 	WopiLaunchSession,
 } from "@/types/api";
 import { ApiError, type ApiRequestConfig, api } from "./http";
@@ -149,6 +150,23 @@ export function createFileService(workspace: Workspace) {
 			api.post<FileInfo>(buildWorkspacePath(workspace, `/files/${id}/copy`), {
 				folder_id: folderId ?? null,
 			}),
+
+		createArchiveExtractTask: (
+			id: number,
+			targetFolderId?: number | null,
+			outputFolderName?: string,
+		) =>
+			api.post<TaskInfo>(
+				buildWorkspacePath(workspace, `/files/${id}/extract`),
+				{
+					...(targetFolderId === undefined
+						? {}
+						: { target_folder_id: targetFolderId }),
+					...(outputFolderName === undefined
+						? {}
+						: { output_folder_name: outputFolderName }),
+				},
+			),
 
 		copyFolder: (id: number, parentId?: number | null) =>
 			api.post<FolderInfo>(

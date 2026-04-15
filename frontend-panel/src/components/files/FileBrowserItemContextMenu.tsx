@@ -24,7 +24,9 @@ export function FileBrowserItemContextMenu({
 	renderTrigger = false,
 }: FileBrowserItemContextMenuProps) {
 	const {
+		onArchiveCompress,
 		onArchiveDownload,
+		onArchiveExtract,
 		onCopy,
 		onDelete,
 		onDownload,
@@ -57,6 +59,11 @@ export function FileBrowserItemContextMenu({
 				onArchiveDownload={
 					onArchiveDownload ? () => onArchiveDownload(item.id) : undefined
 				}
+				onArchiveCompress={
+					onArchiveCompress
+						? () => onArchiveCompress("folder", item.id)
+						: undefined
+				}
 				onCopy={() => onCopy("folder", item.id)}
 				onMove={onMove ? () => onMove("folder", item.id) : undefined}
 				onRename={
@@ -83,6 +90,14 @@ export function FileBrowserItemContextMenu({
 				onFileChooseOpenMethod ? () => onFileChooseOpenMethod(item) : undefined
 			}
 			onDownload={() => onDownload(item.id, item.name)}
+			onArchiveExtract={
+				onArchiveExtract && item.name.toLowerCase().endsWith(".zip")
+					? () => onArchiveExtract(item.id)
+					: undefined
+			}
+			onArchiveCompress={
+				onArchiveCompress ? () => onArchiveCompress("file", item.id) : undefined
+			}
 			onPageShare={() =>
 				onShare({
 					fileId: item.id,

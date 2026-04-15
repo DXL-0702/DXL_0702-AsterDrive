@@ -65,6 +65,7 @@ describe("fileService", () => {
 		fileService.setFolderLock(7, false);
 		fileService.createEmptyFile("draft.md", 7);
 		fileService.copyFile(8, null);
+		fileService.createArchiveExtractTask(8, 7, "bundle");
 		fileService.copyFolder(7, 3);
 		fileService.listVersions(8);
 		fileService.restoreVersion(8, 2);
@@ -111,12 +112,16 @@ describe("fileService", () => {
 		expect(mockState.post).toHaveBeenNthCalledWith(6, "/files/8/copy", {
 			folder_id: null,
 		});
-		expect(mockState.post).toHaveBeenNthCalledWith(7, "/folders/7/copy", {
+		expect(mockState.post).toHaveBeenNthCalledWith(7, "/files/8/extract", {
+			target_folder_id: 7,
+			output_folder_name: "bundle",
+		});
+		expect(mockState.post).toHaveBeenNthCalledWith(8, "/folders/7/copy", {
 			parent_id: 3,
 		});
 		expect(mockState.get).toHaveBeenNthCalledWith(7, "/files/8/versions");
 		expect(mockState.post).toHaveBeenNthCalledWith(
-			8,
+			9,
 			"/files/8/versions/2/restore",
 		);
 		expect(mockState.delete).toHaveBeenNthCalledWith(2, "/files/8/versions/2");
@@ -143,6 +148,7 @@ describe("fileService", () => {
 		teamFileService.listRoot();
 		teamFileService.getFile(8);
 		teamFileService.getDirectLinkToken(8);
+		teamFileService.createArchiveExtractTask(8);
 		teamFileService.listVersions(8);
 
 		expect(mockState.get).toHaveBeenCalledWith("/teams/9/folders", {
@@ -150,6 +156,7 @@ describe("fileService", () => {
 		});
 		expect(mockState.get).toHaveBeenCalledWith("/teams/9/files/8");
 		expect(mockState.get).toHaveBeenCalledWith("/teams/9/files/8/direct-link");
+		expect(mockState.post).toHaveBeenCalledWith("/teams/9/files/8/extract", {});
 		expect(mockState.get).toHaveBeenCalledWith("/teams/9/files/8/versions");
 		expect(teamFileService.downloadPath(8)).toBe("/teams/9/files/8/download");
 		expect(teamFileService.downloadUrl(8)).toBe(

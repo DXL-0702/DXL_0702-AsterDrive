@@ -21,6 +21,8 @@ export interface FileBrowserContextValue {
 	onShare: (target: FileBrowserShareTarget) => void;
 	onDownload: (fileId: number, fileName: string) => void;
 	onArchiveDownload?: (folderId: number) => void;
+	onArchiveCompress?: (type: "file" | "folder", id: number) => void;
+	onArchiveExtract?: (fileId: number) => void;
 	onCopy: (type: "file" | "folder", id: number) => void;
 	onMove?: (type: "file" | "folder", id: number) => void;
 	onToggleLock: (type: "file" | "folder", id: number, locked: boolean) => void;

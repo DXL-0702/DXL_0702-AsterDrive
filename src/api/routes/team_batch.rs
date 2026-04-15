@@ -13,6 +13,7 @@ pub fn routes() -> impl actix_web::dev::HttpServiceFactory + use<> {
         .route("/delete", web::post().to(batch_delete))
         .route("/move", web::post().to(batch_move))
         .route("/copy", web::post().to(batch_copy))
+        .route("/archive-compress", web::post().to(archive_compress))
         .route("/archive-download", web::post().to(archive_download))
         .route(
             "/archive-download/{token}",
@@ -147,6 +148,32 @@ pub async fn archive_download(
     let body = body.into_inner();
     batch::archive_download_ticket_response(&state, team_scope(team_id, claims.user_id), &body)
         .await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/teams/{team_id}/batch/archive-compress",
+    tag = "teams",
+    operation_id = "batch_archive_compress_team",
+    params(("team_id" = i64, Path, description = "Team ID")),
+    request_body = crate::api::routes::batch::ArchiveCompressReq,
+    responses(
+        (status = 200, description = "Team archive compress task created", body = inline(ApiResponse<crate::services::task_service::TaskInfo>)),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn archive_compress(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<i64>,
+    body: web::Json<crate::api::routes::batch::ArchiveCompressReq>,
+) -> Result<HttpResponse> {
+    let team_id = *path;
+    let body = body.into_inner();
+    batch::archive_compress_response(&state, team_scope(team_id, claims.user_id), &body).await
 }
 
 #[api_docs_macros::path(

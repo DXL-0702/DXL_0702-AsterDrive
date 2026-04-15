@@ -103,4 +103,26 @@ describe("batchService", () => {
 		expect(document.querySelector("iframe")).toBeNull();
 		vi.useRealTimers();
 	});
+
+	it("creates archive compress tasks with workspace-scoped payloads", () => {
+		batchService.createArchiveCompressTask([1], [2], "bundle.zip", 7);
+
+		const teamBatchService = createBatchService({ kind: "team", teamId: 4 });
+		teamBatchService.createArchiveCompressTask([], [9]);
+
+		expect(apiPost).toHaveBeenNthCalledWith(1, "/batch/archive-compress", {
+			file_ids: [1],
+			folder_ids: [2],
+			archive_name: "bundle.zip",
+			target_folder_id: 7,
+		});
+		expect(apiPost).toHaveBeenNthCalledWith(
+			2,
+			"/teams/4/batch/archive-compress",
+			{
+				file_ids: [],
+				folder_ids: [9],
+			},
+		);
+	});
 });

@@ -46,6 +46,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/files/{id}/wopi/open", web::post().to(open_wopi))
         .route("/files/{id}/thumbnail", web::get().to(get_thumbnail))
         .route("/files/{id}/content", web::put().to(update_content))
+        .route("/files/{id}/extract", web::post().to(extract_archive))
         .route("/files/{id}/lock", web::post().to(set_file_lock))
         .route("/files/{id}", web::patch().to(patch_file))
         .route("/files/{id}", web::delete().to(delete_file))
@@ -799,6 +800,36 @@ pub async fn update_content(
         body,
     )
     .await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/teams/{team_id}/files/{id}/extract",
+    tag = "teams",
+    operation_id = "extract_team_file_archive",
+    params(
+        ("team_id" = i64, Path, description = "Team ID"),
+        ("id" = i64, Path, description = "File ID")
+    ),
+    request_body = crate::api::routes::files::ExtractArchiveRequest,
+    responses(
+        (status = 200, description = "Team archive extract task created", body = inline(ApiResponse<crate::services::task_service::TaskInfo>)),
+        (status = 400, description = "Unsupported archive format"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+        (status = 404, description = "File not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn extract_archive(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    path: web::Path<(i64, i64)>,
+    body: web::Json<crate::api::routes::files::ExtractArchiveRequest>,
+) -> Result<HttpResponse> {
+    let (team_id, file_id) = path.into_inner();
+    files::extract_archive_response(&state, team_scope(team_id, claims.user_id), file_id, &body)
+        .await
 }
 
 #[api_docs_macros::path(

@@ -50,8 +50,10 @@ function renderMenu(
 	overrides: Partial<React.ComponentProps<typeof FileContextMenu>> = {},
 ) {
 	const handlers = {
+		onArchiveCompress: vi.fn(),
 		onChooseOpenMethod: vi.fn(),
 		onArchiveDownload: vi.fn(),
+		onArchiveExtract: vi.fn(),
 		onCopy: vi.fn(),
 		onDelete: vi.fn(),
 		onDownload: vi.fn(),
@@ -86,6 +88,8 @@ describe("FileContextMenu", () => {
 		fireEvent.click(screen.getByText("open"));
 		fireEvent.click(screen.getByText("open_with_action"));
 		fireEvent.click(screen.getByText("download"));
+		fireEvent.click(screen.getByText("tasks:archive_extract_action"));
+		fireEvent.click(screen.getByText("tasks:archive_compress_action"));
 		fireEvent.click(screen.getByText("share:share_mode_page"));
 		fireEvent.click(screen.getByText("share:share_mode_direct"));
 		fireEvent.click(screen.getByText("copy"));
@@ -99,6 +103,8 @@ describe("FileContextMenu", () => {
 		expect(handlers.onOpen).toHaveBeenCalledTimes(1);
 		expect(handlers.onChooseOpenMethod).toHaveBeenCalledTimes(1);
 		expect(handlers.onDownload).toHaveBeenCalledTimes(1);
+		expect(handlers.onArchiveExtract).toHaveBeenCalledTimes(1);
+		expect(handlers.onArchiveCompress).toHaveBeenCalledTimes(1);
 		expect(handlers.onPageShare).toHaveBeenCalledTimes(1);
 		expect(handlers.onDirectShare).toHaveBeenCalledTimes(1);
 		expect(handlers.onCopy).toHaveBeenCalledTimes(1);
@@ -118,6 +124,9 @@ describe("FileContextMenu", () => {
 
 		expect(screen.queryByText("download")).not.toBeInTheDocument();
 		expect(screen.getByText("open")).toBeInTheDocument();
+		expect(
+			screen.getByText("tasks:archive_compress_action"),
+		).toBeInTheDocument();
 		expect(
 			screen.getByText("tasks:archive_download_action"),
 		).toBeInTheDocument();
@@ -139,6 +148,16 @@ describe("FileContextMenu", () => {
 		fireEvent.click(screen.getByText("tasks:archive_download_action"));
 
 		expect(handlers.onArchiveDownload).toHaveBeenCalledTimes(1);
+	});
+
+	it("invokes archive extract and compress handlers for files", () => {
+		const handlers = renderMenu();
+
+		fireEvent.click(screen.getByText("tasks:archive_extract_action"));
+		fireEvent.click(screen.getByText("tasks:archive_compress_action"));
+
+		expect(handlers.onArchiveExtract).toHaveBeenCalledTimes(1);
+		expect(handlers.onArchiveCompress).toHaveBeenCalledTimes(1);
 	});
 
 	it("uses renderTrigger when requested", () => {

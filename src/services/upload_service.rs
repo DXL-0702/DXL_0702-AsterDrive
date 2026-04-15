@@ -1,4 +1,4 @@
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use sea_orm::{Set, TransactionTrait};
 use serde::Serialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -19,6 +19,8 @@ use crate::types::{
     effective_s3_multipart_chunk_size, parse_storage_policy_options,
 };
 use crate::utils::{id, numbers, paths};
+
+const CANCELED_MULTIPART_SESSION_GRACE_SECS: i64 = 15;
 
 #[derive(Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -64,17 +66,39 @@ async fn increment_session_received_count<C: sea_orm::ConnectionTrait>(
         )
         .col_expr(Column::UpdatedAt, Expr::value(Utc::now()))
         .filter(Column::Id.eq(upload_id))
+        .filter(Column::Status.eq(UploadSessionStatus::Uploading))
         .exec(db)
         .await
         .map_err(AsterError::from)?;
 
-    if result.rows_affected == 0 {
-        return Err(AsterError::upload_session_not_found(format!(
-            "session {upload_id}"
-        )));
+    if result.rows_affected == 1 {
+        return Ok(());
     }
 
-    Ok(())
+    match upload_session_repo::find_by_id(db, upload_id).await {
+        Ok(session) => Err(upload_session_chunk_unavailable_error(&session)),
+        Err(error) => Err(error),
+    }
+}
+
+fn upload_session_chunk_unavailable_error(session: &upload_session::Model) -> AsterError {
+    match session.status {
+        UploadSessionStatus::Failed => {
+            AsterError::upload_session_expired("session was canceled or failed")
+        }
+        UploadSessionStatus::Assembling => {
+            AsterError::upload_session_expired("session is assembling and no longer accepts chunks")
+        }
+        UploadSessionStatus::Completed => {
+            AsterError::upload_session_expired("session already completed")
+        }
+        UploadSessionStatus::Presigned => {
+            AsterError::validation_error("session does not accept relay chunk uploads")
+        }
+        UploadSessionStatus::Uploading => {
+            AsterError::upload_session_not_found(format!("session {}", session.id))
+        }
+    }
 }
 
 fn expected_chunk_size_for_upload(
@@ -536,10 +560,7 @@ async fn upload_chunk_impl(
         "handling upload chunk"
     );
     if session.status != UploadSessionStatus::Uploading {
-        return Err(AsterError::chunk_upload_failed(format!(
-            "session status is '{:?}', expected 'uploading'",
-            session.status
-        )));
+        return Err(upload_session_chunk_unavailable_error(&session));
     }
     if session.expires_at < Utc::now() {
         return Err(AsterError::upload_session_expired("session expired"));
@@ -1251,6 +1272,20 @@ async fn mark_session_failed<C: sea_orm::ConnectionTrait>(db: &C, upload_id: &st
     }
 }
 
+async fn mark_session_failed_with_expiration<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    upload_id: &str,
+    expires_at: chrono::DateTime<Utc>,
+) -> Result<()> {
+    let session = upload_session_repo::find_by_id(db, upload_id).await?;
+    let mut active: upload_session::ActiveModel = session.into();
+    active.status = Set(UploadSessionStatus::Failed);
+    active.expires_at = Set(expires_at);
+    active.updated_at = Set(Utc::now());
+    upload_session_repo::update(db, active).await?;
+    Ok(())
+}
+
 /// 根据 session 查找已完成的文件（幂等重试用）
 async fn find_file_by_session<C: sea_orm::ConnectionTrait>(
     db: &C,
@@ -1276,6 +1311,27 @@ async fn cancel_upload_impl(state: &AppState, session: upload_session::Model) ->
         "canceling upload session"
     );
 
+    if session.s3_multipart_id.is_some()
+        && matches!(
+            session.status,
+            UploadSessionStatus::Uploading
+                | UploadSessionStatus::Presigned
+                | UploadSessionStatus::Assembling
+        )
+    {
+        let expires_at = Utc::now() + Duration::seconds(CANCELED_MULTIPART_SESSION_GRACE_SECS);
+        mark_session_failed_with_expiration(&state.db, upload_id, expires_at).await?;
+
+        let temp_dir = paths::upload_temp_dir(&state.config.server.upload_temp_dir, upload_id);
+        crate::utils::cleanup_temp_dir(&temp_dir).await;
+        tracing::debug!(
+            upload_id,
+            expires_at = %expires_at,
+            "deferred cleanup for canceled multipart upload session"
+        );
+        return Ok(());
+    }
+
     // 清理 S3 临时对象 / multipart upload
     if let Some(ref temp_key) = session.s3_temp_key {
         let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
@@ -1283,6 +1339,9 @@ async fn cancel_upload_impl(state: &AppState, session: upload_session::Model) ->
             if let Some(ref multipart_id) = session.s3_multipart_id {
                 if let Err(e) = driver.abort_multipart_upload(temp_key, multipart_id).await {
                     tracing::warn!("failed to abort S3 multipart upload: {e}");
+                }
+                if let Err(e) = driver.delete(temp_key).await {
+                    tracing::warn!("failed to delete S3 temp object after abort: {e}");
                 }
             } else if let Err(e) = driver.delete(temp_key).await {
                 tracing::warn!("failed to delete S3 temp object: {e}");
@@ -1538,6 +1597,9 @@ pub async fn cleanup_expired(state: &AppState) -> Result<u32> {
             if let Some(ref multipart_id) = session.s3_multipart_id {
                 if let Err(e) = driver.abort_multipart_upload(temp_key, multipart_id).await {
                     tracing::warn!("failed to abort expired S3 multipart upload: {e}");
+                }
+                if let Err(e) = driver.delete(temp_key).await {
+                    tracing::warn!("failed to delete expired S3 temp object after abort: {e}");
                 }
             } else if let Err(e) = driver.delete(temp_key).await {
                 tracing::warn!("failed to delete S3 temp object: {e}");

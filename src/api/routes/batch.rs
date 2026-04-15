@@ -26,6 +26,7 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
         .route("/delete", web::post().to(batch_delete))
         .route("/move", web::post().to(batch_move))
         .route("/copy", web::post().to(batch_copy))
+        .route("/archive-compress", web::post().to(archive_compress))
         .route("/archive-download", web::post().to(archive_download))
         .route(
             "/archive-download/{token}",
@@ -72,6 +73,17 @@ pub struct ArchiveDownloadReq {
     #[serde(default)]
     pub folder_ids: Vec<i64>,
     pub archive_name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct ArchiveCompressReq {
+    #[serde(default)]
+    pub file_ids: Vec<i64>,
+    #[serde(default)]
+    pub folder_ids: Vec<i64>,
+    pub archive_name: Option<String>,
+    pub target_folder_id: Option<i64>,
 }
 
 #[api_docs_macros::path(
@@ -190,6 +202,35 @@ pub async fn archive_download(
 ) -> Result<HttpResponse> {
     let body = body.into_inner();
     archive_download_ticket_response(
+        &state,
+        WorkspaceStorageScope::Personal {
+            user_id: claims.user_id,
+        },
+        &body,
+    )
+    .await
+}
+
+#[api_docs_macros::path(
+    post,
+    path = "/api/v1/batch/archive-compress",
+    tag = "batch",
+    operation_id = "batch_archive_compress",
+    request_body = ArchiveCompressReq,
+    responses(
+        (status = 200, description = "Archive compress task created", body = inline(ApiResponse<task_service::TaskInfo>)),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn archive_compress(
+    state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    body: web::Json<ArchiveCompressReq>,
+) -> Result<HttpResponse> {
+    let body = body.into_inner();
+    archive_compress_response(
         &state,
         WorkspaceStorageScope::Personal {
             user_id: claims.user_id,
@@ -348,6 +389,26 @@ pub(crate) async fn archive_download_ticket_response(
     .await?;
 
     Ok(HttpResponse::Ok().json(ApiResponse::ok(ticket)))
+}
+
+pub(crate) async fn archive_compress_response(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    body: &ArchiveCompressReq,
+) -> Result<HttpResponse> {
+    batch_service::validate_batch_ids(&body.file_ids, &body.folder_ids)?;
+    let task = task_service::create_archive_compress_task_in_scope(
+        state,
+        scope,
+        task_service::CreateArchiveCompressTaskParams {
+            file_ids: body.file_ids.clone(),
+            folder_ids: body.folder_ids.clone(),
+            archive_name: body.archive_name.clone(),
+            target_folder_id: body.target_folder_id,
+        },
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(task)))
 }
 
 pub(crate) async fn archive_download_stream_response(

@@ -4,7 +4,9 @@ import { FileBrowserItemContextMenu } from "@/components/files/FileBrowserItemCo
 
 const mockState = vi.hoisted(() => ({
 	browserContext: {
+		onArchiveCompress: vi.fn(),
 		onArchiveDownload: vi.fn(),
+		onArchiveExtract: vi.fn(),
 		onCopy: vi.fn(),
 		onDelete: vi.fn(),
 		onDownload: vi.fn(),
@@ -28,7 +30,9 @@ vi.mock("@/components/files/FileBrowserContext", () => ({
 vi.mock("@/components/files/FileContextMenu", () => ({
 	FileContextMenu: ({
 		children,
+		onArchiveCompress,
 		onArchiveDownload,
+		onArchiveExtract,
 		onChooseOpenMethod,
 		onCopy,
 		onDelete,
@@ -43,7 +47,9 @@ vi.mock("@/components/files/FileContextMenu", () => ({
 		onVersions,
 	}: {
 		children: React.ReactNode;
+		onArchiveCompress?: () => void;
 		onArchiveDownload?: () => void;
+		onArchiveExtract?: () => void;
 		onChooseOpenMethod?: () => void;
 		onCopy?: () => void;
 		onDelete?: () => void;
@@ -72,6 +78,16 @@ vi.mock("@/components/files/FileContextMenu", () => ({
 			{onDownload && (
 				<button type="button" onClick={onDownload}>
 					download
+				</button>
+			)}
+			{onArchiveExtract && (
+				<button type="button" onClick={onArchiveExtract}>
+					extract
+				</button>
+			)}
+			{onArchiveCompress && (
+				<button type="button" onClick={onArchiveCompress}>
+					compress
 				</button>
 			)}
 			{onArchiveDownload && (
@@ -130,7 +146,9 @@ vi.mock("@/components/files/FileContextMenu", () => ({
 
 describe("FileBrowserItemContextMenu", () => {
 	beforeEach(() => {
+		mockState.browserContext.onArchiveCompress.mockReset();
 		mockState.browserContext.onArchiveDownload.mockReset();
+		mockState.browserContext.onArchiveExtract.mockReset();
 		mockState.browserContext.onCopy.mockReset();
 		mockState.browserContext.onDelete.mockReset();
 		mockState.browserContext.onDownload.mockReset();
@@ -157,6 +175,7 @@ describe("FileBrowserItemContextMenu", () => {
 		);
 
 		fireEvent.click(screen.getByRole("button", { name: "open" }));
+		fireEvent.click(screen.getByRole("button", { name: "compress" }));
 		fireEvent.click(screen.getByRole("button", { name: "archive" }));
 		fireEvent.click(screen.getByRole("button", { name: "share-page" }));
 		fireEvent.click(screen.getByRole("button", { name: "copy" }));
@@ -169,6 +188,10 @@ describe("FileBrowserItemContextMenu", () => {
 		expect(mockState.browserContext.onFolderOpen).toHaveBeenCalledWith(
 			1,
 			"Docs",
+		);
+		expect(mockState.browserContext.onArchiveCompress).toHaveBeenCalledWith(
+			"folder",
+			1,
 		);
 		expect(mockState.browserContext.onArchiveDownload).toHaveBeenCalledWith(1);
 		expect(mockState.browserContext.onShare).toHaveBeenCalledWith({
@@ -195,7 +218,7 @@ describe("FileBrowserItemContextMenu", () => {
 	it("maps file actions to the shared browser callbacks", () => {
 		render(
 			<FileBrowserItemContextMenu
-				item={{ id: 2, name: "report.pdf", is_locked: true } as never}
+				item={{ id: 2, name: "bundle.zip", is_locked: true } as never}
 				isFolder={false}
 			>
 				<div>file</div>
@@ -205,6 +228,8 @@ describe("FileBrowserItemContextMenu", () => {
 		fireEvent.click(screen.getByRole("button", { name: "open" }));
 		fireEvent.click(screen.getByRole("button", { name: "open-method" }));
 		fireEvent.click(screen.getByRole("button", { name: "download" }));
+		fireEvent.click(screen.getByRole("button", { name: "extract" }));
+		fireEvent.click(screen.getByRole("button", { name: "compress" }));
 		fireEvent.click(screen.getByRole("button", { name: "share-page" }));
 		fireEvent.click(screen.getByRole("button", { name: "share-direct" }));
 		fireEvent.click(screen.getByRole("button", { name: "copy" }));
@@ -223,16 +248,21 @@ describe("FileBrowserItemContextMenu", () => {
 		).toHaveBeenCalledWith(expect.objectContaining({ id: 2 }));
 		expect(mockState.browserContext.onDownload).toHaveBeenCalledWith(
 			2,
-			"report.pdf",
+			"bundle.zip",
+		);
+		expect(mockState.browserContext.onArchiveExtract).toHaveBeenCalledWith(2);
+		expect(mockState.browserContext.onArchiveCompress).toHaveBeenCalledWith(
+			"file",
+			2,
 		);
 		expect(mockState.browserContext.onShare).toHaveBeenNthCalledWith(1, {
 			fileId: 2,
-			name: "report.pdf",
+			name: "bundle.zip",
 			initialMode: "page",
 		});
 		expect(mockState.browserContext.onShare).toHaveBeenNthCalledWith(2, {
 			fileId: 2,
-			name: "report.pdf",
+			name: "bundle.zip",
 			initialMode: "direct",
 		});
 		expect(mockState.browserContext.onCopy).toHaveBeenCalledWith("file", 2);
@@ -240,7 +270,7 @@ describe("FileBrowserItemContextMenu", () => {
 		expect(mockState.browserContext.onRename).toHaveBeenCalledWith(
 			"file",
 			2,
-			"report.pdf",
+			"bundle.zip",
 		);
 		expect(mockState.browserContext.onToggleLock).toHaveBeenCalledWith(
 			"file",

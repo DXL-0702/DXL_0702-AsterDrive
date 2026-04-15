@@ -84,6 +84,8 @@ const CHUNK_CONCURRENT = 3;
 const CHUNK_MAX_RETRIES = 3;
 const PROGRESS_FLUSH_INTERVAL = 500;
 const RESTORE_PROGRESS_CONCURRENCY = 4;
+const MULTIPART_DRAIN_TIMEOUT_MS = 3000;
+const MULTIPART_DRAIN_POLL_MS = 50;
 
 function shouldRemovePersistedSession(error: unknown): boolean {
 	return (
@@ -164,6 +166,7 @@ export function useUploadAreaManager({
 	const abortFlagsRef = useRef(new Map<string, boolean>());
 	const directAbortRef = useRef(new Map<string, AbortController>());
 	const presignedXhrRef = useRef(new Map<string, XMLHttpRequest>());
+	const multipartInFlightRef = useRef(new Map<string, number>());
 	const pendingRefreshFolderIdsRef = useRef(new Set<number | null>());
 	const queueWasActiveRef = useRef(false);
 	const resumeTaskIdRef = useRef<string | null>(null);
@@ -482,6 +485,45 @@ export function useUploadAreaManager({
 		[patchTask],
 	);
 
+	const adjustMultipartInFlight = useCallback(
+		(taskId: string, delta: number) => {
+			const current = multipartInFlightRef.current.get(taskId) ?? 0;
+			const next = current + delta;
+			if (next <= 0) {
+				multipartInFlightRef.current.delete(taskId);
+				return;
+			}
+			multipartInFlightRef.current.set(taskId, next);
+		},
+		[],
+	);
+
+	const waitForMultipartDrain = useCallback(async (taskId: string) => {
+		const startedAt = Date.now();
+		while ((multipartInFlightRef.current.get(taskId) ?? 0) > 0) {
+			if (Date.now() - startedAt >= MULTIPART_DRAIN_TIMEOUT_MS) {
+				return;
+			}
+			await new Promise((resolve) =>
+				setTimeout(resolve, MULTIPART_DRAIN_POLL_MS),
+			);
+		}
+	}, []);
+
+	const cancelMultipartSession = useCallback(
+		async (task: UploadTask) => {
+			abortFlagsRef.current.set(task.id, true);
+			if (!task.uploadId) return;
+
+			await waitForMultipartDrain(task.id);
+			try {
+				await uploadService.cancelUpload(task.uploadId);
+			} catch {}
+			removeSession(task.uploadId);
+		},
+		[waitForMultipartDrain],
+	);
+
 	const resumeCompletionTask = useCallback(
 		async (task: UploadTask, parts?: CompletedPart[]) => {
 			const uploadId = task.uploadId;
@@ -650,7 +692,12 @@ export function useUploadAreaManager({
 					let lastError: Error | null = null;
 					for (let attempt = 0; attempt < CHUNK_MAX_RETRIES; attempt++) {
 						try {
-							await uploadService.uploadChunk(uploadId, chunkNumber, blob);
+							adjustMultipartInFlight(task.id, 1);
+							try {
+								await uploadService.uploadChunk(uploadId, chunkNumber, blob);
+							} finally {
+								adjustMultipartInFlight(task.id, -1);
+							}
 							lastError = null;
 							break;
 						} catch (error) {
@@ -714,6 +761,7 @@ export function useUploadAreaManager({
 			}
 		},
 		[
+			adjustMultipartInFlight,
 			flushProgress,
 			markFolderForRefresh,
 			markTaskFailed,
@@ -844,7 +892,14 @@ export function useUploadAreaManager({
 					for (let attempt = 0; attempt < CHUNK_MAX_RETRIES; attempt++) {
 						try {
 							const url = await getPartUrl(partNumber);
-							const etag = await uploadService.presignedUpload(url, blob);
+							adjustMultipartInFlight(task.id, 1);
+							const etag = await (async () => {
+								try {
+									return await uploadService.presignedUpload(url, blob);
+								} finally {
+									adjustMultipartInFlight(task.id, -1);
+								}
+							})();
 							const part: CompletedPart = {
 								part_number: partNumber,
 								etag: etag.replace(/"/g, ""),
@@ -919,6 +974,7 @@ export function useUploadAreaManager({
 			}
 		},
 		[
+			adjustMultipartInFlight,
 			flushProgress,
 			markFolderForRefresh,
 			markTaskFailed,
@@ -1117,6 +1173,12 @@ export function useUploadAreaManager({
 				return;
 			}
 
+			if (task.mode === "chunked" || task.mode === "presigned_multipart") {
+				await cancelMultipartSession(task);
+				patchTask(taskId, { status: "cancelled", error: null });
+				return;
+			}
+
 			abortFlagsRef.current.set(taskId, true);
 			if (task.uploadId) {
 				try {
@@ -1126,11 +1188,11 @@ export function useUploadAreaManager({
 			}
 			patchTask(taskId, { status: "cancelled", error: null });
 		},
-		[patchTask],
+		[cancelMultipartSession, patchTask],
 	);
 
 	const retryTask = useCallback(
-		(taskId: string) => {
+		async (taskId: string) => {
 			const task = tasksRef.current.find((item) => item.id === taskId);
 			if (!task) return;
 			if (!task.file && task.uploadId) {
@@ -1147,8 +1209,12 @@ export function useUploadAreaManager({
 				return;
 			}
 			if (task.uploadId) {
-				void uploadService.cancelUpload(task.uploadId).catch(() => undefined);
-				removeSession(task.uploadId);
+				if (task.mode === "chunked" || task.mode === "presigned_multipart") {
+					await cancelMultipartSession(task);
+				} else {
+					void uploadService.cancelUpload(task.uploadId).catch(() => undefined);
+					removeSession(task.uploadId);
+				}
 			}
 			patchTask(taskId, {
 				status: "queued",
@@ -1161,7 +1227,7 @@ export function useUploadAreaManager({
 			});
 			setUploadPanelOpen(true);
 		},
-		[patchTask, resumeCompletionTask, workspace],
+		[cancelMultipartSession, patchTask, resumeCompletionTask, workspace],
 	);
 
 	const retryFailedTasks = useCallback(() => {

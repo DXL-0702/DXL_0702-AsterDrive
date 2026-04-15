@@ -500,17 +500,15 @@ mod tests {
                 .build(DbBackend::Sqlite)
         );
 
-        assert!(
-            !sql.as_str().contains(r#""users_search_fts""#),
-            "{sql}"
-        );
+        assert!(!sql.as_str().contains(r#""users_search_fts""#), "{sql}");
         assert!(
             sql.as_str()
                 .contains(r#"LOWER("users"."username") LIKE '%be%'"#),
             "{sql}"
         );
         assert!(
-            sql.as_str().contains(r#"LOWER("users"."email") LIKE '%be%'"#),
+            sql.as_str()
+                .contains(r#"LOWER("users"."email") LIKE '%be%'"#),
             "{sql}"
         );
     }

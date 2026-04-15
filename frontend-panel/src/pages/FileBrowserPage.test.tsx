@@ -13,6 +13,8 @@ import FileBrowserPage from "@/pages/FileBrowserPage";
 
 const mockState = vi.hoisted(() => ({
 	batchDelete: vi.fn(),
+	createArchiveCompressTask: vi.fn(),
+	createArchiveExtractTask: vi.fn(),
 	copyFile: vi.fn(),
 	copyFolder: vi.fn(),
 	createPreviewLink: vi.fn(),
@@ -159,8 +161,13 @@ vi.mock("@/stores/previewAppStore", () => ({
 
 vi.mock("@/components/common/BatchActionBar", () => ({
 	BatchActionBar: ({
+		onArchiveCompress,
 		onArchiveDownload,
 	}: {
+		onArchiveCompress: (
+			fileIds: number[],
+			folderIds: number[],
+		) => Promise<void> | void;
 		onArchiveDownload: (
 			fileIds: number[],
 			folderIds: number[],
@@ -168,6 +175,9 @@ vi.mock("@/components/common/BatchActionBar", () => ({
 	}) => (
 		<div>
 			<div>batch-action-bar</div>
+			<button type="button" onClick={() => void onArchiveCompress([3], [])}>
+				batch-archive-compress
+			</button>
 			<button type="button" onClick={() => void onArchiveDownload([], [])}>
 				batch-archive-empty
 			</button>
@@ -418,6 +428,43 @@ vi.mock("@/components/files/BatchTargetFolderDialog", () => ({
 				</button>
 				<button type="button" onClick={() => onOpenChange?.(false)}>
 					{`close-batch-dialog:${mode}`}
+				</button>
+			</div>
+		) : null,
+}));
+
+vi.mock("@/components/files/ArchiveTaskNameDialog", () => ({
+	ArchiveTaskNameDialog: ({
+		initialName,
+		mode,
+		onOpenChange,
+		onSubmit,
+		open,
+	}: {
+		initialName: string;
+		mode: "compress" | "extract";
+		onOpenChange?: (open: boolean) => void;
+		onSubmit: (name: string | undefined) => Promise<void>;
+		open: boolean;
+	}) =>
+		open ? (
+			<div>
+				<div>{`archive-dialog:${mode}:${initialName}`}</div>
+				<button type="button" onClick={() => void onSubmit(initialName)}>
+					confirm-archive-dialog
+				</button>
+				<button
+					type="button"
+					onClick={() =>
+						void onSubmit(
+							mode === "compress" ? "custom-bundle.zip" : "custom-output",
+						)
+					}
+				>
+					confirm-archive-dialog-custom
+				</button>
+				<button type="button" onClick={() => onOpenChange?.(false)}>
+					close-archive-dialog
 				</button>
 			</div>
 		) : null,
@@ -732,6 +779,8 @@ vi.mock("@/lib/utils", () => ({
 vi.mock("@/services/batchService", () => ({
 	batchService: {
 		batchDelete: (...args: unknown[]) => mockState.batchDelete(...args),
+		createArchiveCompressTask: (...args: unknown[]) =>
+			mockState.createArchiveCompressTask(...args),
 		streamArchiveDownload: (...args: unknown[]) =>
 			mockState.streamArchiveDownload(...args),
 	},
@@ -741,6 +790,8 @@ vi.mock("@/services/fileService", () => ({
 	fileService: {
 		copyFile: (...args: unknown[]) => mockState.copyFile(...args),
 		copyFolder: (...args: unknown[]) => mockState.copyFolder(...args),
+		createArchiveExtractTask: (...args: unknown[]) =>
+			mockState.createArchiveExtractTask(...args),
 		createPreviewLink: (...args: unknown[]) =>
 			mockState.createPreviewLink(...args),
 		createWopiSession: (...args: unknown[]) =>
@@ -801,6 +852,7 @@ function createFile(overrides: Record<string, unknown> = {}) {
 
 function getFileBrowserContext() {
 	const context = mockState.fileBrowserContext as {
+		onArchiveExtract: (fileId: number) => void;
 		onDelete: (type: "file" | "folder", id: number) => Promise<void>;
 		onDownload: (fileId: number, fileName: string) => void;
 		onInfo: (type: "file" | "folder", id: number) => void;
@@ -836,6 +888,8 @@ describe("FileBrowserPage", () => {
 
 		MockIntersectionObserver.reset();
 		mockState.batchDelete.mockReset();
+		mockState.createArchiveCompressTask.mockReset();
+		mockState.createArchiveExtractTask.mockReset();
 		mockState.copyFile.mockReset();
 		mockState.copyFolder.mockReset();
 		mockState.createPreviewLink.mockReset();
@@ -900,6 +954,12 @@ describe("FileBrowserPage", () => {
 		mockState.store.viewMode = "grid";
 
 		mockState.batchDelete.mockResolvedValue({ ok: true });
+		mockState.createArchiveCompressTask.mockResolvedValue({
+			display_name: "Compress custom-bundle.zip",
+		});
+		mockState.createArchiveExtractTask.mockResolvedValue({
+			display_name: "Extract bundle.zip",
+		});
 		mockState.copyFile.mockResolvedValue(undefined);
 		mockState.copyFolder.mockResolvedValue(undefined);
 		mockState.createPreviewLink.mockResolvedValue("preview-link");
@@ -1112,6 +1172,69 @@ describe("FileBrowserPage", () => {
 
 		expect(mockState.streamArchiveDownload).toHaveBeenCalledWith([], [5]);
 		expect(mockState.toastSuccess).not.toHaveBeenCalled();
+	});
+
+	it("opens a naming dialog for batch archive compress and clears selection after task creation", async () => {
+		render(<FileBrowserPage />);
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "batch-archive-compress" }),
+		);
+
+		expect(
+			await screen.findByText("archive-dialog:compress:notes.txt.zip"),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "confirm-archive-dialog-custom" }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.createArchiveCompressTask).toHaveBeenCalledWith(
+				[3],
+				[],
+				"custom-bundle.zip",
+			);
+		});
+		expect(mockState.store.clearSelection).toHaveBeenCalledTimes(1);
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"tasks:task_created_success",
+			{
+				description: "Compress custom-bundle.zip",
+			},
+		);
+	});
+
+	it("opens a naming dialog for archive extract and submits the custom output folder", async () => {
+		mockState.store.files = [createFile({ id: 3, name: "bundle.zip" })];
+
+		render(<FileBrowserPage />);
+
+		const context = getFileBrowserContext();
+		context.onArchiveExtract(3);
+
+		expect(
+			await screen.findByText("archive-dialog:extract:bundle"),
+		).toBeInTheDocument();
+
+		fireEvent.click(
+			screen.getByRole("button", { name: "confirm-archive-dialog-custom" }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.createArchiveExtractTask).toHaveBeenCalledWith(
+				3,
+				undefined,
+				"custom-output",
+			);
+		});
+		expect(mockState.store.clearSelection).not.toHaveBeenCalled();
+		expect(mockState.toastSuccess).toHaveBeenCalledWith(
+			"tasks:task_created_success",
+			{
+				description: "Extract bundle.zip",
+			},
+		);
 	});
 
 	it("re-observes infinite scroll when pagination becomes available after the first render", async () => {

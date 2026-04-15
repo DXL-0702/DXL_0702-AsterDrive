@@ -111,9 +111,10 @@ pub async fn mark_progress<C: ConnectionTrait>(
     current: i64,
     total: i64,
     status_text: Option<&str>,
+    steps_json: Option<&str>,
 ) -> Result<bool> {
     let now = Utc::now();
-    let result = BackgroundTask::update_many()
+    let mut update = BackgroundTask::update_many()
         .col_expr(
             background_task::Column::ProgressCurrent,
             Expr::value(current),
@@ -125,10 +126,14 @@ pub async fn mark_progress<C: ConnectionTrait>(
         )
         .col_expr(background_task::Column::UpdatedAt, Expr::value(now))
         .filter(background_task::Column::Id.eq(id))
-        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
-        .exec(db)
-        .await
-        .map_err(AsterError::from)?;
+        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing));
+    if let Some(steps_json) = steps_json {
+        update = update.col_expr(
+            background_task::Column::StepsJson,
+            Expr::value(Some(steps_json.to_string())),
+        );
+    }
+    let result = update.exec(db).await.map_err(AsterError::from)?;
     Ok(result.rows_affected == 1)
 }
 
@@ -137,13 +142,14 @@ pub async fn mark_succeeded<C: ConnectionTrait>(
     db: &C,
     id: i64,
     result_json: Option<&str>,
+    steps_json: Option<&str>,
     current: i64,
     total: i64,
     status_text: Option<&str>,
     finished_at: DateTime<Utc>,
     expires_at: DateTime<Utc>,
 ) -> Result<bool> {
-    let result = BackgroundTask::update_many()
+    let mut update = BackgroundTask::update_many()
         .col_expr(
             background_task::Column::Status,
             Expr::value(BackgroundTaskStatus::Succeeded.to_value()),
@@ -172,10 +178,14 @@ pub async fn mark_succeeded<C: ConnectionTrait>(
         .col_expr(background_task::Column::ExpiresAt, Expr::value(expires_at))
         .col_expr(background_task::Column::UpdatedAt, Expr::value(finished_at))
         .filter(background_task::Column::Id.eq(id))
-        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
-        .exec(db)
-        .await
-        .map_err(AsterError::from)?;
+        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing));
+    if let Some(steps_json) = steps_json {
+        update = update.col_expr(
+            background_task::Column::StepsJson,
+            Expr::value(Some(steps_json.to_string())),
+        );
+    }
+    let result = update.exec(db).await.map_err(AsterError::from)?;
     Ok(result.rows_affected == 1)
 }
 
@@ -185,8 +195,9 @@ pub async fn mark_retry<C: ConnectionTrait>(
     attempt_count: i32,
     next_run_at: DateTime<Utc>,
     last_error: &str,
+    steps_json: Option<&str>,
 ) -> Result<bool> {
-    let result = BackgroundTask::update_many()
+    let mut update = BackgroundTask::update_many()
         .col_expr(
             background_task::Column::Status,
             Expr::value(BackgroundTaskStatus::Retry.to_value()),
@@ -210,10 +221,14 @@ pub async fn mark_retry<C: ConnectionTrait>(
         )
         .col_expr(background_task::Column::UpdatedAt, Expr::value(Utc::now()))
         .filter(background_task::Column::Id.eq(id))
-        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
-        .exec(db)
-        .await
-        .map_err(AsterError::from)?;
+        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing));
+    if let Some(steps_json) = steps_json {
+        update = update.col_expr(
+            background_task::Column::StepsJson,
+            Expr::value(Some(steps_json.to_string())),
+        );
+    }
+    let result = update.exec(db).await.map_err(AsterError::from)?;
     Ok(result.rows_affected == 1)
 }
 
@@ -224,8 +239,9 @@ pub async fn mark_failed<C: ConnectionTrait>(
     last_error: &str,
     finished_at: DateTime<Utc>,
     expires_at: DateTime<Utc>,
+    steps_json: Option<&str>,
 ) -> Result<bool> {
-    let result = BackgroundTask::update_many()
+    let mut update = BackgroundTask::update_many()
         .col_expr(
             background_task::Column::Status,
             Expr::value(BackgroundTaskStatus::Failed.to_value()),
@@ -253,10 +269,14 @@ pub async fn mark_failed<C: ConnectionTrait>(
         .col_expr(background_task::Column::ExpiresAt, Expr::value(expires_at))
         .col_expr(background_task::Column::UpdatedAt, Expr::value(finished_at))
         .filter(background_task::Column::Id.eq(id))
-        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
-        .exec(db)
-        .await
-        .map_err(AsterError::from)?;
+        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing));
+    if let Some(steps_json) = steps_json {
+        update = update.col_expr(
+            background_task::Column::StepsJson,
+            Expr::value(Some(steps_json.to_string())),
+        );
+    }
+    let result = update.exec(db).await.map_err(AsterError::from)?;
     Ok(result.rows_affected == 1)
 }
 
@@ -264,8 +284,9 @@ pub async fn reset_for_manual_retry<C: ConnectionTrait>(
     db: &C,
     id: i64,
     now: DateTime<Utc>,
+    steps_json: Option<&str>,
 ) -> Result<bool> {
-    let result = BackgroundTask::update_many()
+    let mut update = BackgroundTask::update_many()
         .col_expr(
             background_task::Column::Status,
             Expr::value(BackgroundTaskStatus::Pending.to_value()),
@@ -299,10 +320,14 @@ pub async fn reset_for_manual_retry<C: ConnectionTrait>(
         )
         .col_expr(background_task::Column::UpdatedAt, Expr::value(now))
         .filter(background_task::Column::Id.eq(id))
-        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Failed))
-        .exec(db)
-        .await
-        .map_err(AsterError::from)?;
+        .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Failed));
+    if let Some(steps_json) = steps_json {
+        update = update.col_expr(
+            background_task::Column::StepsJson,
+            Expr::value(Some(steps_json.to_string())),
+        );
+    }
+    let result = update.exec(db).await.map_err(AsterError::from)?;
     Ok(result.rows_affected == 1)
 }
 

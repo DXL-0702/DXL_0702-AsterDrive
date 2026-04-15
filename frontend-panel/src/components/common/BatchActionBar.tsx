@@ -13,13 +13,20 @@ import type { BreadcrumbItem } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
 
 interface BatchActionBarProps {
+	onArchiveCompress?: (
+		fileIds: number[],
+		folderIds: number[],
+	) => Promise<void> | void;
 	onArchiveDownload?: (
 		fileIds: number[],
 		folderIds: number[],
 	) => Promise<void> | void;
 }
 
-export function BatchActionBar({ onArchiveDownload }: BatchActionBarProps) {
+export function BatchActionBar({
+	onArchiveCompress,
+	onArchiveDownload,
+}: BatchActionBarProps) {
 	const { t } = useTranslation(["files", "tasks"]);
 	const selectedFileIds = useFileStore((s) => s.selectedFileIds);
 	const selectedFolderIds = useFileStore((s) => s.selectedFolderIds);
@@ -76,6 +83,15 @@ export function BatchActionBar({ onArchiveDownload }: BatchActionBarProps) {
 		}
 	};
 
+	const handleArchiveCompress = async () => {
+		if (!onArchiveCompress) return;
+		try {
+			await onArchiveCompress(fileIds, folderIds);
+		} catch (err) {
+			handleApiError(err);
+		}
+	};
+
 	const handleTargetConfirm = async (targetFolderId: number | null) => {
 		if (!targetDialogMode) return;
 
@@ -125,6 +141,12 @@ export function BatchActionBar({ onArchiveDownload }: BatchActionBarProps) {
 						<Icon name="Copy" className="h-3.5 w-3.5 mr-1" />
 						{t("copy")}
 					</Button>
+					{onArchiveCompress ? (
+						<Button size="sm" variant="outline" onClick={handleArchiveCompress}>
+							<Icon name="FileZip" className="h-3.5 w-3.5 mr-1" />
+							{t("tasks:archive_compress_action")}
+						</Button>
+					) : null}
 					{onArchiveDownload ? (
 						<Button size="sm" variant="outline" onClick={handleArchiveDownload}>
 							<Icon name="Download" className="h-3.5 w-3.5 mr-1" />

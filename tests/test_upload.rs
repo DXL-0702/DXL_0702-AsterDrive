@@ -1263,6 +1263,122 @@ async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
     );
 }
 
+#[actix_web::test]
+async fn test_cancel_upload_keeps_multipart_session_for_grace_cleanup() {
+    use aster_drive::db::repository::{upload_session_part_repo, upload_session_repo};
+    use aster_drive::services::{auth_service, upload_service};
+    use aster_drive::types::UploadSessionStatus;
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "cancelgraceuser",
+        "cancel-grace@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let upload_id = new_test_upload_id();
+    create_upload_session(
+        &state,
+        user.id,
+        &upload_id,
+        UploadSessionStatus::Uploading,
+        chrono::Utc::now() + chrono::Duration::hours(1),
+        2,
+        0,
+        Some("files/temp-key"),
+        Some("multipart-id"),
+        None,
+    )
+    .await;
+
+    let temp_dir = aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+    );
+    tokio::fs::create_dir_all(&temp_dir).await.unwrap();
+    tokio::fs::write(format!("{temp_dir}/chunk_0"), b"temp")
+        .await
+        .unwrap();
+
+    let canceled_at = chrono::Utc::now();
+    upload_service::cancel_upload(&state, &upload_id, user.id)
+        .await
+        .unwrap();
+
+    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(session.status, UploadSessionStatus::Failed);
+    assert!(
+        session.expires_at > canceled_at,
+        "multipart cancel should defer cleanup instead of deleting the session immediately"
+    );
+    assert!(
+        session.expires_at <= canceled_at + chrono::Duration::seconds(20),
+        "multipart cancel grace window should stay short"
+    );
+    assert!(
+        !std::path::Path::new(&temp_dir).exists(),
+        "multipart cancel should still clean local temp data"
+    );
+
+    upload_session_part_repo::upsert_part(&state.db, &upload_id, 1, "etag-1", 5)
+        .await
+        .unwrap();
+    let part = upload_session_part_repo::find_by_upload_and_part(&state.db, &upload_id, 1)
+        .await
+        .unwrap()
+        .expect("session row should remain available during grace window");
+    assert_eq!(part.etag, "etag-1");
+}
+
+#[actix_web::test]
+async fn test_upload_chunk_returns_session_expired_for_failed_multipart_session() {
+    use aster_drive::db::repository::upload_session_part_repo;
+    use aster_drive::services::{auth_service, upload_service};
+    use aster_drive::types::UploadSessionStatus;
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "failedchunkuser",
+        "failed-chunk@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let upload_id = new_test_upload_id();
+    create_upload_session(
+        &state,
+        user.id,
+        &upload_id,
+        UploadSessionStatus::Failed,
+        chrono::Utc::now() + chrono::Duration::hours(1),
+        2,
+        0,
+        Some("files/temp-key"),
+        Some("multipart-id"),
+        None,
+    )
+    .await;
+
+    let err = match upload_service::upload_chunk(&state, &upload_id, 0, user.id, &[b'x'; 5]).await {
+        Ok(_) => panic!("expected failed session to reject late chunk"),
+        Err(err) => err,
+    };
+    assert_eq!(err.code(), "E055");
+    assert!(err.message().contains("canceled or failed"));
+    assert!(
+        upload_session_part_repo::find_by_upload_and_part(&state.db, &upload_id, 1)
+            .await
+            .unwrap()
+            .is_none(),
+        "failed session should reject late multipart chunks before claiming part rows"
+    );
+}
+
 /// S3 presigned upload 端到端测试（需要 testcontainers + rustfs）
 #[tokio::test]
 async fn test_presigned_upload_s3_e2e() {

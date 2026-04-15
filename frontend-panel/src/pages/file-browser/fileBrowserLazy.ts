@@ -1,5 +1,10 @@
 import { lazyWithPreload } from "@/lib/lazyWithPreload";
 
+export const ArchiveTaskNameDialog = lazyWithPreload(async () => {
+	const module = await import("@/components/files/ArchiveTaskNameDialog");
+	return { default: module.ArchiveTaskNameDialog };
+});
+
 export const BatchTargetFolderDialog = lazyWithPreload(async () => {
 	const module = await import("@/components/files/BatchTargetFolderDialog");
 	return { default: module.BatchTargetFolderDialog };
@@ -36,6 +41,7 @@ export const VersionHistoryDialog = lazyWithPreload(async () => {
 });
 
 export const FILE_BROWSER_LAZY_PRELOADERS = [
+	ArchiveTaskNameDialog,
 	BatchTargetFolderDialog,
 	CreateFileDialog,
 	CreateFolderDialog,

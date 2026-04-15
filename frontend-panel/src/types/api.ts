@@ -151,6 +151,8 @@ export type TeamMemberRole = components["schemas"]["TeamMemberRole"];
 export type UpdateTeamMemberRequest =
 	components["schemas"]["PatchTeamMemberReq"];
 export type UpdateTeamRequest = components["schemas"]["PatchTeamReq"];
+export type TaskStepStatus = components["schemas"]["TaskStepStatus"];
+export type TaskStepInfo = components["schemas"]["TaskStepInfo"];
 export type TaskInfo = components["schemas"]["TaskInfo"];
 export type TaskPage = components["schemas"]["OffsetPage_TaskInfo"];
 

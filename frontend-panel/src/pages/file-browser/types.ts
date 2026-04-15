@@ -27,6 +27,20 @@ export interface FileBrowserMoveTarget {
 	folderIds: number[];
 }
 
+export type FileBrowserArchiveTaskTarget =
+	| {
+			mode: "compress";
+			fileIds: number[];
+			folderIds: number[];
+			initialName: string;
+			clearSelectionOnSuccess: boolean;
+	  }
+	| {
+			mode: "extract";
+			fileId: number;
+			initialName: string;
+	  };
+
 export interface FileBrowserVersionTarget {
 	fileId: number;
 	fileName: string;

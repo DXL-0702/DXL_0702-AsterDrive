@@ -19,6 +19,7 @@ pub struct Model {
     pub display_name: String,
     pub payload_json: String,
     pub result_json: Option<String>,
+    pub steps_json: Option<String>,
     pub progress_current: i64,
     pub progress_total: i64,
     pub status_text: Option<String>,

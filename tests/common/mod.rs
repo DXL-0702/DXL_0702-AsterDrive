@@ -151,6 +151,7 @@ fn lock_shared_test_container_state(backend: TestDatabaseBackend) -> File {
     let lock_path = backend.shared_lock_path();
     let file = OpenOptions::new()
         .create(true)
+        .truncate(true)
         .read(true)
         .write(true)
         .open(lock_path)
@@ -526,7 +527,7 @@ fn database_name_from_url(url: &reqwest::Url) -> Option<String> {
         .and_then(|segments| {
             segments
                 .filter(|segment| !segment.is_empty())
-                .next_back()
+                .rfind(|segment| !segment.is_empty())
                 .map(str::to_string)
         })
         .filter(|value| !value.is_empty())

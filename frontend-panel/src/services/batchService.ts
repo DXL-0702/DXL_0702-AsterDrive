@@ -7,7 +7,7 @@ import {
 } from "@/lib/workspace";
 import { api } from "@/services/http";
 import { bindWorkspaceService } from "@/stores/workspaceStore";
-import type { BatchResult } from "@/types/api";
+import type { BatchResult, TaskInfo } from "@/types/api";
 
 interface StreamTicketInfo {
 	token: string;
@@ -95,6 +95,24 @@ export function createBatchService(workspace: Workspace = PERSONAL_WORKSPACE) {
 				.then((ticket) => {
 					triggerStreamingDownload(buildArchiveDownloadUrl(workspace, ticket));
 				}),
+
+		createArchiveCompressTask: (
+			fileIds: number[],
+			folderIds: number[],
+			archiveName?: string,
+			targetFolderId?: number | null,
+		) =>
+			api.post<TaskInfo>(
+				buildWorkspacePath(workspace, "/batch/archive-compress"),
+				{
+					file_ids: fileIds,
+					folder_ids: folderIds,
+					...(archiveName === undefined ? {} : { archive_name: archiveName }),
+					...(targetFolderId === undefined
+						? {}
+						: { target_folder_id: targetFolderId }),
+				},
+			),
 	};
 }
 

@@ -15,6 +15,8 @@ interface FileContextMenuProps {
 	onOpen?: () => void;
 	onChooseOpenMethod?: () => void;
 	onDownload?: () => void;
+	onArchiveExtract?: () => void;
+	onArchiveCompress?: () => void;
 	onArchiveDownload?: () => void;
 	onPageShare: () => void;
 	onDirectShare?: () => void;
@@ -35,6 +37,8 @@ export function FileContextMenu({
 	onOpen,
 	onChooseOpenMethod,
 	onDownload,
+	onArchiveExtract,
+	onArchiveCompress,
 	onArchiveDownload,
 	onPageShare,
 	onDirectShare,
@@ -81,6 +85,18 @@ export function FileContextMenu({
 					<ContextMenuItem onClick={onDownload}>
 						<Icon name="Download" className="h-4 w-4 mr-2" />
 						{t("download")}
+					</ContextMenuItem>
+				)}
+				{!isFolder && onArchiveExtract && (
+					<ContextMenuItem onClick={onArchiveExtract}>
+						<Icon name="FolderOpen" className="h-4 w-4 mr-2" />
+						{t("tasks:archive_extract_action")}
+					</ContextMenuItem>
+				)}
+				{onArchiveCompress && (
+					<ContextMenuItem onClick={onArchiveCompress}>
+						<Icon name="FileZip" className="h-4 w-4 mr-2" />
+						{t("tasks:archive_compress_action")}
 					</ContextMenuItem>
 				)}
 				{isFolder && onArchiveDownload && (

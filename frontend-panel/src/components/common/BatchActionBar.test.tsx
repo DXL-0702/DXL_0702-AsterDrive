@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BatchActionBar } from "@/components/common/BatchActionBar";
 
 const mockState = vi.hoisted(() => ({
+	archiveCompress: vi.fn(),
 	archiveDownload: vi.fn(),
 	batchCopy: vi.fn(),
 	batchDelete: vi.fn(),
@@ -151,6 +152,8 @@ vi.mock("@/stores/fileStore", () => ({
 
 describe("BatchActionBar", () => {
 	beforeEach(() => {
+		mockState.archiveCompress.mockReset();
+		mockState.archiveCompress.mockResolvedValue(undefined);
 		mockState.archiveDownload.mockReset();
 		mockState.archiveDownload.mockResolvedValue(undefined);
 		mockState.batchCopy.mockReset();
@@ -286,6 +289,18 @@ describe("BatchActionBar", () => {
 			expect(mockState.archiveDownload).toHaveBeenCalledWith([1, 2], [5]);
 		});
 		expect(mockState.clearSelection).toHaveBeenCalledTimes(1);
+		expect(mockState.handleApiError).not.toHaveBeenCalled();
+	});
+
+	it("delegates archive compress without clearing the selection immediately", async () => {
+		render(<BatchActionBar onArchiveCompress={mockState.archiveCompress} />);
+
+		fireEvent.click(screen.getByText("tasks:archive_compress_action"));
+
+		await waitFor(() => {
+			expect(mockState.archiveCompress).toHaveBeenCalledWith([1, 2], [5]);
+		});
+		expect(mockState.clearSelection).not.toHaveBeenCalled();
 		expect(mockState.handleApiError).not.toHaveBeenCalled();
 	});
 });

@@ -793,6 +793,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/batch/archive-compress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["batch_archive_compress"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/batch/archive-download": {
         parameters: {
             query?: never;
@@ -1059,6 +1075,22 @@ export interface paths {
         get: operations["download_file"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/files/{id}/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["extract_file_archive"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1721,6 +1753,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/teams/{team_id}/batch/archive-compress": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["batch_archive_compress_team"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/teams/{team_id}/batch/archive-download": {
         parameters: {
             query?: never;
@@ -1987,6 +2035,22 @@ export interface paths {
         get: operations["download_team_file"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/teams/{team_id}/files/{id}/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["extract_team_file_archive"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2697,6 +2761,13 @@ export interface components {
             }[];
             msg: string;
         };
+        ArchiveCompressReq: {
+            archive_name?: string | null;
+            file_ids?: number[];
+            folder_ids?: number[];
+            /** Format: int64 */
+            target_folder_id?: number | null;
+        };
         ArchiveDownloadReq: {
             archive_name?: string | null;
             file_ids?: number[];
@@ -2935,6 +3006,11 @@ export interface components {
         ExecuteConfigActionResp: {
             message: string;
             value?: string | null;
+        };
+        ExtractArchiveRequest: {
+            output_folder_name?: string | null;
+            /** Format: int64 */
+            target_folder_id?: number | null;
         };
         FileCursor: {
             /** Format: int64 */
@@ -3377,6 +3453,7 @@ export interface components {
                 started_at?: string | null;
                 status: components["schemas"]["BackgroundTaskStatus"];
                 status_text?: string | null;
+                steps: components["schemas"]["TaskStepInfo"][];
                 /** Format: int64 */
                 team_id?: number | null;
                 updated_at: string;
@@ -3888,10 +3965,25 @@ export interface components {
             started_at?: string | null;
             status: components["schemas"]["BackgroundTaskStatus"];
             status_text?: string | null;
+            steps: components["schemas"]["TaskStepInfo"][];
             /** Format: int64 */
             team_id?: number | null;
             updated_at: string;
         };
+        TaskStepInfo: {
+            detail?: string | null;
+            finished_at?: string | null;
+            key: string;
+            /** Format: int64 */
+            progress_current: number;
+            /** Format: int64 */
+            progress_total: number;
+            started_at?: string | null;
+            status: components["schemas"]["TaskStepStatus"];
+            title: string;
+        };
+        /** @enum {string} */
+        TaskStepStatus: "pending" | "active" | "succeeded" | "failed" | "canceled";
         TeamAuditEntryInfo: {
             action: string;
             actor_username: string;
@@ -7643,6 +7735,81 @@ export interface operations {
             };
         };
     };
+    batch_archive_compress: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArchiveCompressReq"];
+            };
+        };
+        responses: {
+            /** @description Archive compress task created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int32 */
+                            attempt_count: number;
+                            can_retry: boolean;
+                            created_at: string;
+                            /** Format: int64 */
+                            creator_user_id?: number | null;
+                            display_name: string;
+                            expires_at: string;
+                            finished_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            kind: components["schemas"]["BackgroundTaskKind"];
+                            last_error?: string | null;
+                            /** Format: int32 */
+                            max_attempts: number;
+                            payload_json: string;
+                            /** Format: int64 */
+                            progress_current: number;
+                            /** Format: int32 */
+                            progress_percent: number;
+                            /** Format: int64 */
+                            progress_total: number;
+                            result_json?: string | null;
+                            /** Format: int64 */
+                            share_id?: number | null;
+                            started_at?: string | null;
+                            status: components["schemas"]["BackgroundTaskStatus"];
+                            status_text?: string | null;
+                            steps: components["schemas"]["TaskStepInfo"][];
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     batch_archive_download: {
         parameters: {
             query?: never;
@@ -8626,6 +8793,91 @@ export interface operations {
         responses: {
             /** @description File content */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    extract_file_archive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description File ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtractArchiveRequest"];
+            };
+        };
+        responses: {
+            /** @description Archive extract task created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int32 */
+                            attempt_count: number;
+                            can_retry: boolean;
+                            created_at: string;
+                            /** Format: int64 */
+                            creator_user_id?: number | null;
+                            display_name: string;
+                            expires_at: string;
+                            finished_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            kind: components["schemas"]["BackgroundTaskKind"];
+                            last_error?: string | null;
+                            /** Format: int32 */
+                            max_attempts: number;
+                            payload_json: string;
+                            /** Format: int64 */
+                            progress_current: number;
+                            /** Format: int32 */
+                            progress_percent: number;
+                            /** Format: int64 */
+                            progress_total: number;
+                            result_json?: string | null;
+                            /** Format: int64 */
+                            share_id?: number | null;
+                            started_at?: string | null;
+                            status: components["schemas"]["BackgroundTaskStatus"];
+                            status_text?: string | null;
+                            steps: components["schemas"]["TaskStepInfo"][];
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unsupported archive format */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10657,6 +10909,7 @@ export interface operations {
                                 started_at?: string | null;
                                 status: components["schemas"]["BackgroundTaskStatus"];
                                 status_text?: string | null;
+                                steps: components["schemas"]["TaskStepInfo"][];
                                 /** Format: int64 */
                                 team_id?: number | null;
                                 updated_at: string;
@@ -10730,6 +10983,7 @@ export interface operations {
                             started_at?: string | null;
                             status: components["schemas"]["BackgroundTaskStatus"];
                             status_text?: string | null;
+                            steps: components["schemas"]["TaskStepInfo"][];
                             /** Format: int64 */
                             team_id?: number | null;
                             updated_at: string;
@@ -10803,6 +11057,7 @@ export interface operations {
                             started_at?: string | null;
                             status: components["schemas"]["BackgroundTaskStatus"];
                             status_text?: string | null;
+                            steps: components["schemas"]["TaskStepInfo"][];
                             /** Format: int64 */
                             team_id?: number | null;
                             updated_at: string;
@@ -11516,6 +11771,91 @@ export interface operations {
             };
             /** @description Not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    batch_archive_compress_team: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ArchiveCompressReq"];
+            };
+        };
+        responses: {
+            /** @description Team archive compress task created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int32 */
+                            attempt_count: number;
+                            can_retry: boolean;
+                            created_at: string;
+                            /** Format: int64 */
+                            creator_user_id?: number | null;
+                            display_name: string;
+                            expires_at: string;
+                            finished_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            kind: components["schemas"]["BackgroundTaskKind"];
+                            last_error?: string | null;
+                            /** Format: int32 */
+                            max_attempts: number;
+                            payload_json: string;
+                            /** Format: int64 */
+                            progress_current: number;
+                            /** Format: int32 */
+                            progress_percent: number;
+                            /** Format: int64 */
+                            progress_total: number;
+                            result_json?: string | null;
+                            /** Format: int64 */
+                            share_id?: number | null;
+                            started_at?: string | null;
+                            status: components["schemas"]["BackgroundTaskStatus"];
+                            status_text?: string | null;
+                            steps: components["schemas"]["TaskStepInfo"][];
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -12694,6 +13034,100 @@ export interface operations {
         responses: {
             /** @description Team file content */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description File not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    extract_team_file_archive: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Team ID */
+                team_id: number;
+                /** @description File ID */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtractArchiveRequest"];
+            };
+        };
+        responses: {
+            /** @description Team archive extract task created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int32 */
+                            attempt_count: number;
+                            can_retry: boolean;
+                            created_at: string;
+                            /** Format: int64 */
+                            creator_user_id?: number | null;
+                            display_name: string;
+                            expires_at: string;
+                            finished_at?: string | null;
+                            /** Format: int64 */
+                            id: number;
+                            kind: components["schemas"]["BackgroundTaskKind"];
+                            last_error?: string | null;
+                            /** Format: int32 */
+                            max_attempts: number;
+                            payload_json: string;
+                            /** Format: int64 */
+                            progress_current: number;
+                            /** Format: int32 */
+                            progress_percent: number;
+                            /** Format: int64 */
+                            progress_total: number;
+                            result_json?: string | null;
+                            /** Format: int64 */
+                            share_id?: number | null;
+                            started_at?: string | null;
+                            status: components["schemas"]["BackgroundTaskStatus"];
+                            status_text?: string | null;
+                            steps: components["schemas"]["TaskStepInfo"][];
+                            /** Format: int64 */
+                            team_id?: number | null;
+                            updated_at: string;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Unsupported archive format */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14178,6 +14612,7 @@ export interface operations {
                                 started_at?: string | null;
                                 status: components["schemas"]["BackgroundTaskStatus"];
                                 status_text?: string | null;
+                                steps: components["schemas"]["TaskStepInfo"][];
                                 /** Format: int64 */
                                 team_id?: number | null;
                                 updated_at: string;
@@ -14260,6 +14695,7 @@ export interface operations {
                             started_at?: string | null;
                             status: components["schemas"]["BackgroundTaskStatus"];
                             status_text?: string | null;
+                            steps: components["schemas"]["TaskStepInfo"][];
                             /** Format: int64 */
                             team_id?: number | null;
                             updated_at: string;
@@ -14342,6 +14778,7 @@ export interface operations {
                             started_at?: string | null;
                             status: components["schemas"]["BackgroundTaskStatus"];
                             status_text?: string | null;
+                            steps: components["schemas"]["TaskStepInfo"][];
                             /** Format: int64 */
                             team_id?: number | null;
                             updated_at: string;

@@ -973,4 +973,46 @@ describe("UploadArea", () => {
 		).toHaveLength(1);
 		expect(completeUpload).toHaveBeenCalledWith("upload-new", undefined);
 	});
+
+	it("waits for in-flight chunk requests to drain before canceling an old session on retry", async () => {
+		const inFlightChunk = createDeferred<unknown>();
+
+		cancelUpload.mockResolvedValue(undefined);
+		initUpload
+			.mockResolvedValueOnce({
+				mode: "chunked",
+				upload_id: "upload-old",
+				chunk_size: 3,
+				total_chunks: 2,
+			})
+			.mockResolvedValueOnce({
+				mode: "chunked",
+				upload_id: "upload-new",
+				chunk_size: 5,
+				total_chunks: 1,
+			});
+		uploadChunk
+			.mockRejectedValueOnce(
+				Object.assign(new Error("upload failed"), { retryable: false }),
+			)
+			.mockImplementationOnce(() => inFlightChunk.promise)
+			.mockResolvedValueOnce({});
+		completeUpload.mockResolvedValue({ id: 9010 });
+
+		await uploadOneFile();
+
+		await screen.findByText("hello.txt:Chunked:files:upload_failed");
+		fireEvent.click(screen.getByText("files:upload_retry"));
+
+		await Promise.resolve();
+		expect(cancelUpload).not.toHaveBeenCalled();
+
+		inFlightChunk.resolve({});
+
+		await screen.findByText("hello.txt:Chunked:files:upload_success");
+
+		expect(cancelUpload).toHaveBeenCalledWith("upload-old");
+		expect(removeSession).toHaveBeenCalledWith("upload-old");
+		expect(uploadChunk.mock.calls.at(-1)?.[0]).toBe("upload-new");
+	});
 });

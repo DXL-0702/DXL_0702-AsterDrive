@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { EmptyState } from "@/components/common/EmptyState";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -11,11 +12,15 @@ import { Progress } from "@/components/ui/progress";
 import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { formatDateAbsolute } from "@/lib/format";
+import { workspaceFolderPath } from "@/lib/workspace";
 import { taskService } from "@/services/taskService";
+import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type {
 	BackgroundTaskKind,
 	BackgroundTaskStatus,
 	TaskInfo,
+	TaskStepInfo,
+	TaskStepStatus,
 } from "@/types/api";
 
 const PAGE_SIZE = 20;
@@ -41,8 +46,87 @@ function statusBadgeVariant(status: BackgroundTaskStatus) {
 	}
 }
 
+function stepStatusTextClass(status: TaskStepStatus) {
+	switch (status) {
+		case "active":
+			return "text-primary";
+		case "succeeded":
+			return "text-foreground";
+		case "failed":
+			return "text-destructive";
+		case "canceled":
+		case "pending":
+			return "text-muted-foreground";
+	}
+}
+
+function stepProgressPercent(step: TaskStepInfo) {
+	if (step.progress_total <= 0) {
+		return step.status === "succeeded" ? 100 : 0;
+	}
+	return Math.max(
+		0,
+		Math.min(
+			100,
+			Math.floor((step.progress_current * 100) / step.progress_total),
+		),
+	);
+}
+
+function stepConnectorClass(status: TaskStepStatus) {
+	switch (status) {
+		case "succeeded":
+			return "bg-primary/70";
+		case "active":
+			return "bg-primary/35";
+		case "failed":
+			return "bg-destructive/35";
+		case "canceled":
+			return "bg-border/60";
+		case "pending":
+			return "bg-border/40";
+	}
+}
+
+function stepCircleClass(status: TaskStepStatus) {
+	switch (status) {
+		case "active":
+			return "border-primary bg-primary text-primary-foreground shadow-[0_0_0_4px_rgba(249,115,22,0.16)]";
+		case "succeeded":
+			return "border-primary/40 bg-primary/12 text-foreground";
+		case "failed":
+			return "border-destructive/50 bg-destructive/10 text-destructive";
+		case "canceled":
+			return "border-border/70 bg-muted/35 text-muted-foreground";
+		case "pending":
+			return "border-border/60 bg-background/90 text-muted-foreground";
+	}
+}
+
+function stepCircleLabel(index: number, status: TaskStepStatus) {
+	switch (status) {
+		case "failed":
+			return "!";
+		case "canceled":
+			return "X";
+		default:
+			return String(index + 1);
+	}
+}
+
+function currentTaskStep(task: TaskInfo) {
+	return (
+		task.steps.find((step) => step.status === "active") ??
+		task.steps.find((step) => step.status === "failed") ??
+		task.steps[task.steps.length - 1] ??
+		null
+	);
+}
+
 export default function TasksPage() {
 	const { t } = useTranslation(["core", "tasks"]);
+	const navigate = useNavigate();
+	const workspace = useWorkspaceStore((s) => s.workspace);
 	usePageTitle(t("tasks:title"));
 	const [page, setPage] = useState(0);
 	const [loading, setLoading] = useState(true);
@@ -127,6 +211,30 @@ export default function TasksPage() {
 		}
 	};
 
+	const formatTaskStepStatus = (status: TaskStepStatus) => {
+		switch (status) {
+			case "pending":
+				return t("tasks:step_status_pending");
+			case "active":
+				return t("tasks:step_status_active");
+			case "succeeded":
+				return t("tasks:step_status_succeeded");
+			case "failed":
+				return t("tasks:step_status_failed");
+			case "canceled":
+				return t("tasks:step_status_canceled");
+		}
+	};
+
+	const formatTaskStepTitle = (
+		taskKind: BackgroundTaskKind,
+		step: TaskStepInfo,
+	) => {
+		const key = `tasks:step_${taskKind}_${step.key}`;
+		const translated = t(key);
+		return translated === key ? step.title : translated;
+	};
+
 	const handleRetry = useCallback(
 		async (taskId: number) => {
 			try {
@@ -163,6 +271,42 @@ export default function TasksPage() {
 
 		return lines.join(" · ");
 	};
+
+	const parseTaskResult = (task: TaskInfo) => {
+		if (!task.result_json) {
+			return null;
+		}
+
+		try {
+			const parsed = JSON.parse(task.result_json) as {
+				target_folder_id?: number | null;
+				target_path?: string;
+			};
+			if (
+				typeof parsed !== "object" ||
+				parsed === null ||
+				typeof parsed.target_path !== "string" ||
+				!(
+					parsed.target_folder_id === null ||
+					typeof parsed.target_folder_id === "number"
+				)
+			) {
+				return null;
+			}
+			return parsed;
+		} catch {
+			return null;
+		}
+	};
+
+	const openTaskTargetFolder = useCallback(
+		(targetFolderId: number | null) => {
+			navigate(workspaceFolderPath(workspace, targetFolderId), {
+				viewTransition: true,
+			});
+		},
+		[navigate, workspace],
+	);
 
 	return (
 		<AppLayout>
@@ -211,6 +355,8 @@ export default function TasksPage() {
 					) : (
 						<div className="space-y-3">
 							{tasks.map((task) => {
+								const parsedResult = parseTaskResult(task);
+								const activeStep = currentTaskStep(task);
 								const progressValue =
 									task.status === "succeeded"
 										? 100
@@ -288,12 +434,138 @@ export default function TasksPage() {
 												) : null}
 											</div>
 
+											{task.steps.length > 0 ? (
+												<div className="space-y-3 rounded-lg border bg-muted/15 px-3 py-3">
+													<div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+														<span className="font-medium">
+															{t("tasks:steps_label")}
+														</span>
+														{activeStep ? (
+															<span className="text-muted-foreground">
+																{t("tasks:current_step_label")}:{" "}
+																{formatTaskStepTitle(task.kind, activeStep)}
+															</span>
+														) : null}
+													</div>
+													<div className="overflow-x-auto pb-1">
+														<div className="flex min-w-max items-start px-1 py-2">
+															{task.steps.map((step, index) => (
+																<div
+																	key={`${task.id}-${step.key}`}
+																	className="contents"
+																>
+																	<div className="w-44 shrink-0">
+																		<div className="flex flex-col items-center text-center">
+																			<div className="relative flex h-12 w-12 items-center justify-center">
+																				{step.status === "active" ? (
+																					<span className="absolute inset-0 rounded-full border-2 border-primary/20 border-t-primary animate-spin" />
+																				) : null}
+																				<span
+																					className={`relative flex h-9 w-9 items-center justify-center rounded-full border text-sm font-semibold transition-colors ${stepCircleClass(step.status)}`}
+																				>
+																					{stepCircleLabel(index, step.status)}
+																				</span>
+																			</div>
+																			<div className="mt-3 space-y-1">
+																				<p className="text-sm font-semibold leading-snug">
+																					{index + 1}.{" "}
+																					{formatTaskStepTitle(task.kind, step)}
+																				</p>
+																				<p
+																					className={`text-xs font-medium ${stepStatusTextClass(step.status)}`}
+																				>
+																					{formatTaskStepStatus(step.status)}
+																				</p>
+																			</div>
+																		</div>
+																	</div>
+																	{index < task.steps.length - 1 ? (
+																		<div className="flex h-12 w-16 shrink-0 items-center px-2">
+																			<div
+																				className={`h-1 w-full rounded-full ${stepConnectorClass(step.status)}`}
+																			/>
+																		</div>
+																	) : null}
+																</div>
+															))}
+														</div>
+													</div>
+													{activeStep ? (
+														<div className="rounded-lg border bg-background/70 px-3 py-3">
+															<div className="flex flex-wrap items-center justify-between gap-2">
+																<div className="text-sm font-medium">
+																	{task.steps.findIndex(
+																		(step) => step.key === activeStep.key,
+																	) + 1}
+																	. {formatTaskStepTitle(task.kind, activeStep)}
+																</div>
+																<span
+																	className={`text-xs font-medium ${stepStatusTextClass(activeStep.status)}`}
+																>
+																	{formatTaskStepStatus(activeStep.status)}
+																</span>
+															</div>
+															{activeStep.detail ? (
+																<p className="mt-2 text-sm text-muted-foreground">
+																	{activeStep.detail}
+																</p>
+															) : null}
+															{activeStep.progress_total > 0 ? (
+																<div className="mt-3 space-y-2">
+																	<div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+																		<span>
+																			{t("tasks:step_progress_label")}
+																		</span>
+																		<span>
+																			{stepProgressPercent(activeStep)}% ·{" "}
+																			{t("tasks:progress_ratio", {
+																				current: activeStep.progress_current,
+																				total: activeStep.progress_total,
+																			})}
+																		</span>
+																	</div>
+																	<Progress
+																		value={stepProgressPercent(activeStep)}
+																		className="h-1.5"
+																	/>
+																</div>
+															) : null}
+														</div>
+													) : null}
+												</div>
+											) : null}
+
 											{task.last_error ? (
 												<div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
 													<span className="font-medium">
 														{t("tasks:error_label")}:
 													</span>{" "}
 													{task.last_error}
+												</div>
+											) : null}
+
+											{task.status === "succeeded" && parsedResult ? (
+												<div className="flex flex-col gap-3 rounded-lg border bg-muted/20 px-3 py-3 text-sm">
+													<div>
+														<span className="font-medium">
+															{t("tasks:result_path_label")}:
+														</span>{" "}
+														<span className="text-muted-foreground">
+															{parsedResult.target_path}
+														</span>
+													</div>
+													<Button
+														variant="outline"
+														size="sm"
+														onClick={() =>
+															openTaskTargetFolder(
+																parsedResult.target_folder_id ?? null,
+															)
+														}
+													>
+														<Icon name="FolderOpen" className="mr-1 h-4 w-4" />
+														{t("tasks:open_target_folder")}
+													</Button>
 												</div>
 											) : null}
 										</div>

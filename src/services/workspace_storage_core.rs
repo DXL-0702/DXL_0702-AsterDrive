@@ -92,13 +92,38 @@ pub(crate) async fn mark_upload_session_completed<C: ConnectionTrait>(
     session_id: &str,
     file_id: i64,
 ) -> Result<()> {
+    use crate::entities::upload_session::{Column, Entity as UploadSession};
+    use sea_orm::{ActiveEnum, ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr};
+
+    let now = Utc::now();
+    let result = UploadSession::update_many()
+        .col_expr(
+            Column::Status,
+            Expr::value(crate::types::UploadSessionStatus::Completed.to_value()),
+        )
+        .col_expr(Column::FileId, Expr::value(Some(file_id)))
+        .col_expr(Column::UpdatedAt, Expr::value(now))
+        .filter(Column::Id.eq(session_id))
+        .filter(Column::Status.eq(crate::types::UploadSessionStatus::Assembling))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+
+    if result.rows_affected == 1 {
+        return Ok(());
+    }
+
     let session_fresh = upload_session_repo::find_by_id(db, session_id).await?;
-    let mut active: upload_session::ActiveModel = session_fresh.into();
-    active.status = Set(crate::types::UploadSessionStatus::Completed);
-    active.file_id = Set(Some(file_id));
-    active.updated_at = Set(Utc::now());
-    upload_session_repo::update(db, active).await?;
-    Ok(())
+    if session_fresh.status == crate::types::UploadSessionStatus::Failed {
+        return Err(AsterError::upload_assembly_failed(
+            "upload was canceled during assembly",
+        ));
+    }
+
+    Err(AsterError::upload_assembly_failed(format!(
+        "session status is '{:?}', expected 'assembling'",
+        session_fresh.status
+    )))
 }
 
 fn resolve_team_policy_group_id(team: &team::Model) -> Result<i64> {
