@@ -221,7 +221,7 @@ async fn download_share_resource_with_disposition(
             file_id = file.id,
             "shared file download satisfied by ETag"
         );
-        return file_service::build_stream_response_with_disposition(
+        return file_service::build_download_response_with_disposition(
             state,
             file,
             &blob,
@@ -245,7 +245,7 @@ async fn download_share_resource_with_disposition(
         }
     }
 
-    match file_service::build_stream_response_with_disposition(
+    match file_service::build_download_response_with_disposition(
         state,
         file,
         &blob,

@@ -928,7 +928,7 @@ describe("AdminPoliciesPage", () => {
 			target: { value: "NEWKEY" },
 		});
 		fireEvent.click(
-			screen.getByRole("button", { name: "select-item:relay_stream" }),
+			screen.getAllByRole("button", { name: "select-item:relay_stream" })[0],
 		);
 		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
 
@@ -965,7 +965,10 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: 4096,
 				name: "Archive S3 Updated",
-				options: { s3_upload_strategy: "relay_stream" },
+				options: {
+					s3_download_strategy: "relay_stream",
+					s3_upload_strategy: "relay_stream",
+				},
 			}),
 		);
 		expect(payload).toHaveProperty("access_key", "NEWKEY");
@@ -1066,9 +1069,6 @@ describe("AdminPoliciesPage", () => {
 		expect(screen.getByDisplayValue("Legacy Presigned S3")).toBeInTheDocument();
 		expect(screen.getByDisplayValue("legacy-bucket")).toBeInTheDocument();
 		expect(screen.getByDisplayValue("legacy-path")).toBeInTheDocument();
-		expect(
-			screen.getByRole("button", { name: "select-item:presigned" }),
-		).toBeInTheDocument();
 
 		fireEvent.change(screen.getByLabelText("Access Key"), {
 			target: { value: "LEGACYKEY" },
@@ -1092,7 +1092,10 @@ describe("AdminPoliciesPage", () => {
 			expect(mockState.update).toHaveBeenCalledWith(
 				10,
 				expect.objectContaining({
-					options: { s3_upload_strategy: "presigned" },
+					options: {
+						s3_download_strategy: "relay_stream",
+						s3_upload_strategy: "presigned",
+					},
 				}),
 			);
 		});
@@ -1131,7 +1134,7 @@ describe("AdminPoliciesPage", () => {
 			target: { value: "NEWKEY" },
 		});
 		fireEvent.click(
-			screen.getByRole("button", { name: "select-item:relay_stream" }),
+			screen.getAllByRole("button", { name: "select-item:relay_stream" })[0],
 		);
 		fireEvent.click(screen.getByRole("button", { name: /test_connection/i }));
 
@@ -1167,7 +1170,10 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: 4096,
 				name: "Relay S3",
-				options: { s3_upload_strategy: "relay_stream" },
+				options: {
+					s3_download_strategy: "relay_stream",
+					s3_upload_strategy: "relay_stream",
+				},
 			}),
 		);
 		expect(payload).not.toHaveProperty("secret_key");
@@ -1250,7 +1256,10 @@ describe("AdminPoliciesPage", () => {
 				is_default: false,
 				max_file_size: undefined,
 				name: "Broken S3",
-				options: { s3_upload_strategy: "relay_stream" },
+				options: {
+					s3_download_strategy: "relay_stream",
+					s3_upload_strategy: "relay_stream",
+				},
 				secret_key: "",
 			});
 		});

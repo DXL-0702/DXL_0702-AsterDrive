@@ -1,15 +1,21 @@
-use actix_web::HttpResponse;
+use std::time::Duration;
+
+use actix_web::{HttpResponse, http::header};
 
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob};
-use crate::errors::Result;
+use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
+use crate::storage::driver::PresignedDownloadOptions;
+use crate::types::{DriverType, S3DownloadStrategy, parse_storage_policy_options};
 
 use super::{
     DownloadDisposition, ensure_personal_file_scope, get_info_in_scope, if_none_match_matches,
     inline_sandbox_csp, requires_inline_sandbox,
 };
+
+const PRESIGNED_DOWNLOAD_TTL_SECS: u64 = 5 * 60;
 
 pub(crate) async fn download_in_scope(
     state: &AppState,
@@ -25,7 +31,7 @@ pub(crate) async fn download_in_scope(
     );
     let file = get_info_in_scope(state, scope, id).await?;
     let blob = file_repo::find_blob_by_id(&state.db, file.blob_id).await?;
-    build_stream_response(state, &file, &blob, if_none_match).await
+    build_download_response(state, &file, &blob, if_none_match).await
 }
 
 /// 下载文件（流式，不全量缓冲）
@@ -80,6 +86,93 @@ pub(crate) async fn build_stream_response(
         if_none_match,
     )
     .await
+}
+
+pub(crate) async fn build_download_response(
+    state: &AppState,
+    f: &file::Model,
+    blob: &file_blob::Model,
+    if_none_match: Option<&str>,
+) -> Result<HttpResponse> {
+    build_download_response_with_disposition(
+        state,
+        f,
+        blob,
+        DownloadDisposition::Attachment,
+        if_none_match,
+    )
+    .await
+}
+
+pub(crate) async fn build_download_response_with_disposition(
+    state: &AppState,
+    f: &file::Model,
+    blob: &file_blob::Model,
+    disposition: DownloadDisposition,
+    if_none_match: Option<&str>,
+) -> Result<HttpResponse> {
+    if let Some(if_none_match) = if_none_match
+        && if_none_match_matches(if_none_match, &blob.hash)
+    {
+        return build_stream_response_with_disposition(
+            state,
+            f,
+            blob,
+            disposition,
+            Some(if_none_match),
+        )
+        .await;
+    }
+
+    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+    let options = parse_storage_policy_options(policy.options.as_ref());
+    let should_presign = policy.driver_type == DriverType::S3
+        && disposition == DownloadDisposition::Attachment
+        && options.effective_s3_download_strategy() == S3DownloadStrategy::Presigned;
+
+    if should_presign {
+        return build_presigned_redirect_response(state, &policy, f, blob).await;
+    }
+
+    build_stream_response_with_disposition(state, f, blob, disposition, None).await
+}
+
+async fn build_presigned_redirect_response(
+    state: &AppState,
+    policy: &crate::entities::storage_policy::Model,
+    f: &file::Model,
+    blob: &file_blob::Model,
+) -> Result<HttpResponse> {
+    let driver = state.driver_registry.get_driver(policy)?;
+    let url = driver
+        .presigned_url(
+            &blob.storage_path,
+            Duration::from_secs(PRESIGNED_DOWNLOAD_TTL_SECS),
+            PresignedDownloadOptions {
+                response_cache_control: Some("private, max-age=0, must-revalidate".to_string()),
+                response_content_disposition: Some(
+                    DownloadDisposition::Attachment.header_value(&f.name),
+                ),
+                response_content_type: Some(f.mime_type.clone()),
+            },
+        )
+        .await?
+        .ok_or_else(|| {
+            AsterError::storage_driver_error("presigned download not supported by driver")
+        })?;
+
+    tracing::debug!(
+        file_id = f.id,
+        blob_id = blob.id,
+        policy_id = blob.policy_id,
+        ttl_secs = PRESIGNED_DOWNLOAD_TTL_SECS,
+        "redirecting file download to presigned S3 URL"
+    );
+
+    Ok(HttpResponse::Found()
+        .insert_header((header::LOCATION, url))
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .finish())
 }
 
 pub(crate) async fn build_stream_response_with_disposition(

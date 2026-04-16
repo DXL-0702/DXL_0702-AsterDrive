@@ -3764,6 +3764,11 @@ export interface components {
             kind: "text";
         });
         /**
+         * @description S3 下载传输策略（存储策略 options JSON）
+         * @enum {string}
+         */
+        S3DownloadStrategy: "relay_stream" | "presigned";
+        /**
          * @description S3 上传传输策略（存储策略 options JSON）
          * @enum {string}
          */
@@ -3848,7 +3853,6 @@ export interface components {
             /** Format: int64 */
             view_count: number;
         };
-        /** @description 公开返回给前端的分享信息（不含密码哈希和内部 ID） */
         SharePublicInfo: {
             /** Format: int64 */
             download_count: number;
@@ -3867,7 +3871,6 @@ export interface components {
             /** Format: int64 */
             view_count: number;
         };
-        /** @description 公开返回给前端的分享信息（不含密码哈希和内部 ID） */
         SharePublicOwnerInfo: {
             avatar: components["schemas"]["AvatarInfo"];
             name: string;
@@ -3962,6 +3965,7 @@ export interface components {
         };
         StoragePolicyOptions: {
             content_dedup?: boolean | null;
+            s3_download_strategy?: null | components["schemas"]["S3DownloadStrategy"];
             s3_upload_strategy?: null | components["schemas"]["S3UploadStrategy"];
         };
         StoragePolicySummaryInfo: {
@@ -10092,7 +10096,6 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
-                        /** @description 公开返回给前端的分享信息（不含密码哈希和内部 ID） */
                         data?: {
                             /** Format: int64 */
                             download_count: number;

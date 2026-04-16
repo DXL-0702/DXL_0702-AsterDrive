@@ -862,6 +862,17 @@ pub enum S3UploadStrategy {
     Presigned,
 }
 
+/// S3 下载传输策略（存储策略 options JSON）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum S3DownloadStrategy {
+    /// 服务端从 S3 拉流后回传给客户端
+    RelayStream,
+    /// 服务端完成鉴权后重定向到 S3 presigned GET URL
+    Presigned,
+}
+
 /// Raw JSON array stored in `storage_policies.allowed_types`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
 pub struct StoredStoragePolicyAllowedTypes(pub String);
@@ -928,6 +939,8 @@ pub struct StoragePolicyOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub s3_upload_strategy: Option<S3UploadStrategy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub s3_download_strategy: Option<S3DownloadStrategy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_dedup: Option<bool>,
 }
 
@@ -935,6 +948,11 @@ impl StoragePolicyOptions {
     pub fn effective_s3_upload_strategy(&self) -> S3UploadStrategy {
         self.s3_upload_strategy
             .unwrap_or(S3UploadStrategy::RelayStream)
+    }
+
+    pub fn effective_s3_download_strategy(&self) -> S3DownloadStrategy {
+        self.s3_download_strategy
+            .unwrap_or(S3DownloadStrategy::RelayStream)
     }
 }
 
@@ -1010,7 +1028,9 @@ impl TokenType {
 
 #[cfg(test)]
 mod tests {
-    use super::{S3UploadStrategy, StoragePolicyOptions, parse_storage_policy_options};
+    use super::{
+        S3DownloadStrategy, S3UploadStrategy, StoragePolicyOptions, parse_storage_policy_options,
+    };
 
     #[test]
     fn s3_strategy_defaults_to_relay_stream() {
@@ -1027,6 +1047,24 @@ mod tests {
         assert_eq!(
             options.effective_s3_upload_strategy(),
             S3UploadStrategy::Presigned
+        );
+    }
+
+    #[test]
+    fn s3_download_strategy_defaults_to_relay_stream() {
+        let options = StoragePolicyOptions::default();
+        assert_eq!(
+            options.effective_s3_download_strategy(),
+            S3DownloadStrategy::RelayStream
+        );
+    }
+
+    #[test]
+    fn explicit_presigned_download_strategy_maps_to_presigned() {
+        let options = parse_storage_policy_options(r#"{"s3_download_strategy":"presigned"}"#);
+        assert_eq!(
+            options.effective_s3_download_strategy(),
+            S3DownloadStrategy::Presigned
         );
     }
 
@@ -1050,5 +1088,12 @@ mod tests {
         })
         .unwrap();
         assert_eq!(json, r#"{"s3_upload_strategy":"presigned"}"#);
+
+        let json = serde_json::to_string(&StoragePolicyOptions {
+            s3_download_strategy: Some(S3DownloadStrategy::Presigned),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(json, r#"{"s3_download_strategy":"presigned"}"#);
     }
 }

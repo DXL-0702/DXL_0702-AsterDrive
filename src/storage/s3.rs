@@ -528,18 +528,30 @@ impl StorageDriver for S3Driver {
         Ok(storage_path.to_string())
     }
 
-    async fn presigned_url(&self, path: &str, expires: Duration) -> Result<Option<String>> {
+    async fn presigned_url(
+        &self,
+        path: &str,
+        expires: Duration,
+        options: super::driver::PresignedDownloadOptions,
+    ) -> Result<Option<String>> {
         let key = self.full_key(path);
         let presign_config = PresigningConfig::builder()
             .expires_in(expires)
             .build()
             .map_aster_err_ctx("presign config", AsterError::storage_driver_error)?;
 
-        let url = self
-            .client
-            .get_object()
-            .bucket(&self.bucket)
-            .key(&key)
+        let mut request = self.client.get_object().bucket(&self.bucket).key(&key);
+        if let Some(cache_control) = options.response_cache_control {
+            request = request.response_cache_control(cache_control);
+        }
+        if let Some(content_disposition) = options.response_content_disposition {
+            request = request.response_content_disposition(content_disposition);
+        }
+        if let Some(content_type) = options.response_content_type {
+            request = request.response_content_type(content_type);
+        }
+
+        let url = request
             .presigned(presign_config)
             .await
             .map_aster_err_ctx("S3 presigned URL failed", AsterError::storage_driver_error)?;

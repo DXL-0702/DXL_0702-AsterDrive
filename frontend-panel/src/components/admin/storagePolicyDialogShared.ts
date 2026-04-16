@@ -5,13 +5,14 @@ import {
 import type {
 	CreatePolicyRequest,
 	DriverType,
+	S3DownloadStrategy,
 	S3UploadStrategy,
 	StoragePolicy,
 	StoragePolicyOptions,
 	UpdatePolicyRequest,
 } from "@/types/api";
 
-export type { S3UploadStrategy } from "@/types/api";
+export type { S3DownloadStrategy, S3UploadStrategy } from "@/types/api";
 
 export interface PolicyFormData {
 	name: string;
@@ -26,12 +27,19 @@ export interface PolicyFormData {
 	is_default: boolean;
 	content_dedup: boolean;
 	s3_upload_strategy: S3UploadStrategy;
+	s3_download_strategy: S3DownloadStrategy;
 }
 
 export function getEffectiveS3UploadStrategy(
 	options: StoragePolicyOptions,
 ): S3UploadStrategy {
 	return options.s3_upload_strategy ?? "relay_stream";
+}
+
+export function getEffectiveS3DownloadStrategy(
+	options: StoragePolicyOptions,
+): S3DownloadStrategy {
+	return options.s3_download_strategy ?? "relay_stream";
 }
 
 export function buildPolicyOptions(form: PolicyFormData): StoragePolicyOptions {
@@ -41,6 +49,7 @@ export function buildPolicyOptions(form: PolicyFormData): StoragePolicyOptions {
 
 	return {
 		s3_upload_strategy: form.s3_upload_strategy,
+		s3_download_strategy: form.s3_download_strategy,
 	};
 }
 
@@ -65,6 +74,7 @@ export function getPolicyForm(policy: StoragePolicy): PolicyFormData {
 		content_dedup:
 			policy.driver_type === "local" && options.content_dedup === true,
 		s3_upload_strategy: getEffectiveS3UploadStrategy(options),
+		s3_download_strategy: getEffectiveS3DownloadStrategy(options),
 	};
 }
 
@@ -212,4 +222,5 @@ export const emptyForm: PolicyFormData = {
 	is_default: false,
 	content_dedup: false,
 	s3_upload_strategy: "relay_stream",
+	s3_download_strategy: "relay_stream",
 };

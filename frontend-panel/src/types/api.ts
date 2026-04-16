@@ -110,6 +110,7 @@ export type ResetUserPasswordRequest =
 export type StoragePolicy = components["schemas"]["StoragePolicy"];
 export type StoragePolicyPage =
 	components["schemas"]["OffsetPage_StoragePolicy"];
+export type S3DownloadStrategy = components["schemas"]["S3DownloadStrategy"];
 export type StoragePolicyGroupItem =
 	components["schemas"]["StoragePolicyGroupItemInfo"];
 export type StoragePolicyGroup =

@@ -218,6 +218,7 @@ export default function AdminPoliciesPage() {
 						access_key: "",
 						secret_key: "",
 						s3_upload_strategy: "relay_stream",
+						s3_download_strategy: "relay_stream",
 					},
 		);
 	};

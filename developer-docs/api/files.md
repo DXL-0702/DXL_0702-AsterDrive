@@ -88,7 +88,7 @@
 - `GET /files/{id}/direct-link`：返回一个短 token；真正下载走根路径 `/d/{token}/{filename}`
 - `POST /files/{id}/preview-link`：返回一个短期预览链接；真正读取内容走根路径 `/pv/{token}/{filename}`
 - `POST /files/{id}/wopi/open`：为配置成 `provider = "wopi"` 的预览器创建一次 WOPI 启动会话
-- `GET /files/{id}/download`：流式下载文件；支持 `If-None-Match`，命中时返回 `304`
+- `GET /files/{id}/download`：下载文件；默认是流式响应，若命中的 S3 策略把 `options.s3_download_strategy` 设为 `presigned`，则会在鉴权后返回 `302` 重定向到短时效的对象存储 GET URL；支持 `If-None-Match`，命中时返回 `304`
 - `GET /files/{id}/thumbnail`：读取缩略图（仅支持的图片类型）；若后台仍在生成，会先返回 `202` 和 `Retry-After`
 - `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
 - `PATCH /files/{id}`：改名或移动

@@ -6,6 +6,7 @@ mod common;
 use actix_web::test;
 use aster_drive::db::repository::policy_repo;
 use serde_json::Value;
+use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 use tokio::task::JoinSet;
 
 const TEST_CHUNK_SIZE: usize = 5_242_880;
@@ -356,6 +357,36 @@ fn build_multipart_payload(filename: &str, data: &[u8]) -> (String, Vec<u8>) {
     (boundary, payload)
 }
 
+async fn store_temp_file_in_personal_space(
+    state: &aster_drive::runtime::AppState,
+    user_id: i64,
+    filename: &str,
+    data: &[u8],
+) -> i64 {
+    let temp_path = aster_drive::utils::paths::temp_file_path(
+        &state.config.server.temp_dir,
+        &format!("download-test-{}", uuid::Uuid::new_v4()),
+    );
+    tokio::fs::create_dir_all(&state.config.server.temp_dir)
+        .await
+        .unwrap();
+    tokio::fs::write(&temp_path, data).await.unwrap();
+    let file = aster_drive::services::file_service::store_from_temp(
+        state,
+        user_id,
+        None,
+        filename,
+        &temp_path,
+        data.len() as i64,
+        None,
+        false,
+    )
+    .await
+    .unwrap();
+    let _ = tokio::fs::remove_file(&temp_path).await;
+    file.id
+}
+
 #[actix_web::test]
 async fn test_chunked_upload_flow() {
     let state = common::setup().await;
@@ -462,6 +493,199 @@ async fn test_update_storage_used_is_atomic_under_concurrency() {
         updated.storage_used, 0,
         "storage_used should not go below zero"
     );
+}
+
+#[actix_web::test]
+async fn test_s3_relay_stream_download_e2e() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let me: Value = test::read_body_json(resp).await;
+    let user_id = me["data"]["id"].as_i64().expect("user id should exist");
+
+    let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
+        .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
+        .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
+        .start()
+        .await
+        .expect("failed to start rustfs container");
+
+    let port = container.get_host_port_ipv4(9000).await.unwrap();
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let bucket = "download-relay";
+    wait_for_s3_bucket(&endpoint, bucket).await;
+
+    create_s3_default_policy(
+        &state,
+        user_id,
+        "S3 Relay Download",
+        &endpoint,
+        bucket,
+        r#"{"s3_download_strategy":"relay_stream"}"#,
+        TEST_CHUNK_SIZE as i64,
+    )
+    .await;
+
+    let file_id = store_temp_file_in_personal_space(
+        &state,
+        user_id,
+        "relay report.txt",
+        b"hello relay download",
+    )
+    .await;
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/download"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get("Content-Disposition")
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        r#"attachment; filename="relay report.txt""#
+    );
+    let body = test::read_body(resp).await;
+    assert_eq!(body.as_ref(), b"hello relay download");
+}
+
+#[actix_web::test]
+async fn test_s3_presigned_download_redirects_and_share_counts() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let me: Value = test::read_body_json(resp).await;
+    let user_id = me["data"]["id"].as_i64().expect("user id should exist");
+
+    let container = GenericImage::new("rustfs/rustfs", RUSTFS_TEST_IMAGE_TAG)
+        .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(9000))
+        .with_env_var("RUSTFS_ACCESS_KEY", "rustfsadmin")
+        .with_env_var("RUSTFS_SECRET_KEY", "rustfsadmin123")
+        .start()
+        .await
+        .expect("failed to start rustfs container");
+
+    let port = container.get_host_port_ipv4(9000).await.unwrap();
+    let endpoint = format!("http://127.0.0.1:{port}");
+    let bucket = "download-presigned";
+    wait_for_s3_bucket(&endpoint, bucket).await;
+
+    create_s3_default_policy(
+        &state,
+        user_id,
+        "S3 Presigned Download",
+        &endpoint,
+        bucket,
+        r#"{"s3_download_strategy":"presigned"}"#,
+        TEST_CHUNK_SIZE as i64,
+    )
+    .await;
+
+    let file_name = "presigned report.txt";
+    let file_data = b"hello presigned download";
+    let file_id = store_temp_file_in_personal_space(&state, user_id, file_name, file_data).await;
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/download"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 302);
+    assert_eq!(
+        resp.headers().get("Cache-Control").unwrap(),
+        "no-store",
+        "presigned redirect should not be cached"
+    );
+    let location = resp
+        .headers()
+        .get("Location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        location.contains("response-content-disposition="),
+        "presigned URL should preserve attachment filename"
+    );
+
+    let response = reqwest::get(&location).await.unwrap();
+    assert!(response.status().is_success());
+    assert_eq!(
+        response
+            .headers()
+            .get(reqwest::header::CONTENT_DISPOSITION)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        r#"attachment; filename="presigned report.txt""#
+    );
+    assert_eq!(response.bytes().await.unwrap().as_ref(), file_data);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/shares")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "target": { "type": "file", "id": file_id }
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let share_token = body["data"]["token"]
+        .as_str()
+        .expect("share token should exist")
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}/download"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 302);
+    let shared_location = resp
+        .headers()
+        .get("Location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        shared_location.contains("response-content-disposition="),
+        "shared presigned URL should preserve attachment filename"
+    );
+    let shared_response = reqwest::get(&shared_location).await.unwrap();
+    assert!(shared_response.status().is_success());
+    assert_eq!(shared_response.bytes().await.unwrap().as_ref(), file_data);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{share_token}"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["download_count"], 1);
 }
 
 #[actix_web::test]

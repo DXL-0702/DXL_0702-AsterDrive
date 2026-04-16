@@ -3,7 +3,7 @@
 #[macro_use]
 mod common;
 
-use aster_drive::storage::driver::StorageDriver;
+use aster_drive::storage::driver::{PresignedDownloadOptions, StorageDriver};
 use aster_drive::storage::s3::S3Driver;
 use testcontainers::{GenericImage, ImageExt, runners::AsyncRunner};
 
@@ -116,7 +116,11 @@ async fn test_s3_put_get_delete() {
 
     // PRESIGNED URL (just verify it generates without error)
     let url = driver
-        .presigned_url("test/dst.txt", std::time::Duration::from_secs(300))
+        .presigned_url(
+            "test/dst.txt",
+            std::time::Duration::from_secs(300),
+            PresignedDownloadOptions::default(),
+        )
         .await
         .unwrap();
     assert!(url.is_some());

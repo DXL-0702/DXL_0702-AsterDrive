@@ -39,6 +39,7 @@ describe("storagePolicyDialogShared", () => {
 			is_default: true,
 			content_dedup: true,
 			s3_upload_strategy: "relay_stream",
+			s3_download_strategy: "relay_stream",
 		});
 	});
 
@@ -57,6 +58,7 @@ describe("storagePolicyDialogShared", () => {
 				is_default: false,
 				content_dedup: false,
 				s3_upload_strategy: "presigned",
+				s3_download_strategy: "relay_stream",
 			}),
 		).toEqual({
 			name: "Media",
@@ -69,7 +71,10 @@ describe("storagePolicyDialogShared", () => {
 			max_file_size: 2048,
 			chunk_size: 6 * 1024 * 1024,
 			is_default: false,
-			options: { s3_upload_strategy: "presigned" },
+			options: {
+				s3_upload_strategy: "presigned",
+				s3_download_strategy: "relay_stream",
+			},
 		});
 	});
 
@@ -88,6 +93,7 @@ describe("storagePolicyDialogShared", () => {
 				is_default: true,
 				content_dedup: false,
 				s3_upload_strategy: "relay_stream",
+				s3_download_strategy: "presigned",
 			}),
 		).toEqual({
 			name: "Media",
@@ -97,7 +103,10 @@ describe("storagePolicyDialogShared", () => {
 			max_file_size: undefined,
 			chunk_size: 5 * 1024 * 1024,
 			is_default: true,
-			options: { s3_upload_strategy: "relay_stream" },
+			options: {
+				s3_upload_strategy: "relay_stream",
+				s3_download_strategy: "presigned",
+			},
 		});
 	});
 });

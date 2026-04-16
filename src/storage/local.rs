@@ -221,7 +221,12 @@ impl StorageDriver for LocalDriver {
         Ok(storage_path.to_string())
     }
 
-    async fn presigned_url(&self, _path: &str, _expires: Duration) -> Result<Option<String>> {
+    async fn presigned_url(
+        &self,
+        _path: &str,
+        _expires: Duration,
+        _options: super::driver::PresignedDownloadOptions,
+    ) -> Result<Option<String>> {
         Ok(None)
     }
 }

@@ -106,8 +106,9 @@ impl StorageDriver for BlockingPutFileDriver {
         &self,
         path: &str,
         expires: Duration,
+        options: crate::storage::driver::PresignedDownloadOptions,
     ) -> crate::errors::Result<Option<String>> {
-        self.inner.presigned_url(path, expires).await
+        self.inner.presigned_url(path, expires, options).await
     }
 }
 

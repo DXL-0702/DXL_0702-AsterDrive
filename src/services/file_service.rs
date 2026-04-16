@@ -24,7 +24,10 @@ pub use content::{
 };
 pub use deletion::{batch_purge, delete, purge};
 pub(crate) use deletion::{batch_purge_in_scope, cleanup_unreferenced_blob, delete_in_scope};
-pub(crate) use download::{build_stream_response_with_disposition, download_in_scope};
+pub(crate) use download::{
+    build_download_response_with_disposition, build_stream_response_with_disposition,
+    download_in_scope,
+};
 pub use download::{download, download_raw};
 pub use lock::set_lock;
 pub(crate) use lock::set_lock_in_scope;

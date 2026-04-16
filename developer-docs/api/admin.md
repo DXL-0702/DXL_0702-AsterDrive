@@ -48,7 +48,7 @@
 当前实现注意点：
 
 - 创建和更新都会采用请求里的 `chunk_size`
-- `options` 当前主要承载 S3 上传策略，例如 `{"s3_upload_strategy":"relay_stream"}`、`{"s3_upload_strategy":"presigned"}`
+- `options` 当前主要承载 S3 上传 / 下载策略，例如 `{"s3_upload_strategy":"presigned","s3_download_strategy":"presigned"}`
 - 旧配置 `{"presigned_upload":true}` 仍兼容
 - REST 仍然不能管理 `allowed_types`
 - 当前 `PATCH` 不能修改 `driver_type`

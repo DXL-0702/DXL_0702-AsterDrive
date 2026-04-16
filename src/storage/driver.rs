@@ -9,6 +9,13 @@ pub struct BlobMetadata {
     pub content_type: Option<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct PresignedDownloadOptions {
+    pub response_cache_control: Option<String>,
+    pub response_content_disposition: Option<String>,
+    pub response_content_type: Option<String>,
+}
+
 pub trait StoragePathVisitor: Send {
     fn visit_path(&mut self, path: String) -> Result<()>;
 }
@@ -76,7 +83,12 @@ pub trait StorageDriver: Send + Sync {
     }
 
     /// 生成临时访问 URL（本地存储返回 None）
-    async fn presigned_url(&self, path: &str, expires: Duration) -> Result<Option<String>>;
+    async fn presigned_url(
+        &self,
+        path: &str,
+        expires: Duration,
+        options: PresignedDownloadOptions,
+    ) -> Result<Option<String>>;
 
     /// 生成 presigned PUT URL 供客户端直传（S3 only，本地返回 None）
     async fn presigned_put_url(&self, path: &str, expires: Duration) -> Result<Option<String>> {

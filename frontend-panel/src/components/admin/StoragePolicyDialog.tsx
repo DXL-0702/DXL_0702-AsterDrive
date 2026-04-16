@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
 	PolicyFormData,
+	S3DownloadStrategy,
 	S3UploadStrategy,
 } from "@/components/admin/storagePolicyDialogShared";
 import { Badge } from "@/components/ui/badge";
@@ -193,6 +194,10 @@ export function StoragePolicyDialog({
 		form.s3_upload_strategy === "relay_stream"
 			? t("s3_upload_strategy_relay_stream")
 			: t("s3_upload_strategy_presigned");
+	const s3DownloadStrategyLabel =
+		form.s3_download_strategy === "relay_stream"
+			? t("s3_download_strategy_relay_stream")
+			: t("s3_download_strategy_presigned");
 	const contentDedupLabel = form.content_dedup
 		? t("policy_wizard_enabled")
 		: t("policy_wizard_disabled");
@@ -240,6 +245,10 @@ export function StoragePolicyDialog({
 						label: t("s3_upload_strategy"),
 						value: s3UploadStrategyLabel,
 					},
+					{
+						label: t("s3_download_strategy"),
+						value: s3DownloadStrategyLabel,
+					},
 				]
 			: []),
 	];
@@ -255,6 +264,19 @@ export function StoragePolicyDialog({
 	] satisfies ReadonlyArray<{
 		label: string;
 		value: S3UploadStrategy;
+	}>;
+	const s3DownloadStrategyOptions = [
+		{
+			label: t("s3_download_strategy_relay_stream"),
+			value: "relay_stream",
+		},
+		{
+			label: t("s3_download_strategy_presigned"),
+			value: "presigned",
+		},
+	] satisfies ReadonlyArray<{
+		label: string;
+		value: S3DownloadStrategy;
 	}>;
 
 	const renderNameField = (showCreateValidation = false) => (
@@ -389,6 +411,37 @@ export function StoragePolicyDialog({
 					form.s3_upload_strategy === "relay_stream"
 						? "s3_upload_strategy_relay_stream_desc"
 						: "s3_upload_strategy_presigned_desc",
+				)}
+			</p>
+		</div>
+	);
+
+	const renderS3DownloadStrategyField = () => (
+		<div className="space-y-2 pt-1">
+			<Label htmlFor="s3_download_strategy">{t("s3_download_strategy")}</Label>
+			<Select
+				items={s3DownloadStrategyOptions}
+				value={form.s3_download_strategy}
+				onValueChange={(value) =>
+					onFieldChange("s3_download_strategy", value as S3DownloadStrategy)
+				}
+			>
+				<SelectTrigger id="s3_download_strategy">
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					{s3DownloadStrategyOptions.map((option) => (
+						<SelectItem key={option.value} value={option.value}>
+							{option.label}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			<p className="text-xs text-muted-foreground">
+				{t(
+					form.s3_download_strategy === "relay_stream"
+						? "s3_download_strategy_relay_stream_desc"
+						: "s3_download_strategy_presigned_desc",
 				)}
 			</p>
 		</div>
@@ -728,7 +781,10 @@ export function StoragePolicyDialog({
 													<div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
 														<div className="space-y-4">
 															{form.driver_type === "s3" ? (
-																renderS3UploadStrategyField()
+																<>
+																	{renderS3UploadStrategyField()}
+																	{renderS3DownloadStrategyField()}
+																</>
 															) : (
 																<>
 																	<div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-sm text-muted-foreground">
@@ -817,9 +873,14 @@ export function StoragePolicyDialog({
 												t("policy_editor_rules_desc"),
 											)}
 											<div className="space-y-4">
-												{form.driver_type === "s3"
-													? renderS3UploadStrategyField()
-													: renderLocalContentDedupField()}
+												{form.driver_type === "s3" ? (
+													<>
+														{renderS3UploadStrategyField()}
+														{renderS3DownloadStrategyField()}
+													</>
+												) : (
+													renderLocalContentDedupField()
+												)}
 												{renderLimitsFields()}
 												{renderDefaultToggle()}
 											</div>
