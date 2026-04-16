@@ -62,8 +62,9 @@ ASTER_TEST_DATABASE_BACKEND=mysql cargo test --test test_admin test_admin_team_c
 
 这意味着：
 
-- 同一轮测试里，PostgreSQL / MySQL 容器会复用，不会每个测试都单独拉一个容器
+- PostgreSQL / MySQL 共享容器会尽量跨多次本地测试命令复用，不会每次都重新冷启动
 - 但数据库实例不会复用，所以并行集成测试不会互相污染数据
+- 已退出测试进程留下的独立数据库，会在下一次启动对应后端测试容器时自动清理
 
 ## PostgreSQL / MySQL 的差异
 
@@ -76,8 +77,8 @@ ASTER_TEST_DATABASE_BACKEND=mysql cargo test --test test_admin test_admin_team_c
 ### MySQL
 
 - 业务测试默认仍使用容器内的 `aster` 用户
-- 但独立数据库的创建和授权由 `root` 连接负责
-- 原因很简单：`MYSQL_USER` 生成的普通用户默认只有初始 `asterdrive` 库权限，不能自己建新库
+- 独立数据库仍由 `root` 连接创建
+- 但普通测试用户的访问权限会在容器启动时一次性补齐，不再为每个测试库单独跑一次 `GRANT`
 
 ## 什么时候该切后端
 
@@ -109,6 +110,7 @@ ASTER_TEST_DATABASE_BACKEND=mysql cargo test --test test_admin test_admin_team_c
 
 - PostgreSQL / MySQL 依赖本机可用的 Docker / 容器运行时
 - 第一次跑会拉镜像，明显比 SQLite 慢
+- 之后同一个工作区重复跑 `postgres` / `mysql` 测试，通常会直接复用已有共享容器，冷启动开销会小很多
 - 如果某个测试没有走 `common::setup()`，而是自己手写数据库初始化逻辑，那它不会自动吃到这个开关
 - `common::setup_with_database_url(...)` 仍然保留给需要显式控制数据库地址的场景，它不会替你解读 `ASTER_TEST_DATABASE_BACKEND`
 

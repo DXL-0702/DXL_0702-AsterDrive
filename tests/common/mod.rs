@@ -54,6 +54,8 @@ static MYSQL_TEST_CONTAINER: tokio::sync::OnceCell<SharedTestDatabaseContainer> 
 
 #[derive(Default, Deserialize, Serialize)]
 struct SharedTestContainerState {
+    #[serde(default)]
+    databases_by_pid: HashMap<u32, Vec<String>>,
     pids: Vec<u32>,
 }
 
@@ -70,6 +72,37 @@ impl Drop for SharedTestContainerLease {
 impl SharedTestContainerLease {
     fn new(backend: TestDatabaseBackend) -> Self {
         Self { backend }
+    }
+}
+
+impl SharedTestContainerState {
+    fn normalize(&mut self) {
+        self.pids.sort_unstable();
+        self.pids.dedup();
+
+        self.databases_by_pid
+            .retain(|pid, _| self.pids.binary_search(pid).is_ok());
+        for pid in &self.pids {
+            let databases = self.databases_by_pid.entry(*pid).or_default();
+            databases.sort_unstable();
+            databases.dedup();
+        }
+    }
+
+    fn register_pid(&mut self, pid: u32) {
+        if !self.pids.contains(&pid) {
+            self.pids.push(pid);
+        }
+        self.normalize();
+    }
+
+    fn remember_database(&mut self, pid: u32, database_name: &str) {
+        self.register_pid(pid);
+        let databases = self.databases_by_pid.entry(pid).or_default();
+        if !databases.iter().any(|name| name == database_name) {
+            databases.push(database_name.to_string());
+        }
+        databases.sort_unstable();
     }
 }
 
@@ -177,11 +210,13 @@ fn load_shared_test_container_state(
         .and_then(|mut state_file| state_file.read_to_string(&mut raw))
         .expect("shared test container state should be readable");
 
-    if raw.trim().is_empty() {
+    let mut state = if raw.trim().is_empty() {
         SharedTestContainerState::default()
     } else {
         serde_json::from_str(&raw).expect("shared test container state should be valid json")
-    }
+    };
+    state.normalize();
+    state
 }
 
 fn save_shared_test_container_state(
@@ -225,30 +260,103 @@ fn process_is_running(pid: u32) -> bool {
         .unwrap_or(false)
 }
 
-fn remove_shared_test_container_if_exists(backend: TestDatabaseBackend) {
-    let _ = Command::new("docker")
-        .args(["rm", "-f", &backend.shared_container_name()])
-        .output();
+fn prune_shared_test_container_state(state: &mut SharedTestContainerState) -> Vec<String> {
+    let stale_pids = state
+        .pids
+        .iter()
+        .copied()
+        .filter(|pid| !process_is_running(*pid))
+        .collect::<Vec<_>>();
+    let stale_databases = stale_pids
+        .iter()
+        .flat_map(|pid| {
+            state
+                .databases_by_pid
+                .remove(pid)
+                .unwrap_or_default()
+                .into_iter()
+        })
+        .collect::<Vec<_>>();
+
+    state.pids.retain(|pid| !stale_pids.contains(pid));
+    state.normalize();
+
+    stale_databases
 }
 
-fn prune_shared_test_container_state(
-    backend: TestDatabaseBackend,
-    state: &mut SharedTestContainerState,
-) {
-    state.pids.retain(|pid| process_is_running(*pid));
+fn remember_shared_test_database(backend: TestDatabaseBackend, database_name: &str) {
+    let mut lock_file = lock_shared_test_container_state(backend);
+    let mut state = load_shared_test_container_state(&mut lock_file, backend);
+    state.remember_database(std::process::id(), database_name);
+    save_shared_test_container_state(&mut lock_file, backend, &state);
+}
 
-    if state.pids.is_empty() {
-        remove_shared_test_container_if_exists(backend);
+fn test_backend_from_database_backend(backend: sea_orm::DbBackend) -> Option<TestDatabaseBackend> {
+    match backend {
+        sea_orm::DbBackend::Postgres => Some(TestDatabaseBackend::Postgres),
+        sea_orm::DbBackend::MySql => Some(TestDatabaseBackend::MySql),
+        _ => None,
     }
 }
 
 fn release_shared_test_container(backend: TestDatabaseBackend) {
     let mut lock_file = lock_shared_test_container_state(backend);
     let mut state = load_shared_test_container_state(&mut lock_file, backend);
-    let current_pid = std::process::id();
-    state.pids.retain(|pid| *pid != current_pid);
-    prune_shared_test_container_state(backend, &mut state);
+    let _ = prune_shared_test_container_state(&mut state);
     save_shared_test_container_state(&mut lock_file, backend, &state);
+}
+
+async fn drop_stale_test_databases(
+    backend: sea_orm::DbBackend,
+    admin_database_url: &str,
+    database_names: &[String],
+) {
+    if database_names.is_empty() {
+        return;
+    }
+
+    use sea_orm::ConnectionTrait;
+
+    let admin_cfg = aster_drive::config::DatabaseConfig {
+        url: admin_database_url.to_string(),
+        pool_size: 1,
+        retry_count: 0,
+    };
+    let admin_db = aster_drive::db::connect(&admin_cfg)
+        .await
+        .expect("stale test database cleanup should connect");
+
+    for database_name in database_names {
+        let drop_sql = format!(
+            "DROP DATABASE IF EXISTS {}",
+            quote_database_identifier(backend, database_name)
+        );
+        admin_db
+            .execute_unprepared(&drop_sql)
+            .await
+            .expect("stale test database should drop");
+    }
+}
+
+async fn ensure_mysql_test_user_access(admin_database_url: &str, username: &str) {
+    use sea_orm::ConnectionTrait;
+
+    let admin_cfg = aster_drive::config::DatabaseConfig {
+        url: admin_database_url.to_string(),
+        pool_size: 1,
+        retry_count: 0,
+    };
+    let admin_db = aster_drive::db::connect(&admin_cfg)
+        .await
+        .expect("mysql test admin connection should succeed");
+    let grant_sql = format!(
+        "GRANT ALL PRIVILEGES ON *.* TO {}@'%'",
+        quote_mysql_string(username)
+    );
+    admin_db
+        .execute_unprepared(&grant_sql)
+        .await
+        .expect("mysql test user grant should succeed");
 }
 
 #[allow(dead_code)]
@@ -379,13 +487,9 @@ async fn start_postgres_test_container() -> SharedTestDatabaseContainer {
     let backend = TestDatabaseBackend::Postgres;
     let mut lock_file = lock_shared_test_container_state(backend);
     let mut state = load_shared_test_container_state(&mut lock_file, backend);
-    prune_shared_test_container_state(backend, &mut state);
+    let stale_databases = prune_shared_test_container_state(&mut state);
     let current_pid = std::process::id();
-    if !state.pids.contains(&current_pid) {
-        state.pids.push(current_pid);
-        state.pids.sort_unstable();
-        state.pids.dedup();
-    }
+    state.register_pid(current_pid);
 
     let container = GenericImage::new("postgres", "16")
         .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(
@@ -406,14 +510,21 @@ async fn start_postgres_test_container() -> SharedTestDatabaseContainer {
         .await
         .expect("postgres test port should be exposed");
     let database_url = backend.database_url(port);
+    let admin_database_url = backend.admin_database_url(port);
 
     wait_for_database(&database_url).await;
+    drop_stale_test_databases(
+        sea_orm::DbBackend::Postgres,
+        &admin_database_url,
+        &stale_databases,
+    )
+    .await;
     save_shared_test_container_state(&mut lock_file, backend, &state);
 
     SharedTestDatabaseContainer {
         _container: container,
         _lease: SharedTestContainerLease::new(backend),
-        admin_database_url: backend.admin_database_url(port),
+        admin_database_url,
         database_url,
     }
 }
@@ -424,13 +535,9 @@ async fn start_mysql_test_container() -> SharedTestDatabaseContainer {
     let backend = TestDatabaseBackend::MySql;
     let mut lock_file = lock_shared_test_container_state(backend);
     let mut state = load_shared_test_container_state(&mut lock_file, backend);
-    prune_shared_test_container_state(backend, &mut state);
+    let stale_databases = prune_shared_test_container_state(&mut state);
     let current_pid = std::process::id();
-    if !state.pids.contains(&current_pid) {
-        state.pids.push(current_pid);
-        state.pids.sort_unstable();
-        state.pids.dedup();
-    }
+    state.register_pid(current_pid);
 
     let container = GenericImage::new("mysql", "8.4")
         .with_exposed_port(testcontainers::core::IntoContainerPort::tcp(
@@ -452,14 +559,22 @@ async fn start_mysql_test_container() -> SharedTestDatabaseContainer {
         .await
         .expect("mysql test port should be exposed");
     let database_url = backend.database_url(port);
+    let admin_database_url = backend.admin_database_url(port);
 
     wait_for_database(&database_url).await;
+    ensure_mysql_test_user_access(&admin_database_url, "aster").await;
+    drop_stale_test_databases(
+        sea_orm::DbBackend::MySql,
+        &admin_database_url,
+        &stale_databases,
+    )
+    .await;
     save_shared_test_container_state(&mut lock_file, backend, &state);
 
     SharedTestDatabaseContainer {
         _container: container,
         _lease: SharedTestContainerLease::new(backend),
-        admin_database_url: backend.admin_database_url(port),
+        admin_database_url,
         database_url,
     }
 }
@@ -575,24 +690,15 @@ async fn provision_isolated_test_database_url(
         sea_orm::DbBackend::MySql => isolated_database_name(&base_name, 64),
         _ => return database_url.to_string(),
     };
+    let test_backend = test_backend_from_database_backend(backend)
+        .expect("isolated database provisioning only supports postgres/mysql");
+    remember_shared_test_database(test_backend, &isolated_name);
 
     let create_sql = format!(
         "CREATE DATABASE {}",
         quote_database_identifier(backend, &isolated_name)
     );
     admin_db.execute_unprepared(&create_sql).await.unwrap();
-
-    if backend == sea_orm::DbBackend::MySql {
-        let username = parsed_url.username();
-        if !username.is_empty() {
-            let grant_sql = format!(
-                "GRANT ALL PRIVILEGES ON {}.* TO {}@'%'",
-                quote_database_identifier(backend, &isolated_name),
-                quote_mysql_string(username),
-            );
-            admin_db.execute_unprepared(&grant_sql).await.unwrap();
-        }
-    }
 
     replace_database_name(parsed_url, &isolated_name)
 }
