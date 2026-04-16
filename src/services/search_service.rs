@@ -160,47 +160,52 @@ pub(crate) async fn search_in_scope(
     let (files, total_files, folders, total_folders, shared_file_ids, shared_folder_ids) =
         match scope {
             WorkspaceStorageScope::Personal { user_id } => {
-                let (files, total_files) = if search_type == "folder" {
-                    (vec![], 0)
-                } else {
-                    search_repo::search_files(
-                        &state.db,
-                        user_id,
-                        query,
-                        params.mime_type.as_deref(),
-                        params.min_size,
-                        params.max_size,
-                        created_after,
-                        created_before,
-                        params.folder_id,
-                        limit,
-                        offset,
-                    )
-                    .await?
+                let file_search = async {
+                    if search_type == "folder" {
+                        Ok((vec![], 0))
+                    } else {
+                        search_repo::search_files(
+                            &state.db,
+                            user_id,
+                            query,
+                            params.mime_type.as_deref(),
+                            params.min_size,
+                            params.max_size,
+                            created_after,
+                            created_before,
+                            params.folder_id,
+                            limit,
+                            offset,
+                        )
+                        .await
+                    }
                 };
-
-                let (folders, total_folders) = if search_type == "file" {
-                    (vec![], 0)
-                } else {
-                    search_repo::search_folders(
-                        &state.db,
-                        user_id,
-                        query,
-                        created_after,
-                        created_before,
-                        params.folder_id,
-                        limit,
-                        offset,
-                    )
-                    .await?
+                let folder_search = async {
+                    if search_type == "file" {
+                        Ok((vec![], 0))
+                    } else {
+                        search_repo::search_folders(
+                            &state.db,
+                            user_id,
+                            query,
+                            created_after,
+                            created_before,
+                            params.folder_id,
+                            limit,
+                            offset,
+                        )
+                        .await
+                    }
                 };
+                let ((files, total_files), (folders, total_folders)) =
+                    tokio::try_join!(file_search, folder_search)?;
 
                 let file_ids: Vec<i64> = files.iter().map(|file| file.id).collect();
                 let folder_ids: Vec<i64> = folders.iter().map(|folder| folder.id).collect();
-                let shared_file_ids =
-                    share_repo::find_active_file_ids(&state.db, user_id, &file_ids).await?;
-                let shared_folder_ids =
-                    share_repo::find_active_folder_ids(&state.db, user_id, &folder_ids).await?;
+                let (shared_file_ids, shared_folder_ids) = tokio::try_join!(
+                    share_repo::find_active_file_ids(&state.db, user_id, &file_ids),
+                    share_repo::find_active_folder_ids(&state.db, user_id, &folder_ids),
+                )?;
 
                 (
                     files,
@@ -212,48 +217,52 @@ pub(crate) async fn search_in_scope(
                 )
             }
             WorkspaceStorageScope::Team { team_id, .. } => {
-                let (files, total_files) = if search_type == "folder" {
-                    (vec![], 0)
-                } else {
-                    search_repo::search_team_files(
-                        &state.db,
-                        team_id,
-                        query,
-                        params.mime_type.as_deref(),
-                        params.min_size,
-                        params.max_size,
-                        created_after,
-                        created_before,
-                        params.folder_id,
-                        limit,
-                        offset,
-                    )
-                    .await?
+                let file_search = async {
+                    if search_type == "folder" {
+                        Ok((vec![], 0))
+                    } else {
+                        search_repo::search_team_files(
+                            &state.db,
+                            team_id,
+                            query,
+                            params.mime_type.as_deref(),
+                            params.min_size,
+                            params.max_size,
+                            created_after,
+                            created_before,
+                            params.folder_id,
+                            limit,
+                            offset,
+                        )
+                        .await
+                    }
                 };
-
-                let (folders, total_folders) = if search_type == "file" {
-                    (vec![], 0)
-                } else {
-                    search_repo::search_team_folders(
-                        &state.db,
-                        team_id,
-                        query,
-                        created_after,
-                        created_before,
-                        params.folder_id,
-                        limit,
-                        offset,
-                    )
-                    .await?
+                let folder_search = async {
+                    if search_type == "file" {
+                        Ok((vec![], 0))
+                    } else {
+                        search_repo::search_team_folders(
+                            &state.db,
+                            team_id,
+                            query,
+                            created_after,
+                            created_before,
+                            params.folder_id,
+                            limit,
+                            offset,
+                        )
+                        .await
+                    }
                 };
+                let ((files, total_files), (folders, total_folders)) =
+                    tokio::try_join!(file_search, folder_search)?;
 
                 let file_ids: Vec<i64> = files.iter().map(|file| file.id).collect();
                 let folder_ids: Vec<i64> = folders.iter().map(|folder| folder.id).collect();
-                let shared_file_ids =
-                    share_repo::find_active_team_file_ids(&state.db, team_id, &file_ids).await?;
-                let shared_folder_ids =
-                    share_repo::find_active_team_folder_ids(&state.db, team_id, &folder_ids)
-                        .await?;
+                let (shared_file_ids, shared_folder_ids) = tokio::try_join!(
+                    share_repo::find_active_team_file_ids(&state.db, team_id, &file_ids),
+                    share_repo::find_active_team_folder_ids(&state.db, team_id, &folder_ids),
+                )?;
 
                 (
                     files,

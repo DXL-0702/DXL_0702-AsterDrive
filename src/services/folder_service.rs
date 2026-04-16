@@ -125,14 +125,14 @@ async fn build_folder_contents(
     let file_ids: Vec<i64> = files.iter().map(|file| file.id).collect();
     let folder_ids: Vec<i64> = folders.iter().map(|folder| folder.id).collect();
     let (shared_file_ids, shared_folder_ids) = match scope {
-        WorkspaceStorageScope::Personal { user_id } => (
-            share_repo::find_active_file_ids(&state.db, user_id, &file_ids).await?,
-            share_repo::find_active_folder_ids(&state.db, user_id, &folder_ids).await?,
-        ),
-        WorkspaceStorageScope::Team { team_id, .. } => (
-            share_repo::find_active_team_file_ids(&state.db, team_id, &file_ids).await?,
-            share_repo::find_active_team_folder_ids(&state.db, team_id, &folder_ids).await?,
-        ),
+        WorkspaceStorageScope::Personal { user_id } => tokio::try_join!(
+            share_repo::find_active_file_ids(&state.db, user_id, &file_ids),
+            share_repo::find_active_folder_ids(&state.db, user_id, &folder_ids),
+        )?,
+        WorkspaceStorageScope::Team { team_id, .. } => tokio::try_join!(
+            share_repo::find_active_team_file_ids(&state.db, team_id, &file_ids),
+            share_repo::find_active_team_folder_ids(&state.db, team_id, &folder_ids),
+        )?,
     };
 
     Ok(FolderContents {
@@ -711,96 +711,106 @@ pub(crate) async fn list_in_scope(
 
     let (folders, folders_total, files, files_total) = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            let (folders, folders_total) = if folder_limit == 0 {
-                (
-                    vec![],
+            let folder_task = async {
+                if folder_limit == 0 {
+                    Ok((
+                        vec![],
+                        folder_repo::find_children_paginated(
+                            &state.db, user_id, parent_id, 0, 0, sort_by, sort_order,
+                        )
+                        .await?
+                        .1,
+                    ))
+                } else {
                     folder_repo::find_children_paginated(
-                        &state.db, user_id, parent_id, 0, 0, sort_by, sort_order,
+                        &state.db,
+                        user_id,
+                        parent_id,
+                        folder_limit,
+                        folder_offset,
+                        sort_by,
+                        sort_order,
                     )
-                    .await?
-                    .1,
-                )
-            } else {
-                folder_repo::find_children_paginated(
-                    &state.db,
-                    user_id,
-                    parent_id,
-                    folder_limit,
-                    folder_offset,
-                    sort_by,
-                    sort_order,
-                )
-                .await?
+                    .await
+                }
             };
-
-            let (files, files_total) = if file_limit == 0 {
-                (
-                    vec![],
+            let file_task = async {
+                if file_limit == 0 {
+                    Ok((
+                        vec![],
+                        file_repo::find_by_folder_cursor(
+                            &state.db, user_id, parent_id, 0, None, sort_by, sort_order,
+                        )
+                        .await?
+                        .1,
+                    ))
+                } else {
                     file_repo::find_by_folder_cursor(
-                        &state.db, user_id, parent_id, 0, None, sort_by, sort_order,
+                        &state.db,
+                        user_id,
+                        parent_id,
+                        file_limit,
+                        file_cursor,
+                        sort_by,
+                        sort_order,
                     )
-                    .await?
-                    .1,
-                )
-            } else {
-                file_repo::find_by_folder_cursor(
-                    &state.db,
-                    user_id,
-                    parent_id,
-                    file_limit,
-                    file_cursor,
-                    sort_by,
-                    sort_order,
-                )
-                .await?
+                    .await
+                }
             };
+            let ((folders, folders_total), (files, files_total)) =
+                tokio::try_join!(folder_task, file_task)?;
 
             (folders, folders_total, files, files_total)
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            let (folders, folders_total) = if folder_limit == 0 {
-                (
-                    vec![],
+            let folder_task = async {
+                if folder_limit == 0 {
+                    Ok((
+                        vec![],
+                        folder_repo::find_team_children_paginated(
+                            &state.db, team_id, parent_id, 0, 0, sort_by, sort_order,
+                        )
+                        .await?
+                        .1,
+                    ))
+                } else {
                     folder_repo::find_team_children_paginated(
-                        &state.db, team_id, parent_id, 0, 0, sort_by, sort_order,
+                        &state.db,
+                        team_id,
+                        parent_id,
+                        folder_limit,
+                        folder_offset,
+                        sort_by,
+                        sort_order,
                     )
-                    .await?
-                    .1,
-                )
-            } else {
-                folder_repo::find_team_children_paginated(
-                    &state.db,
-                    team_id,
-                    parent_id,
-                    folder_limit,
-                    folder_offset,
-                    sort_by,
-                    sort_order,
-                )
-                .await?
+                    .await
+                }
             };
-
-            let (files, files_total) = if file_limit == 0 {
-                (
-                    vec![],
+            let file_task = async {
+                if file_limit == 0 {
+                    Ok((
+                        vec![],
+                        file_repo::find_by_team_folder_cursor(
+                            &state.db, team_id, parent_id, 0, None, sort_by, sort_order,
+                        )
+                        .await?
+                        .1,
+                    ))
+                } else {
                     file_repo::find_by_team_folder_cursor(
-                        &state.db, team_id, parent_id, 0, None, sort_by, sort_order,
+                        &state.db,
+                        team_id,
+                        parent_id,
+                        file_limit,
+                        file_cursor,
+                        sort_by,
+                        sort_order,
                     )
-                    .await?
-                    .1,
-                )
-            } else {
-                file_repo::find_by_team_folder_cursor(
-                    &state.db,
-                    team_id,
-                    parent_id,
-                    file_limit,
-                    file_cursor,
-                    sort_by,
-                    sort_order,
-                )
-                .await?
+                    .await
+                }
             };
+            let ((folders, folders_total), (files, files_total)) =
+                tokio::try_join!(folder_task, file_task)?;
 
             (folders, folders_total, files, files_total)
         }
