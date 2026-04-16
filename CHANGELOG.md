@@ -5,6 +5,96 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.21] - 2026-04-17
+
+### Release Highlights
+
+- **全文搜索加速（跨数据库）** — SQLite FTS5 + trigram、PostgreSQL pg_trgm GIN、MySQL ngram FULLTEXT 三种后端统一索引，查询自动降级，短查询走 LIKE
+- **全局搜索对话框** — 顶栏搜索重构为 `/` / `Ctrl+K` 快捷键唤起的全局弹窗，支持防抖搜索、键盘导航、无限滚动和搜索结果直接预览跳转
+- **在线压缩与解压任务** — 新增多步骤后台任务框架，支持批量压缩（ZIP）和单文件解压，个人空间与团队空间均可用
+- **S3 presigned 直链下载** — 存储策略新增 S3 下载策略配置，`presigned` 模式下鉴权后 302 重定向至短时效 S3 URL，减轻服务端流量
+- **服务模块大规模拆分** — `auth_service`/`file_service`/`folder_service`/`team_service` 等 12 个大型服务文件拆分为子模块，路由层同步拆分
+- **测试基础设施优化** — PostgreSQL 模板数据库 + MySQL Schema 复制，测试并发速度提升；Argon2 测试参数降级加速
+
+### Added
+
+- **全文搜索加速 (FTS)**
+  - SQLite FTS5 虚拟表 + trigram 索引 + 同步触发器，文件/文件夹/用户/团队搜索提速
+  - PostgreSQL `pg_trgm` GIN 索引，MySQL `ngram` FULLTEXT 索引
+  - 提取 `search_acceleration.rs` 公共工具统一生成建表/触发器/回滚 SQL
+  - 抽象 `search_query.rs` 构建函数：`sqlite_fts_match_condition`、`mysql_boolean_mode_query` 等
+  - 重构 `search_repo`/`team_repo`/`user_repo`：自动选择最优查询路径
+  - `doctor` 命令新增 `sqlite_search_acceleration` 检查项
+  - Dockerfile 基础镜像升至 Alpine 3.23
+- **全局搜索对话框**
+  - `GlobalSearchDialog` 组件：防抖搜索、键盘导航（↑↓/Enter/Esc）、无限滚动加载更多
+  - 搜索结果按文件/文件夹分组展示，支持缩略图预览
+  - TopBar 搜索入口重构，点击或按 `/` / `Ctrl+K` 唤起
+  - `AppLayout` 注册全局快捷键，搜索结果可直接跳转到目标文件夹并打开预览
+- **在线压缩与解压任务**
+  - 新增 `steps_json` 字段（后台任务步骤进度）
+  - `createArchiveCompressTask`：批量压缩个人/团队文件为 ZIP
+  - `createArchiveExtractTask`：解压单文件（.zip）到目标文件夹
+  - 任务步骤状态机：`Pending`/`Active`/`Succeeded`/`Failed`/`Canceled`
+  - 任务详情面板默认折叠，展开后显示步骤流与时间线
+- **S3 presigned 下载**
+  - `S3DownloadStrategy` 枚举：`relay_stream`（默认，流式）/ `presigned`（重定向）
+  - 下载时按策略分流：presigned 返回 302 至带签名 S3 URL，携带 `Content-Disposition` 等覆盖头
+  - `StorageDriver::presigned_url` 新增 `PresignedDownloadOptions` 参数
+  - 前端管理面板存储策略编辑页新增"S3 下载方式"选择
+- **审计日志下沉服务层**
+  - 批量操作/文件/文件夹/分享/上传服务新增 `*_with_audit` 包装函数
+  - 审计日志调用从路由层移入服务层，消除路由层样板代码
+
+### Changed
+
+- **服务模块大规模拆分**
+  - 12 个大型服务拆分为子模块：`auth_service`→password/registration/session/tokens，`file_service`→common/content/deletion/download/lock/thumbnail/transfer 等
+  - `auth.rs` → `auth/mod.rs` + `auth/cookies.rs`，`files.rs` → `access/mutations/upload/versions`
+  - 团队空间文件路由迁移至 `files/mod.rs` 统一管理
+  - `repo` 层同步拆分：`file_repo`/`folder_repo` 按 common/blob/mutation/query/trash 拆分
+- **配置来源与值类型强类型化**
+  - `SystemConfigSource`/`SystemConfigValueType` 枚举替代字符串
+  - `AuditAction`/`ThemeMode`/`ColorPreset`/`PrefViewMode`/`Language` 迁入 `types.rs`
+  - 存储策略 options/allowed_types 从 JSON 字符串改为 `StoragePolicyOptions` 结构体
+  - 任务 Payload/Result 改为标签枚举，通过 `kind` 区分压缩/解压类型
+- **非去重 Blob 上传事务解耦**
+  - 上传 I/O 移至数据库事务外执行，失败时自动清理孤立临时文件
+  - 新增 `PreparedNonDedupBlobUpload` 枚举及 `prepare_non_dedup_blob_upload` 等函数
+- **后台任务优雅关闭**
+  - 引入 `CancellationToken` 替代粗暴 `abort`，关闭时最长 30s 宽限期
+  - 周期任务添加随机 jitter（最大 30s），避免多实例同时触发清理竞争
+  - 提取 `run_periodic_iteration` 统一 panic 捕获
+- **文件夹树请求使用排序偏好**
+  - 文件夹树请求同步携带 `sortBy`/`sortOrder`，排序变化时自动重置树缓存
+- **E2E 测试模块化**
+  - 删去 1391 行单文件，按功能域拆分为 `00-auth`/`admin`/`file-browser`/`shares`/`navigation`/`webdav` 等独立 spec
+  - 提取 `support/` 公共工具：`auth`/`files`/`network`/`shares`/`test`
+- **Release 构建优化级别调整**
+  - Cargo.toml `opt-level` 从 `"s"`（优化体积）改为 `2`（优化性能）
+- **Dockerfile 基础镜像升级**
+  - Alpine 3.21 → 3.23
+- **CI 工作流命名**
+  - `rust.yml` 改为 `Rust CI`，`frontend.yml` 改为 `Frontend CI`
+
+### Fixed
+
+- **MySQL 时间戳 2038 年溢出** — 全部 `timestamp_with_time_zone` 替换为 `utc_date_time_column`，MySQL 下使用 `DATETIME(6)`；历史迁移文件同步更新
+- **上传取消竞态** — 取消时引入宽限期等待在途 chunk 排空后再清理；`mark_upload_session_completed` 在 assembly 期间被取消的竞态检测
+- **MySQL 全文搜索最小字符数** — 从 2 提升至 3，修复 `ngram` 索引下的空结果问题
+- **测试容器孤立数据库泄漏** — 按 PID 记录容器生命周期数据库，下次启动时自动清理已退出进程遗留的测试库
+
+### Breaking Changes
+
+- **MySQL 数据库迁移（必须执行）** — `m20260415_000004_fix_mysql_utc_datetime_columns` 将所有 `TIMESTAMP` 列改为 `DATETIME(6)`，已在使用的 MySQL实例需运行迁移
+- **测试基础设施变更** — `ASTER_TEST_DATABASE_BACKEND=postgres/mysql` 时测试容器管理方式有变，详见 `developer-docs/testing.md`
+
+---
+
+**统计数据**：
+- 347 files changed, 36,054 insertions(+), 21,310 deletions(-)
+- 21 commits
+
 ## [v0.0.1-alpha.20] - 2026-04-15
 
 ### Release Highlights
@@ -1733,7 +1823,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.20...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.21...HEAD
+[v0.0.1-alpha.21]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.20...v0.0.1-alpha.21
 [v0.0.1-alpha.20]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.19...v0.0.1-alpha.20
 [v0.0.1-alpha.19]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.18...v0.0.1-alpha.19
 [v0.0.1-alpha.18]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.17...v0.0.1-alpha.18
