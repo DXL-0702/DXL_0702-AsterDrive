@@ -4,6 +4,7 @@ use crate::errors::{AsterError, Result};
 pub const MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY: &str = "mail_outbox_dispatch_interval_secs";
 pub const BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY: &str =
     "background_task_dispatch_interval_secs";
+pub const BACKGROUND_TASK_MAX_CONCURRENCY_KEY: &str = "background_task_max_concurrency";
 pub const MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY: &str = "maintenance_cleanup_interval_secs";
 pub const BLOB_RECONCILE_INTERVAL_SECS_KEY: &str = "blob_reconcile_interval_secs";
 pub const TEAM_MEMBER_LIST_MAX_LIMIT_KEY: &str = "team_member_list_max_limit";
@@ -13,6 +14,7 @@ pub const THUMBNAIL_MAX_SOURCE_BYTES_KEY: &str = "thumbnail_max_source_bytes";
 
 pub const DEFAULT_MAIL_OUTBOX_DISPATCH_INTERVAL_SECS: u64 = 5;
 pub const DEFAULT_BACKGROUND_TASK_DISPATCH_INTERVAL_SECS: u64 = 5;
+pub const DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY: usize = 1;
 pub const DEFAULT_MAINTENANCE_CLEANUP_INTERVAL_SECS: u64 = 3600;
 pub const DEFAULT_BLOB_RECONCILE_INTERVAL_SECS: u64 = 6 * 3600;
 pub const DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT: u64 = 100;
@@ -23,6 +25,10 @@ pub const DEFAULT_THUMBNAIL_MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
 pub const MAX_LIST_PAGE_LIMIT: u64 = 1000;
 
 pub fn normalize_interval_config_value(key: &str, value: &str) -> Result<String> {
+    normalize_positive_u64_config_value(key, value)
+}
+
+pub fn normalize_concurrency_config_value(key: &str, value: &str) -> Result<String> {
     normalize_positive_u64_config_value(key, value)
 }
 
@@ -58,6 +64,21 @@ pub fn background_task_dispatch_interval_secs(runtime_config: &RuntimeConfig) ->
         BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY,
         DEFAULT_BACKGROUND_TASK_DISPATCH_INTERVAL_SECS,
     )
+}
+
+pub fn background_task_max_concurrency(runtime_config: &RuntimeConfig) -> usize {
+    usize::try_from(read_positive_u64(
+        runtime_config,
+        BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
+        DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY as u64,
+    ))
+    .unwrap_or_else(|_| {
+        tracing::warn!(
+            key = BACKGROUND_TASK_MAX_CONCURRENCY_KEY,
+            "background task concurrency config exceeds usize; using default"
+        );
+        DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY
+    })
 }
 
 pub fn maintenance_cleanup_interval_secs(runtime_config: &RuntimeConfig) -> u64 {
@@ -179,11 +200,14 @@ fn read_bounded_u64(
 mod tests {
     use super::{
         AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY, BLOB_RECONCILE_INTERVAL_SECS_KEY,
+        BACKGROUND_TASK_MAX_CONCURRENCY_KEY, DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY,
         DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES, DEFAULT_BLOB_RECONCILE_INTERVAL_SECS,
         DEFAULT_TASK_LIST_MAX_LIMIT, DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT, TASK_LIST_MAX_LIMIT_KEY,
-        TEAM_MEMBER_LIST_MAX_LIMIT_KEY, avatar_max_upload_size_bytes, blob_reconcile_interval_secs,
-        normalize_bytes_config_value, normalize_interval_config_value,
-        normalize_list_max_limit_config_value, task_list_max_limit, team_member_list_max_limit,
+        TEAM_MEMBER_LIST_MAX_LIMIT_KEY, avatar_max_upload_size_bytes,
+        background_task_max_concurrency, blob_reconcile_interval_secs,
+        normalize_bytes_config_value, normalize_concurrency_config_value,
+        normalize_interval_config_value, normalize_list_max_limit_config_value,
+        task_list_max_limit, team_member_list_max_limit,
     };
     use crate::config::RuntimeConfig;
     use crate::entities::system_config;
@@ -240,6 +264,24 @@ mod tests {
     }
 
     #[test]
+    fn background_task_concurrency_reader_uses_runtime_value_and_default() {
+        let runtime_config = RuntimeConfig::new();
+        assert_eq!(
+            background_task_max_concurrency(&runtime_config),
+            DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY
+        );
+
+        runtime_config.apply(config_model(BACKGROUND_TASK_MAX_CONCURRENCY_KEY, "3"));
+        assert_eq!(background_task_max_concurrency(&runtime_config), 3usize);
+
+        runtime_config.apply(config_model(BACKGROUND_TASK_MAX_CONCURRENCY_KEY, "0"));
+        assert_eq!(
+            background_task_max_concurrency(&runtime_config),
+            DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY
+        );
+    }
+
+    #[test]
     fn avatar_upload_reader_uses_runtime_value() {
         let runtime_config = RuntimeConfig::new();
         runtime_config.apply(config_model(AVATAR_MAX_UPLOAD_SIZE_BYTES_KEY, "4096"));
@@ -253,6 +295,10 @@ mod tests {
             "60"
         );
         assert_eq!(
+            normalize_concurrency_config_value("test_concurrency", "4").unwrap(),
+            "4"
+        );
+        assert_eq!(
             normalize_bytes_config_value("test_bytes", "1024").unwrap(),
             "1024"
         );
@@ -261,6 +307,7 @@ mod tests {
             "1000"
         );
         assert!(normalize_interval_config_value("test_interval", "0").is_err());
+        assert!(normalize_concurrency_config_value("test_concurrency", "0").is_err());
         assert!(normalize_bytes_config_value("test_bytes", "-1").is_err());
         assert!(normalize_list_max_limit_config_value("test_limit", "1001").is_err());
     }
