@@ -88,3 +88,77 @@ pub fn build_folder_list_items(
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    fn mock_file(id: i64, name: &str, is_locked: bool) -> file::Model {
+        file::Model {
+            id,
+            name: name.to_string(),
+            folder_id: None,
+            team_id: None,
+            blob_id: 1,
+            size: 100,
+            user_id: 1,
+            mime_type: "text/plain".to_string(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            deleted_at: None,
+            is_locked,
+        }
+    }
+
+    fn mock_folder(id: i64, name: &str, is_locked: bool) -> folder::Model {
+        folder::Model {
+            id,
+            name: name.to_string(),
+            parent_id: None,
+            team_id: None,
+            user_id: 1,
+            policy_id: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            deleted_at: None,
+            is_locked,
+        }
+    }
+
+    #[test]
+    fn build_file_list_items_maps_correctly() {
+        let files = vec![mock_file(1, "a.txt", false), mock_file(2, "b.txt", true)];
+        let shared: HashSet<i64> = [1].into_iter().collect();
+        let items = build_file_list_items(files, &shared);
+
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].id, 1);
+        assert_eq!(items[0].name, "a.txt");
+        assert!(items[0].is_shared);
+        assert!(!items[0].is_locked);
+        assert_eq!(items[1].id, 2);
+        assert!(!items[1].is_shared);
+        assert!(items[1].is_locked);
+    }
+
+    #[test]
+    fn build_file_list_items_empty() {
+        let items: Vec<FileListItem> = build_file_list_items(vec![], &HashSet::new());
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn build_folder_list_items_maps_correctly() {
+        let folders = vec![mock_folder(1, "docs", false), mock_folder(2, "pics", true)];
+        let shared: HashSet<i64> = [2].into_iter().collect();
+        let items = build_folder_list_items(folders, &shared);
+
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].id, 1);
+        assert!(!items[0].is_shared);
+        assert_eq!(items[1].id, 2);
+        assert!(items[1].is_shared);
+        assert!(items[1].is_locked);
+    }
+}

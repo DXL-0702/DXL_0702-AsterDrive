@@ -8,7 +8,7 @@ use crate::errors::{AsterError, Result};
 use crate::services::profile_service;
 use crate::types::EntityType;
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum ShareStatus {

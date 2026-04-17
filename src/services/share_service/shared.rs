@@ -307,6 +307,120 @@ pub(super) fn resolve_share_resource(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entities::share;
+    use crate::types::EntityType;
+    use std::collections::HashMap;
+
+    fn mock_share_file(file_id: i64) -> share::Model {
+        share::Model {
+            id: 1,
+            token: "abc".to_string(),
+            user_id: 1,
+            team_id: None,
+            file_id: Some(file_id),
+            folder_id: None,
+            password: None,
+            expires_at: None,
+            max_downloads: 0,
+            download_count: 0,
+            view_count: 0,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    fn mock_share_folder(folder_id: i64) -> share::Model {
+        share::Model {
+            id: 2,
+            token: "def".to_string(),
+            user_id: 1,
+            team_id: None,
+            file_id: None,
+            folder_id: Some(folder_id),
+            password: None,
+            expires_at: None,
+            max_downloads: 0,
+            download_count: 0,
+            view_count: 0,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        }
+    }
+
+    fn mock_file(id: i64, name: &str) -> crate::entities::file::Model {
+        crate::entities::file::Model {
+            id,
+            name: name.to_string(),
+            folder_id: None,
+            team_id: None,
+            blob_id: 1,
+            size: 100,
+            user_id: 1,
+            mime_type: "text/plain".to_string(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            deleted_at: None,
+            is_locked: false,
+        }
+    }
+
+    #[test]
+    fn validate_max_downloads_negative_fails() {
+        let err = validate_max_downloads(-1).unwrap_err();
+        assert_eq!(err.code(), "E005");
+    }
+
+    #[test]
+    fn validate_max_downloads_zero_ok() {
+        assert!(validate_max_downloads(0).is_ok());
+    }
+
+    #[test]
+    fn resolve_share_status_active() {
+        let share = mock_share_file(1);
+        assert_eq!(resolve_share_status(&share, false), ShareStatus::Active);
+    }
+
+    #[test]
+    fn resolve_share_status_deleted() {
+        let share = mock_share_file(1);
+        assert_eq!(resolve_share_status(&share, true), ShareStatus::Deleted);
+    }
+
+    #[test]
+    fn resolve_share_status_expired() {
+        let mut share = mock_share_file(1);
+        share.expires_at = Some(chrono::Utc::now() - chrono::Duration::hours(1));
+        assert_eq!(resolve_share_status(&share, false), ShareStatus::Expired);
+    }
+
+    #[test]
+    fn resolve_share_status_exhausted() {
+        let mut share = mock_share_file(1);
+        share.max_downloads = 5;
+        share.download_count = 5;
+        assert_eq!(resolve_share_status(&share, false), ShareStatus::Exhausted);
+    }
+
+    #[test]
+    fn remaining_downloads_unlimited() {
+        assert_eq!(remaining_downloads(0, 100), None);
+    }
+
+    #[test]
+    fn remaining_downloads_calculates() {
+        assert_eq!(remaining_downloads(10, 3), Some(7));
+    }
+
+    #[test]
+    fn remaining_downloads_never_negative() {
+        assert_eq!(remaining_downloads(5, 10), Some(0));
+    }
+}
+
 pub(super) fn resolve_share_status(share: &share::Model, resource_deleted: bool) -> ShareStatus {
     if resource_deleted {
         return ShareStatus::Deleted;
