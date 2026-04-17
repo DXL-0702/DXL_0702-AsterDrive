@@ -3,21 +3,200 @@ use base64::Engine;
 use crate::db::repository::{user_repo, webdav_account_repo};
 use crate::errors::{AsterError, MapAsterErr};
 use crate::runtime::AppState;
-use crate::services::auth_service;
 use crate::utils::hash;
 
 /// WebDAV 认证结果
+#[derive(Debug)]
 pub struct WebdavAuthResult {
     pub user_id: i64,
     /// 限制访问范围：None = 全部，Some(folder_id) = 只能访问该文件夹及子目录
     pub root_folder_id: Option<i64>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::authenticate_webdav;
+    use crate::cache;
+    use crate::config::{CacheConfig, Config, DatabaseConfig, RuntimeConfig};
+    use crate::entities::{user, webdav_account};
+    use crate::errors::AsterError;
+    use crate::runtime::AppState;
+    use crate::services::mail_service;
+    use crate::storage::{DriverRegistry, PolicySnapshot};
+    use crate::types::{UserRole, UserStatus};
+    use crate::utils::hash;
+    use actix_web::http::header::{self, HeaderMap, HeaderValue};
+    use base64::Engine;
+    use chrono::Utc;
+    use migration::{Migrator, MigratorTrait};
+    use sea_orm::{ActiveModelTrait, Set};
+    use std::sync::Arc;
+
+    async fn build_auth_test_state() -> AppState {
+        hash::enable_fast_password_hash_for_test();
+
+        let db = crate::db::connect(&DatabaseConfig {
+            url: "sqlite::memory:".to_string(),
+            pool_size: 1,
+            retry_count: 0,
+        })
+        .await
+        .expect("webdav auth test database should connect");
+        Migrator::up(&db, None)
+            .await
+            .expect("webdav auth test migrations should succeed");
+
+        let runtime_config = Arc::new(RuntimeConfig::new());
+        let cache = cache::create_cache(&CacheConfig {
+            enabled: false,
+            ..Default::default()
+        })
+        .await;
+        let (storage_change_tx, _) = tokio::sync::broadcast::channel(
+            crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
+        );
+
+        AppState {
+            db,
+            driver_registry: Arc::new(DriverRegistry::new()),
+            runtime_config: runtime_config.clone(),
+            policy_snapshot: Arc::new(PolicySnapshot::new()),
+            config: Arc::new(Config::default()),
+            cache,
+            mail_sender: mail_service::runtime_sender(runtime_config),
+            storage_change_tx,
+        }
+    }
+
+    async fn seed_webdav_account(state: &AppState) -> (String, String, i64, Option<i64>) {
+        let now = Utc::now();
+        let user = user::ActiveModel {
+            username: Set("webdav-auth-user".to_string()),
+            email: Set("webdav-auth-user@example.com".to_string()),
+            password_hash: Set("unused".to_string()),
+            role: Set(UserRole::User),
+            status: Set(UserStatus::Active),
+            session_version: Set(0),
+            email_verified_at: Set(Some(now)),
+            pending_email: Set(None),
+            storage_used: Set(0),
+            storage_quota: Set(0),
+            policy_group_id: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            config: Set(None),
+            ..Default::default()
+        }
+        .insert(&state.db)
+        .await
+        .expect("webdav auth test user should be inserted");
+
+        let username = "webdav-auth".to_string();
+        let password = "webdav-pass".to_string();
+        let root_folder_id = Some(123);
+
+        webdav_account::ActiveModel {
+            user_id: Set(user.id),
+            username: Set(username.clone()),
+            password_hash: Set(
+                hash::hash_password(&password).expect("webdav auth test password hash should work")
+            ),
+            root_folder_id: Set(root_folder_id),
+            is_active: Set(true),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        }
+        .insert(&state.db)
+        .await
+        .expect("webdav auth test account should be inserted");
+
+        (username, password, user.id, root_folder_id)
+    }
+
+    fn basic_headers(username: &str, password: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"));
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Basic {encoded}"))
+                .expect("basic auth header should be valid"),
+        );
+        headers
+    }
+
+    fn bearer_headers(token: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::AUTHORIZATION,
+            HeaderValue::from_str(&format!("Bearer {token}"))
+                .expect("bearer auth header should be valid"),
+        );
+        headers
+    }
+
+    #[actix_web::test]
+    async fn basic_auth_succeeds() {
+        let state = build_auth_test_state().await;
+        let (username, password, user_id, root_folder_id) = seed_webdav_account(&state).await;
+
+        let result = authenticate_webdav(&basic_headers(&username, &password), &state)
+            .await
+            .expect("basic auth should succeed");
+
+        assert_eq!(result.user_id, user_id);
+        assert_eq!(result.root_folder_id, root_folder_id);
+    }
+
+    #[actix_web::test]
+    async fn basic_auth_wrong_password_returns_invalid_credentials() {
+        let state = build_auth_test_state().await;
+        let (username, _, _, _) = seed_webdav_account(&state).await;
+
+        let err = authenticate_webdav(&basic_headers(&username, "wrong-password"), &state)
+            .await
+            .expect_err("wrong password should fail");
+
+        assert!(matches!(
+            err,
+            AsterError::AuthInvalidCredentials(message) if message == "wrong password"
+        ));
+    }
+
+    #[actix_web::test]
+    async fn bearer_auth_returns_unsupported_auth_scheme() {
+        let state = build_auth_test_state().await;
+
+        let err = authenticate_webdav(&bearer_headers("jwt-token"), &state)
+            .await
+            .expect_err("bearer auth should be rejected");
+
+        assert!(matches!(
+            err,
+            AsterError::AuthTokenInvalid(message) if message == "unsupported auth scheme"
+        ));
+    }
+
+    #[actix_web::test]
+    async fn missing_authorization_header_returns_token_invalid() {
+        let state = build_auth_test_state().await;
+
+        let err = authenticate_webdav(&HeaderMap::new(), &state)
+            .await
+            .expect_err("missing Authorization header should fail");
+
+        assert!(matches!(
+            err,
+            AsterError::AuthTokenInvalid(message) if message == "missing Authorization header"
+        ));
+    }
+}
+
 /// 从 WebDAV 请求头提取并认证用户
 ///
 /// 支持：
 /// 1. `Authorization: Basic base64(username:password)` — 查 webdav_accounts 表
-/// 2. `Authorization: Bearer <jwt_token>` — JWT 认证（API 客户端用，全部访问权限）
 pub async fn authenticate_webdav(
     headers: &actix_web::http::header::HeaderMap,
     state: &AppState,
@@ -33,16 +212,8 @@ pub async fn authenticate_webdav(
             user_id,
             root_folder_id,
         })
-    } else if let Some(bearer) = auth_header.strip_prefix("Bearer ") {
-        let user_id = authenticate_bearer(bearer.trim(), state).await?;
-        Ok(WebdavAuthResult {
-            user_id,
-            root_folder_id: None, // JWT = 全部访问
-        })
     } else {
-        Err(AsterError::auth_token_invalid(
-            "unsupported auth scheme, use Basic or Bearer",
-        ))
+        Err(AsterError::auth_token_invalid("unsupported auth scheme"))
     }
 }
 
@@ -83,10 +254,4 @@ async fn authenticate_basic(
     }
 
     Ok((account.user_id, account.root_folder_id))
-}
-
-/// Bearer JWT: verify_token → Claims.user_id
-async fn authenticate_bearer(token: &str, state: &AppState) -> Result<i64, AsterError> {
-    let (claims, _) = auth_service::authenticate_access_token(state, token).await?;
-    Ok(claims.user_id)
 }

@@ -13,6 +13,7 @@ use xmltree::Element;
 use crate::db::repository::{file_repo, user_repo, version_repo};
 use crate::webdav::auth::WebdavAuthResult;
 use crate::webdav::dav::DavPath;
+use crate::webdav::href_for_relative;
 use crate::webdav::path_resolver::{self, ResolvedNode};
 
 /// 处理 REPORT 方法（cadaver `history` 发送 `DAV:version-tree`）
@@ -53,6 +54,7 @@ pub async fn handle_report(
         ResolvedNode::File(f) => f,
         _ => return error_response(409, "Version history is only available for files"),
     };
+    let decoded_relative = String::from_utf8_lossy(dav_path.as_bytes()).into_owned();
 
     // 查版本列表
     let versions = match version_repo::find_by_file_id(db, file.id).await {
@@ -77,7 +79,7 @@ pub async fn handle_report(
 
     // 当前版本（活跃版本）
     if let Some(blob) = &current_blob {
-        let href = format!("{}{}", prefix, relative);
+        let href = href_for_relative(prefix, &decoded_relative);
         let response =
             build_version_response(&href, "current", blob.size, &file.updated_at, &creator);
         multistatus
@@ -95,7 +97,11 @@ pub async fn handle_report(
     for ver in &versions {
         let size = blobs.get(&ver.blob_id).map(|b| b.size).unwrap_or(ver.size);
 
-        let href = format!("{}{}?v={}", prefix, relative, ver.version);
+        let href = format!(
+            "{}?v={}",
+            href_for_relative(prefix, &decoded_relative),
+            ver.version
+        );
         let response = build_version_response(
             &href,
             &format!("V{}", ver.version),

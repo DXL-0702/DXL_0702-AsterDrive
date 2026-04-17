@@ -84,6 +84,7 @@ md-5 = "0.11.0"
 num_cpus = "1.17.0"
 parking_lot = "0.12"
 paste = "1.0.15"
+percent-encoding = "2.3"
 prometheus = { version = "0.14", optional = true, default-features = false }
 sysinfo = { version = "0.38", optional = true, default-features = false, features = ["system"] }
 rand = { version = "0.10.1", default-features = false, features = ["std", "std_rng", "thread_rng"] }
@@ -112,6 +113,7 @@ zip = { version = "8", default-features = false, features = ["deflate"] }
 aws-smithy-http-client = { version = "1.1.12", features = ["test-util"] }
 aws-smithy-types = "1.4.7"
 fs2 = "0.4"
+quick-xml = "0.38"
 testcontainers = { version = "0.27", features = ["reusable-containers"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 

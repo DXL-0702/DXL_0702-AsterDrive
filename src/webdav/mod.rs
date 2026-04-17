@@ -28,6 +28,27 @@ use crate::webdav::dav::{
 const XML_CONTENT_TYPE: &str = "application/xml; charset=utf-8";
 const CHUNK_SIZE: usize = 16 * 1024;
 
+pub(crate) fn encode_href(path: &str) -> String {
+    use percent_encoding::{AsciiSet, CONTROLS, utf8_percent_encode};
+
+    const PATH_SET: &AsciiSet = &CONTROLS
+        .add(b' ')
+        .add(b'"')
+        .add(b'#')
+        .add(b'<')
+        .add(b'>')
+        .add(b'?')
+        .add(b'`')
+        .add(b'{')
+        .add(b'}')
+        .add(b'&')
+        .add(b'\'')
+        .add(b'+')
+        .add(b'%');
+
+    utf8_percent_encode(path, PATH_SET).to_string()
+}
+
 /// WebDAV 共享状态（单例）
 pub struct WebDavState {
     pub prefix: String,
@@ -496,7 +517,7 @@ async fn handle_proppatch(
     let mut response = dav_element("response");
     response.children.push(XMLNode::Element(text_element(
         "D:href",
-        &href_for_relative(prefix, path.as_str()),
+        &href_for_dav_path(prefix, &path),
     )));
 
     let mut groups: BTreeMap<u16, Vec<DavProp>> = BTreeMap::new();
@@ -1210,9 +1231,10 @@ fn active_lock_element(lock: &DavLock) -> Element {
     active.children.push(XMLNode::Element(timeout));
 
     let mut token = dav_element("locktoken");
-    token
-        .children
-        .push(XMLNode::Element(text_element("D:href", &lock.token)));
+    token.children.push(XMLNode::Element(text_element(
+        "D:href",
+        &encode_href(&lock.token),
+    )));
     active.children.push(XMLNode::Element(token));
 
     let mut depth = dav_element("depth");
@@ -1304,12 +1326,21 @@ fn child_relative_path(parent: &str, name: &[u8], is_dir: bool) -> String {
     relative
 }
 
-fn href_for_relative(prefix: &str, relative: &str) -> String {
-    if relative == "/" {
+fn decoded_path_string(path: &DavPath) -> String {
+    String::from_utf8_lossy(path.as_bytes()).into_owned()
+}
+
+pub(crate) fn href_for_relative(prefix: &str, relative: &str) -> String {
+    let href = if relative == "/" {
         format!("{prefix}/")
     } else {
         format!("{prefix}{relative}")
-    }
+    };
+    encode_href(&href)
+}
+
+fn href_for_dav_path(prefix: &str, path: &DavPath) -> String {
+    href_for_relative(prefix, &decoded_path_string(path))
 }
 
 fn display_name(relative: &str) -> &str {
@@ -1457,11 +1488,14 @@ mod tests {
     };
     use crate::webdav::dav::{DavLock, DavLockSystem, LsFuture};
     use crate::webdav::fs::AsterDavFs;
+    use actix_web::body::to_bytes;
     use actix_web::http::{StatusCode, header};
     use actix_web::{FromRequest, web};
     use async_trait::async_trait;
     use chrono::Utc;
     use migration::{Migrator, MigratorTrait};
+    use quick_xml::Reader;
+    use quick_xml::events::Event;
     use sea_orm::{ActiveModelTrait, Set};
     use std::collections::HashMap;
     use std::io;
@@ -1919,6 +1953,79 @@ mod tests {
             1,
             "GET should open exactly one streaming reader from storage"
         );
+
+        drop(state);
+        let _ = std::fs::remove_dir_all(temp_root);
+    }
+
+    #[actix_web::test]
+    async fn propfind_href_is_percent_encoded_and_xml_parseable() {
+        let driver = CountingDirectUploadDriver::default();
+        let (state, user, policy, temp_root) = build_webdav_test_state(
+            DriverType::Local,
+            crate::types::StoredStoragePolicyOptions::empty(),
+            std::sync::Arc::new(driver),
+        )
+        .await;
+        let filename = "测试 文件 & report.txt";
+        create_root_file(
+            &state,
+            user.id,
+            policy.id,
+            filename,
+            4,
+            "files/weird-name.txt",
+        )
+        .await;
+
+        let dav_fs = AsterDavFs::new(state.clone(), user.id, None);
+        let lock_system = NoopLockSystem;
+        let encoded_uri = format!("/webdav{}", super::encode_href(&format!("/{filename}")));
+        let req = actix_web::test::TestRequest::default()
+            .method(actix_web::http::Method::from_bytes(b"PROPFIND").expect("valid method"))
+            .uri(&encoded_uri)
+            .to_http_request();
+
+        let response = super::handle_propfind(&req, &dav_fs, &lock_system, "/webdav", &[]).await;
+
+        assert_eq!(response.status(), StatusCode::from_u16(207).unwrap());
+        let body = to_bytes(response.into_body())
+            .await
+            .expect("PROPFIND response body should be readable");
+
+        let mut reader = Reader::from_reader(body.as_ref());
+        let mut buf = Vec::new();
+        let mut in_href = false;
+        let mut hrefs = Vec::new();
+
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(Event::Start(event))
+                    if event.name().as_ref() == b"D:href" || event.name().as_ref() == b"href" =>
+                {
+                    in_href = true;
+                }
+                Ok(Event::Text(text)) if in_href => {
+                    hrefs.push(text.decode().expect("href text should decode").into_owned());
+                    in_href = false;
+                }
+                Ok(Event::End(event))
+                    if event.name().as_ref() == b"D:href" || event.name().as_ref() == b"href" =>
+                {
+                    in_href = false;
+                }
+                Ok(Event::Eof) => break,
+                Ok(_) => {}
+                Err(error) => panic!("PROPFIND XML should parse cleanly: {error}"),
+            }
+            buf.clear();
+        }
+
+        assert_eq!(hrefs.len(), 1);
+        let decoded = percent_encoding::percent_decode_str(&hrefs[0])
+            .decode_utf8_lossy()
+            .into_owned();
+        assert_eq!(decoded, format!("/webdav/{filename}"));
 
         drop(state);
         let _ = std::fs::remove_dir_all(temp_root);

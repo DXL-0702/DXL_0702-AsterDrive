@@ -5,6 +5,32 @@ use actix_web::test;
 use actix_web::{App, web};
 use base64::Engine;
 
+fn basic_auth_header(username: &str, password: &str) -> String {
+    format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"))
+    )
+}
+
+macro_rules! create_webdav_basic_auth {
+    ($app:expr, $token:expr) => {{
+        let username = "testuser-webdav";
+        let password = "webdav-pass-123";
+        let req = test::TestRequest::post()
+            .uri("/api/v1/webdav-accounts")
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
+            .set_json(serde_json::json!({
+                "username": username,
+                "password": password
+            }))
+            .to_request();
+        let resp = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 201, "create WebDAV account should return 201");
+        basic_auth_header(username, password)
+    }};
+}
+
 fn snapshot_dir_tree(
     path: &std::path::Path,
 ) -> std::io::Result<std::collections::BTreeSet<String>> {
@@ -45,11 +71,12 @@ async fn test_webdav_propfind_root() {
     let app = setup_with_webdav!();
 
     let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
 
     // PROPFIND 根目录 (Depth: 0)
     let req = test::TestRequest::with_uri("/webdav/")
         .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Authorization", auth))
         .insert_header(("Depth", "0"))
         .to_request();
     let resp = test::call_service(&app, req).await;
@@ -61,7 +88,7 @@ async fn test_webdav_mkcol_and_list() {
     let app = setup_with_webdav!();
 
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     // MKCOL 创建目录
     let req = test::TestRequest::with_uri("/webdav/testdir/")
@@ -92,7 +119,7 @@ async fn test_webdav_put_get_delete() {
     let app = setup_with_webdav!();
 
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     // PUT 上传文件
     let req = test::TestRequest::put()
@@ -164,7 +191,7 @@ async fn test_webdav_get_and_head_do_not_create_runtime_temp_files() {
 
     let (token, _) = register_and_login!(app);
     upload_test_file_named!(app, token, "streamed-read.txt");
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
     let runtime_path = std::path::Path::new(&runtime_temp_dir);
 
     let temp_snapshot_before_get = snapshot_dir_tree(runtime_path).unwrap();
@@ -228,7 +255,7 @@ async fn test_webdav_put_local_fast_path_avoids_runtime_temp_files() {
     .await;
 
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
     let runtime_path = std::path::Path::new(&runtime_temp_dir);
     let temp_snapshot_before_put = snapshot_dir_tree(runtime_path).unwrap();
 
@@ -288,7 +315,7 @@ async fn test_webdav_put_without_content_length_avoids_runtime_temp_files() {
     .await;
 
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
     let runtime_path = std::path::Path::new(&runtime_temp_dir);
     let upload_path = std::path::Path::new(&upload_temp_dir);
     let runtime_snapshot_before_put = snapshot_dir_tree(runtime_path).unwrap();
@@ -355,7 +382,7 @@ async fn test_webdav_runtime_toggle_takes_effect_immediately() {
     .await;
 
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     let req = test::TestRequest::with_uri("/webdav/")
         .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
@@ -408,7 +435,7 @@ async fn test_webdav_copy_move() {
     let app = setup_with_webdav!();
 
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     // PUT 创建源文件
     let req = test::TestRequest::put()
@@ -473,7 +500,7 @@ async fn test_webdav_copy_move() {
 async fn test_webdav_copy_folder_recursively() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     let req = test::TestRequest::with_uri("/webdav/srcdir/")
         .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
@@ -523,7 +550,7 @@ async fn test_webdav_copy_folder_recursively() {
 async fn test_webdav_move_overwrites_existing_destination() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     for (path, content) in [
         ("/webdav/source-overwrite.txt", "fresh content"),
@@ -571,7 +598,7 @@ async fn test_webdav_move_overwrites_existing_destination() {
 async fn test_webdav_propfind_hides_hidden_artifacts() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     for path in [
         "/webdav/._hidden",
@@ -615,7 +642,7 @@ async fn test_webdav_propfind_hides_hidden_artifacts() {
 async fn test_webdav_copy_overwrites_existing_destination() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     for (path, content) in [
         ("/webdav/source-copy.txt", "copy fresh"),
@@ -663,7 +690,7 @@ async fn test_webdav_copy_overwrites_existing_destination() {
 async fn test_webdav_custom_property_roundtrip() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     let req = test::TestRequest::put()
         .uri("/webdav/props.txt")
@@ -750,7 +777,7 @@ async fn test_webdav_custom_property_roundtrip() {
 async fn test_webdav_proppatch_rejects_dav_namespace_changes() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     let req = test::TestRequest::put()
         .uri("/webdav/dav-props.txt")
@@ -830,10 +857,7 @@ async fn test_webdav_basic_auth_root_scope() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
 
-    let basic = format!(
-        "Basic {}",
-        base64::engine::general_purpose::STANDARD.encode("basic-scope-user:basic-scope-pass")
-    );
+    let basic = basic_auth_header("basic-scope-user", "basic-scope-pass");
 
     let req = test::TestRequest::with_uri("/webdav/")
         .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
@@ -860,11 +884,12 @@ async fn test_webdav_options() {
     let app = setup_with_webdav!();
 
     let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
 
     // OPTIONS 应返回 DAV header
     let req = test::TestRequest::with_uri("/webdav/")
         .method(actix_web::http::Method::OPTIONS)
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Authorization", auth))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -883,7 +908,7 @@ async fn test_webdav_options() {
 async fn test_webdav_lock_unlock() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     // PUT 创建文件
     let req = test::TestRequest::put()
@@ -970,7 +995,7 @@ async fn test_webdav_lock_unlock() {
 async fn test_webdav_lock_missing_path_returns_not_found_instead_of_locked() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     let lock_body = r#"<?xml version="1.0" encoding="utf-8" ?>
 <D:lockinfo xmlns:D="DAV:">
@@ -1005,75 +1030,30 @@ async fn test_webdav_unauthorized() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 401);
+    assert_eq!(
+        resp.headers()
+            .get("WWW-Authenticate")
+            .and_then(|value| value.to_str().ok()),
+        Some("Basic realm=\"AsterDrive WebDAV\"")
+    );
 }
 
 #[actix_web::test]
-async fn test_webdav_bearer_rejects_refresh_token() {
+async fn test_webdav_bearer_access_token_is_rejected_with_basic_challenge() {
     let app = setup_with_webdav!();
-    let (_access, refresh) = register_and_login!(app);
+    let (access, _) = register_and_login!(app);
 
     let req = test::TestRequest::with_uri("/webdav/")
         .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
-        .insert_header(("Authorization", format!("Bearer {refresh}")))
+        .insert_header(("Authorization", format!("Bearer {access}")))
         .insert_header(("Depth", "0"))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 401);
-}
-
-#[actix_web::test]
-async fn test_webdav_bearer_respects_session_revocation() {
-    let (app, db, mail_sender) = setup_with_webdav_and_mail!();
-    let (admin_token, _) = register_and_login!(app);
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/register")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "username": "webdavrevoke",
-            "email": "webdavrevoke@example.com",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 201);
-    let body: serde_json::Value = test::read_body_json(resp).await;
-    let user_id = body["data"]["id"].as_i64().unwrap();
-
-    let _ = confirm_latest_contact_verification!(app, db, mail_sender);
-
-    let req = test::TestRequest::post()
-        .uri("/api/v1/auth/login")
-        .peer_addr("127.0.0.1:12345".parse().unwrap())
-        .set_json(serde_json::json!({
-            "identifier": "webdavrevoke",
-            "password": "password123"
-        }))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    let user_access = common::extract_cookie(&resp, "aster_access").unwrap();
-
-    let req = test::TestRequest::with_uri("/webdav/")
-        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
-        .insert_header(("Authorization", format!("Bearer {user_access}")))
-        .insert_header(("Depth", "0"))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 207);
-
-    let req = test::TestRequest::post()
-        .uri(&format!("/api/v1/admin/users/{user_id}/sessions/revoke"))
-        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
-        .insert_header(common::csrf_header_for(&admin_token))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
-
-    let req = test::TestRequest::with_uri("/webdav/")
-        .method(actix_web::http::Method::from_bytes(b"PROPFIND").unwrap())
-        .insert_header(("Authorization", format!("Bearer {user_access}")))
-        .insert_header(("Depth", "0"))
-        .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 401);
+    assert_eq!(
+        resp.headers()
+            .get("WWW-Authenticate")
+            .and_then(|value| value.to_str().ok()),
+        Some("Basic realm=\"AsterDrive WebDAV\"")
+    );
 }

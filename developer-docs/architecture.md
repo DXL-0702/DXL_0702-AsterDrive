@@ -379,7 +379,8 @@ WebDAV 不是走 `src/api/routes/*`，而是这样进入系统：
 
 - Basic Auth 使用独立表 `webdav_accounts`
 - 每个账号可以限制到某个根文件夹
-- Bearer JWT 也可直接访问 WebDAV，但不受 `root_folder_id` 限制
+- WebDAV 协议入口仅接受 Basic Auth，对应 `webdav_accounts` 独立账号
+- JWT 只用于 `/api/v1/webdav-accounts` 这类管理接口，不用于 `/webdav/*` 协议入口
 
 ## 上传链路
 

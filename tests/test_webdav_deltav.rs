@@ -2,6 +2,33 @@
 mod common;
 
 use actix_web::test;
+use base64::Engine;
+
+fn basic_auth_header(username: &str, password: &str) -> String {
+    format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode(format!("{username}:{password}"))
+    )
+}
+
+macro_rules! create_webdav_basic_auth {
+    ($app:expr, $token:expr) => {{
+        let username = "testuser-webdav";
+        let password = "webdav-pass-123";
+        let req = test::TestRequest::post()
+            .uri("/api/v1/webdav-accounts")
+            .insert_header(("Cookie", common::access_cookie_header(&$token)))
+            .insert_header(common::csrf_header_for(&$token))
+            .set_json(serde_json::json!({
+                "username": username,
+                "password": password
+            }))
+            .to_request();
+        let resp = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 201, "create WebDAV account should return 201");
+        basic_auth_header(username, password)
+    }};
+}
 
 /// 辅助宏：WebDAV PUT 上传文件
 macro_rules! webdav_put {
@@ -52,7 +79,7 @@ macro_rules! send_version_tree {
 async fn test_deltav_report_no_versions() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     // 上传文件（首次上传不产生历史版本）
     webdav_put!(app, "/webdav/hello.txt", auth, "v1 content");
@@ -95,7 +122,7 @@ async fn test_deltav_report_no_versions() {
 async fn test_deltav_report_with_versions() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     // 上传 → 覆盖 → 覆盖（产生 2 个历史版本）
     webdav_put!(app, "/webdav/data.txt", auth, "version 1");
@@ -144,7 +171,7 @@ async fn test_deltav_report_with_versions() {
 async fn test_deltav_report_on_folder() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     let req = test::TestRequest::with_uri("/webdav/mydir/")
         .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
@@ -168,7 +195,7 @@ async fn test_deltav_report_on_folder() {
 async fn test_deltav_report_not_found() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     let resp = send_version_tree!(app, "/webdav/nonexistent.txt", auth);
     assert_eq!(resp.status(), 404);
@@ -180,7 +207,7 @@ async fn test_deltav_report_not_found() {
 async fn test_deltav_report_unsupported_type() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     webdav_put!(app, "/webdav/file.txt", auth, "content");
 
@@ -203,7 +230,7 @@ async fn test_deltav_report_unsupported_type() {
 async fn test_deltav_version_control_file() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     webdav_put!(app, "/webdav/vc.txt", auth, "content");
 
@@ -221,7 +248,7 @@ async fn test_deltav_version_control_file() {
 async fn test_deltav_version_control_folder() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     let req = test::TestRequest::with_uri("/webdav/somedir/")
         .method(actix_web::http::Method::from_bytes(b"MKCOL").unwrap())
@@ -243,7 +270,7 @@ async fn test_deltav_version_control_folder() {
 async fn test_deltav_version_control_not_found() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
-    let auth = format!("Bearer {token}");
+    let auth = create_webdav_basic_auth!(app, token);
 
     let req = test::TestRequest::with_uri("/webdav/nope.txt")
         .method(actix_web::http::Method::from_bytes(b"VERSION-CONTROL").unwrap())
@@ -259,10 +286,11 @@ async fn test_deltav_version_control_not_found() {
 async fn test_deltav_options_header() {
     let app = setup_with_webdav!();
     let (token, _) = register_and_login!(app);
+    let auth = create_webdav_basic_auth!(app, token);
 
     let req = test::TestRequest::with_uri("/webdav/")
         .method(actix_web::http::Method::OPTIONS)
-        .insert_header(("Authorization", format!("Bearer {token}")))
+        .insert_header(("Authorization", auth))
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
@@ -294,4 +322,10 @@ async fn test_deltav_report_unauthorized() {
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 401);
+    assert_eq!(
+        resp.headers()
+            .get("WWW-Authenticate")
+            .and_then(|value| value.to_str().ok()),
+        Some("Basic realm=\"AsterDrive WebDAV\"")
+    );
 }
