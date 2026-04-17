@@ -497,11 +497,13 @@ mod tests {
                 let max_in_flight = max_in_flight.clone();
                 async move {
                     let current = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
-                    let _ = max_in_flight.fetch_update(
-                        Ordering::SeqCst,
-                        Ordering::SeqCst,
-                        |existing| Some(existing.max(current)),
-                    );
+                    if let Err(e) =
+                        max_in_flight.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |existing| {
+                            Some(existing.max(current))
+                        })
+                    {
+                        tracing::trace!("max_in_flight fetch_update failed: {e}");
+                    }
                     sleep(Duration::from_millis(20)).await;
                     in_flight.fetch_sub(1, Ordering::SeqCst);
                     value * 2

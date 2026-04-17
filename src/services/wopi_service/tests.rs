@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use rsa::{RsaPrivateKey, rand_core::OsRng, traits::PublicKeyParts};
 use serde_json::json;
 
 use super::discovery::{
@@ -214,27 +216,30 @@ fn request_source_check_accepts_matching_origin_or_missing_headers() {
 
     ensure_request_source_allowed(
         &app,
-        WopiRequestSource {
+        &WopiRequestSource {
             origin: Some("http://localhost:8080"),
             referer: None,
+            ..Default::default()
         },
     )
     .unwrap();
 
     ensure_request_source_allowed(
         &app,
-        WopiRequestSource {
+        &WopiRequestSource {
             origin: None,
             referer: Some("http://localhost:8080/hosting/wopi/word/edit"),
+            ..Default::default()
         },
     )
     .unwrap();
 
     ensure_request_source_allowed(
         &app,
-        WopiRequestSource {
+        &WopiRequestSource {
             origin: None,
             referer: None,
+            ..Default::default()
         },
     )
     .unwrap();
@@ -244,9 +249,10 @@ fn request_source_check_accepts_matching_origin_or_missing_headers() {
 fn request_source_check_rejects_untrusted_origin() {
     let err = ensure_request_source_allowed(
         &test_wopi_app(),
-        WopiRequestSource {
+        &WopiRequestSource {
             origin: Some("https://evil.example.com"),
             referer: None,
+            ..Default::default()
         },
     )
     .unwrap_err();
@@ -298,6 +304,29 @@ fn parse_put_relative_request_allows_extension_only_suggested_target() {
         PutRelativeTargetMode::Suggested(name) => assert_eq!(name, "report 1.docx"),
         PutRelativeTargetMode::Relative { .. } => panic!("expected suggested target"),
     }
+}
+
+#[test]
+fn parse_discovery_xml_extracts_proof_keys() {
+    let mut rng = OsRng;
+    let key = RsaPrivateKey::new(&mut rng, 2048).unwrap();
+    let modulus = STANDARD.encode(key.to_public_key().n().to_bytes_be());
+    let exponent = STANDARD.encode(key.to_public_key().e().to_bytes_be());
+    let discovery = parse_discovery_xml(&format!(
+        r#"
+            <wopi-discovery>
+              <proof-key modulus="{modulus}" exponent="{exponent}" />
+              <net-zone name="external-http">
+                <app name="Word">
+                  <action name="view" ext="docx" urlsrc="https://office.example.com/word/view?" />
+                </app>
+              </net-zone>
+            </wopi-discovery>
+            "#
+    ))
+    .unwrap();
+
+    assert!(discovery.proof_keys().is_some());
 }
 
 #[test]

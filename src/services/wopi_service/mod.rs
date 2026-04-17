@@ -6,6 +6,7 @@
 mod discovery;
 mod locks;
 mod operations;
+mod proof;
 mod session;
 mod targets;
 #[cfg(test)]

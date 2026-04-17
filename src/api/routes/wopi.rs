@@ -52,8 +52,13 @@ pub async fn check_file_info(
     path: web::Path<i64>,
     query: web::Query<WopiAccessQuery>,
 ) -> HttpResponse {
-    match wopi_service::check_file_info(&state, *path, &query.access_token, request_source(&req))
-        .await
+    match wopi_service::check_file_info(
+        &state,
+        *path,
+        &query.access_token,
+        request_source(&state, &req),
+    )
+    .await
     {
         Ok(info) => HttpResponse::Ok().json(info),
         Err(error) => protocol_error_response(error),
@@ -77,7 +82,7 @@ pub async fn get_file_contents(
         &query.access_token,
         if_none_match,
         max_expected_size,
-        request_source(&req),
+        request_source(&state, &req),
     )
     .await
     {
@@ -104,7 +109,7 @@ pub async fn put_file_contents(
         &query.access_token,
         body,
         optional_header_value(&req, "X-WOPI-Lock"),
-        request_source(&req),
+        request_source(&state, &req),
     )
     .await
     {
@@ -141,7 +146,7 @@ pub async fn file_operation(
                     "X-WOPI-OverwriteRelativeTarget",
                 ),
                 size_header: optional_header_value(&req, "X-WOPI-Size"),
-                request_source: request_source(&req),
+                request_source: request_source(&state, &req),
             },
         )
         .await
@@ -161,7 +166,7 @@ pub async fn file_operation(
             &state,
             *path,
             &query.access_token,
-            request_source(&req),
+            request_source(&state, &req),
         )
         .await
         {
@@ -180,7 +185,7 @@ pub async fn file_operation(
             &query.access_token,
             optional_header_value(&req, "X-WOPI-RequestedName"),
             optional_header_value(&req, "X-WOPI-Lock"),
-            request_source(&req),
+            request_source(&state, &req),
         )
         .await
         {
@@ -203,7 +208,7 @@ pub async fn file_operation(
             *path,
             &query.access_token,
             body,
-            request_source(&req),
+            request_source(&state, &req),
         )
         .await
         {
@@ -219,7 +224,7 @@ pub async fn file_operation(
             &query.access_token,
             requested_lock,
             old_lock,
-            request_source(&req),
+            request_source(&state, &req),
         )
         .await
     } else if override_value.eq_ignore_ascii_case("LOCK") {
@@ -228,7 +233,7 @@ pub async fn file_operation(
             *path,
             &query.access_token,
             requested_lock,
-            request_source(&req),
+            request_source(&state, &req),
         )
         .await
     } else if override_value.eq_ignore_ascii_case("UNLOCK") {
@@ -237,7 +242,7 @@ pub async fn file_operation(
             *path,
             &query.access_token,
             requested_lock,
-            request_source(&req),
+            request_source(&state, &req),
         )
         .await
     } else if override_value.eq_ignore_ascii_case("REFRESH_LOCK") {
@@ -246,7 +251,7 @@ pub async fn file_operation(
             *path,
             &query.access_token,
             requested_lock,
-            request_source(&req),
+            request_source(&state, &req),
         )
         .await
     } else {
@@ -312,9 +317,17 @@ fn optional_header_value<'a>(req: &'a HttpRequest, name: &str) -> Option<&'a str
         .filter(|value| !value.is_empty())
 }
 
-fn request_source(req: &HttpRequest) -> wopi_service::WopiRequestSource<'_> {
+fn request_source<'a>(
+    state: &AppState,
+    req: &'a HttpRequest,
+) -> wopi_service::WopiRequestSource<'a> {
     wopi_service::WopiRequestSource {
         origin: optional_header_value(req, "Origin"),
         referer: optional_header_value(req, "Referer"),
+        proof: optional_header_value(req, "X-WOPI-Proof"),
+        proof_old: optional_header_value(req, "X-WOPI-ProofOld"),
+        timestamp: optional_header_value(req, "X-WOPI-TimeStamp"),
+        public_url: crate::config::site_url::public_site_url(&state.runtime_config)
+            .map(|base| format!("{base}{}", req.uri())),
     }
 }

@@ -12,6 +12,7 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::preview_app_service;
 
+use super::proof::{WopiProofKeySet, parse_wopi_proof_key_set, validate_wopi_proof};
 use super::targets::file_extension;
 use super::types::{DiscoveredWopiPreviewApp, WopiRequestSource};
 
@@ -56,6 +57,7 @@ struct WopiDiscoveryAction {
 #[derive(Debug, Clone)]
 pub(crate) struct WopiDiscovery {
     actions: Vec<WopiDiscoveryAction>,
+    proof_keys: Option<WopiProofKeySet>,
 }
 
 #[derive(Debug, Clone)]
@@ -171,21 +173,43 @@ pub(crate) async fn resolve_action_url(
 }
 
 pub(crate) async fn load_discovery(state: &AppState, discovery_url: &str) -> Result<WopiDiscovery> {
-    if let Some(cached) = DISCOVERY_CACHE.get(discovery_url).await
+    let cached = DISCOVERY_CACHE.get(discovery_url).await;
+    if let Some(cached) = cached.as_ref()
         && cached.cached_at + discovery_cache_ttl(&state.runtime_config) > Utc::now()
     {
-        return Ok(cached.discovery);
+        return Ok(cached.discovery.clone());
     }
 
-    let response = DISCOVERY_CLIENT
+    let response = match DISCOVERY_CLIENT
         .get(discovery_url)
         .send()
         .await
         .map_aster_err_ctx(
             "failed to fetch WOPI discovery",
             AsterError::validation_error,
-        )?;
+        ) {
+        Ok(response) => response,
+        Err(error) => {
+            if let Some(cached) = cached.as_ref() {
+                tracing::warn!(
+                    discovery_url,
+                    error = %error,
+                    "using stale WOPI discovery cache after refresh failure"
+                );
+                return Ok(cached.discovery.clone());
+            }
+            return Err(error);
+        }
+    };
     if !response.status().is_success() {
+        if let Some(cached) = cached.as_ref() {
+            tracing::warn!(
+                discovery_url,
+                status = %response.status(),
+                "using stale WOPI discovery cache after non-success refresh"
+            );
+            return Ok(cached.discovery.clone());
+        }
         return Err(AsterError::validation_error(format!(
             "WOPI discovery returned HTTP {}",
             response.status()
@@ -196,7 +220,20 @@ pub(crate) async fn load_discovery(state: &AppState, discovery_url: &str) -> Res
         "failed to read WOPI discovery",
         AsterError::validation_error,
     )?;
-    let parsed = parse_discovery_xml(&body)?;
+    let parsed = match parse_discovery_xml(&body) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            if let Some(cached) = cached.as_ref() {
+                tracing::warn!(
+                    discovery_url,
+                    error = %error,
+                    "using stale WOPI discovery cache after parse failure"
+                );
+                return Ok(cached.discovery.clone());
+            }
+            return Err(error);
+        }
+    };
     DISCOVERY_CACHE
         .insert(
             discovery_url.to_string(),
@@ -213,6 +250,8 @@ pub(crate) fn parse_discovery_xml(xml: &str) -> Result<WopiDiscovery> {
     let root = Element::parse(xml.as_bytes())
         .map_aster_err_ctx("invalid WOPI discovery XML", AsterError::validation_error)?;
     let mut actions = Vec::new();
+    let mut proof_keys = None;
+    collect_discovery_proof_keys(&root, &mut proof_keys)?;
     collect_discovery_actions(&root, None, None, &mut actions);
     if actions.is_empty() {
         return Err(AsterError::validation_error(
@@ -220,7 +259,41 @@ pub(crate) fn parse_discovery_xml(xml: &str) -> Result<WopiDiscovery> {
         ));
     }
 
-    Ok(WopiDiscovery { actions })
+    Ok(WopiDiscovery {
+        actions,
+        proof_keys,
+    })
+}
+
+fn collect_discovery_proof_keys(
+    element: &Element,
+    out: &mut Option<WopiProofKeySet>,
+) -> Result<()> {
+    if element.name.eq_ignore_ascii_case("proof-key") {
+        let current_modulus = element_attribute(element, "modulus")
+            .ok_or_else(|| AsterError::validation_error("WOPI proof-key is missing modulus"))?;
+        let current_exponent = element_attribute(element, "exponent")
+            .ok_or_else(|| AsterError::validation_error("WOPI proof-key is missing exponent"))?;
+        let parsed = parse_wopi_proof_key_set(
+            current_modulus,
+            current_exponent,
+            element_attribute(element, "oldmodulus"),
+            element_attribute(element, "oldexponent"),
+        )?;
+        if out.replace(parsed).is_some() {
+            return Err(AsterError::validation_error(
+                "WOPI discovery contains multiple proof-key elements",
+            ));
+        }
+    }
+
+    for child in &element.children {
+        if let XMLNode::Element(child) = child {
+            collect_discovery_proof_keys(child, out)?;
+        }
+    }
+
+    Ok(())
 }
 
 fn collect_discovery_actions(
@@ -306,6 +379,10 @@ impl WopiDiscovery {
                     .find(|item| item.action == action && item.ext.as_deref() == Some("*"))
             })
             .map(|item| item.urlsrc.clone())
+    }
+
+    pub(crate) fn proof_keys(&self) -> Option<&WopiProofKeySet> {
+        self.proof_keys.as_ref()
     }
 }
 
@@ -623,13 +700,11 @@ pub(crate) fn trusted_origins_for_app(
 
 pub(crate) fn ensure_request_source_allowed(
     app: &preview_app_service::PublicPreviewAppDefinition,
-    request_source: WopiRequestSource<'_>,
+    request_source: &WopiRequestSource<'_>,
 ) -> Result<()> {
-    // 这里做的是“配置级来源收敛”，用于挡掉明显不可信的 Origin / Referer。
-    // 对 Microsoft 365 for the web 来说，官方还定义了基于 discovery proof-key 的
-    // `X-WOPI-Proof` / `X-WOPI-TimeStamp` 验签：
-    // https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/online/scenarios/proofkeys
-    // 当前项目尚未实现 proof-key 校验，所以不要把这个函数误当成完整的微软来源验证。
+    // 这里只做“配置级来源收敛”，用于挡掉明显不可信的 Origin / Referer。
+    // 真正的 Microsoft 365 proof-key 验签在 `ensure_request_proof_valid()`，
+    // 两层一起才构成完整的 WOPI 请求来源校验。
     let trusted_origins = trusted_origins_for_app(app);
     if trusted_origins.is_empty() {
         return Ok(());
@@ -664,6 +739,38 @@ pub(crate) fn ensure_request_source_allowed(
     }
 
     Ok(())
+}
+
+pub(crate) async fn ensure_request_proof_valid(
+    state: &AppState,
+    app_config: &WopiAppConfig,
+    access_token: &str,
+    request_source: &WopiRequestSource<'_>,
+) -> Result<()> {
+    let Some(discovery_url) = app_config.discovery_url.as_deref() else {
+        return Ok(());
+    };
+    let discovery = load_discovery(state, discovery_url).await?;
+    let Some(proof_keys) = discovery.proof_keys() else {
+        return Ok(());
+    };
+    let public_url = request_source.public_url.as_deref().ok_or_else(|| {
+        AsterError::internal_error(
+            "WOPI proof validation requires a configured public_site_url request URL",
+        )
+    })?;
+
+    // discovery 提供了 proof-key 时，说明该 provider 期望按照微软定义的
+    // proof 头部签名请求。这里必须在 access_token 解析成功后、业务落库前验签。
+    validate_wopi_proof(
+        proof_keys,
+        access_token,
+        public_url,
+        request_source.proof,
+        request_source.proof_old,
+        request_source.timestamp,
+        Utc::now(),
+    )
 }
 
 fn push_unique(values: &mut Vec<String>, value: String) {

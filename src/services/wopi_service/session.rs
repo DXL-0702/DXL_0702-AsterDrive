@@ -17,7 +17,10 @@ use crate::services::{
     workspace_storage_service::WorkspaceStorageScope,
 };
 
-use super::discovery::{ensure_request_source_allowed, parse_wopi_app_config, resolve_action_url};
+use super::discovery::{
+    ensure_request_proof_valid, ensure_request_source_allowed, parse_wopi_app_config,
+    resolve_action_url,
+};
 use super::types::{WopiLaunchSession, WopiRequestSource};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,11 +165,20 @@ pub(crate) async fn resolve_access_token(
         wopi_session_repo::delete_by_id(&state.db, session.id).await?;
         return Err(AsterError::auth_forbidden("WOPI app is disabled"));
     }
-    if let Err(error) = parse_wopi_app_config(&app) {
+    let app_config = match parse_wopi_app_config(&app) {
+        Ok(config) => config,
+        Err(error) => {
+            wopi_session_repo::delete_by_id(&state.db, session.id).await?;
+            return Err(error);
+        }
+    };
+    ensure_request_source_allowed(&app, &request_source)?;
+    if let Err(error) =
+        ensure_request_proof_valid(state, &app_config, access_token, &request_source).await
+    {
         wopi_session_repo::delete_by_id(&state.db, session.id).await?;
         return Err(error);
     }
-    ensure_request_source_allowed(&app, request_source)?;
 
     // 最终仍回到统一文件 scope 校验：WOPI 只是另一个接入层，不应绕开个人/团队边界。
     let file =

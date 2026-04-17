@@ -211,8 +211,8 @@ mod tests {
             storage_used: 0,
             storage_quota: 0,
             policy_group_id: None,
-            created_at: chrono::Utc::now().into(),
-            updated_at: chrono::Utc::now().into(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
             config: None,
         };
         let profile = crate::entities::user_profile::Model {
@@ -222,8 +222,8 @@ mod tests {
             avatar_source: crate::types::AvatarSource::None,
             avatar_key: None,
             avatar_version: 0,
-            created_at: chrono::Utc::now().into(),
-            updated_at: chrono::Utc::now().into(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
         };
         let name = resolve_share_owner_name(&user, Some(&profile));
         assert_eq!(name, "Alicia");
@@ -244,8 +244,8 @@ mod tests {
             storage_used: 0,
             storage_quota: 0,
             policy_group_id: None,
-            created_at: chrono::Utc::now().into(),
-            updated_at: chrono::Utc::now().into(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
             config: None,
         };
         let name = resolve_share_owner_name(&user, None);
@@ -267,8 +267,8 @@ mod tests {
             storage_used: 0,
             storage_quota: 0,
             policy_group_id: None,
-            created_at: chrono::Utc::now().into(),
-            updated_at: chrono::Utc::now().into(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
             config: None,
         };
         let profile = crate::entities::user_profile::Model {
@@ -278,8 +278,8 @@ mod tests {
             avatar_source: crate::types::AvatarSource::None,
             avatar_key: None,
             avatar_version: 0,
-            created_at: chrono::Utc::now().into(),
-            updated_at: chrono::Utc::now().into(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
         };
         let name = resolve_share_owner_name(&user, Some(&profile));
         assert_eq!(name, "charlie");

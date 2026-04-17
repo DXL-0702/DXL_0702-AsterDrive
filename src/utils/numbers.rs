@@ -125,6 +125,18 @@ mod tests {
     }
 
     #[test]
+    fn u64_to_i64_accepts_within_i64_range() {
+        assert_eq!(u64_to_i64(0, "test").unwrap(), 0);
+        assert_eq!(u64_to_i64(i64::MAX as u64, "test").unwrap(), i64::MAX);
+    }
+
+    #[test]
+    fn u64_to_i64_rejects_overflow() {
+        let err = u64_to_i64((i64::MAX as u64) + 1, "test").unwrap_err();
+        assert_eq!(err.code(), "E004");
+    }
+
+    #[test]
     fn calc_total_chunks_rounds_up() {
         assert_eq!(
             calc_total_chunks(10_485_761, 5_242_880, "multipart upload").unwrap(),

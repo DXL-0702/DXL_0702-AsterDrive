@@ -116,10 +116,14 @@ pub struct DiscoveredWopiPreviewApp {
     pub label: String,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct WopiRequestSource<'a> {
     pub origin: Option<&'a str>,
     pub referer: Option<&'a str>,
+    pub proof: Option<&'a str>,
+    pub proof_old: Option<&'a str>,
+    pub timestamp: Option<&'a str>,
+    pub public_url: Option<String>,
 }
 
 pub struct WopiPutRelativeRequest<'a> {

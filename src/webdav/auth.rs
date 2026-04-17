@@ -13,6 +13,69 @@ pub struct WebdavAuthResult {
     pub root_folder_id: Option<i64>,
 }
 
+/// 从 WebDAV 请求头提取并认证用户
+///
+/// 支持：
+/// 1. `Authorization: Basic base64(username:password)` — 查 webdav_accounts 表
+pub async fn authenticate_webdav(
+    headers: &actix_web::http::header::HeaderMap,
+    state: &AppState,
+) -> Result<WebdavAuthResult, AsterError> {
+    let auth_header = headers
+        .get(actix_web::http::header::AUTHORIZATION)
+        .and_then(|v: &actix_web::http::header::HeaderValue| v.to_str().ok())
+        .ok_or_else(|| AsterError::auth_token_invalid("missing Authorization header"))?;
+
+    if let Some(basic) = auth_header.strip_prefix("Basic ") {
+        let (user_id, root_folder_id) = authenticate_basic(basic.trim(), state).await?;
+        Ok(WebdavAuthResult {
+            user_id,
+            root_folder_id,
+        })
+    } else {
+        Err(AsterError::auth_token_invalid("unsupported auth scheme"))
+    }
+}
+
+/// Basic Auth: 查 webdav_accounts 表（独立于登录密码）
+/// 返回 (user_id, root_folder_id)
+async fn authenticate_basic(
+    encoded: &str,
+    state: &AppState,
+) -> Result<(i64, Option<i64>), AsterError> {
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(encoded)
+        .map_aster_err_with(|| AsterError::auth_invalid_credentials("invalid base64"))?;
+
+    let credentials = String::from_utf8(decoded)
+        .map_aster_err_with(|| AsterError::auth_invalid_credentials("invalid utf8"))?;
+
+    let (username, password) = credentials
+        .split_once(':')
+        .ok_or_else(|| AsterError::auth_invalid_credentials("invalid basic auth format"))?;
+
+    // 查 WebDAV 专用账号
+    let account = webdav_account_repo::find_by_username(&state.db, username)
+        .await?
+        .ok_or_else(|| AsterError::auth_invalid_credentials("WebDAV account not found"))?;
+
+    if !account.is_active {
+        return Err(AsterError::auth_forbidden("WebDAV account is disabled"));
+    }
+
+    if !hash::verify_password(password, &account.password_hash)? {
+        return Err(AsterError::auth_invalid_credentials("wrong password"));
+    }
+
+    // 确认关联用户仍然活跃
+    let user = user_repo::find_by_id(&state.db, account.user_id).await?;
+    if !user.status.is_active() {
+        return Err(AsterError::auth_forbidden("user account is disabled"));
+    }
+
+    Ok((account.user_id, account.root_folder_id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::authenticate_webdav;
@@ -191,67 +254,4 @@ mod tests {
             AsterError::AuthTokenInvalid(message) if message == "missing Authorization header"
         ));
     }
-}
-
-/// 从 WebDAV 请求头提取并认证用户
-///
-/// 支持：
-/// 1. `Authorization: Basic base64(username:password)` — 查 webdav_accounts 表
-pub async fn authenticate_webdav(
-    headers: &actix_web::http::header::HeaderMap,
-    state: &AppState,
-) -> Result<WebdavAuthResult, AsterError> {
-    let auth_header = headers
-        .get(actix_web::http::header::AUTHORIZATION)
-        .and_then(|v: &actix_web::http::header::HeaderValue| v.to_str().ok())
-        .ok_or_else(|| AsterError::auth_token_invalid("missing Authorization header"))?;
-
-    if let Some(basic) = auth_header.strip_prefix("Basic ") {
-        let (user_id, root_folder_id) = authenticate_basic(basic.trim(), state).await?;
-        Ok(WebdavAuthResult {
-            user_id,
-            root_folder_id,
-        })
-    } else {
-        Err(AsterError::auth_token_invalid("unsupported auth scheme"))
-    }
-}
-
-/// Basic Auth: 查 webdav_accounts 表（独立于登录密码）
-/// 返回 (user_id, root_folder_id)
-async fn authenticate_basic(
-    encoded: &str,
-    state: &AppState,
-) -> Result<(i64, Option<i64>), AsterError> {
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(encoded)
-        .map_aster_err_with(|| AsterError::auth_invalid_credentials("invalid base64"))?;
-
-    let credentials = String::from_utf8(decoded)
-        .map_aster_err_with(|| AsterError::auth_invalid_credentials("invalid utf8"))?;
-
-    let (username, password) = credentials
-        .split_once(':')
-        .ok_or_else(|| AsterError::auth_invalid_credentials("invalid basic auth format"))?;
-
-    // 查 WebDAV 专用账号
-    let account = webdav_account_repo::find_by_username(&state.db, username)
-        .await?
-        .ok_or_else(|| AsterError::auth_invalid_credentials("WebDAV account not found"))?;
-
-    if !account.is_active {
-        return Err(AsterError::auth_forbidden("WebDAV account is disabled"));
-    }
-
-    if !hash::verify_password(password, &account.password_hash)? {
-        return Err(AsterError::auth_invalid_credentials("wrong password"));
-    }
-
-    // 确认关联用户仍然活跃
-    let user = user_repo::find_by_id(&state.db, account.user_id).await?;
-    if !user.status.is_active() {
-        return Err(AsterError::auth_forbidden("user account is disabled"));
-    }
-
-    Ok((account.user_id, account.root_folder_id))
 }
