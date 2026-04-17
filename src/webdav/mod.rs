@@ -594,6 +594,16 @@ async fn handle_lock(
         return HttpResponse::BadRequest().finish();
     }
 
+    match dav_fs.metadata(&path).await {
+        Ok(_) => {}
+        Err(FsError::NotFound) => {
+            // 现有锁系统只能锁定已解析到数据库实体的资源；
+            // 对不存在路径直接返回 404，避免误报成 423 Locked。
+            return HttpResponse::NotFound().finish();
+        }
+        Err(err) => return fs_error_response(err),
+    }
+
     let lock = match lock_system
         .lock(
             &path,
@@ -609,12 +619,7 @@ async fn handle_lock(
         Err(_) => return HttpResponse::Locked().finish(),
     };
 
-    let status = if dav_fs.metadata(&path).await.is_ok() {
-        StatusCode::OK
-    } else {
-        StatusCode::CREATED
-    };
-    lock_response(lock, status)
+    lock_response(lock, StatusCode::OK)
 }
 
 async fn handle_unlock(

@@ -967,6 +967,34 @@ async fn test_webdav_lock_unlock() {
 }
 
 #[actix_web::test]
+async fn test_webdav_lock_missing_path_returns_not_found_instead_of_locked() {
+    let app = setup_with_webdav!();
+    let (token, _) = register_and_login!(app);
+    let auth = format!("Bearer {token}");
+
+    let lock_body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:lockinfo xmlns:D="DAV:">
+  <D:lockscope><D:exclusive/></D:lockscope>
+  <D:locktype><D:write/></D:locktype>
+  <D:owner><D:href>testuser</D:href></D:owner>
+</D:lockinfo>"#;
+
+    let req = test::TestRequest::with_uri("/webdav/missing-lock-target.txt")
+        .method(actix_web::http::Method::from_bytes(b"LOCK").unwrap())
+        .insert_header(("Authorization", auth))
+        .insert_header(("Content-Type", "application/xml"))
+        .insert_header(("Timeout", "Second-3600"))
+        .set_payload(lock_body)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        404,
+        "LOCK on a missing path should return 404 instead of 423"
+    );
+}
+
+#[actix_web::test]
 async fn test_webdav_unauthorized() {
     let app = setup_with_webdav!();
 
