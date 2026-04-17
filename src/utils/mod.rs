@@ -47,6 +47,11 @@ pub async fn cleanup_temp_dir(path: &str) {
     }
 }
 
+/// 启动时只清理短命 runtime 临时目录，不碰任务产物和其他 temp 内容。
+pub async fn cleanup_runtime_temp_root(temp_root: &str) {
+    cleanup_temp_dir(&paths::runtime_temp_dir(temp_root)).await;
+}
+
 /// 文件名最大长度
 const MAX_FILENAME_LEN: usize = 255;
 
@@ -143,6 +148,7 @@ pub fn next_copy_name(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn test_is_hidden_name() {
@@ -212,5 +218,31 @@ mod tests {
     fn test_storage_path_from_hash() {
         let hash = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
         assert_eq!(storage_path_from_hash(hash), format!("ab/cd/{hash}"));
+    }
+
+    #[tokio::test]
+    async fn test_cleanup_runtime_temp_root_only_removes_runtime_namespace() {
+        let temp_root =
+            std::env::temp_dir().join(format!("aster-drive-utils-{}", uuid::Uuid::new_v4()));
+        let temp_root = temp_root.to_string_lossy().into_owned();
+        let runtime_dir = PathBuf::from(paths::runtime_temp_dir(&temp_root));
+        let task_dir = PathBuf::from(paths::task_temp_dir(&temp_root, 42));
+
+        tokio::fs::create_dir_all(&runtime_dir).await.unwrap();
+        tokio::fs::create_dir_all(&task_dir).await.unwrap();
+        tokio::fs::write(runtime_dir.join("session.tmp"), b"runtime")
+            .await
+            .unwrap();
+        tokio::fs::write(task_dir.join("artifact.bin"), b"task")
+            .await
+            .unwrap();
+
+        cleanup_runtime_temp_root(&temp_root).await;
+
+        assert!(!runtime_dir.exists());
+        assert!(task_dir.exists());
+        assert!(task_dir.join("artifact.bin").exists());
+
+        cleanup_temp_dir(&temp_root).await;
     }
 }

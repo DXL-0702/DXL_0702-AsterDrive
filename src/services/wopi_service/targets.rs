@@ -342,9 +342,12 @@ pub(crate) async fn store_relative_target_from_bytes(
         result
     } else {
         let temp_dir = &state.config.server.temp_dir;
-        let temp_path =
-            crate::utils::paths::temp_file_path(temp_dir, &uuid::Uuid::new_v4().to_string());
-        tokio::fs::create_dir_all(temp_dir)
+        let runtime_temp_dir = crate::utils::paths::runtime_temp_dir(temp_dir);
+        let temp_path = crate::utils::paths::runtime_temp_file_path(
+            temp_dir,
+            &uuid::Uuid::new_v4().to_string(),
+        );
+        tokio::fs::create_dir_all(&runtime_temp_dir)
             .await
             .map_aster_err(AsterError::storage_driver_error)?;
         tokio::fs::write(&temp_path, body)

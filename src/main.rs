@@ -140,8 +140,10 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
-    // 清理 WebDAV 临时文件（上次启动的孤儿文件）
-    let _ = tokio::fs::remove_dir_all(&cfg.server.temp_dir).await;
+    // 只清理短命 runtime 临时目录：
+    // - 不碰 temp_dir 根，避免误删共享目录（例如 /tmp）里的其他内容；
+    // - 不碰 temp_dir/tasks，保留后台任务产物给 retention/排障逻辑处理。
+    aster_drive::utils::cleanup_runtime_temp_root(&cfg.server.temp_dir).await;
 
     let host = state.config.server.host.clone();
     let port = state.config.server.port;

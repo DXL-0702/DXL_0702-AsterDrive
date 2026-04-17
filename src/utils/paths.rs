@@ -142,6 +142,14 @@ pub fn temp_file_path(temp_dir: &str, name: &str) -> String {
     join_path(temp_dir, name)
 }
 
+pub fn runtime_temp_dir(temp_root: &str) -> String {
+    join_path(temp_root, "_runtime")
+}
+
+pub fn runtime_temp_file_path(temp_root: &str, name: &str) -> String {
+    join_path(&runtime_temp_dir(temp_root), name)
+}
+
 pub fn upload_temp_dir(upload_temp_root: &str, upload_id: &str) -> String {
     join_path(upload_temp_root, upload_id)
 }
@@ -173,9 +181,9 @@ pub fn task_token_temp_dir(temp_dir: &str, task_id: i64, processing_token: i64) 
 mod tests {
     use super::{
         DEFAULT_CONFIG_SQLITE_DATABASE_URL, DEFAULT_TEMP_DIR, DEFAULT_UPLOAD_TEMP_DIR,
-        resolve_config_relative_path, resolve_config_relative_sqlite_url, task_temp_dir,
-        task_token_temp_dir, temp_file_path, upload_assembled_path, upload_chunk_path,
-        upload_temp_dir,
+        resolve_config_relative_path, resolve_config_relative_sqlite_url, runtime_temp_dir,
+        runtime_temp_file_path, task_temp_dir, task_token_temp_dir, temp_file_path,
+        upload_assembled_path, upload_chunk_path, upload_temp_dir,
     };
     use std::path::Path;
 
@@ -204,6 +212,20 @@ mod tests {
     fn temp_file_path_preserves_absolute_root_without_double_slash() {
         let path = temp_file_path("/tmp///", "///upload.bin");
         assert_eq!(path, "/tmp/upload.bin");
+        assert_no_double_slash(&path);
+    }
+
+    #[test]
+    fn runtime_temp_file_path_nests_under_runtime_subdir() {
+        let path = runtime_temp_file_path("data/.tmp///", "/abc123/");
+        assert_eq!(path, "data/.tmp/_runtime/abc123");
+        assert_no_double_slash(&path);
+    }
+
+    #[test]
+    fn runtime_temp_dir_uses_namespaced_subdir() {
+        let path = runtime_temp_dir("/tmp///");
+        assert_eq!(path, "/tmp/_runtime");
         assert_no_double_slash(&path);
     }
 
