@@ -58,7 +58,9 @@ pub async fn lock_file(
 
     if let Some(active_lock) = active_lock {
         if let Some(payload) = active_lock.payload {
-            if payload.app_key == resolved.payload.app_key && payload.lock == lock_value {
+            // WOPI lock 是“文件 + opaque lock ID”，不是“文件 + 用户/app”。
+            // 官方 key concepts 明确要求 lock 不能绑定到特定用户。
+            if payload.lock == lock_value {
                 refresh_lock_model(state, active_lock.lock).await?;
                 return Ok(WopiLockOperationResult::Success);
             }
@@ -98,9 +100,7 @@ pub async fn unlock_and_relock_file(
     };
 
     match active_lock.payload {
-        Some(payload)
-            if payload.app_key == resolved.payload.app_key && payload.lock == old_lock =>
-        {
+        Some(payload) if payload.lock == old_lock => {
             replace_wopi_lock_model(state, active_lock.lock, &resolved.payload, &new_lock).await?;
             Ok(WopiLockOperationResult::Success)
         }
@@ -132,9 +132,7 @@ pub async fn refresh_lock(
     };
 
     match active_lock.payload {
-        Some(payload)
-            if payload.app_key == resolved.payload.app_key && payload.lock == lock_value =>
-        {
+        Some(payload) if payload.lock == lock_value => {
             refresh_lock_model(state, active_lock.lock).await?;
             Ok(WopiLockOperationResult::Success)
         }
@@ -166,9 +164,7 @@ pub async fn unlock_file(
     };
 
     match active_lock.payload {
-        Some(payload)
-            if payload.app_key == resolved.payload.app_key && payload.lock == lock_value =>
-        {
+        Some(payload) if payload.lock == lock_value => {
             lock_service::set_entity_locked(&state.db, EntityType::File, resolved.file.id, false)
                 .await?;
             lock_repo::delete_by_id(&state.db, active_lock.lock.id).await?;
@@ -187,7 +183,6 @@ pub async fn unlock_file(
 
 pub(crate) async fn ensure_wopi_lock_matches(
     state: &AppState,
-    payload: &WopiAccessTokenPayload,
     file_id: i64,
     requested_lock: Option<&str>,
 ) -> Result<Option<WopiConflict>> {
@@ -195,7 +190,33 @@ pub(crate) async fn ensure_wopi_lock_matches(
         return Ok(None);
     };
 
-    let Some(lock_payload) = active_lock.payload else {
+    ensure_active_wopi_lock_matches(&active_lock, requested_lock)
+}
+
+pub(crate) async fn ensure_wopi_putfile_lock_matches(
+    state: &AppState,
+    file: &file::Model,
+    requested_lock: Option<&str>,
+) -> Result<Option<WopiConflict>> {
+    let Some(active_lock) = load_active_lock(state, file.id).await? else {
+        if file.size == 0 {
+            return Ok(None);
+        }
+
+        return Ok(Some(WopiConflict {
+            current_lock: Some(String::new()),
+            reason: "existing file requires a WOPI lock".to_string(),
+        }));
+    };
+
+    ensure_active_wopi_lock_matches(&active_lock, requested_lock)
+}
+
+fn ensure_active_wopi_lock_matches(
+    active_lock: &ActiveWopiLock,
+    requested_lock: Option<&str>,
+) -> Result<Option<WopiConflict>> {
+    let Some(lock_payload) = active_lock.payload.as_ref() else {
         return Ok(Some(WopiConflict {
             current_lock: Some(String::new()),
             reason: "file is locked outside WOPI".to_string(),
@@ -207,12 +228,12 @@ pub(crate) async fn ensure_wopi_lock_matches(
         .filter(|value| !value.is_empty())
         .ok_or_else(|| AsterError::validation_error("X-WOPI-Lock header is required"))?;
 
-    if lock_payload.app_key == payload.app_key && lock_payload.lock == requested_lock {
+    if lock_payload.lock == requested_lock {
         return Ok(None);
     }
 
     Ok(Some(WopiConflict {
-        current_lock: Some(lock_payload.lock),
+        current_lock: Some(lock_payload.lock.clone()),
         reason: "WOPI lock mismatch".to_string(),
     }))
 }
@@ -297,6 +318,7 @@ async fn replace_wopi_lock_model(
     requested_lock: &str,
 ) -> Result<()> {
     let mut active: resource_lock::ActiveModel = lock.into();
+    // app_key 仍保留在 owner_info 里做审计/排障，但 lock 是否匹配只比较 opaque lock ID。
     let owner_info = lock_service::ResourceLockOwnerInfo::Wopi(lock_service::WopiLockOwnerInfo {
         app_key: payload.app_key.clone(),
         lock: requested_lock.to_string(),

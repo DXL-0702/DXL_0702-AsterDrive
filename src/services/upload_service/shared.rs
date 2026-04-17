@@ -144,3 +144,102 @@ pub(super) async fn mark_session_failed_with_expiration<C: ConnectionTrait>(
     upload_session_repo::update(db, active).await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::UploadSessionStatus;
+
+    fn mock_session(total_size: i64, chunk_size: i64, total_chunks: i32) -> upload_session::Model {
+        upload_session::Model {
+            id: "test-session".to_string(),
+            user_id: 1,
+            team_id: None,
+            filename: "test.bin".to_string(),
+            total_size,
+            chunk_size,
+            total_chunks,
+            received_count: 0,
+            folder_id: None,
+            policy_id: 1,
+            status: UploadSessionStatus::Uploading,
+            s3_temp_key: None,
+            s3_multipart_id: None,
+            file_id: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+        }
+    }
+
+    #[test]
+    fn expected_chunk_size_non_final() {
+        // 5 chunks, 1MB each, total 5MB
+        let session = mock_session(5_242_880, 1_048_576, 5);
+        let size = expected_chunk_size_for_upload(&session, 0).unwrap();
+        assert_eq!(size, 1_048_576);
+        let size = expected_chunk_size_for_upload(&session, 3).unwrap();
+        assert_eq!(size, 1_048_576);
+    }
+
+    #[test]
+    fn expected_chunk_size_final() {
+        // 5 chunks, 1MB each, total 5MB-1 (non-even division)
+        let total = 1_048_576 * 4 + 500_000;
+        let session = mock_session(total, 1_048_576, 5);
+        let size = expected_chunk_size_for_upload(&session, 4).unwrap();
+        assert_eq!(size, 500_000);
+    }
+
+    #[test]
+    fn expected_chunk_size_invalid_metadata() {
+        let session = mock_session(100, 0, 10); // chunk_size = 0
+        let err = expected_chunk_size_for_upload(&session, 0).unwrap_err();
+        assert_eq!(err.code(), "E056"); // ChunkUploadFailed
+    }
+
+    #[test]
+    fn expected_chunk_size_final_negative() {
+        // total_size < preceding (corrupted session)
+        let session = mock_session(1_000_000, 1_048_576, 2); // 2 chunks, but total < 1 chunk
+        let err = expected_chunk_size_for_upload(&session, 1).unwrap_err();
+        assert_eq!(err.code(), "E056");
+    }
+
+    #[test]
+    fn upload_session_chunk_unavailable_error_matrix() {
+        use UploadSessionStatus::*;
+
+        let mut session = mock_session(100, 10, 10);
+
+        session.status = Failed;
+        let e = upload_session_chunk_unavailable_error(&session);
+        assert_eq!(e.code(), "E055"); // UploadSessionExpired
+
+        session.status = Assembling;
+        let e = upload_session_chunk_unavailable_error(&session);
+        assert_eq!(e.code(), "E055");
+
+        session.status = Completed;
+        let e = upload_session_chunk_unavailable_error(&session);
+        assert_eq!(e.code(), "E055");
+
+        session.status = Presigned;
+        let e = upload_session_chunk_unavailable_error(&session);
+        assert_eq!(e.code(), "E005"); // ValidationError
+
+        session.status = Uploading;
+        let e = upload_session_chunk_unavailable_error(&session);
+        assert_eq!(e.code(), "E054"); // UploadSessionNotFound
+    }
+
+    #[test]
+    fn upload_session_status_label_mapping() {
+        use UploadSessionStatus::*;
+        assert_eq!(upload_session_status_label(Uploading), "uploading");
+        assert_eq!(upload_session_status_label(Assembling), "assembling");
+        assert_eq!(upload_session_status_label(Completed), "completed");
+        assert_eq!(upload_session_status_label(Failed), "failed");
+        assert_eq!(upload_session_status_label(Presigned), "presigned");
+    }
+}

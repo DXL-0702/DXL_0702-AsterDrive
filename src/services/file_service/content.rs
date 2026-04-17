@@ -10,6 +10,7 @@ use crate::services::{
 };
 
 use super::get_info_in_scope;
+use crate::utils::numbers::usize_to_i64;
 
 /// 从临时文件存储 blob 并创建文件记录
 ///
@@ -112,7 +113,7 @@ pub(crate) async fn update_content_in_scope(
         }
     }
 
-    let size = body.len() as i64;
+    let size = usize_to_i64(body.len(), "body length")?;
     let resolved_policy =
         workspace_storage_service::resolve_policy_for_size(state, scope, f.folder_id, size).await?;
     let result = if resolved_policy.driver_type == crate::types::DriverType::Local {

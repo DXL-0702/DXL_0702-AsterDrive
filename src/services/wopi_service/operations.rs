@@ -4,13 +4,18 @@
 //! 重点不是重新实现一套文件系统，而是复用已有的文件主链路，同时补上
 //! WOPI 专用的 lock、rename、PUT_RELATIVE 语义。
 
+use actix_web::http::header::{HeaderName, HeaderValue};
+
 use crate::db::repository::file_repo;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{file_service, profile_service};
 use crate::types::NullablePatch;
 
-use super::locks::{active_wopi_lock_value, ensure_wopi_lock_matches, load_active_lock};
+use super::locks::{
+    active_wopi_lock_value, ensure_wopi_lock_matches, ensure_wopi_putfile_lock_matches,
+    load_active_lock,
+};
 use super::session::{resolve_access_token, scope_from_payload};
 use super::targets::{
     PutRelativeTargetMode, build_put_relative_response, encode_wopi_filename,
@@ -48,6 +53,7 @@ pub async fn check_file_info(
         read_only: false,
         supports_get_lock: true,
         supports_locks: true,
+        supports_extended_lock_length: Some(true),
         supports_rename: true,
         supports_user_info: Some(true),
         supports_update: true,
@@ -60,18 +66,34 @@ pub async fn get_file_contents(
     file_id: i64,
     access_token: &str,
     if_none_match: Option<&str>,
+    max_expected_size: Option<&str>,
     request_source: WopiRequestSource<'_>,
 ) -> Result<actix_web::HttpResponse> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
     let blob = file_repo::find_blob_by_id(&state.db, resolved.file.blob_id).await?;
-    file_service::build_stream_response_with_disposition(
+    let max_expected_size = parse_wopi_max_expected_size(max_expected_size)?;
+    if let Some(max_expected_size) = max_expected_size
+        && resolved.file.size > max_expected_size
+    {
+        return Err(AsterError::precondition_failed(
+            "file is larger than X-WOPI-MaxExpectedSize",
+        ));
+    }
+
+    let mut response = file_service::build_stream_response_with_disposition(
         state,
         &resolved.file,
         &blob,
         file_service::DownloadDisposition::Inline,
         if_none_match,
     )
-    .await
+    .await?;
+    response.headers_mut().insert(
+        HeaderName::from_static("x-wopi-itemversion"),
+        HeaderValue::from_str(&blob.hash)
+            .map_err(|_| AsterError::internal_error("invalid WOPI item version header"))?,
+    );
+    Ok(response)
 }
 
 pub async fn put_file_contents(
@@ -83,9 +105,10 @@ pub async fn put_file_contents(
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiPutFileResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
-    // WOPI 写回必须先走锁校验；否则外部编辑器会绕过项目内部锁系统直接覆盖内容。
+    // PutFile 有一个容易漏掉的协议细节：对现有文件，客户端必须先持有 lock。
+    // 只有“未锁定且大小为 0 的新建文件”允许直接首写，这对应 editnew 的落盘流程。
     if let Some(conflict) =
-        ensure_wopi_lock_matches(state, &resolved.payload, resolved.file.id, requested_lock).await?
+        ensure_wopi_putfile_lock_matches(state, &resolved.file, requested_lock).await?
     {
         return Ok(WopiPutFileResult::Conflict(conflict));
     }
@@ -235,7 +258,7 @@ pub async fn rename_file(
 ) -> Result<WopiRenameFileResult> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
     if let Some(conflict) =
-        ensure_wopi_lock_matches(state, &resolved.payload, resolved.file.id, requested_lock).await?
+        ensure_wopi_lock_matches(state, resolved.file.id, requested_lock).await?
     {
         return Ok(WopiRenameFileResult::Conflict(conflict));
     }
@@ -306,6 +329,19 @@ pub async fn put_user_info(
 
 fn item_version_if_present(_file_id: i64, item_version: String) -> String {
     item_version
+}
+
+pub(crate) fn parse_wopi_max_expected_size(value: Option<&str>) -> Result<Option<i64>> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+
+    let parsed = value.parse::<u32>().map_err(|_| {
+        AsterError::validation_error(
+            "X-WOPI-MaxExpectedSize header must be a non-negative 32-bit integer",
+        )
+    })?;
+    Ok(Some(i64::from(parsed)))
 }
 
 fn normalize_wopi_user_info(body: &actix_web::web::Bytes) -> Result<String> {

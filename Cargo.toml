@@ -90,17 +90,19 @@ sysinfo = { version = "0.38", optional = true, default-features = false, feature
 rand = { version = "0.10.1", default-features = false, features = ["std", "std_rng", "thread_rng"] }
 redis = { version = "1.2.0", features = ["connection-manager", "tokio-comp", "tokio-rustls-comp"] }
 reqwest = "0.13"
+rsa = "0.9.10"
 rust-embed = "8"
 sea-orm = { version = "~2.0.0-rc.38", features = ["sqlx-mysql", "sqlx-postgres", "sqlx-sqlite", "macros", "runtime-tokio-rustls"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 serde_repr = "0.1.20"
 sha2 = "0.11"
+sha2_10 = { package = "sha2", version = "0.10" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "fs", "io-util"] }
 tokio-util = { version = "0.7", features = ["io", "io-util"] }
 toml = "1.1"
 tracing = { version = "0.1.44", default-features = false}
-tracing-appender = "0.2.4"
+tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["ansi", "env-filter", "fmt", "json"] }
 utoipa = { version = "5.4.0", features = ["chrono", "actix_extras", "repr"], optional = true }
 utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"], optional = true }

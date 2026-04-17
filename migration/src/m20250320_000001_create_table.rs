@@ -239,6 +239,13 @@ impl MigrationTrait for Migration {
                             .to(StoragePolicies::Table, StoragePolicies::Id)
                             .on_delete(ForeignKeyAction::SetNull),
                     )
+                    // 自引用 FK：父目录删，子目录 parent_id 置 NULL；应用层软删除时由 service 负责清理子树
+                    .foreign_key(
+                        ForeignKey::create()
+                            .from(Folders::Table, Folders::ParentId)
+                            .to(Folders::Table, Folders::Id)
+                            .on_delete(ForeignKeyAction::SetNull),
+                    )
                     .to_owned(),
             )
             .await?;

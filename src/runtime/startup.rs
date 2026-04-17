@@ -97,11 +97,9 @@ async fn ensure_default_policy(db: &sea_orm::DatabaseConnection) -> Result<()> {
 
     // 创建默认本地存储策略
     let data_dir = "data/uploads";
-    std::fs::create_dir_all(data_dir)
-        .map_aster_err(|e| AsterError::storage_driver_error(format!(
-            "failed to create data dir '{}': {e}",
-            data_dir
-        )))?;
+    std::fs::create_dir_all(data_dir).map_aster_err(|e| {
+        AsterError::storage_driver_error(format!("failed to create data dir '{}': {e}", data_dir))
+    })?;
 
     use chrono::Utc;
     use sea_orm::Set;

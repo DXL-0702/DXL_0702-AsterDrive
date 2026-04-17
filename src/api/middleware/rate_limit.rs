@@ -2,13 +2,13 @@ use actix_governor::{
     GovernorConfig, GovernorConfigBuilder, KeyExtractor, SimpleKeyExtractionError,
 };
 use actix_web::dev::ServiceRequest;
-use actix_web::http::header::ContentType;
 use actix_web::{HttpResponse, HttpResponseBuilder};
 use governor::NotUntil;
 use governor::clock::{Clock, DefaultClock, QuantaInstant};
 use governor::middleware::NoOpMiddleware;
 use std::net::IpAddr;
 
+use crate::api::response::ApiResponse;
 use crate::config::RateLimitTier;
 
 /// IP-based key extractor，429 响应返回 ApiResponse JSON 格式
@@ -20,7 +20,6 @@ impl KeyExtractor for AsterIpKeyExtractor {
     type KeyExtractionError = SimpleKeyExtractionError<&'static str>;
 
     fn extract(&self, req: &ServiceRequest) -> Result<Self::Key, Self::KeyExtractionError> {
-        // peer_addr 在测试环境中可能为 None，fallback 到 loopback
         let ip = req
             .peer_addr()
             .map(|socket| socket.ip())
@@ -31,16 +30,17 @@ impl KeyExtractor for AsterIpKeyExtractor {
     fn exceed_rate_limit_response(
         &self,
         negative: &NotUntil<QuantaInstant>,
-        mut response: HttpResponseBuilder,
+        _response: HttpResponseBuilder,
     ) -> HttpResponse {
         let wait_time = negative
             .wait_time_from(DefaultClock::default().now())
             .as_secs();
-        response
+        let msg = format!("Too Many Requests, retry after {wait_time}s");
+        HttpResponse::TooManyRequests()
             .insert_header(("Retry-After", wait_time.to_string()))
-            .content_type(ContentType::json())
-            .body(format!(
-                r#"{{"code":1006,"msg":"Too Many Requests, retry after {wait_time}s"}}"#
+            .json(ApiResponse::<()>::error(
+                crate::api::error_code::ErrorCode::RateLimited,
+                &msg,
             ))
     }
 }

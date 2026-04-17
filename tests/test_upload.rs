@@ -508,10 +508,9 @@ async fn test_concurrent_quota_overrun_is_rejected_by_cas() {
     use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
 
     let state = common::setup().await;
-    let registered =
-        auth_service::register(&state, "quotaov", "quotaov@test.com", "password123")
-            .await
-            .unwrap();
+    let registered = auth_service::register(&state, "quotaov", "quotaov@test.com", "password123")
+        .await
+        .unwrap();
 
     // 设 quota = 100 字节，并发提交 20 个 +10 字节请求（总需求 200，超额一倍）
     let model = user::Entity::find_by_id(registered.id)
@@ -545,7 +544,9 @@ async fn test_concurrent_quota_overrun_is_rejected_by_cas() {
     assert_eq!(succeeded, 10, "exactly 10 requests should fit in quota=100");
     assert_eq!(quota_exceeded, 10, "remaining 10 must be rejected");
 
-    let final_state = user_repo::find_by_id(&state.db, registered.id).await.unwrap();
+    let final_state = user_repo::find_by_id(&state.db, registered.id)
+        .await
+        .unwrap();
     assert_eq!(final_state.storage_used, 100, "must not exceed quota");
 }
 
@@ -558,10 +559,9 @@ async fn test_check_quota_rejects_integer_overflow() {
     use sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
 
     let state = common::setup().await;
-    let registered =
-        auth_service::register(&state, "ovflu", "ovflu@test.com", "password123")
-            .await
-            .unwrap();
+    let registered = auth_service::register(&state, "ovflu", "ovflu@test.com", "password123")
+        .await
+        .unwrap();
 
     // 把 storage_used 调到接近 i64::MAX，再传一个会触发溢出的 delta
     let model = user::Entity::find_by_id(registered.id)

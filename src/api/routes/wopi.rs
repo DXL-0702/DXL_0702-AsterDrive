@@ -1,3 +1,22 @@
+//! WOPI HTTP 路由映射。
+//!
+//! 本地路径固定对应官方 WOPI file endpoints：
+//! - `GET  /api/v1/wopi/files/{id}` -> CheckFileInfo
+//! - `POST /api/v1/wopi/files/{id}` -> Lock / Unlock / RefreshLock / RenameFile / PutRelativeFile / PutUserInfo
+//! - `GET  /api/v1/wopi/files/{id}/contents` -> GetFile
+//! - `POST /api/v1/wopi/files/{id}/contents` -> PutFile
+//!
+//! 维护这组路由时务必同时对照：
+//! - https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/files/checkfileinfo
+//! - https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/files/getfile
+//! - https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/files/putfile
+//! - https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/files/renamefile
+//! - https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/files/putrelativefile
+//! - https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/rest/files/putuserinfo
+//!
+//! 这些路径还和 `session::build_public_wopi_src()`、PUT_RELATIVE 返回 URL 直接耦合，
+//! 不能只改路由而不改 launch / response 生成逻辑。
+
 use crate::runtime::AppState;
 use crate::services::wopi_service;
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -51,11 +70,13 @@ pub async fn get_file_contents(
         .headers()
         .get("If-None-Match")
         .and_then(|value| value.to_str().ok());
+    let max_expected_size = optional_header_value(&req, "X-WOPI-MaxExpectedSize");
     match wopi_service::get_file_contents(
         &state,
         *path,
         &query.access_token,
         if_none_match,
+        max_expected_size,
         request_source(&req),
     )
     .await

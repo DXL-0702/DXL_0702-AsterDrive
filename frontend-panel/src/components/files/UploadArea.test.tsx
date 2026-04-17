@@ -556,6 +556,7 @@ describe("UploadArea", () => {
 			expect(getProgress).toHaveBeenCalledWith("upload-missing-status");
 		});
 		expect(warnSpy).toHaveBeenCalledWith(
+			"[AsterDrive]",
 			"skipping restored upload session because progress is missing a status",
 			expect.objectContaining({
 				progress: expect.objectContaining({

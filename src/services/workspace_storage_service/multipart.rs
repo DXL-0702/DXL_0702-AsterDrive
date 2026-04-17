@@ -19,6 +19,7 @@ use super::{
     resolve_policy_for_size, store_from_temp, store_from_temp_with_hints, update_storage_used,
     verify_folder_access,
 };
+use crate::utils::numbers::usize_to_i64;
 
 pub(crate) fn relay_stream_direct_upload_eligible(
     policy: &crate::entities::storage_policy::Model,
@@ -89,7 +90,11 @@ async fn upload_local_direct(
                         "write local staging file",
                         AsterError::file_upload_failed,
                     )?;
-                    size += chunk.len() as i64;
+                    size = size
+                        .checked_add(usize_to_i64(chunk.len(), "chunk length")?)
+                        .ok_or_else(|| {
+                            AsterError::file_upload_failed("accumulated chunk size overflows i64")
+                        })?;
                 }
                 staging_file.flush().await.map_aster_err_ctx(
                     "flush local staging file",
@@ -428,7 +433,11 @@ pub(crate) async fn upload(
                     .write_all(&chunk)
                     .await
                     .map_aster_err_ctx("write temp", AsterError::file_upload_failed)?;
-                size += chunk.len() as i64;
+                size = size
+                    .checked_add(usize_to_i64(chunk.len(), "chunk length")?)
+                    .ok_or_else(|| {
+                        AsterError::file_upload_failed("accumulated chunk size overflows i64")
+                    })?;
             }
             break;
         }

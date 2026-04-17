@@ -168,3 +168,82 @@ pub fn verify_token(token: &str, secret: &str) -> Result<Claims> {
     })?;
     Ok(data.claims)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::TokenType;
+
+    const SECRET: &str = "test_secret_32bytes_xxxxxxxxxxxxxxxxx";
+
+    fn make_token(token_type: TokenType, ttl_secs: u64, secret: &str) -> String {
+        create_token(1, 1, token_type, ttl_secs, secret).unwrap()
+    }
+
+    #[test]
+    fn verify_access_token_roundtrip() {
+        let token = make_token(TokenType::Access, 3600, SECRET);
+        let claims = verify_token(&token, SECRET).unwrap();
+        assert_eq!(claims.user_id, 1);
+        assert_eq!(claims.session_version, 1);
+        assert_eq!(claims.token_type, TokenType::Access);
+    }
+
+    #[test]
+    fn verify_refresh_token_roundtrip() {
+        let token = make_token(TokenType::Refresh, 86400, SECRET);
+        let claims = verify_token(&token, SECRET).unwrap();
+        assert_eq!(claims.token_type, TokenType::Refresh);
+    }
+
+    #[test]
+    fn verify_token_rejects_wrong_secret() {
+        let token = make_token(TokenType::Access, 3600, SECRET);
+        let err = verify_token(&token, "wrong_secret").unwrap_err();
+        // jsonwebtoken 的 InvalidSignature 归类到 "invalid token"
+        assert_eq!(err.code(), "E012"); // AuthTokenInvalid
+    }
+
+    #[test]
+    fn ensure_token_type_access_rejects_refresh() {
+        let token = make_token(TokenType::Refresh, 3600, SECRET);
+        let claims = verify_token(&token, SECRET).unwrap();
+        let err = ensure_token_type(&claims, TokenType::Access).unwrap_err();
+        assert_eq!(err.code(), "E012");
+    }
+
+    #[test]
+    fn ensure_session_current_rejects_stale_version() {
+        let claims = Claims {
+            sub: "1".to_string(),
+            user_id: 1,
+            session_version: 1,
+            token_type: TokenType::Access,
+            exp: usize::MAX, // 永不过期，只测 version
+        };
+        let snapshot = crate::services::auth_service::AuthSnapshot {
+            session_version: 2,
+            status: crate::types::UserStatus::Active,
+            role: crate::types::UserRole::User,
+        };
+        let err = ensure_session_current(&claims, snapshot).unwrap_err();
+        assert_eq!(err.code(), "E012");
+    }
+
+    #[test]
+    fn ensure_session_current_accepts_matching_version() {
+        let claims = Claims {
+            sub: "1".to_string(),
+            user_id: 1,
+            session_version: 1,
+            token_type: TokenType::Access,
+            exp: usize::MAX,
+        };
+        let snapshot = crate::services::auth_service::AuthSnapshot {
+            session_version: 1,
+            status: crate::types::UserStatus::Active,
+            role: crate::types::UserRole::User,
+        };
+        assert!(ensure_session_current(&claims, snapshot).is_ok());
+    }
+}

@@ -66,7 +66,7 @@ where
         match Pin::new(&mut self.stream).poll_next(cx) {
             Poll::Pending => Poll::Pending,
             Poll::Ready(Some(Ok(chunk))) => {
-                let chunk_len = chunk.len() as u64;
+                let chunk_len = numbers::usize_to_u64(chunk.len());
                 if chunk_len > self.remaining {
                     self.finished = true;
                     return Poll::Ready(Some(Err(std::io::Error::new(

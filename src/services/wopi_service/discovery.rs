@@ -625,6 +625,11 @@ pub(crate) fn ensure_request_source_allowed(
     app: &preview_app_service::PublicPreviewAppDefinition,
     request_source: WopiRequestSource<'_>,
 ) -> Result<()> {
+    // 这里做的是“配置级来源收敛”，用于挡掉明显不可信的 Origin / Referer。
+    // 对 Microsoft 365 for the web 来说，官方还定义了基于 discovery proof-key 的
+    // `X-WOPI-Proof` / `X-WOPI-TimeStamp` 验签：
+    // https://learn.microsoft.com/en-us/microsoft-365/cloud-storage-partner-program/online/scenarios/proofkeys
+    // 当前项目尚未实现 proof-key 校验，所以不要把这个函数误当成完整的微软来源验证。
     let trusted_origins = trusted_origins_for_app(app);
     if trusted_origins.is_empty() {
         return Ok(());

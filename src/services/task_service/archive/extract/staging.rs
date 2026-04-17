@@ -134,11 +134,9 @@ pub(super) fn stage_zip_archive_for_extract(
             .map_aster_err_ctx("create extracted file", AsterError::storage_driver_error)?;
         let copied = copy_reader_to_writer_with_lease(Some(lease_guard), &mut entry, &mut output)?;
         processed_bytes = processed_bytes
-            .checked_add(
-                i64::try_from(copied).map_aster_err_with(|| {
-                    AsterError::internal_error("extracted bytes exceed i64 range")
-                })?,
-            )
+            .checked_add(i64::try_from(copied).map_aster_err_with(|| {
+                AsterError::internal_error("extracted bytes exceed i64 range")
+            })?)
             .ok_or_else(|| AsterError::internal_error("archive extract progress overflow"))?;
         file_count += 1;
 

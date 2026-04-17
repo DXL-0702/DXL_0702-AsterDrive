@@ -1,6 +1,6 @@
 use super::tasks::BackgroundTasks;
 use sea_orm::DatabaseConnection;
-use tokio::signal::unix::{signal, SignalKind};
+use tokio::signal::unix::{SignalKind, signal};
 
 /// 等待 SIGINT 或 SIGTERM 信号，然后进行优雅关闭
 pub async fn wait_for_signal() {

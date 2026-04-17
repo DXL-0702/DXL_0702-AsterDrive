@@ -321,8 +321,12 @@ mod tests {
             let (mut writer, reader) = tokio::io::duplex(self.bytes.len().max(1));
             let payload = self.bytes.as_ref().clone();
             tokio::spawn(async move {
-                let _ = writer.write_all(&payload).await;
-                let _ = writer.shutdown().await;
+                if let Err(e) = writer.write_all(&payload).await {
+                    tracing::trace!("mock stream write failed (reader dropped?): {e}");
+                }
+                if let Err(e) = writer.shutdown().await {
+                    tracing::trace!("mock stream shutdown failed: {e}");
+                }
             });
             Ok(Box::new(reader))
         }

@@ -17,6 +17,7 @@ use crate::services::upload_service::shared::{
     expected_chunk_size_for_upload, upload_session_chunk_unavailable_error,
 };
 use crate::types::UploadSessionStatus;
+use crate::utils::numbers::usize_to_i64;
 use crate::utils::paths;
 
 async fn increment_session_received_count<C: sea_orm::ConnectionTrait>(
@@ -80,10 +81,10 @@ async fn upload_chunk_impl(
     }
 
     let expected_size = expected_chunk_size_for_upload(&session, chunk_number)?;
-    if data.len() as i64 != expected_size {
+    let data_len = usize_to_i64(data.len(), "chunk data length")?;
+    if data_len != expected_size {
         return Err(AsterError::chunk_upload_failed(format!(
-            "chunk {chunk_number} size mismatch: expected {expected_size}, got {}",
-            data.len()
+            "chunk {chunk_number} size mismatch: expected {expected_size}, got {data_len}"
         )));
     }
 
@@ -140,14 +141,8 @@ async fn upload_chunk_impl(
         let finalize_result = async {
             // S3 上传成功以后，必须把 part 元数据和 received_count 放在同一事务里提交；
             // 否则 complete 阶段会看到“不完整的 part 清单”。
-            upload_session_part_repo::upsert_part(
-                &txn,
-                upload_id,
-                s3_part_number,
-                &etag,
-                data.len() as i64,
-            )
-            .await?;
+            upload_session_part_repo::upsert_part(&txn, upload_id, s3_part_number, &etag, data_len)
+                .await?;
             increment_session_received_count(&txn, upload_id).await?;
             txn.commit().await.map_err(AsterError::from)?;
             Ok::<(), AsterError>(())

@@ -6,6 +6,7 @@ use super::discovery::{
     append_wopi_src, build_discovered_preview_apps, ensure_request_source_allowed,
     expand_action_url, parse_discovery_xml, resolve_discovery_action_url, trusted_origins_for_app,
 };
+use super::operations::parse_wopi_max_expected_size;
 use super::session::access_token_hash;
 use super::targets::{
     PutRelativeTargetMode, decode_wopi_filename, encode_wopi_filename, parse_put_relative_request,
@@ -268,6 +269,7 @@ fn check_file_info_serializes_user_can_not_write_relative() {
         read_only: false,
         supports_get_lock: true,
         supports_locks: true,
+        supports_extended_lock_length: Some(true),
         supports_rename: true,
         supports_user_info: Some(true),
         supports_update: true,
@@ -276,6 +278,7 @@ fn check_file_info_serializes_user_can_not_write_relative() {
 
     let payload = serde_json::to_value(info).unwrap();
     assert_eq!(payload["UserCanNotWriteRelative"], json!(false));
+    assert_eq!(payload["SupportsExtendedLockLength"], json!(true));
 }
 
 #[test]
@@ -295,4 +298,21 @@ fn parse_put_relative_request_allows_extension_only_suggested_target() {
         PutRelativeTargetMode::Suggested(name) => assert_eq!(name, "report 1.docx"),
         PutRelativeTargetMode::Relative { .. } => panic!("expected suggested target"),
     }
+}
+
+#[test]
+fn parse_wopi_max_expected_size_accepts_u32_range() {
+    assert_eq!(parse_wopi_max_expected_size(None).unwrap(), None);
+    assert_eq!(parse_wopi_max_expected_size(Some("0")).unwrap(), Some(0));
+    assert_eq!(
+        parse_wopi_max_expected_size(Some("4294967295")).unwrap(),
+        Some(4_294_967_295)
+    );
+}
+
+#[test]
+fn parse_wopi_max_expected_size_rejects_invalid_values() {
+    assert!(parse_wopi_max_expected_size(Some("-1")).is_err());
+    assert!(parse_wopi_max_expected_size(Some("4294967296")).is_err());
+    assert!(parse_wopi_max_expected_size(Some("abc")).is_err());
 }

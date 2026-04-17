@@ -41,6 +41,8 @@ pub struct WopiCheckFileInfo {
     pub read_only: bool,
     pub supports_get_lock: bool,
     pub supports_locks: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supports_extended_lock_length: Option<bool>,
     pub supports_rename: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub supports_user_info: Option<bool>,

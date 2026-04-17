@@ -159,3 +159,129 @@ pub async fn verify_password_and_sign(
         cookie_signature: sign_share_cookie(token, &state.config.auth.jwt_secret),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SECRET: &str = "share_secret_12345";
+
+    #[test]
+    fn sign_verify_share_cookie_roundtrip() {
+        let token = "abc123xyz";
+        let cookie = sign_share_cookie(token, SECRET);
+        assert!(!cookie.is_empty());
+        assert!(verify_share_cookie(token, &cookie, SECRET));
+    }
+
+    #[test]
+    fn verify_share_cookie_rejects_wrong_token() {
+        let token_a = "token_a";
+        let token_b = "token_b";
+        let cookie = sign_share_cookie(token_a, SECRET);
+        assert!(!verify_share_cookie(token_b, &cookie, SECRET));
+    }
+
+    #[test]
+    fn verify_share_cookie_rejects_wrong_secret() {
+        let token = "token";
+        let cookie = sign_share_cookie(token, SECRET);
+        assert!(!verify_share_cookie(token, &cookie, "wrong_secret"));
+    }
+
+    #[test]
+    fn verify_share_cookie_rejects_short_value() {
+        let token = "token";
+        // wrong length
+        assert!(!verify_share_cookie(token, "short", SECRET));
+    }
+
+    #[test]
+    fn resolve_share_owner_name_prefers_display_name() {
+        let user = crate::entities::user::Model {
+            id: 1,
+            username: "alice".to_string(),
+            email: "alice@test.com".to_string(),
+            password_hash: String::new(),
+            role: crate::types::UserRole::User,
+            status: crate::types::UserStatus::Active,
+            session_version: 0,
+            email_verified_at: None,
+            pending_email: None,
+            storage_used: 0,
+            storage_quota: 0,
+            policy_group_id: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+            config: None,
+        };
+        let profile = crate::entities::user_profile::Model {
+            user_id: 1,
+            display_name: Some("Alicia".to_string()),
+            wopi_user_info: None,
+            avatar_source: crate::types::AvatarSource::None,
+            avatar_key: None,
+            avatar_version: 0,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+        };
+        let name = resolve_share_owner_name(&user, Some(&profile));
+        assert_eq!(name, "Alicia");
+    }
+
+    #[test]
+    fn resolve_share_owner_name_falls_back_to_username() {
+        let user = crate::entities::user::Model {
+            id: 1,
+            username: "bob".to_string(),
+            email: "bob@test.com".to_string(),
+            password_hash: String::new(),
+            role: crate::types::UserRole::User,
+            status: crate::types::UserStatus::Active,
+            session_version: 0,
+            email_verified_at: None,
+            pending_email: None,
+            storage_used: 0,
+            storage_quota: 0,
+            policy_group_id: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+            config: None,
+        };
+        let name = resolve_share_owner_name(&user, None);
+        assert_eq!(name, "bob");
+    }
+
+    #[test]
+    fn resolve_share_owner_name_skips_empty_display_name() {
+        let user = crate::entities::user::Model {
+            id: 1,
+            username: "charlie".to_string(),
+            email: "charlie@test.com".to_string(),
+            password_hash: String::new(),
+            role: crate::types::UserRole::User,
+            status: crate::types::UserStatus::Active,
+            session_version: 0,
+            email_verified_at: None,
+            pending_email: None,
+            storage_used: 0,
+            storage_quota: 0,
+            policy_group_id: None,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+            config: None,
+        };
+        let profile = crate::entities::user_profile::Model {
+            user_id: 1,
+            display_name: Some("   ".to_string()),
+            wopi_user_info: None,
+            avatar_source: crate::types::AvatarSource::None,
+            avatar_key: None,
+            avatar_version: 0,
+            created_at: chrono::Utc::now().into(),
+            updated_at: chrono::Utc::now().into(),
+        };
+        let name = resolve_share_owner_name(&user, Some(&profile));
+        assert_eq!(name, "charlie");
+    }
+}

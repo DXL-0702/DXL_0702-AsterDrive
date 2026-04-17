@@ -38,6 +38,21 @@ pub fn usize_to_i32(value: usize, value_name: &str) -> Result<i32> {
     })
 }
 
+/// 把 `usize`（如 `Vec::len()` / `&[u8].len()`）安全转 `i64`。
+/// 仅在 32-bit 平台是 infallible，但保持签名一致以配合现有调用方式。
+pub fn usize_to_i64(value: usize, value_name: &str) -> Result<i64> {
+    i64::try_from(value).map_aster_err_with(|| {
+        AsterError::internal_error(format!("{value_name} exceeds i64 range: {value}"))
+    })
+}
+
+/// 把 `usize` 安全转 `u64`（所有 Rust 平台上都是 infallible，
+/// 但 helper 存在以便未来切换到 `wasm32`/`avr` 等异构目标时有统一入口）。
+#[inline]
+pub fn usize_to_u64(value: usize) -> u64 {
+    value as u64
+}
+
 pub fn calc_total_chunks(total_size: i64, chunk_size: i64, context: &str) -> Result<i32> {
     if total_size < 0 {
         return Err(AsterError::validation_error(format!(
@@ -96,6 +111,17 @@ mod tests {
     fn usize_to_i32_rejects_overflow() {
         let err = usize_to_i32(i32::MAX as usize + 1, "uploaded_part_count").unwrap_err();
         assert_eq!(err.code(), "E004");
+    }
+
+    #[test]
+    fn usize_to_i64_accepts_small_values() {
+        assert_eq!(usize_to_i64(1024, "body_len").unwrap(), 1024);
+    }
+
+    #[test]
+    fn usize_to_u64_is_infallible_on_common_targets() {
+        assert_eq!(usize_to_u64(0), 0);
+        assert_eq!(usize_to_u64(usize::MAX), usize::MAX as u64);
     }
 
     #[test]
