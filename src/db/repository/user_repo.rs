@@ -145,7 +145,9 @@ pub async fn find_paginated<C: ConnectionTrait>(
     let backend = db.get_database_backend();
     let keyword = keyword.map(str::trim).filter(|keyword| !keyword.is_empty());
 
-    let mut q = User::find().order_by_asc(user::Column::Id);
+    let mut q = User::find()
+        .order_by_desc(user::Column::CreatedAt)
+        .order_by_desc(user::Column::Id);
 
     if let Some(keyword) = keyword {
         q = q.filter(user_keyword_condition(backend, keyword));

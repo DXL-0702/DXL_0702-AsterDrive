@@ -38,7 +38,9 @@ pub async fn find_paginated<C: ConnectionTrait>(
 ) -> Result<(Vec<storage_policy::Model>, u64)> {
     fetch_offset_page(
         db,
-        StoragePolicy::find().order_by_asc(storage_policy::Column::Id),
+        StoragePolicy::find()
+            .order_by_desc(storage_policy::Column::CreatedAt)
+            .order_by_desc(storage_policy::Column::Id),
         limit,
         offset,
     )

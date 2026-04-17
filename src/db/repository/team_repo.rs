@@ -154,7 +154,9 @@ async fn find_paginated_by_archived_state<C: ConnectionTrait>(
 ) -> Result<(Vec<team::Model>, u64)> {
     let backend = db.get_database_backend();
     let keyword = keyword.map(str::trim).filter(|keyword| !keyword.is_empty());
-    let mut q = Team::find().order_by_asc(team::Column::Id);
+    let mut q = Team::find()
+        .order_by_desc(team::Column::CreatedAt)
+        .order_by_desc(team::Column::Id);
 
     q = if archived {
         q.filter(team::Column::ArchivedAt.is_not_null())

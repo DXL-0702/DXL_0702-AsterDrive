@@ -480,6 +480,61 @@ async fn test_cannot_disable_default_policy_group() {
 }
 
 #[actix_web::test]
+async fn test_policy_groups_are_sorted_by_created_at_desc() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let policy_id = body["data"]["items"][0]["id"].as_i64().unwrap();
+
+    for group_name in ["First Group", "Second Group"] {
+        let req = test::TestRequest::post()
+            .uri("/api/v1/admin/policy-groups")
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .set_json(serde_json::json!({
+                "name": group_name,
+                "description": format!("{group_name} description"),
+                "is_enabled": true,
+                "is_default": false,
+                "items": [
+                    {
+                        "policy_id": policy_id,
+                        "priority": 1,
+                        "min_file_size": 0,
+                        "max_file_size": 0
+                    }
+                ]
+            }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+    }
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/policy-groups?limit=3&offset=0")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let groups = body["data"]["items"].as_array().unwrap();
+    assert_eq!(body["data"]["total"], 3);
+    assert_eq!(groups.len(), 3);
+    assert_eq!(groups[0]["name"], "Second Group");
+    assert_eq!(groups[1]["name"], "First Group");
+}
+
+#[actix_web::test]
 async fn test_cannot_disable_assigned_policy_group() {
     let state = common::setup().await;
     let app = create_test_app!(state);

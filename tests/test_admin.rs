@@ -289,7 +289,7 @@ async fn test_admin_users() {
 
     // 分页列出用户
     let req = test::TestRequest::get()
-        .uri("/api/v1/admin/users?limit=2&offset=1")
+        .uri("/api/v1/admin/users?limit=2&offset=0")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .to_request();
@@ -299,11 +299,11 @@ async fn test_admin_users() {
     let data = &body["data"];
     let users = data["items"].as_array().unwrap();
     assert_eq!(data["limit"], 2);
-    assert_eq!(data["offset"], 1);
+    assert_eq!(data["offset"], 0);
     assert_eq!(data["total"], 3);
     assert_eq!(users.len(), 2);
-    assert_eq!(users[0]["username"], "user2");
-    assert_eq!(users[1]["username"], "user3");
+    assert_eq!(users[0]["username"], "user3");
+    assert_eq!(users[1]["username"], "user2");
     assert_eq!(users[0]["profile"]["avatar"]["source"], "none");
 }
 
@@ -689,6 +689,55 @@ async fn test_admin_team_crud() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["total"], 1);
+}
+
+#[actix_web::test]
+async fn test_admin_teams_are_sorted_by_created_at_desc() {
+    let state = common::setup().await;
+    let default_group_id = state
+        .policy_snapshot
+        .system_default_policy_group()
+        .expect("default policy group should exist")
+        .id;
+    let app = create_test_app!(state);
+    let (admin_token, _) = register_and_login!(app);
+
+    admin_create_user!(
+        app,
+        admin_token,
+        "team-sort-admin",
+        "team-sort-admin@example.com",
+        "password123"
+    );
+
+    for team_name in ["First Team", "Second Team"] {
+        let req = test::TestRequest::post()
+            .uri("/api/v1/admin/teams")
+            .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+            .insert_header(common::csrf_header_for(&admin_token))
+            .set_json(serde_json::json!({
+                "name": team_name,
+                "admin_identifier": "team-sort-admin",
+                "policy_group_id": default_group_id
+            }))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+    }
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/admin/teams?limit=2&offset=0")
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let teams = body["data"]["items"].as_array().unwrap();
+    assert_eq!(body["data"]["total"], 2);
+    assert_eq!(teams.len(), 2);
+    assert_eq!(teams[0]["name"], "Second Team");
+    assert_eq!(teams[1]["name"], "First Team");
 }
 
 #[actix_web::test]
@@ -1337,9 +1386,9 @@ async fn test_admin_policies() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 201);
 
-    // 列出策略分页（应有 2 个策略，当前取第 2 个）
+    // 列出策略分页，新建的应排在最前面
     let req = test::TestRequest::get()
-        .uri("/api/v1/admin/policies?limit=1&offset=1")
+        .uri("/api/v1/admin/policies?limit=1&offset=0")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
         .to_request();
@@ -1348,7 +1397,7 @@ async fn test_admin_policies() {
     let body: Value = test::read_body_json(resp).await;
     let policies = body["data"]["items"].as_array().unwrap();
     assert_eq!(body["data"]["limit"], 1);
-    assert_eq!(body["data"]["offset"], 1);
+    assert_eq!(body["data"]["offset"], 0);
     assert_eq!(body["data"]["total"], 2);
     assert_eq!(policies.len(), 1);
     assert_eq!(policies[0]["name"], "Archive S3");
