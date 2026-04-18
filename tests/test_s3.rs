@@ -30,8 +30,7 @@ fn s3_policy(endpoint: &str, bucket: &str) -> aster_drive::entities::storage_pol
     }
 }
 
-/// 用 aws-sdk-s3 创建测试 bucket
-async fn create_bucket(endpoint: &str, bucket: &str) {
+fn s3_test_client(endpoint: &str) -> aws_sdk_s3::Client {
     let credentials =
         aws_credential_types::Credentials::new("rustfsadmin", "rustfsadmin123", None, None, "test");
     let config = aws_sdk_s3::Config::builder()
@@ -41,8 +40,56 @@ async fn create_bucket(endpoint: &str, bucket: &str) {
         .endpoint_url(endpoint)
         .force_path_style(true)
         .build();
-    let client = aws_sdk_s3::Client::from_conf(config);
-    let _ = client.create_bucket().bucket(bucket).send().await;
+    aws_sdk_s3::Client::from_conf(config)
+}
+
+async fn try_create_bucket(endpoint: &str, bucket: &str) -> std::result::Result<(), String> {
+    use aws_sdk_s3::error::ProvideErrorMetadata;
+
+    let client = s3_test_client(endpoint);
+    if let Err(err) = client.create_bucket().bucket(bucket).send().await {
+        let code = err
+            .as_service_error()
+            .and_then(|service_err| service_err.code());
+        if matches!(
+            code,
+            Some("BucketAlreadyOwnedByYou") | Some("BucketAlreadyExists")
+        ) {
+            return Ok(());
+        }
+        return Err(err.to_string());
+    }
+    Ok(())
+}
+
+async fn wait_for_s3_bucket(endpoint: &str, bucket: &str) {
+    let mut last_err: Option<String> = None;
+    let ready = tokio::time::timeout(std::time::Duration::from_secs(45), async {
+        loop {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                try_create_bucket(endpoint, bucket),
+            )
+            .await
+            {
+                Ok(Ok(())) => break,
+                Ok(Err(err)) => last_err = Some(err),
+                Err(_) => {
+                    last_err = Some("create_bucket attempt timed out".to_string());
+                }
+            }
+            // 这里只是 readiness probe 的退避间隔；真正的同步条件是上面的 create_bucket 成功。
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+    })
+    .await;
+
+    if ready.is_err() {
+        panic!(
+            "timed out waiting for S3 bucket {bucket} at {endpoint}: {}",
+            last_err.unwrap_or_else(|| "unknown error".to_string())
+        );
+    }
 }
 
 #[tokio::test]
@@ -59,10 +106,7 @@ async fn test_s3_put_get_delete() {
     let endpoint = format!("http://127.0.0.1:{port}");
     let bucket = "test-bucket";
 
-    // 等容器就绪
-    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-
-    create_bucket(&endpoint, bucket).await;
+    wait_for_s3_bucket(&endpoint, bucket).await;
 
     let policy = s3_policy(&endpoint, bucket);
     let driver = S3Driver::new(&policy).expect("failed to create S3Driver");

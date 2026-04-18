@@ -53,4 +53,19 @@ describe("useConfirmDialog", () => {
 
 		expect(onConfirm).not.toHaveBeenCalled();
 	});
+
+	it("keeps the open-change handler stable across rerenders", () => {
+		const onConfirm = vi.fn();
+		const { result, rerender } = renderHook(() =>
+			useConfirmDialog<number>(onConfirm),
+		);
+		const initialOnOpenChange = result.current.dialogProps.onOpenChange;
+
+		act(() => {
+			result.current.requestConfirm(7);
+		});
+		rerender();
+
+		expect(result.current.dialogProps.onOpenChange).toBe(initialOnOpenChange);
+	});
 });

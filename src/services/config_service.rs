@@ -49,6 +49,16 @@ pub struct ConfigActionResult {
     pub value: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct ExecuteConfigActionInput<'a> {
+    pub key: &'a str,
+    pub action: ConfigActionType,
+    pub actor_user_id: i64,
+    pub target_email: Option<&'a str>,
+    pub value: Option<&'a str>,
+    pub discovery_url: Option<&'a str>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct SystemConfig {
@@ -162,13 +172,16 @@ pub async fn set_with_audit(
 
 pub async fn execute_action(
     state: &AppState,
-    key: &str,
-    action: ConfigActionType,
-    actor_user_id: i64,
-    target_email: Option<&str>,
-    value: Option<&str>,
-    discovery_url: Option<&str>,
+    input: ExecuteConfigActionInput<'_>,
 ) -> Result<ConfigActionResult> {
+    let ExecuteConfigActionInput {
+        key,
+        action,
+        actor_user_id,
+        target_email,
+        value,
+        discovery_url,
+    } = input;
     match key {
         MAIL_CONFIG_ACTION_KEY => {
             execute_mail_action(state, action, actor_user_id, target_email).await
@@ -180,6 +193,28 @@ pub async fn execute_action(
             "config action target '{key}'"
         ))),
     }
+}
+
+pub async fn execute_action_with_audit(
+    state: &AppState,
+    input: ExecuteConfigActionInput<'_>,
+    audit_ctx: &AuditContext,
+) -> Result<ConfigActionResult> {
+    let action_result = execute_action(state, input).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::ConfigActionExecute,
+        None,
+        None,
+        Some(input.key),
+        audit_service::details(audit_service::ConfigActionDetails {
+            action: input.action.as_str(),
+            target_email: action_result.target_email.as_deref(),
+        }),
+    )
+    .await;
+    Ok(action_result)
 }
 
 async fn execute_mail_action(

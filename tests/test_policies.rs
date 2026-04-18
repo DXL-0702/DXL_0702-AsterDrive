@@ -71,12 +71,14 @@ async fn test_user_default_policy_switch_updates_snapshot_immediately() {
 
     user_service::update(
         &state,
-        user.id,
-        None,
-        None,
-        None,
-        None,
-        Some(alternate_group.id),
+        user_service::UpdateUserInput {
+            id: user.id,
+            email_verified: None,
+            role: None,
+            status: None,
+            storage_quota: None,
+            policy_group_id: Some(alternate_group.id),
+        },
     )
     .await
     .unwrap();

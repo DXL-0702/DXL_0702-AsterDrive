@@ -10,7 +10,8 @@ use crate::api::response::ApiResponse;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
-use crate::services::{audit_service, auth_service, user_service};
+use crate::services::audit_service::AuditRequestInfo;
+use crate::services::{auth_service, user_service};
 use crate::types::VerificationPurpose;
 use actix_web::{HttpRequest, HttpResponse, web};
 
@@ -49,30 +50,16 @@ pub async fn setup(
     req: HttpRequest,
     body: web::Json<SetupReq>,
 ) -> Result<HttpResponse> {
-    let user = auth_service::setup(&state, &body.username, &body.email, &body.password).await?;
-    let user_info = user_service::get_self_info(&state, user.id).await?;
-    let ctx = audit_service::AuditContext {
-        user_id: user.id,
-        ip_address: req
-            .connection_info()
-            .realip_remote_addr()
-            .map(|s| s.to_string()),
-        user_agent: req
-            .headers()
-            .get("user-agent")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string()),
-    };
-    audit_service::log(
+    let audit_info = AuditRequestInfo::from_request(&req);
+    let user = auth_service::setup_with_audit(
         &state,
-        &ctx,
-        audit_service::AuditAction::SystemSetup,
-        None,
-        None,
-        Some(&user.username),
-        None,
+        &body.username,
+        &body.email,
+        &body.password,
+        &audit_info,
     )
-    .await;
+    .await?;
+    let user_info = user_service::get_self_info(&state, user.id).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(user_info)))
 }
 
@@ -92,30 +79,16 @@ pub async fn register(
     req: HttpRequest,
     body: web::Json<RegisterReq>,
 ) -> Result<HttpResponse> {
-    let user = auth_service::register(&state, &body.username, &body.email, &body.password).await?;
-    let user_info = user_service::get_self_info(&state, user.id).await?;
-    let ctx = audit_service::AuditContext {
-        user_id: user.id,
-        ip_address: req
-            .connection_info()
-            .realip_remote_addr()
-            .map(|s| s.to_string()),
-        user_agent: req
-            .headers()
-            .get("user-agent")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string()),
-    };
-    audit_service::log(
+    let audit_info = AuditRequestInfo::from_request(&req);
+    let user = auth_service::register_with_audit(
         &state,
-        &ctx,
-        audit_service::AuditAction::UserRegister,
-        None,
-        None,
-        Some(&user.username),
-        None,
+        &body.username,
+        &body.email,
+        &body.password,
+        &audit_info,
     )
-    .await;
+    .await?;
+    let user_info = user_service::get_self_info(&state, user.id).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(user_info)))
 }
 
@@ -135,38 +108,17 @@ pub async fn resend_register_activation(
     body: web::Json<ResendRegisterActivationReq>,
 ) -> Result<HttpResponse> {
     let started_at = tokio::time::Instant::now();
-    let result = auth_service::resend_register_activation(&state, &body.identifier).await;
-    let user = match result {
+    let audit_info = AuditRequestInfo::from_request(&req);
+    let result =
+        auth_service::resend_register_activation_with_audit(&state, &body.identifier, &audit_info)
+            .await;
+    match result {
         Ok(user) => user,
         Err(error) => {
             apply_auth_mail_response_floor(started_at).await;
             return Err(error);
         }
     };
-    if let Some(user) = user {
-        let ctx = audit_service::AuditContext {
-            user_id: user.id,
-            ip_address: req
-                .connection_info()
-                .realip_remote_addr()
-                .map(|s| s.to_string()),
-            user_agent: req
-                .headers()
-                .get("user-agent")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string()),
-        };
-        audit_service::log(
-            &state,
-            &ctx,
-            audit_service::AuditAction::UserResendRegistration,
-            Some("user"),
-            Some(user.id),
-            Some(&user.username),
-            None,
-        )
-        .await;
-    }
     apply_auth_mail_response_floor(started_at).await;
 
     Ok(HttpResponse::Ok().json(ApiResponse::ok(ActionMessageResp {
@@ -209,26 +161,30 @@ pub async fn confirm_contact_verification(
         ));
     };
 
-    let result = match auth_service::confirm_contact_verification(&state, token).await {
-        Ok(result) => result,
-        Err(AsterError::ContactVerificationInvalid(_)) => {
-            return Ok(contact_verification_redirect_response(
-                &state,
-                fallback_path,
-                ContactVerificationRedirectStatus::Invalid,
-                None,
-            ));
-        }
-        Err(AsterError::ContactVerificationExpired(_)) => {
-            return Ok(contact_verification_redirect_response(
-                &state,
-                fallback_path,
-                ContactVerificationRedirectStatus::Expired,
-                None,
-            ));
-        }
-        Err(error) => return Err(error),
-    };
+    let audit_info = AuditRequestInfo::from_request(&req);
+    let result =
+        match auth_service::confirm_contact_verification_with_audit(&state, token, &audit_info)
+            .await
+        {
+            Ok(result) => result,
+            Err(AsterError::ContactVerificationInvalid(_)) => {
+                return Ok(contact_verification_redirect_response(
+                    &state,
+                    fallback_path,
+                    ContactVerificationRedirectStatus::Invalid,
+                    None,
+                ));
+            }
+            Err(AsterError::ContactVerificationExpired(_)) => {
+                return Ok(contact_verification_redirect_response(
+                    &state,
+                    fallback_path,
+                    ContactVerificationRedirectStatus::Expired,
+                    None,
+                ));
+            }
+            Err(error) => return Err(error),
+        };
 
     if result.purpose == VerificationPurpose::PasswordReset {
         return Ok(contact_verification_redirect_response(
@@ -238,36 +194,6 @@ pub async fn confirm_contact_verification(
             None,
         ));
     }
-
-    let action = match result.purpose {
-        VerificationPurpose::RegisterActivation => {
-            audit_service::AuditAction::UserConfirmRegistration
-        }
-        VerificationPurpose::ContactChange => audit_service::AuditAction::UserConfirmEmailChange,
-        VerificationPurpose::PasswordReset => audit_service::AuditAction::UserConfirmPasswordReset,
-    };
-    let ctx = audit_service::AuditContext {
-        user_id: result.user_id,
-        ip_address: req
-            .connection_info()
-            .realip_remote_addr()
-            .map(|s| s.to_string()),
-        user_agent: req
-            .headers()
-            .get("user-agent")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string()),
-    };
-    audit_service::log(
-        &state,
-        &ctx,
-        action,
-        Some("user"),
-        Some(result.user_id),
-        None,
-        None,
-    )
-    .await;
 
     let (redirect_path, redirect_status, email) = match result.purpose {
         VerificationPurpose::RegisterActivation if has_active_session => (
@@ -322,37 +248,13 @@ pub async fn request_password_reset(
     body: web::Json<PasswordResetRequestReq>,
 ) -> Result<HttpResponse> {
     let started_at = tokio::time::Instant::now();
-    let result = auth_service::request_password_reset(&state, &body.email).await;
-    let result = match result {
-        Ok(result) => result,
+    let audit_info = AuditRequestInfo::from_request(&req);
+    match auth_service::request_password_reset_with_audit(&state, &body.email, &audit_info).await {
+        Ok(_) => {}
         Err(error) => {
             apply_auth_mail_response_floor(started_at).await;
             return Err(error);
         }
-    };
-    if let Some(user) = result.user.as_ref() {
-        let ctx = audit_service::AuditContext {
-            user_id: user.id,
-            ip_address: req
-                .connection_info()
-                .realip_remote_addr()
-                .map(|s| s.to_string()),
-            user_agent: req
-                .headers()
-                .get("user-agent")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string()),
-        };
-        audit_service::log(
-            &state,
-            &ctx,
-            audit_service::AuditAction::UserRequestPasswordReset,
-            Some("user"),
-            Some(user.id),
-            Some(&user.username),
-            None,
-        )
-        .await;
     }
     apply_auth_mail_response_floor(started_at).await;
 
@@ -378,31 +280,14 @@ pub async fn confirm_password_reset(
     req: HttpRequest,
     body: web::Json<PasswordResetConfirmReq>,
 ) -> Result<HttpResponse> {
-    let user =
-        auth_service::confirm_password_reset(&state, &body.token, &body.new_password).await?;
-
-    let ctx = audit_service::AuditContext {
-        user_id: user.id,
-        ip_address: req
-            .connection_info()
-            .realip_remote_addr()
-            .map(|s| s.to_string()),
-        user_agent: req
-            .headers()
-            .get("user-agent")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string()),
-    };
-    audit_service::log(
+    let audit_info = AuditRequestInfo::from_request(&req);
+    auth_service::confirm_password_reset_with_audit(
         &state,
-        &ctx,
-        audit_service::AuditAction::UserConfirmPasswordReset,
-        Some("user"),
-        Some(user.id),
-        Some(&user.username),
-        None,
+        &body.token,
+        &body.new_password,
+        &audit_info,
     )
-    .await;
+    .await?;
 
     Ok(HttpResponse::Ok().json(ApiResponse::ok(ActionMessageResp {
         message: "Password reset successful".to_string(),

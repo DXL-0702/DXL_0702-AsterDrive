@@ -14,7 +14,10 @@ use crate::db::repository::{
 use crate::entities::user;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
-use crate::services::{auth_service, profile_service};
+use crate::services::{
+    audit_service::{self, AuditContext},
+    auth_service, profile_service,
+};
 use crate::types::{
     BrowserOpenMode, ColorPreset, Language, PrefViewMode, StoredUserConfig, ThemeMode, UserConfig,
     UserPreferences, UserRole, UserStatus,
@@ -98,6 +101,28 @@ pub struct UserInfo {
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
     pub updated_at: chrono::DateTime<chrono::Utc>,
     pub profile: profile_service::UserProfileInfo,
+}
+
+#[derive(Debug, Clone)]
+pub struct ForceDeleteSummary {
+    pub user_id: i64,
+    pub username: String,
+    pub file_count: usize,
+    pub folder_count: usize,
+    pub share_count: u64,
+    pub webdav_account_count: u64,
+    pub upload_session_count: u64,
+    pub lock_count: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct UpdateUserInput {
+    pub id: i64,
+    pub email_verified: Option<bool>,
+    pub role: Option<UserRole>,
+    pub status: Option<UserStatus>,
+    pub storage_quota: Option<i64>,
+    pub policy_group_id: Option<i64>,
 }
 
 fn user_core(user: &user::Model) -> UserCore {
@@ -249,15 +274,43 @@ pub async fn create(
     get(state, user.id).await
 }
 
-pub async fn update(
+pub async fn create_with_audit(
     state: &AppState,
-    id: i64,
-    email_verified: Option<bool>,
-    role: Option<UserRole>,
-    status: Option<UserStatus>,
-    storage_quota: Option<i64>,
-    policy_group_id: Option<i64>,
+    username: &str,
+    email: &str,
+    password: &str,
+    audit_ctx: &AuditContext,
 ) -> Result<UserInfo> {
+    let user = create(state, username, email, password).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::AdminCreateUser,
+        Some("user"),
+        Some(user.id),
+        Some(&user.username),
+        audit_service::details(audit_service::AdminCreateUserDetails {
+            email: &user.email,
+            email_verified: user.email_verified,
+            role: user.role,
+            status: user.status,
+            storage_quota: user.storage_quota,
+            policy_group_id: user.policy_group_id,
+        }),
+    )
+    .await;
+    Ok(user)
+}
+
+pub async fn update(state: &AppState, input: UpdateUserInput) -> Result<UserInfo> {
+    let UpdateUserInput {
+        id,
+        email_verified,
+        role,
+        status,
+        storage_quota,
+        policy_group_id,
+    } = input;
     if id == 1 {
         if let Some(ref status) = status
             && !status.is_active()
@@ -344,6 +397,31 @@ pub async fn update(
     to_user_info(state, &updated, profile_service::AvatarAudience::AdminUser).await
 }
 
+pub async fn update_with_audit(
+    state: &AppState,
+    input: UpdateUserInput,
+    audit_ctx: &AuditContext,
+) -> Result<UserInfo> {
+    let user = update(state, input).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::AdminUpdateUser,
+        Some("user"),
+        Some(user.id),
+        Some(&user.username),
+        audit_service::details(audit_service::AdminUpdateUserDetails {
+            email_verified: user.email_verified,
+            role: user.role,
+            status: user.status,
+            storage_quota: user.storage_quota,
+            policy_group_id: user.policy_group_id,
+        }),
+    )
+    .await;
+    Ok(user)
+}
+
 /// 强制删除用户及其所有数据（不可逆）
 ///
 /// 级联清理顺序：
@@ -356,7 +434,7 @@ pub async fn update(
 /// 7. 清理上传 session 和临时文件
 /// 8. 清理资源锁
 /// 9. 删除用户记录
-pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
+pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<ForceDeleteSummary> {
     let db = &state.db;
     let user = user_repo::find_by_id(db, target_user_id).await?;
 
@@ -402,10 +480,10 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     folder_repo::delete_many(db, &folder_ids).await?;
 
     // 3. 删除所有分享链接
-    share_repo::delete_all_by_user(db, target_user_id).await?;
+    let share_count = share_repo::delete_all_by_user(db, target_user_id).await?;
 
     // 4. 删除所有 WebDAV 账号
-    webdav_account_repo::delete_all_by_user(db, target_user_id).await?;
+    let webdav_account_count = webdav_account_repo::delete_all_by_user(db, target_user_id).await?;
 
     // 5. 删除头像上传对象
     if let Err(e) = profile_service::cleanup_avatar_upload(state, target_user_id).await {
@@ -413,7 +491,7 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
     }
 
     // 6. 清理上传 session
-    upload_session_repo::delete_all_by_user(db, target_user_id).await?;
+    let upload_session_count = upload_session_repo::delete_all_by_user(db, target_user_id).await?;
 
     // 7. 清理用户持有的资源锁
     let locks = lock_repo::find_by_owner(db, target_user_id).await?;
@@ -432,7 +510,7 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
             );
         }
     }
-    lock_repo::delete_all_by_owner(db, target_user_id).await?;
+    let lock_count = lock_repo::delete_all_by_owner(db, target_user_id).await?;
 
     // 8. 删除用户记录
     user_repo::delete(db, target_user_id).await?;
@@ -449,7 +527,42 @@ pub async fn force_delete(state: &AppState, target_user_id: i64) -> Result<()> {
         folder_count,
     );
 
-    Ok(())
+    Ok(ForceDeleteSummary {
+        user_id: user.id,
+        username: user.username,
+        file_count,
+        folder_count,
+        share_count,
+        webdav_account_count,
+        upload_session_count,
+        lock_count,
+    })
+}
+
+pub async fn force_delete_with_audit(
+    state: &AppState,
+    target_user_id: i64,
+    audit_ctx: &AuditContext,
+) -> Result<ForceDeleteSummary> {
+    let summary = force_delete(state, target_user_id).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::AdminForceDeleteUser,
+        Some("user"),
+        Some(summary.user_id),
+        Some(&summary.username),
+        audit_service::details(audit_service::AdminForceDeleteUserDetails {
+            file_count: summary.file_count,
+            folder_count: summary.folder_count,
+            share_count: summary.share_count,
+            webdav_account_count: summary.webdav_account_count,
+            upload_session_count: summary.upload_session_count,
+            lock_count: summary.lock_count,
+        }),
+    )
+    .await;
+    Ok(summary)
 }
 
 /// 从 user Model 的 config 字段解析偏好设置。

@@ -222,3 +222,64 @@ async fn test_chunked_upload_with_relative_path_and_auto_rename() {
     assert!(names.contains(&"chunked.txt"));
     assert!(names.contains(&"chunked (1).txt"));
 }
+
+#[actix_web::test]
+async fn test_relative_path_normalizes_nfd_segments_to_nfc() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let relative_path = urlencoding::encode("cafe\u{0301}/hello.txt");
+
+    let boundary = "----DirUploadBoundaryNormalize";
+    let payload = "------DirUploadBoundaryNormalize\r\n\
+         Content-Disposition: form-data; name=\"file\"; filename=\"hello.txt\"\r\n\
+         Content-Type: text/plain\r\n\r\n\
+         hello nested world\r\n\
+         ------DirUploadBoundaryNormalize--\r\n";
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/files/upload?relative_path={relative_path}"
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let root_folders = body["data"]["folders"].as_array().unwrap();
+    assert_eq!(root_folders.len(), 1);
+    assert_eq!(root_folders[0]["name"], "caf\u{00e9}");
+}
+
+#[actix_web::test]
+async fn test_relative_path_rejects_windows_reserved_segment() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload/init")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "filename": "hello.txt",
+            "total_size": 10_485_760,
+            "relative_path": "docs/CON/hello.txt"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+}

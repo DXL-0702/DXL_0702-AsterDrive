@@ -9,6 +9,8 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
 use crate::services::{file_service, profile_service};
 use crate::types::NullablePatch;
+use bytes::BytesMut;
+use futures::StreamExt;
 
 use super::locks::{
     active_wopi_lock_value, ensure_wopi_lock_matches, ensure_wopi_putfile_lock_matches,
@@ -16,10 +18,10 @@ use super::locks::{
 };
 use super::session::{resolve_access_token, scope_from_payload};
 use super::targets::{
-    PutRelativeTargetMode, build_put_relative_response, encode_wopi_filename,
-    find_file_by_name_in_scope, normalize_requested_rename_target, parse_put_relative_request,
-    resolve_available_rename_target, response_name_for_rename, store_relative_target_from_bytes,
-    suggest_available_relative_target,
+    PutRelativeTargetMode, StoreRelativeTargetParams, build_put_relative_response,
+    encode_wopi_filename, find_file_by_name_in_scope, normalize_requested_rename_target,
+    parse_put_relative_request, parse_wopi_size_header, resolve_available_rename_target,
+    response_name_for_rename, store_relative_target_from_stream, suggest_available_relative_target,
 };
 use super::types::{
     MAX_WOPI_USER_INFO_LEN, WOPI_FILE_NAME_MAX_LEN, WopiCheckFileInfo, WopiPutFileResult,
@@ -104,7 +106,8 @@ pub async fn put_file_contents(
     state: &AppState,
     file_id: i64,
     access_token: &str,
-    body: actix_web::web::Bytes,
+    payload: &mut actix_web::web::Payload,
+    content_length: Option<i64>,
     requested_lock: Option<&str>,
     request_source: WopiRequestSource<'_>,
 ) -> Result<WopiPutFileResult> {
@@ -117,11 +120,12 @@ pub async fn put_file_contents(
         return Ok(WopiPutFileResult::Conflict(conflict));
     }
 
-    let (updated, item_version) = file_service::update_content_in_scope(
+    let (updated, item_version) = file_service::update_content_stream_in_scope(
         state,
         scope_from_payload(&resolved.payload),
         resolved.file.id,
-        body,
+        payload,
+        content_length,
         None,
     )
     .await?;
@@ -138,35 +142,36 @@ pub async fn put_relative_file(
     let WopiPutRelativeRequest {
         file_id,
         access_token,
-        body,
+        payload,
         suggested_target,
         relative_target,
         overwrite_relative_target,
         size_header,
+        content_length,
         request_source,
     } = req;
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
+    let declared_size = parse_wopi_size_header(size_header)?.or(content_length);
     let request = parse_put_relative_request(
         &resolved.file.name,
         suggested_target,
         relative_target,
         overwrite_relative_target,
-        size_header,
-        body.len(),
     )?;
     let scope = scope_from_payload(&resolved.payload);
 
     let target_file = match request.target_mode {
         PutRelativeTargetMode::Suggested(target_name) => {
             // SuggestedTarget 永远表示"新建一个可用名称"，不会覆盖现有文件。
-            store_relative_target_from_bytes(
+            store_relative_target_from_stream(
                 state,
-                scope,
-                resolved.file.folder_id,
-                &target_name,
-                None,
-                &body,
-                false,
+                StoreRelativeTargetParams::new(
+                    scope,
+                    resolved.file.folder_id,
+                    &target_name,
+                    payload,
+                )
+                .declared_size(declared_size),
             )
             .await?
         }
@@ -183,14 +188,16 @@ pub async fn put_relative_file(
             let existing = match existing {
                 Some(existing) => existing,
                 None => {
-                    store_relative_target_from_bytes(
+                    store_relative_target_from_stream(
                         state,
-                        scope,
-                        resolved.file.folder_id,
-                        &target_name,
-                        None,
-                        &body,
-                        true,
+                        StoreRelativeTargetParams::new(
+                            scope,
+                            resolved.file.folder_id,
+                            &target_name,
+                            payload,
+                        )
+                        .declared_size(declared_size)
+                        .exact_name(),
                     )
                     .await?
                 }
@@ -233,14 +240,17 @@ pub async fn put_relative_file(
                 ));
             }
 
-            store_relative_target_from_bytes(
+            store_relative_target_from_stream(
                 state,
-                scope,
-                resolved.file.folder_id,
-                &target_name,
-                Some(existing.id),
-                &body,
-                true,
+                StoreRelativeTargetParams::new(
+                    scope,
+                    resolved.file.folder_id,
+                    &target_name,
+                    payload,
+                )
+                .declared_size(declared_size)
+                .overwrite(existing.id)
+                .exact_name(),
             )
             .await?
         }
@@ -323,10 +333,11 @@ pub async fn put_user_info(
     state: &AppState,
     file_id: i64,
     access_token: &str,
-    body: actix_web::web::Bytes,
+    payload: &mut actix_web::web::Payload,
     request_source: WopiRequestSource<'_>,
 ) -> Result<()> {
     let resolved = resolve_access_token(state, file_id, access_token, request_source).await?;
+    let body = collect_limited_payload(payload, MAX_WOPI_USER_INFO_LEN).await?;
     let user_info = normalize_wopi_user_info(&body)?;
     profile_service::update_wopi_user_info(state, resolved.payload.actor_user_id, user_info).await
 }
@@ -348,7 +359,30 @@ pub(crate) fn parse_wopi_max_expected_size(value: Option<&str>) -> Result<Option
     Ok(Some(i64::from(parsed)))
 }
 
-fn normalize_wopi_user_info(body: &actix_web::web::Bytes) -> Result<String> {
+async fn collect_limited_payload(
+    payload: &mut actix_web::web::Payload,
+    max_len: usize,
+) -> Result<bytes::Bytes> {
+    let mut body = BytesMut::with_capacity(max_len.min(4096));
+    while let Some(chunk) = payload.next().await {
+        let chunk = chunk.map_aster_err_with(|| {
+            AsterError::validation_error("failed to read PUT_USER_INFO request body")
+        })?;
+        let next_len = body
+            .len()
+            .checked_add(chunk.len())
+            .ok_or_else(|| AsterError::validation_error("PUT_USER_INFO body is too large"))?;
+        if next_len > max_len {
+            return Err(AsterError::validation_error(format!(
+                "PUT_USER_INFO body must be {MAX_WOPI_USER_INFO_LEN} bytes or fewer"
+            )));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body.freeze())
+}
+
+fn normalize_wopi_user_info(body: &[u8]) -> Result<String> {
     let user_info = std::str::from_utf8(body).map_aster_err_with(|| {
         AsterError::validation_error("PUT_USER_INFO body must be valid UTF-8")
     })?;

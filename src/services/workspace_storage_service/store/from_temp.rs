@@ -141,7 +141,7 @@ async fn prepare_store_from_temp(
         "storing file from temp"
     );
 
-    crate::utils::validate_name(filename)?;
+    let filename = crate::utils::normalize_validate_name(filename)?;
 
     let policy = match resolved_policy {
         Some(policy) => policy,
@@ -182,7 +182,7 @@ async fn prepare_store_from_temp(
     Ok(PreparedStoreFromTemp {
         scope,
         folder_id,
-        filename: filename.to_string(),
+        filename: filename.clone(),
         temp_path: temp_path.to_string(),
         size,
         existing_file_id,
@@ -191,7 +191,7 @@ async fn prepare_store_from_temp(
         blob_plan,
         overwrite_ctx,
         storage_delta,
-        mime: mime_guess::from_path(filename)
+        mime: mime_guess::from_path(&filename)
             .first_or_octet_stream()
             .to_string(),
         now: Utc::now(),

@@ -131,11 +131,12 @@ pub struct WopiRequestSource<'a> {
 pub struct WopiPutRelativeRequest<'a> {
     pub file_id: i64,
     pub access_token: &'a str,
-    pub body: actix_web::web::Bytes,
+    pub payload: &'a mut actix_web::web::Payload,
     pub suggested_target: Option<&'a str>,
     pub relative_target: Option<&'a str>,
     pub overwrite_relative_target: Option<&'a str>,
     pub size_header: Option<&'a str>,
+    pub content_length: Option<i64>,
     pub request_source: WopiRequestSource<'a>,
 }
 

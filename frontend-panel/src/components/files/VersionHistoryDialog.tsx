@@ -133,7 +133,12 @@ export function VersionHistoryDialog({
 		setDeletingVersionId(null);
 		restoreDialogProps.onOpenChange(false);
 		deleteDialogProps.onOpenChange(false);
-	}, [load, open]);
+	}, [
+		deleteDialogProps.onOpenChange,
+		load,
+		open,
+		restoreDialogProps.onOpenChange,
+	]);
 
 	return (
 		<>

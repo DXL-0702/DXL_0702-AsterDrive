@@ -40,6 +40,16 @@ macro_rules! upload_test_file_with_name_and_mime {
     }};
 }
 
+fn upload_payload(filename: &str, content: &str) -> String {
+    format!(
+        "------UnicodeBoundary123\r\n\
+         Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n\
+         Content-Type: text/plain\r\n\r\n\
+         {content}\r\n\
+         ------UnicodeBoundary123--\r\n"
+    )
+}
+
 #[actix_web::test]
 async fn test_file_upload_download_delete() {
     let state = common::setup().await;
@@ -285,6 +295,26 @@ async fn test_file_repo_resolve_unique_filename_prefers_first_gap_and_preserves_
 }
 
 #[actix_web::test]
+async fn test_file_repo_resolve_unique_filename_treats_nfd_and_nfc_as_same_name() {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let user = user_repo::find_by_username(&db, "testuser")
+        .await
+        .unwrap()
+        .expect("registered user should exist");
+
+    upload_test_file_named!(app, token, "cafe\u{0301}.txt");
+
+    let candidate = file_repo::resolve_unique_filename(&db, user.id, None, "caf\u{00e9}.txt")
+        .await
+        .unwrap();
+    assert_eq!(candidate, "caf\u{00e9} (1).txt");
+}
+
+#[actix_web::test]
 async fn test_dangerous_html_direct_link_stays_inline_with_csp_sandbox() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -461,6 +491,98 @@ async fn test_file_lock_unlock() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+}
+
+#[actix_web::test]
+async fn test_upload_normalizes_nfd_filename_and_auto_renames_nfc_duplicates() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let nfc = "caf\u{00e9}.txt";
+    let nfd = "cafe\u{0301}.txt";
+    let copy_name = "caf\u{00e9} (1).txt";
+
+    for (requested_name, expected_name) in [(nfd, nfc), (nfc, copy_name)] {
+        let req = test::TestRequest::post()
+            .uri("/api/v1/files/upload")
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .insert_header((
+                "Content-Type",
+                "multipart/form-data; boundary=----UnicodeBoundary123",
+            ))
+            .set_payload(upload_payload(requested_name, "unicode content"))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(body["data"]["name"], expected_name);
+    }
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let body: Value = test::read_body_json(resp).await;
+    let names: Vec<&str> = body["data"]["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|file| file["name"].as_str().unwrap())
+        .collect();
+    assert!(names.contains(&nfc));
+    assert!(names.contains(&copy_name));
+}
+
+#[actix_web::test]
+async fn test_upload_rejects_windows_reserved_filename() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/upload")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header((
+            "Content-Type",
+            "multipart/form-data; boundary=----UnicodeBoundary123",
+        ))
+        .set_payload(upload_payload("CON.txt", "reserved"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+}
+
+#[actix_web::test]
+async fn test_file_rename_normalizes_nfd_and_rejects_windows_reserved_name() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_test_file!(app, token);
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "cafe\u{0301}.txt" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["name"], "caf\u{00e9}.txt");
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "AUX.txt" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
 }
 
 #[actix_web::test]
@@ -813,6 +935,35 @@ async fn test_create_empty_file() {
         .insert_header(common::csrf_header_for(&token))
         .insert_header(("Content-Type", "application/json"))
         .set_json(serde_json::json!({ "name": "", "folder_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+}
+
+#[actix_web::test]
+async fn test_create_empty_file_normalizes_nfd_and_rejects_windows_reserved_name() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/new")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header(("Content-Type", "application/json"))
+        .set_json(serde_json::json!({ "name": "cafe\u{0301}.txt", "folder_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["name"], "caf\u{00e9}.txt");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/files/new")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .insert_header(("Content-Type", "application/json"))
+        .set_json(serde_json::json!({ "name": "PRN.txt", "folder_id": null }))
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);

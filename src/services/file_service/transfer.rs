@@ -115,6 +115,13 @@ pub(crate) struct BatchDuplicateFileRecordSpec {
     pub dest_name: String,
 }
 
+#[derive(Clone)]
+pub(crate) struct BatchDuplicateFileRecordTargetSpec {
+    pub src: file::Model,
+    pub dest_name: String,
+    pub dest_folder_id: Option<i64>,
+}
+
 async fn batch_duplicate_file_records_with_specs_in_scope(
     state: &AppState,
     scope: WorkspaceStorageScope,
@@ -292,6 +299,64 @@ pub(crate) async fn batch_duplicate_file_records_with_names_in_scope(
     dest_folder_id: Option<i64>,
 ) -> Result<Vec<file::Model>> {
     batch_duplicate_file_records_with_specs_in_scope(state, scope, copy_specs, dest_folder_id).await
+}
+
+pub(crate) async fn batch_duplicate_file_records_to_mixed_folders_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    copy_specs: &[BatchDuplicateFileRecordTargetSpec],
+) -> Result<()> {
+    if copy_specs.is_empty() {
+        return Ok(());
+    }
+
+    let total_size = copy_specs.iter().try_fold(0i64, |acc, spec| {
+        acc.checked_add(spec.src.size).ok_or_else(|| {
+            AsterError::internal_error("total copied byte count overflow during folder copy")
+        })
+    })?;
+    let now = chrono::Utc::now();
+
+    workspace_storage_service::check_quota(&state.db, scope, total_size).await?;
+
+    let txn = crate::db::transaction::begin(&state.db).await?;
+    workspace_storage_service::check_quota(&txn, scope, total_size).await?;
+
+    let mut blob_counts: std::collections::HashMap<i64, i32> = std::collections::HashMap::new();
+    for spec in copy_specs {
+        let entry = blob_counts.entry(spec.src.blob_id).or_default();
+        *entry = entry.checked_add(1).ok_or_else(|| {
+            AsterError::internal_error(format!(
+                "blob copy count overflow for blob {} during folder copy",
+                spec.src.blob_id
+            ))
+        })?;
+    }
+    for (&blob_id, &count) in &blob_counts {
+        file_repo::increment_blob_ref_count_by(&txn, blob_id, count).await?;
+    }
+
+    let models: Vec<file::ActiveModel> = copy_specs
+        .iter()
+        .map(|spec| file::ActiveModel {
+            name: Set(spec.dest_name.clone()),
+            folder_id: Set(spec.dest_folder_id),
+            team_id: Set(scope.team_id()),
+            blob_id: Set(spec.src.blob_id),
+            size: Set(spec.src.size),
+            user_id: Set(scope.actor_user_id()),
+            mime_type: Set(spec.src.mime_type.clone()),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        })
+        .collect();
+    file_repo::create_many(&txn, models).await?;
+
+    workspace_storage_service::update_storage_used(&txn, scope, total_size).await?;
+
+    crate::db::transaction::commit(txn).await?;
+    Ok(())
 }
 
 /// 批量复制文件记录：一次事务处理 blob ref_count + 文件创建 + 配额

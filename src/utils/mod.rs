@@ -6,6 +6,7 @@ pub mod numbers;
 pub mod paths;
 
 use crate::errors::{AsterError, Result};
+use unicode_normalization::UnicodeNormalization;
 
 /// 校验资源归属权，不匹配则返回 403
 pub fn verify_owner(entity_user_id: i64, user_id: i64, entity_name: &str) -> Result<()> {
@@ -60,8 +61,29 @@ const MAX_FILENAME_LEN: usize = 255;
 /// 文件/文件夹名禁止字符
 const FORBIDDEN_CHARS: &[char] = &['/', '\\', '\0', ':', '*', '?', '"', '<', '>', '|'];
 
+/// Windows 保留设备名（大小写不敏感，带扩展名也无效）
+const WINDOWS_RESERVED_BASENAMES: &[&str] = &[
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+];
+
+pub fn normalize_name(name: &str) -> String {
+    name.nfc().collect()
+}
+
+pub fn normalize_validate_name(name: &str) -> Result<String> {
+    let normalized = normalize_name(name);
+    validate_normalized_name(&normalized)?;
+    Ok(normalized)
+}
+
 /// 校验文件/文件夹名合法性
 pub fn validate_name(name: &str) -> Result<()> {
+    let normalized = normalize_name(name);
+    validate_normalized_name(&normalized)
+}
+
+fn validate_normalized_name(name: &str) -> Result<()> {
     if name.is_empty() {
         return Err(AsterError::validation_error("name cannot be empty"));
     }
@@ -72,6 +94,11 @@ pub fn validate_name(name: &str) -> Result<()> {
     }
     if name == "." || name == ".." {
         return Err(AsterError::validation_error("invalid name"));
+    }
+    if is_windows_reserved_name(name) {
+        return Err(AsterError::validation_error(
+            "name cannot use a Windows reserved device name",
+        ));
     }
     if let Some(c) = name.chars().find(|c| FORBIDDEN_CHARS.contains(c)) {
         return Err(AsterError::validation_error(format!(
@@ -89,6 +116,12 @@ pub fn validate_name(name: &str) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+fn is_windows_reserved_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name);
+    let upper = stem.to_ascii_uppercase();
+    WINDOWS_RESERVED_BASENAMES.contains(&upper.as_str())
 }
 
 /// 根据 blob key 计算分片存储路径：`ab/cd/abcdef...`
@@ -186,6 +219,7 @@ mod tests {
         assert!(validate_name("hello.txt").is_ok());
         assert!(validate_name(".gitignore").is_ok());
         assert!(validate_name("file (1).txt").is_ok());
+        assert!(validate_name("cafe\u{0301}.txt").is_ok());
 
         // 空名
         assert!(validate_name("").is_err());
@@ -220,6 +254,24 @@ mod tests {
         assert!(validate_name(&long_name).is_err());
         let ok_name = "a".repeat(255);
         assert!(validate_name(&ok_name).is_ok());
+    }
+
+    #[test]
+    fn test_normalize_validate_name_normalizes_nfd_to_nfc() {
+        let normalized = normalize_validate_name("cafe\u{0301}.txt").unwrap();
+        assert_eq!(normalized, "caf\u{00e9}.txt");
+    }
+
+    #[test]
+    fn test_validate_name_rejects_windows_reserved_names() {
+        for name in [
+            "CON", "con", "PRN.txt", "aux", "NUL.log", "COM1", "com9.txt", "LPT1", "lpt9.prn",
+        ] {
+            assert!(validate_name(name).is_err(), "{name} should be rejected");
+        }
+
+        assert!(validate_name("console.txt").is_ok());
+        assert!(validate_name("LPT10.txt").is_ok());
     }
 
     #[test]

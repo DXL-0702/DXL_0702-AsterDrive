@@ -161,7 +161,7 @@ pub async fn update_content(
     claims: web::ReqData<Claims>,
     path: web::Path<i64>,
     req: HttpRequest,
-    body: web::Bytes,
+    mut payload: web::Payload,
 ) -> Result<HttpResponse> {
     update_content_response(
         &state,
@@ -171,7 +171,7 @@ pub async fn update_content(
             user_id: claims.user_id,
         },
         *path,
-        body,
+        &mut payload,
     )
     .await
 }
@@ -289,7 +289,7 @@ pub(crate) async fn team_update_content(
     claims: web::ReqData<Claims>,
     path: web::Path<(i64, i64)>,
     req: HttpRequest,
-    body: web::Bytes,
+    mut payload: web::Payload,
 ) -> Result<HttpResponse> {
     let (team_id, file_id) = path.into_inner();
     update_content_response(
@@ -298,7 +298,7 @@ pub(crate) async fn team_update_content(
         &req,
         team_scope(team_id, claims.user_id),
         file_id,
-        body,
+        &mut payload,
     )
     .await
 }
@@ -544,21 +544,36 @@ pub(crate) async fn update_content_response(
     req: &HttpRequest,
     scope: WorkspaceStorageScope,
     file_id: i64,
-    body: web::Bytes,
+    payload: &mut web::Payload,
 ) -> Result<HttpResponse> {
     let if_match = req
         .headers()
         .get("If-Match")
         .and_then(|value| value.to_str().ok());
+    let declared_size = request_content_length(req);
     let ctx = AuditContext::from_request(req, claims);
-    let (file, new_hash) = file_service::update_content_in_scope_with_audit(
-        state, scope, file_id, body, if_match, &ctx,
+    let (file, new_hash) = file_service::update_content_stream_in_scope_with_audit(
+        state,
+        scope,
+        file_id,
+        payload,
+        declared_size,
+        if_match,
+        &ctx,
     )
     .await?;
 
     Ok(HttpResponse::Ok()
         .insert_header(("ETag", format!("\"{new_hash}\"")))
         .json(ApiResponse::ok(file)))
+}
+
+fn request_content_length(req: &HttpRequest) -> Option<i64> {
+    req.headers()
+        .get(actix_web::http::header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .and_then(|value| crate::utils::numbers::u64_to_i64(value, "content length").ok())
 }
 
 pub(crate) async fn set_lock_response(

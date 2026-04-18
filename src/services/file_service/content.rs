@@ -1,7 +1,9 @@
 //! 文件服务子模块：`content`。
 
-use actix_web::web::Bytes;
+use actix_web::web::{Bytes, Payload};
+use futures::StreamExt;
 use sha2::{Digest, Sha256};
+use tokio::io::AsyncWriteExt;
 
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
@@ -15,6 +17,111 @@ use crate::services::{
 
 use super::get_info_in_scope;
 use crate::utils::numbers::usize_to_i64;
+
+pub(crate) struct StreamedTempUpload {
+    pub temp_path: String,
+    pub size: i64,
+    pub resolved_policy: Option<crate::entities::storage_policy::Model>,
+    pub precomputed_hash: Option<String>,
+}
+
+pub(crate) async fn stream_request_body_to_temp_upload(
+    state: &AppState,
+    payload: &mut Payload,
+    resolved_policy_hint: Option<crate::entities::storage_policy::Model>,
+    declared_size: Option<i64>,
+) -> Result<StreamedTempUpload> {
+    let (temp_path, should_hash) = if let Some(policy) = resolved_policy_hint
+        .as_ref()
+        .filter(|policy| policy.driver_type == crate::types::DriverType::Local)
+    {
+        let staging_token = format!("{}.upload", uuid::Uuid::new_v4());
+        let staging_path =
+            crate::storage::drivers::local::upload_staging_path(policy, &staging_token)
+                .map_aster_err_ctx(
+                    "resolve local staging path",
+                    AsterError::storage_driver_error,
+                )?;
+        if let Some(parent) = staging_path.parent() {
+            tokio::fs::create_dir_all(parent)
+                .await
+                .map_aster_err(AsterError::storage_driver_error)?;
+        }
+        (
+            staging_path.to_string_lossy().into_owned(),
+            workspace_storage_service::local_content_dedup_enabled(policy),
+        )
+    } else {
+        let temp_dir = &state.config.server.temp_dir;
+        let runtime_temp_dir = crate::utils::paths::runtime_temp_dir(temp_dir);
+        let temp_path = crate::utils::paths::runtime_temp_file_path(
+            temp_dir,
+            &uuid::Uuid::new_v4().to_string(),
+        );
+        tokio::fs::create_dir_all(&runtime_temp_dir)
+            .await
+            .map_aster_err_ctx("create temp dir", AsterError::file_upload_failed)?;
+        (temp_path, false)
+    };
+
+    let mut temp_file = tokio::fs::File::create(&temp_path)
+        .await
+        .map_aster_err_ctx("create temp", AsterError::file_upload_failed)?;
+    let mut size: i64 = 0;
+    let mut hasher = should_hash.then(Sha256::new);
+
+    let write_result = async {
+        while let Some(chunk) = payload.next().await {
+            let chunk = chunk.map_aster_err_with(|| {
+                AsterError::validation_error("failed to read request body")
+            })?;
+            if let Some(hasher) = hasher.as_mut() {
+                hasher.update(&chunk);
+            }
+            temp_file
+                .write_all(&chunk)
+                .await
+                .map_aster_err_ctx("write temp", AsterError::file_upload_failed)?;
+            size = size
+                .checked_add(usize_to_i64(chunk.len(), "request body chunk length")?)
+                .ok_or_else(|| {
+                    AsterError::file_upload_failed("accumulated request body size overflows i64")
+                })?;
+        }
+        temp_file
+            .flush()
+            .await
+            .map_aster_err_ctx("flush temp", AsterError::file_upload_failed)?;
+        Ok::<(), AsterError>(())
+    }
+    .await;
+
+    drop(temp_file);
+
+    if let Err(error) = write_result {
+        crate::utils::cleanup_temp_file(&temp_path).await;
+        return Err(error);
+    }
+
+    if let Some(declared_size) = declared_size
+        && size != declared_size
+    {
+        crate::utils::cleanup_temp_file(&temp_path).await;
+        return Err(AsterError::validation_error(
+            "request body length does not match declared size",
+        ));
+    }
+
+    let precomputed_hash =
+        hasher.map(|hasher| crate::utils::hash::sha256_digest_to_hex(&hasher.finalize()));
+
+    Ok(StreamedTempUpload {
+        temp_path,
+        size,
+        resolved_policy: resolved_policy_hint,
+        precomputed_hash,
+    })
+}
 
 /// 从临时文件存储 blob 并创建文件记录
 ///
@@ -218,6 +325,92 @@ pub(crate) async fn update_content_in_scope(
         blob_id = updated.blob_id,
         size = updated.size,
         "updated file content"
+    );
+    Ok((updated, new_blob.hash.clone()))
+}
+
+pub(crate) async fn update_content_stream_in_scope(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    payload: &mut Payload,
+    declared_size: Option<i64>,
+    if_match: Option<&str>,
+) -> Result<(crate::entities::file::Model, String)> {
+    let db = &state.db;
+    tracing::debug!(
+        scope = ?scope,
+        file_id,
+        declared_size,
+        has_if_match = if_match.is_some(),
+        "streaming file content update"
+    );
+    let f = get_info_in_scope(state, scope, file_id).await?;
+
+    if f.is_locked {
+        let lock = crate::db::repository::lock_repo::find_by_entity(
+            db,
+            crate::types::EntityType::File,
+            file_id,
+        )
+        .await?;
+        if let Some(lock) = lock
+            && lock.owner_id != Some(scope.actor_user_id())
+        {
+            return Err(AsterError::resource_locked(
+                "file is locked by another user",
+            ));
+        }
+    }
+
+    let current_blob = crate::db::repository::file_repo::find_blob_by_id(db, f.blob_id).await?;
+    if let Some(etag) = if_match {
+        let expected = etag.trim_matches('"');
+        if !expected.eq_ignore_ascii_case(&current_blob.hash) {
+            return Err(AsterError::precondition_failed(
+                "file has been modified (ETag mismatch)",
+            ));
+        }
+    }
+
+    let resolved_policy_hint = match declared_size {
+        Some(size) => Some(
+            workspace_storage_service::resolve_policy_for_size(state, scope, f.folder_id, size)
+                .await?,
+        ),
+        None => None,
+    };
+    let streamed =
+        stream_request_body_to_temp_upload(state, payload, resolved_policy_hint, declared_size)
+            .await?;
+    let StreamedTempUpload {
+        temp_path,
+        size,
+        resolved_policy,
+        precomputed_hash,
+    } = streamed;
+
+    let result = workspace_storage_service::store_from_temp_with_hints(
+        state,
+        StoreFromTempParams::new(scope, f.folder_id, &f.name, &temp_path, size)
+            .overwrite(file_id)
+            .skip_lock_check(),
+        StoreFromTempHints {
+            resolved_policy,
+            precomputed_hash: precomputed_hash.as_deref(),
+        },
+    )
+    .await;
+    crate::utils::cleanup_temp_file(&temp_path).await;
+
+    let updated = result?;
+    let new_blob = crate::db::repository::file_repo::find_blob_by_id(db, updated.blob_id).await?;
+    tracing::debug!(
+        scope = ?scope,
+        file_id = updated.id,
+        blob_id = updated.blob_id,
+        size = updated.size,
+        "completed streamed file content update"
     );
     Ok((updated, new_blob.hash.clone()))
 }

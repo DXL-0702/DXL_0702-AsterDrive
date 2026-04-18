@@ -505,6 +505,7 @@ async fn wait_for_database(database_url: &str) {
                 Ok(_) => break,
                 Err(err) => {
                     last_err = Some(err.to_string());
+                    // 这里只是数据库 readiness probe 的退避间隔；外层 timeout 才是最终边界。
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                 }
             }
@@ -1090,7 +1091,6 @@ pub async fn flush_mail_outbox_with(
     mail_sender: &std::sync::Arc<dyn aster_drive::services::mail_service::MailSender>,
 ) {
     const MAX_ATTEMPTS: usize = 8;
-    const RETRY_DELAY_MS: u64 = 25;
 
     for attempt in 0..MAX_ATTEMPTS {
         aster_drive::services::mail_outbox_service::drain_with(db, runtime_config, mail_sender)
@@ -1105,7 +1105,8 @@ pub async fn flush_mail_outbox_with(
         }
 
         if attempt + 1 < MAX_ATTEMPTS {
-            tokio::time::sleep(std::time::Duration::from_millis(RETRY_DELAY_MS)).await;
+            // drain 可能刚触发了同进程内的异步发送/落库链路，先让出一次调度，不再硬睡固定时长。
+            tokio::task::yield_now().await;
         }
     }
 
@@ -1227,6 +1228,7 @@ macro_rules! create_test_app {
         let db = state.db.clone();
         test::init_service(
             App::new()
+                .wrap(aster_drive::api::middleware::security_headers::default_headers())
                 .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
                 .app_data(web::JsonConfig::default().limit(1024 * 1024))
                 .app_data(web::Data::new(state))
@@ -1490,6 +1492,7 @@ macro_rules! setup_with_webdav {
         let webdav_config = aster_drive::config::WebDavConfig::default();
         let app = test::init_service(
             App::new()
+                .wrap(aster_drive::api::middleware::security_headers::default_headers())
                 .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
                 .app_data(web::JsonConfig::default().limit(1024 * 1024))
                 .app_data(web::Data::new(state))
@@ -1516,6 +1519,7 @@ macro_rules! setup_with_webdav_and_mail {
         let webdav_config = aster_drive::config::WebDavConfig::default();
         let app = test::init_service(
             App::new()
+                .wrap(aster_drive::api::middleware::security_headers::default_headers())
                 .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
                 .app_data(web::JsonConfig::default().limit(1024 * 1024))
                 .app_data(web::Data::new(state))

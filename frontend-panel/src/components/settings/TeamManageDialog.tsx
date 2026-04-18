@@ -259,43 +259,6 @@ export function TeamManageDialog({
 		},
 	);
 
-	useEffect(() => {
-		if (!open || teamId == null) {
-			auditRequestIdRef.current += 1;
-			detailRequestIdRef.current += 1;
-			memberRequestIdRef.current += 1;
-			setArchiveConfirmValue("");
-			archiveDialogProps.onOpenChange(false);
-			setAuditEntries([]);
-			setAuditLoading(false);
-			setAuditOffset(0);
-			setAuditTotal(0);
-			setDetailLoading(false);
-			setMemberIdentifier("");
-			setMemberLoading(false);
-			setMemberOffset(0);
-			setMemberQuery("");
-			setMemberRole("member");
-			setMemberRoleFilter("__all__");
-			setMemberStatusFilter("__all__");
-			setMemberTotal(0);
-			setMembers([]);
-			setManagerCount(0);
-			setMutating(false);
-			setOwnerCount(0);
-			setTeamDescription("");
-			setTeamDetail(null);
-			setTeamName("");
-			setDialogTab("overview");
-			return;
-		}
-
-		setAuditOffset(0);
-		setMemberOffset(0);
-		setDialogTab("overview");
-		void loadTeamDetail(teamId);
-	}, [open, teamId]);
-
 	useLayoutEffect(() => {
 		if (!isPageLayout || teamId == null || pageTab == null) {
 			return;
@@ -605,6 +568,44 @@ export function TeamManageDialog({
 		requestConfirm: requestArchiveConfirm,
 		dialogProps: archiveDialogProps,
 	} = useConfirmDialog<true>(handleArchiveTeam);
+
+	useEffect(() => {
+		if (!open || teamId == null) {
+			auditRequestIdRef.current += 1;
+			detailRequestIdRef.current += 1;
+			memberRequestIdRef.current += 1;
+			setArchiveConfirmValue("");
+			archiveDialogProps.onOpenChange(false);
+			setAuditEntries([]);
+			setAuditLoading(false);
+			setAuditOffset(0);
+			setAuditTotal(0);
+			setDetailLoading(false);
+			setMemberIdentifier("");
+			setMemberLoading(false);
+			setMemberOffset(0);
+			setMemberQuery("");
+			setMemberRole("member");
+			setMemberRoleFilter("__all__");
+			setMemberStatusFilter("__all__");
+			setMemberTotal(0);
+			setMembers([]);
+			setManagerCount(0);
+			setMutating(false);
+			setOwnerCount(0);
+			setTeamDescription("");
+			setTeamDetail(null);
+			setTeamName("");
+			setDialogTab("overview");
+			return;
+		}
+
+		setAuditOffset(0);
+		setMemberOffset(0);
+		setDialogTab("overview");
+		void loadTeamDetail(teamId);
+	}, [archiveDialogProps.onOpenChange, open, teamId]);
+
 	const removeMember =
 		members.find((member) => member.user_id === removeMemberId) ?? null;
 

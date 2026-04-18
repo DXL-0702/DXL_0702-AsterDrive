@@ -7,8 +7,9 @@ use super::{
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::AppState;
+use crate::services::audit_service::AuditContext;
 use crate::services::auth_service::Claims;
-use crate::services::{audit_service, auth_service, profile_service, user_service};
+use crate::services::{auth_service, profile_service, user_service};
 use actix_web::{HttpRequest, HttpResponse, web};
 
 #[api_docs_macros::path(
@@ -30,19 +31,15 @@ pub async fn request_email_change(
     claims: web::ReqData<Claims>,
     body: web::Json<RequestEmailChangeReq>,
 ) -> Result<HttpResponse> {
-    let user = auth_service::request_email_change(&state, claims.user_id, &body.new_email).await?;
-    let user_info = user_service::get_self_info(&state, user.id).await?;
-    let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    audit_service::log(
+    let ctx = AuditContext::from_request(&req, &claims);
+    let user = auth_service::request_email_change_with_audit(
         &state,
+        claims.user_id,
+        &body.new_email,
         &ctx,
-        audit_service::AuditAction::UserRequestEmailChange,
-        Some("user"),
-        Some(user.id),
-        Some(&user.username),
-        None,
     )
-    .await;
+    .await?;
+    let user_info = user_service::get_self_info(&state, user.id).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user_info)))
 }
 
@@ -63,26 +60,14 @@ pub async fn resend_email_change(
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
     let started_at = tokio::time::Instant::now();
-    let result = auth_service::resend_email_change(&state, claims.user_id).await;
-    let user = match result {
-        Ok(user) => user,
+    let ctx = AuditContext::from_request(&req, &claims);
+    let result = auth_service::resend_email_change_with_audit(&state, claims.user_id, &ctx).await;
+    match result {
+        Ok(_) => {}
         Err(error) => {
             apply_auth_mail_response_floor(started_at).await;
             return Err(error);
         }
-    };
-    if let Some(user) = user {
-        let ctx = audit_service::AuditContext::from_request(&req, &claims);
-        audit_service::log(
-            &state,
-            &ctx,
-            audit_service::AuditAction::UserResendEmailChange,
-            Some("user"),
-            Some(user.id),
-            Some(&user.username),
-            None,
-        )
-        .await;
     }
     apply_auth_mail_response_floor(started_at).await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(ActionMessageResp {

@@ -33,20 +33,17 @@ pub(crate) async fn parse_relative_upload_path(
     let filename = segments
         .last()
         .ok_or_else(|| AsterError::validation_error("relative_path cannot be empty"))?;
-    crate::utils::validate_name(filename)?;
+    let filename = crate::utils::normalize_validate_name(filename)?;
 
     let parent_segments: Vec<String> = segments[..segments.len().saturating_sub(1)]
         .iter()
-        .map(|segment| {
-            crate::utils::validate_name(segment)?;
-            Ok((*segment).to_string())
-        })
+        .map(|segment| crate::utils::normalize_validate_name(segment))
         .collect::<Result<Vec<_>>>()?;
 
     Ok(ParsedUploadPath {
         base_folder_id,
         parent_segments,
-        filename: (*filename).to_string(),
+        filename,
     })
 }
 
@@ -80,19 +77,19 @@ async fn ensure_folder_in_parent<C: sea_orm::ConnectionTrait>(
 ) -> Result<folder::Model> {
     // 目录上传 / 解压导入会并发命中同一路径。
     // 这里先查后建，并在插入冲突后回读，保证“得到该目录”的语义是幂等的。
-    crate::utils::validate_name(name)?;
+    let name = crate::utils::normalize_validate_name(name)?;
 
     match scope {
         WorkspaceStorageScope::Personal { user_id } => {
             if let Some(existing) =
-                folder_repo::find_by_name_in_parent(db, user_id, parent_id, name).await?
+                folder_repo::find_by_name_in_parent(db, user_id, parent_id, &name).await?
             {
                 return Ok(existing);
             }
 
             let now = Utc::now();
             let model = folder::ActiveModel {
-                name: Set(name.to_string()),
+                name: Set(name.clone()),
                 parent_id: Set(parent_id),
                 user_id: Set(user_id),
                 policy_id: Set(None),
@@ -105,7 +102,7 @@ async fn ensure_folder_in_parent<C: sea_orm::ConnectionTrait>(
                 Ok(created) => Ok(created),
                 Err(err) => {
                     if let Some(existing) =
-                        folder_repo::find_by_name_in_parent(db, user_id, parent_id, name).await?
+                        folder_repo::find_by_name_in_parent(db, user_id, parent_id, &name).await?
                     {
                         Ok(existing)
                     } else {
@@ -119,14 +116,14 @@ async fn ensure_folder_in_parent<C: sea_orm::ConnectionTrait>(
             actor_user_id,
         } => {
             if let Some(existing) =
-                folder_repo::find_by_name_in_team_parent(db, team_id, parent_id, name).await?
+                folder_repo::find_by_name_in_team_parent(db, team_id, parent_id, &name).await?
             {
                 return Ok(existing);
             }
 
             let now = Utc::now();
             let model = folder::ActiveModel {
-                name: Set(name.to_string()),
+                name: Set(name.clone()),
                 parent_id: Set(parent_id),
                 team_id: Set(Some(team_id)),
                 user_id: Set(actor_user_id),
@@ -140,7 +137,7 @@ async fn ensure_folder_in_parent<C: sea_orm::ConnectionTrait>(
                 Ok(created) => Ok(created),
                 Err(err) => {
                     if let Some(existing) =
-                        folder_repo::find_by_name_in_team_parent(db, team_id, parent_id, name)
+                        folder_repo::find_by_name_in_team_parent(db, team_id, parent_id, &name)
                             .await?
                     {
                         Ok(existing)

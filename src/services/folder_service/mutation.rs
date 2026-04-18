@@ -36,7 +36,7 @@ pub(crate) async fn create_in_scope(
         workspace_storage_service::require_team_access(state, team_id, actor_user_id).await?;
     }
 
-    crate::utils::validate_name(name)?;
+    let name = crate::utils::normalize_validate_name(name)?;
 
     if let Some(pid) = parent_id {
         workspace_storage_service::verify_folder_access(state, scope, pid).await?;
@@ -44,26 +44,26 @@ pub(crate) async fn create_in_scope(
 
     let exists = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            folder_repo::find_by_name_in_parent(&state.db, user_id, parent_id, name)
+            folder_repo::find_by_name_in_parent(&state.db, user_id, parent_id, &name)
                 .await?
                 .is_some()
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            folder_repo::find_by_name_in_team_parent(&state.db, team_id, parent_id, name)
+            folder_repo::find_by_name_in_team_parent(&state.db, team_id, parent_id, &name)
                 .await?
                 .is_some()
         }
     };
 
     if exists {
-        return Err(folder_repo::duplicate_name_error(name));
+        return Err(folder_repo::duplicate_name_error(&name));
     }
 
     let now = Utc::now();
     let created = folder_repo::create(
         &state.db,
         folder::ActiveModel {
-            name: Set(name.to_string()),
+            name: Set(name),
             parent_id: Set(parent_id),
             team_id: Set(scope.team_id()),
             user_id: Set(scope.actor_user_id()),
@@ -208,9 +208,10 @@ pub(crate) async fn update_in_scope(
         }
     }
 
-    if let Some(ref n) = name {
-        crate::utils::validate_name(n)?;
-    }
+    let name = match name {
+        Some(name) => Some(crate::utils::normalize_validate_name(&name)?),
+        None => None,
+    };
 
     let target_parent = match parent_id {
         NullablePatch::Absent => f.parent_id,

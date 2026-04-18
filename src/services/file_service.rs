@@ -20,10 +20,12 @@ pub(crate) use common::{
     DownloadDisposition, ensure_personal_file_scope, if_none_match_matches,
     if_none_match_matches_value, inline_sandbox_csp, requires_inline_sandbox,
 };
-pub(crate) use content::update_content_in_scope;
 pub use content::{
     StoreFromTempRequest, create_empty, resolve_policy, resolve_policy_for_size, store_from_temp,
     update_content, upload,
+};
+pub(crate) use content::{
+    StreamedTempUpload, stream_request_body_to_temp_upload, update_content_stream_in_scope,
 };
 pub use deletion::{batch_purge, delete, purge};
 pub(crate) use deletion::{
@@ -42,7 +44,8 @@ pub(crate) use metadata::{get_info_in_scope, update_in_scope};
 pub(crate) use thumbnail::get_thumbnail_data_in_scope;
 pub use thumbnail::{ThumbnailResult, get_thumbnail_data};
 pub(crate) use transfer::{
-    BatchDuplicateFileRecordSpec, batch_duplicate_file_records_in_scope,
+    BatchDuplicateFileRecordSpec, BatchDuplicateFileRecordTargetSpec,
+    batch_duplicate_file_records_to_mixed_folders_in_scope,
     batch_duplicate_file_records_with_names_in_scope, copy_file_in_scope,
 };
 pub use transfer::{batch_duplicate_file_records, copy_file, duplicate_file_record};
@@ -94,15 +97,18 @@ pub(crate) async fn update_in_scope_with_audit(
     Ok(file.into())
 }
 
-pub(crate) async fn update_content_in_scope_with_audit(
+pub(crate) async fn update_content_stream_in_scope_with_audit(
     state: &AppState,
     scope: WorkspaceStorageScope,
     file_id: i64,
-    body: bytes::Bytes,
+    payload: &mut actix_web::web::Payload,
+    declared_size: Option<i64>,
     if_match: Option<&str>,
     audit_ctx: &AuditContext,
 ) -> Result<(FileInfo, String)> {
-    let (file, new_hash) = update_content_in_scope(state, scope, file_id, body, if_match).await?;
+    let (file, new_hash) =
+        update_content_stream_in_scope(state, scope, file_id, payload, declared_size, if_match)
+            .await?;
     audit_service::log(
         state,
         audit_ctx,
@@ -135,4 +141,25 @@ pub(crate) async fn copy_file_in_scope_with_audit(
     )
     .await;
     Ok(file.into())
+}
+
+pub(crate) async fn download_in_scope_with_audit(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    file_id: i64,
+    if_none_match: Option<&str>,
+    audit_ctx: &AuditContext,
+) -> Result<DownloadOutcome> {
+    let outcome = download_in_scope(state, scope, file_id, if_none_match).await?;
+    audit_service::log(
+        state,
+        audit_ctx,
+        audit_service::AuditAction::FileDownload,
+        Some("file"),
+        Some(file_id),
+        None,
+        None,
+    )
+    .await;
+    Ok(outcome)
 }

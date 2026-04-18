@@ -21,6 +21,20 @@ pub async fn create<C: ConnectionTrait>(
         .map_err(|err| map_name_db_err(err, &name))
 }
 
+/// 批量插入文件夹记录（不返回创建的 Model，目录树复制用）
+pub async fn create_many<C: ConnectionTrait>(
+    db: &C,
+    models: Vec<folder::ActiveModel>,
+) -> Result<()> {
+    if models.is_empty() {
+        return Ok(());
+    }
+    Folder::insert_many(models).exec(db).await.map_err(|err| {
+        map_bulk_name_db_err(err, "one or more folders already exist in this location")
+    })?;
+    Ok(())
+}
+
 /// 批量移动文件夹到同一父文件夹
 pub async fn move_many_to_parent<C: ConnectionTrait>(
     db: &C,

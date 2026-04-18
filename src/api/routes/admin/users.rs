@@ -39,24 +39,9 @@ pub async fn create_user(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    let user = user_service::create(&state, &body.username, &body.email, &body.password).await?;
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::AdminCreateUser,
-        Some("user"),
-        Some(user.id),
-        Some(&user.username),
-        audit_service::details(audit_service::AdminCreateUserDetails {
-            email: &user.email,
-            email_verified: user.email_verified,
-            role: user.role,
-            status: user.status,
-            storage_quota: user.storage_quota,
-            policy_group_id: user.policy_group_id,
-        }),
-    )
-    .await;
+    let user =
+        user_service::create_with_audit(&state, &body.username, &body.email, &body.password, &ctx)
+            .await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(user)))
 }
 
@@ -129,18 +114,8 @@ pub async fn revoke_user_sessions(
     req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let user = auth_service::revoke_user_sessions(&state, *path).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::AdminRevokeUserSessions,
-        Some("user"),
-        Some(user.id),
-        Some(&user.username),
-        None,
-    )
-    .await;
+    auth_service::revoke_user_sessions_with_audit(&state, *path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -171,32 +146,19 @@ pub async fn update_user(
     validate_request(&*body)?;
     let body = body.into_inner();
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    let user = user_service::update(
+    let user = user_service::update_with_audit(
         &state,
-        target_id,
-        body.email_verified,
-        body.role,
-        body.status,
-        body.storage_quota,
-        body.policy_group_id,
+        user_service::UpdateUserInput {
+            id: target_id,
+            email_verified: body.email_verified,
+            role: body.role,
+            status: body.status,
+            storage_quota: body.storage_quota,
+            policy_group_id: body.policy_group_id,
+        },
+        &ctx,
     )
     .await?;
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::AdminUpdateUser,
-        Some("user"),
-        Some(user.id),
-        Some(&user.username),
-        audit_service::details(audit_service::AdminUpdateUserDetails {
-            email_verified: user.email_verified,
-            role: user.role,
-            status: user.status,
-            storage_quota: user.storage_quota,
-            policy_group_id: user.policy_group_id,
-        }),
-    )
-    .await;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }
 
@@ -224,18 +186,8 @@ pub async fn reset_user_password(
     body: web::Json<ResetUserPasswordReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    let user = auth_service::set_password(&state, *path, &body.password).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::AdminResetUserPassword,
-        Some("user"),
-        Some(user.id),
-        Some(&user.username),
-        None,
-    )
-    .await;
+    auth_service::set_password_with_audit(&state, *path, &body.password, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -256,9 +208,12 @@ pub async fn reset_user_password(
 )]
 pub async fn force_delete_user(
     state: web::Data<AppState>,
+    claims: web::ReqData<Claims>,
+    req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    user_service::force_delete(&state, *path).await?;
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    user_service::force_delete_with_audit(&state, *path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 

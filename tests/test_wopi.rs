@@ -22,6 +22,7 @@ const TEST_WOPI_ALT_APP_KEY: &str = "custom.onlyoffice.alt";
 const TEST_WOPI_ORIGIN: &str = "http://localhost:8080";
 const TEST_WOPI_ACTION_URL: &str =
     "http://localhost:8080/hosting/wopi/word/edit?WOPISrc={{wopi_src}}";
+const OVER_LIMIT_BODY_SIZE: usize = 10 * 1024 * 1024 + 1;
 
 macro_rules! register_named_user_and_login {
     ($app:expr, $db:expr, $mail_sender:expr, $username:expr, $email:expr, $password:expr) => {{
@@ -456,6 +457,53 @@ async fn test_wopi_lock_put_get_and_unlock_lifecycle() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["is_locked"], false);
+}
+
+#[actix_web::test]
+async fn test_wopi_put_file_accepts_body_larger_than_global_payload_limit() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+    let lock_value = "wopi-lock-large-put";
+    let payload = vec![b'p'; OVER_LIMIT_BODY_SIZE];
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "LOCK"))
+        .insert_header(("X-WOPI-Lock", lock_value))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_contents_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "PUT"))
+        .insert_header(("X-WOPI-Lock", lock_value))
+        .set_payload(payload.clone())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::get()
+        .uri(&wopi_contents_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body = test::read_body(resp).await;
+    assert_eq!(&body[..], payload.as_slice());
 }
 
 #[actix_web::test]
@@ -1003,6 +1051,81 @@ async fn test_wopi_put_relative_creates_copy_for_suggested_target() {
 }
 
 #[actix_web::test]
+async fn test_wopi_put_relative_accepts_body_larger_than_global_payload_limit() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+    let payload = vec![b'r'; OVER_LIMIT_BODY_SIZE];
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "PUT_RELATIVE"))
+        .insert_header(("X-WOPI-SuggestedTarget", ".docx"))
+        .insert_header(("X-WOPI-Size", payload.len().to_string()))
+        .set_payload(payload.clone())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: Value = test::read_body_json(resp).await;
+    let url = body["Url"].as_str().unwrap();
+    let (target_file_id, target_access_token) = parse_wopi_result_url(url);
+
+    let req = test::TestRequest::get()
+        .uri(&wopi_contents_query(target_file_id, &target_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body = test::read_body(resp).await;
+    assert_eq!(&body[..], payload.as_slice());
+}
+
+#[actix_web::test]
+async fn test_wopi_put_relative_rejects_size_header_mismatch() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "PUT_RELATIVE"))
+        .insert_header(("X-WOPI-SuggestedTarget", ".docx"))
+        .insert_header(("X-WOPI-Size", "1"))
+        .set_payload("mismatch")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["msg"],
+        "request body length does not match declared size"
+    );
+}
+
+#[actix_web::test]
 async fn test_wopi_put_relative_returns_valid_relative_target_for_name_conflict() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
@@ -1247,6 +1370,77 @@ async fn test_wopi_rename_file_generates_available_name_on_conflict() {
 }
 
 #[actix_web::test]
+async fn test_wopi_rename_file_normalizes_nfd_requested_name() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "RENAME_FILE"))
+        .insert_header(("X-WOPI-RequestedName", "cafe+AwE-"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["Name"], "caf\u{00e9}");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&access_cookie)))
+        .insert_header(common::csrf_header_for(&access_cookie))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["name"], "caf\u{00e9}.docx");
+}
+
+#[actix_web::test]
+async fn test_wopi_rename_file_rejects_windows_reserved_name() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "RENAME_FILE"))
+        .insert_header(("X-WOPI-RequestedName", "CON"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    assert_eq!(
+        resp.headers()
+            .get("X-WOPI-InvalidFileNameError")
+            .and_then(|value| value.to_str().ok()),
+        Some("invalid requested file name")
+    );
+}
+
+#[actix_web::test]
 async fn test_wopi_rename_file_returns_invalid_file_name_error_when_name_cannot_be_sanitized() {
     let state = common::setup().await;
     configure_test_wopi_runtime(&state);
@@ -1312,6 +1506,38 @@ async fn test_wopi_put_user_info_round_trips_into_check_file_info() {
 
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["UserInfo"], "pane=comments");
+}
+
+#[actix_web::test]
+async fn test_wopi_put_user_info_rejects_oversized_body() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let app = create_test_app!(state);
+
+    let (access_cookie, _) = register_and_login!(app);
+    let file_id = upload_test_file_named!(app, access_cookie, "report 1.docx");
+    let launch = open_wopi_session!(
+        app,
+        access_cookie,
+        &format!("/api/v1/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+    let oversized = "a".repeat(1025);
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "PUT_USER_INFO"))
+        .set_payload(oversized)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(
+        body["msg"],
+        "PUT_USER_INFO body must be 1024 bytes or fewer"
+    );
 }
 
 #[actix_web::test]
@@ -1995,6 +2221,109 @@ async fn test_team_wopi_put_relative_is_rejected_after_member_removal() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
+}
+
+#[actix_web::test]
+async fn test_team_wopi_put_relative_accepts_body_larger_than_global_payload_limit() {
+    let state = common::setup().await;
+    configure_test_wopi_runtime(&state);
+    let db = state.db.clone();
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+
+    let (_, owner_token) = register_named_user_and_login!(
+        app,
+        db,
+        mail_sender,
+        "wopiownerlarge",
+        "wopiownerlarge@example.com",
+        "password123"
+    );
+    let (member_id, member_token) = register_named_user_and_login!(
+        app,
+        db,
+        mail_sender,
+        "wopimemberlarge",
+        "wopimemberlarge@example.com",
+        "password123"
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .set_json(json!({ "name": "WOPI Large Team" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/teams/{team_id}/members"))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .set_json(json!({ "user_id": member_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = team_multipart_request!(
+        &format!("/api/v1/teams/{team_id}/files/upload"),
+        &owner_token,
+        "team-report.docx",
+        "team content",
+    );
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+
+    let launch = open_wopi_session!(
+        app,
+        member_token,
+        &format!("/api/v1/teams/{team_id}/files/{file_id}/wopi/open"),
+        TEST_WOPI_APP_KEY
+    );
+    let wopi_access_token = launch["data"]["access_token"].as_str().unwrap();
+    let payload = vec![b'z'; OVER_LIMIT_BODY_SIZE];
+
+    let req = test::TestRequest::post()
+        .uri(&wopi_file_query(file_id, wopi_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .insert_header(("X-WOPI-Override", "PUT_RELATIVE"))
+        .insert_header(("X-WOPI-SuggestedTarget", ".docx"))
+        .insert_header(("X-WOPI-Size", payload.len().to_string()))
+        .set_payload(payload.clone())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["Name"], "team-report (1).docx");
+    let url = body["Url"].as_str().unwrap();
+    let (target_file_id, target_access_token) = parse_wopi_result_url(url);
+    let created = aster_drive::db::repository::file_repo::find_by_name_in_team_folder(
+        &db,
+        team_id,
+        None,
+        "team-report (1).docx",
+    )
+    .await
+    .unwrap()
+    .expect("team put-relative target should be created");
+    assert_eq!(created.id, target_file_id);
+    assert_eq!(created.user_id, member_id);
+    assert_eq!(created.team_id, Some(team_id));
+
+    let req = test::TestRequest::get()
+        .uri(&wopi_contents_query(target_file_id, &target_access_token))
+        .insert_header(("Origin", TEST_WOPI_ORIGIN))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body = test::read_body(resp).await;
+    assert_eq!(&body[..], payload.as_slice());
 }
 
 #[actix_web::test]

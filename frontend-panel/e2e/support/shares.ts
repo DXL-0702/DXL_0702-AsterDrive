@@ -72,7 +72,7 @@ export async function expectProtectedFolderSharePreview(
 export async function expectShareUnavailable(
 	browser: Browser,
 	shareUrl: string,
-	expectedError = "Share link not found.",
+	expectedError = "This share link does not exist or is no longer available",
 ) {
 	const context = await browser.newContext({
 		locale: "en-US",
@@ -82,6 +82,10 @@ export async function expectShareUnavailable(
 
 	await seedClientState(page);
 	await page.goto(shareUrl);
+	await expect(page).toHaveURL(shareUrl);
+	await expect(page.getByText("Unavailable", { exact: true })).toBeVisible({
+		timeout: 30_000,
+	});
 	await expect(page.getByText(expectedError, { exact: true })).toBeVisible({
 		timeout: 30_000,
 	});

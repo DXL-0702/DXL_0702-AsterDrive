@@ -378,7 +378,7 @@ describe("AdminTasksPage", () => {
 			});
 		});
 
-		fireEvent.click(screen.getByRole("button", { name: /admin:refresh/i }));
+		fireEvent.click(screen.getByRole("button", { name: /refresh/i }));
 
 		await waitFor(() => {
 			expect(mockState.list).toHaveBeenNthCalledWith(4, {

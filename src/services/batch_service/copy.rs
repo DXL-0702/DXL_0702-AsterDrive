@@ -2,6 +2,8 @@
 
 use std::collections::HashSet;
 
+use futures::{StreamExt, stream};
+
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{
@@ -13,6 +15,8 @@ use super::shared::load_target_folder_in_scope;
 use super::{
     BatchResult, NormalizedSelection, load_normalized_selection_in_scope, reserve_unique_name,
 };
+
+const BATCH_FOLDER_COPY_CONCURRENCY: usize = 4;
 
 pub(crate) async fn batch_copy_in_scope(
     state: &AppState,
@@ -110,13 +114,28 @@ pub(crate) async fn batch_copy_in_scope(
         );
     }
 
-    for &id in &normalized_folder_ids {
-        if let Some(error) = target_error.as_ref() {
+    if let Some(error) = target_error.as_ref() {
+        for &id in &normalized_folder_ids {
             result.record_failure("folder", id, error.clone());
-            continue;
         }
+        return Ok(result);
+    }
 
-        match folder_service::copy_folder_in_scope(state, scope, id, target_folder_id).await {
+    let mut folder_copy_results =
+        stream::iter(normalized_folder_ids.iter().copied().enumerate().map(
+            |(index, id)| async move {
+                let copy_result =
+                    folder_service::copy_folder_in_scope(state, scope, id, target_folder_id).await;
+                (index, id, copy_result)
+            },
+        ))
+        .buffer_unordered(BATCH_FOLDER_COPY_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
+    folder_copy_results.sort_unstable_by_key(|(index, _, _)| *index);
+
+    for (_, id, copy_result) in folder_copy_results {
+        match copy_result {
             Ok(_) => result.record_success(),
             Err(e) => result.record_failure("folder", id, e.to_string()),
         }

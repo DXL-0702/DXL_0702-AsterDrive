@@ -248,6 +248,7 @@ async fn wait_for_s3_bucket(endpoint: &str, bucket: &str) {
                     last_err = Some("create_bucket attempt timed out".to_string());
                 }
             }
+            // 这里只是 readiness probe 的退避间隔；真正的同步条件是上面的 create_bucket 成功。
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
     })
@@ -369,12 +370,14 @@ async fn create_s3_default_policy(
 
     aster_drive::services::user_service::update(
         state,
-        user_id,
-        None,
-        None,
-        None,
-        None,
-        Some(group.id),
+        aster_drive::services::user_service::UpdateUserInput {
+            id: user_id,
+            email_verified: None,
+            role: None,
+            status: None,
+            storage_quota: None,
+            policy_group_id: Some(group.id),
+        },
     )
     .await
     .unwrap();
@@ -424,6 +427,98 @@ async fn store_temp_file_in_personal_space(
     .unwrap();
     let _ = tokio::fs::remove_file(&temp_path).await;
     file.id
+}
+
+#[tokio::test]
+async fn test_concurrent_store_from_temp_same_name_auto_renames() {
+    use aster_drive::db::repository::file_repo;
+    use aster_drive::services::{auth_service, file_service};
+    use std::sync::Arc;
+
+    let state = Arc::new(common::setup().await);
+    let user = auth_service::register(
+        &state,
+        "raceuser",
+        "concurrent-store@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let temp_path_1 = aster_drive::utils::paths::temp_file_path(
+        &state.config.server.temp_dir,
+        &format!("concurrent-store-{}", uuid::Uuid::new_v4()),
+    );
+    let temp_path_2 = aster_drive::utils::paths::temp_file_path(
+        &state.config.server.temp_dir,
+        &format!("concurrent-store-{}", uuid::Uuid::new_v4()),
+    );
+    tokio::fs::create_dir_all(&state.config.server.temp_dir)
+        .await
+        .unwrap();
+    tokio::fs::write(&temp_path_1, b"first concurrent upload")
+        .await
+        .unwrap();
+    tokio::fs::write(&temp_path_2, b"second concurrent upload")
+        .await
+        .unwrap();
+
+    let barrier = Arc::new(tokio::sync::Barrier::new(2));
+    let state_1 = Arc::clone(&state);
+    let state_2 = Arc::clone(&state);
+    let barrier_1 = Arc::clone(&barrier);
+    let barrier_2 = Arc::clone(&barrier);
+    let name_1 = "race.txt".to_string();
+    let name_2 = name_1.clone();
+    let path_1 = temp_path_1.clone();
+    let path_2 = temp_path_2.clone();
+
+    let (first, second) = tokio::join!(
+        async move {
+            barrier_1.wait().await;
+            file_service::store_from_temp(
+                &state_1,
+                user.id,
+                file_service::StoreFromTempRequest::new(
+                    None,
+                    &name_1,
+                    &path_1,
+                    i64::try_from(b"first concurrent upload".len()).unwrap(),
+                ),
+            )
+            .await
+        },
+        async move {
+            barrier_2.wait().await;
+            file_service::store_from_temp(
+                &state_2,
+                user.id,
+                file_service::StoreFromTempRequest::new(
+                    None,
+                    &name_2,
+                    &path_2,
+                    i64::try_from(b"second concurrent upload".len()).unwrap(),
+                ),
+            )
+            .await
+        }
+    );
+
+    let first = first.unwrap();
+    let second = second.unwrap();
+    let first = file_repo::find_by_id(&state.db, first.id).await.unwrap();
+    let second = file_repo::find_by_id(&state.db, second.id).await.unwrap();
+
+    let mut names = vec![first.name, second.name];
+    names.sort();
+    assert_eq!(
+        names,
+        vec!["race (1).txt".to_string(), "race.txt".to_string()],
+        "concurrent same-name uploads should succeed and auto-rename one side",
+    );
+
+    let _ = tokio::fs::remove_file(&temp_path_1).await;
+    let _ = tokio::fs::remove_file(&temp_path_2).await;
 }
 
 #[actix_web::test]
@@ -521,6 +616,44 @@ async fn test_init_upload_validates_filename_and_total_size() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
+}
+
+#[actix_web::test]
+async fn test_upload_service_init_upload_normalizes_nfd_filename_and_rejects_windows_reserved_name()
+{
+    use aster_drive::db::repository::upload_session_repo;
+    use aster_drive::services::{auth_service, upload_service};
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "unicodeupload",
+        "unicodeupload@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let init =
+        upload_service::init_upload(&state, user.id, "cafe\u{0301}.txt", 10_485_760, None, None)
+            .await
+            .unwrap();
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Chunked);
+    let upload_id = init
+        .upload_id
+        .expect("chunked upload should return upload_id");
+    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(session.filename, "caf\u{00e9}.txt");
+
+    let err = match upload_service::init_upload(&state, user.id, "COM1.txt", 10_485_760, None, None)
+        .await
+    {
+        Ok(_) => panic!("COM1.txt should be rejected"),
+        Err(err) => err,
+    };
+    assert_eq!(err.code(), "E005");
 }
 
 #[actix_web::test]

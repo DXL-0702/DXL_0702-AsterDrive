@@ -1,5 +1,7 @@
 //! 认证 API 路由：`session`。
 
+use std::collections::HashSet;
+
 use super::{AuthTokenResp, ChangePasswordReq, storage_event_frame};
 use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::request_auth::{access_cookie_token, bearer_token};
@@ -7,8 +9,10 @@ use crate::api::response::ApiResponse;
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
+use crate::services::audit_service::{AuditContext, AuditRequestInfo};
 use crate::services::auth_service::Claims;
-use crate::services::{audit_service, auth_service, team_service, user_service};
+use crate::services::storage_change_service::StorageChangeWorkspace;
+use crate::services::{auth_service, team_service, user_service};
 use crate::utils::numbers::{u64_to_i64, usize_to_i64};
 use actix_web::{HttpRequest, HttpResponse, web};
 use bytes::Bytes;
@@ -18,26 +22,91 @@ use super::cookies::{
     clear_access_cookie, clear_csrf_cookie, clear_refresh_cookie,
 };
 
+async fn revalidate_storage_event_stream(
+    state: &AppState,
+    user_id: i64,
+    session_version: i64,
+    refresh_visible_teams: bool,
+) -> Result<Option<HashSet<i64>>> {
+    let snapshot = auth_service::get_auth_snapshot(state, user_id).await?;
+    if !snapshot.status.is_active() {
+        return Err(AsterError::auth_forbidden("account is disabled"));
+    }
+    if snapshot.session_version != session_version {
+        return Err(AsterError::auth_token_invalid("session revoked"));
+    }
+    if !refresh_visible_teams {
+        return Ok(None);
+    }
+
+    team_service::list_user_team_ids(state, user_id, false)
+        .await
+        .map(Some)
+}
+
 pub async fn get_storage_events(
     state: web::Data<AppState>,
     claims: web::ReqData<Claims>,
 ) -> Result<HttpResponse> {
     let user_id = claims.user_id;
-    let visible_team_ids = team_service::list_user_team_ids(&state, user_id, false).await?;
+    let session_version = claims.session_version;
+    let visible_team_ids = revalidate_storage_event_stream(&state, user_id, session_version, true)
+        .await?
+        .expect("visible teams should be loaded on initial SSE auth check");
     let mut rx = state.storage_change_tx.subscribe();
 
     let stream = async_stream::stream! {
         let mut heartbeat = tokio::time::interval(std::time::Duration::from_secs(15));
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut visible_team_ids = visible_team_ids;
 
         loop {
             tokio::select! {
                 _ = heartbeat.tick() => {
+                    match revalidate_storage_event_stream(&state, user_id, session_version, true).await {
+                        Ok(Some(updated_team_ids)) => {
+                            visible_team_ids = updated_team_ids;
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            tracing::info!(
+                                user_id,
+                                error_code = error.code(),
+                                error = error.message(),
+                                "closing storage change event stream after periodic auth revalidation failed"
+                            );
+                            break;
+                        }
+                    }
                     yield Ok::<Bytes, actix_web::Error>(Bytes::from_static(b": keep-alive\n\n"));
                 }
                 recv = rx.recv() => {
                     match recv {
                         Ok(event) => {
+                            let refresh_visible_teams =
+                                matches!(event.workspace, Some(StorageChangeWorkspace::Team { .. }));
+                            match revalidate_storage_event_stream(
+                                &state,
+                                user_id,
+                                session_version,
+                                refresh_visible_teams,
+                            )
+                            .await
+                            {
+                                Ok(Some(updated_team_ids)) => {
+                                    visible_team_ids = updated_team_ids;
+                                }
+                                Ok(None) => {}
+                                Err(error) => {
+                                    tracing::info!(
+                                        user_id,
+                                        error_code = error.code(),
+                                        error = error.message(),
+                                        "closing storage change event stream after event auth revalidation failed"
+                                    );
+                                    break;
+                                }
+                            }
                             if !event.is_visible_to(user_id, &visible_team_ids) {
                                 continue;
                             }
@@ -47,6 +116,17 @@ pub async fn get_storage_events(
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                             tracing::warn!(user_id, skipped, "storage change event stream lagged");
+                            if let Err(error) =
+                                revalidate_storage_event_stream(&state, user_id, session_version, false).await
+                            {
+                                tracing::info!(
+                                    user_id,
+                                    error_code = error.code(),
+                                    error = error.message(),
+                                    "closing storage change event stream after lagged auth revalidation failed"
+                                );
+                                break;
+                            }
                             if let Some(frame) = storage_event_frame(
                                 &crate::services::storage_change_service::StorageChangeEvent::sync_required(),
                             ) {
@@ -90,32 +170,11 @@ pub async fn login(
         &state.runtime_config,
         RequestSourceMode::OptionalWhenPresent,
     )?;
-    let result = auth_service::login(&state, &body.identifier, &body.password).await?;
+    let audit_info = AuditRequestInfo::from_request(&req);
+    let result =
+        auth_service::login_with_audit(&state, &body.identifier, &body.password, &audit_info)
+            .await?;
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
-
-    // 审计日志 — 直接使用 login 返回的 user_id
-    let ctx = audit_service::AuditContext {
-        user_id: result.user_id,
-        ip_address: req
-            .connection_info()
-            .realip_remote_addr()
-            .map(|s| s.to_string()),
-        user_agent: req
-            .headers()
-            .get("user-agent")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string()),
-    };
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::UserLogin,
-        None,
-        None,
-        Some(&body.identifier),
-        None,
-    )
-    .await;
 
     let secure = auth_policy.cookie_secure;
     let csrf_token = csrf::build_csrf_token();
@@ -198,6 +257,7 @@ pub async fn logout(state: web::Data<AppState>, req: HttpRequest) -> HttpRespons
         }
     }
 
+    let audit_info = AuditRequestInfo::from_request(&req);
     for token in [
         req.cookie(REFRESH_COOKIE)
             .map(|cookie| cookie.value().to_string()),
@@ -207,33 +267,9 @@ pub async fn logout(state: web::Data<AppState>, req: HttpRequest) -> HttpRespons
     .into_iter()
     .flatten()
     {
-        let Ok(claims) = auth_service::verify_token(&token, &state.config.auth.jwt_secret) else {
-            continue;
-        };
-
-        let ctx = audit_service::AuditContext {
-            user_id: claims.user_id,
-            ip_address: req
-                .connection_info()
-                .realip_remote_addr()
-                .map(|s| s.to_string()),
-            user_agent: req
-                .headers()
-                .get("user-agent")
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string()),
-        };
-        audit_service::log(
-            &state,
-            &ctx,
-            audit_service::AuditAction::UserLogout,
-            None,
-            None,
-            None,
-            None,
-        )
-        .await;
-        break;
+        if auth_service::log_logout_for_token(&state, &token, &audit_info).await {
+            break;
+        }
     }
 
     let secure = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config).cookie_secure;
@@ -280,28 +316,18 @@ pub async fn put_password(
     claims: web::ReqData<Claims>,
     body: web::Json<ChangePasswordReq>,
 ) -> Result<HttpResponse> {
-    let user = auth_service::change_password(
+    let ctx = AuditContext::from_request(&req, &claims);
+    let user = auth_service::change_password_with_audit(
         &state,
         claims.user_id,
         &body.current_password,
         &body.new_password,
+        &ctx,
     )
     .await?;
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     let (access_token, refresh_token) =
         auth_service::issue_tokens_for_session(&state, user.id, user.session_version)?;
-
-    let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::UserChangePassword,
-        None,
-        None,
-        None,
-        None,
-    )
-    .await;
 
     let secure = auth_policy.cookie_secure;
     let csrf_token = csrf::build_csrf_token();

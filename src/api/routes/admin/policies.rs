@@ -325,22 +325,9 @@ pub async fn create_policy_group(
     body: web::Json<CreatePolicyGroupReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    let group = policy_service::create_group(&state, body.into_inner().into()).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::AdminCreatePolicyGroup,
-        Some("policy_group"),
-        Some(group.id),
-        Some(&group.name),
-        audit_service::details(audit_service::PolicyGroupAuditDetails {
-            is_default: group.is_default,
-            is_enabled: group.is_enabled,
-            item_count: group.items.len(),
-        }),
-    )
-    .await;
+    let group =
+        policy_service::create_group_with_audit(&state, body.into_inner().into(), &ctx).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(group)))
 }
 
@@ -390,22 +377,10 @@ pub async fn update_policy_group(
     body: web::Json<PatchPolicyGroupReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    let group = policy_service::update_group(&state, *path, body.into_inner().into()).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::AdminUpdatePolicyGroup,
-        Some("policy_group"),
-        Some(group.id),
-        Some(&group.name),
-        audit_service::details(audit_service::PolicyGroupAuditDetails {
-            is_default: group.is_default,
-            is_enabled: group.is_enabled,
-            item_count: group.items.len(),
-        }),
-    )
-    .await;
+    let group =
+        policy_service::update_group_with_audit(&state, *path, body.into_inner().into(), &ctx)
+            .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(group)))
 }
 
@@ -430,23 +405,8 @@ pub async fn delete_policy_group(
     req: HttpRequest,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let group = policy_service::get_group(&state, *path).await?;
-    policy_service::delete_group(&state, *path).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::AdminDeletePolicyGroup,
-        Some("policy_group"),
-        Some(group.id),
-        Some(&group.name),
-        audit_service::details(audit_service::PolicyGroupAuditDetails {
-            is_default: group.is_default,
-            is_enabled: group.is_enabled,
-            item_count: group.items.len(),
-        }),
-    )
-    .await;
+    policy_service::delete_group_with_audit(&state, *path, &ctx).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -474,26 +434,9 @@ pub async fn migrate_policy_group_users(
     body: web::Json<MigratePolicyGroupUsersReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    let source_group = policy_service::get_group(&state, *path).await?;
-    let target_group = policy_service::get_group(&state, body.target_group_id).await?;
-    let result = policy_service::migrate_group_users(&state, *path, body.target_group_id).await?;
     let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::AdminMigratePolicyGroupUsers,
-        Some("policy_group"),
-        Some(source_group.id),
-        Some(&source_group.name),
-        audit_service::details(audit_service::PolicyGroupMigrationDetails {
-            source_group_id: source_group.id,
-            source_group_name: &source_group.name,
-            target_group_id: target_group.id,
-            target_group_name: &target_group.name,
-            affected_users: result.affected_users,
-            migrated_assignments: result.migrated_assignments,
-        }),
-    )
-    .await;
+    let result =
+        policy_service::migrate_group_users_with_audit(&state, *path, body.target_group_id, &ctx)
+            .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(result)))
 }

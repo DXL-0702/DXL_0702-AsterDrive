@@ -138,6 +138,78 @@ async fn test_folder_lock_unlock() {
 }
 
 #[actix_web::test]
+async fn test_folder_create_normalizes_nfd_name_to_nfc() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "cafe\u{0301}" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["name"], "caf\u{00e9}");
+}
+
+#[actix_web::test]
+async fn test_folder_create_rejects_windows_reserved_name() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "CON" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+}
+
+#[actix_web::test]
+async fn test_folder_rename_normalizes_nfd_name_and_rejects_windows_reserved_name() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "Workspace" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let folder_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/folders/{folder_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "cafe\u{0301}" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["name"], "caf\u{00e9}");
+
+    let req = test::TestRequest::patch()
+        .uri(&format!("/api/v1/folders/{folder_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "LPT1" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+}
+
+#[actix_web::test]
 async fn test_folder_name_validation_returns_400() {
     let state = common::setup().await;
     let app = create_test_app!(state);
@@ -460,6 +532,107 @@ async fn test_nested_folder_copy() {
         1,
         "original A should still have its file"
     );
+}
+
+#[actix_web::test]
+async fn test_folder_copy_quota_failure_does_not_materialize_nested_descendants() {
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "QuotaSource" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let source_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "Nested", "parent_id": source_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    upload_test_file_to_folder!(app, token, source_id);
+    upload_test_file_to_folder!(app, token, source_id);
+
+    let user = user_repo::find_by_username(&db, "testuser")
+        .await
+        .unwrap()
+        .unwrap();
+    let storage_used = user.storage_used;
+    let mut user_active: aster_drive::entities::user::ActiveModel = user.into();
+    user_active.storage_quota = Set(storage_used);
+    user_active.update(&db).await.unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/folders/{source_id}/copy"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 507);
+    let body: Value = test::read_body_json(resp).await;
+    assert!(
+        body["msg"].as_str().unwrap_or_default().contains("quota"),
+        "quota error should be surfaced to the client"
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let root_folders = body["data"]["folders"].as_array().unwrap();
+
+    if let Some(copy_folder) = root_folders
+        .iter()
+        .find(|folder| folder["name"].as_str() == Some("QuotaSource (1)"))
+    {
+        let copy_folder_id = copy_folder["id"].as_i64().unwrap();
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{copy_folder_id}"))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body: Value = test::read_body_json(resp).await;
+        assert!(
+            body["data"]["files"].as_array().unwrap().is_empty(),
+            "quota failure should not leave copied files in the exposed copy shell"
+        );
+        assert!(
+            body["data"]["folders"].as_array().unwrap().is_empty(),
+            "quota failure should not expose nested descendant folders in the copy shell"
+        );
+    }
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/folders/{source_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["files"].as_array().unwrap().len(), 2);
+    assert_eq!(body["data"]["folders"].as_array().unwrap().len(), 1);
+    assert_eq!(body["data"]["folders"][0]["name"], "Nested");
 }
 
 #[actix_web::test]

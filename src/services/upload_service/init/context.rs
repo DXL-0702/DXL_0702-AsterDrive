@@ -96,13 +96,13 @@ async fn resolve_upload_target(
             })
         }
         None => {
-            crate::utils::validate_name(filename)?;
+            let filename = crate::utils::normalize_validate_name(filename)?;
             if let Some(folder_id) = folder_id {
                 workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;
             }
             Ok(ResolvedUploadTarget {
                 folder_id,
-                filename: filename.to_string(),
+                filename,
             })
         }
     }

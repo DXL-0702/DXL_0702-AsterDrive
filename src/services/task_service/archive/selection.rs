@@ -1,6 +1,9 @@
 //! 归档任务子模块：`selection`。
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    path::{Component, Path},
+};
 
 use actix_web::HttpResponse;
 use chrono::Utc;
@@ -247,18 +250,7 @@ pub(super) async fn collect_archive_entries_from_selection_in_scope(
                         file.id
                     ))
                 })?;
-            let relative_dir = if parent_path == &root_path {
-                String::new()
-            } else {
-                parent_path
-                    .strip_prefix(&(root_path.clone() + "/"))
-                    .ok_or_else(|| {
-                        AsterError::internal_error(format!(
-                            "folder path '{parent_path}' is outside root '{root_path}'"
-                        ))
-                    })?
-                    .to_string()
-            };
+            let relative_dir = archive_relative_dir(parent_path, &root_path)?;
             let entry_path = if relative_dir.is_empty() {
                 format!("{archive_root}/{}", file.name)
             } else {
@@ -318,18 +310,44 @@ fn archive_directory_entry_path(
     folder_path: &str,
     root_path: &str,
 ) -> Result<String> {
-    if folder_path == root_path {
+    let relative_dir = archive_relative_dir(folder_path, root_path)?;
+    if relative_dir.is_empty() {
         return Ok(format!("{archive_root}/"));
     }
 
-    let relative_dir = folder_path
-        .strip_prefix(&(root_path.to_string() + "/"))
-        .ok_or_else(|| {
+    Ok(format!("{archive_root}/{relative_dir}/"))
+}
+
+fn archive_relative_dir(folder_path: &str, root_path: &str) -> Result<String> {
+    let relative_path = Path::new(folder_path)
+        .strip_prefix(Path::new(root_path))
+        .map_err(|_| {
             AsterError::internal_error(format!(
                 "folder path '{folder_path}' is outside root '{root_path}'"
             ))
         })?;
-    Ok(format!("{archive_root}/{relative_dir}/"))
+
+    let mut parts = Vec::new();
+    for component in relative_path.components() {
+        match component {
+            Component::Normal(part) => {
+                let part = part.to_str().ok_or_else(|| {
+                    AsterError::internal_error(format!(
+                        "folder path '{folder_path}' contains non-UTF-8 segment"
+                    ))
+                })?;
+                parts.push(part);
+            }
+            Component::CurDir => {}
+            _ => {
+                return Err(AsterError::internal_error(format!(
+                    "folder path '{folder_path}' resolved to invalid relative path"
+                )));
+            }
+        }
+    }
+
+    Ok(parts.join("/"))
 }
 
 fn resolve_archive_name(
@@ -365,4 +383,58 @@ fn default_archive_name(selection: &batch_service::NormalizedSelection) -> Strin
     }
 
     format!("archive-{}", Utc::now().format("%Y%m%d-%H%M%S"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{archive_directory_entry_path, archive_relative_dir};
+
+    #[test]
+    fn archive_relative_dir_returns_empty_for_root_path() {
+        assert_eq!(archive_relative_dir("/root", "/root").unwrap(), "");
+    }
+
+    #[test]
+    fn archive_relative_dir_strips_root_with_path_components() {
+        assert_eq!(
+            archive_relative_dir("/root/nested/child", "/root").unwrap(),
+            "nested/child"
+        );
+    }
+
+    #[test]
+    fn archive_relative_dir_rejects_shared_text_prefix_outside_root() {
+        let error = archive_relative_dir("/rooted/child", "/root").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("folder path '/rooted/child' is outside root '/root'")
+        );
+    }
+
+    #[test]
+    fn archive_directory_entry_path_formats_root_directory() {
+        assert_eq!(
+            archive_directory_entry_path("archive", "/root", "/root").unwrap(),
+            "archive/"
+        );
+    }
+
+    #[test]
+    fn archive_directory_entry_path_formats_nested_directory() {
+        assert_eq!(
+            archive_directory_entry_path("archive", "/root/nested/child", "/root").unwrap(),
+            "archive/nested/child/"
+        );
+    }
+
+    #[test]
+    fn archive_directory_entry_path_rejects_path_outside_root() {
+        let error = archive_directory_entry_path("archive", "/other/place", "/root").unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("folder path '/other/place' is outside root '/root'")
+        );
+    }
 }

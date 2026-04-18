@@ -1348,6 +1348,267 @@ async fn test_folder_service_cycle_detection() {
     assert!(result.is_ok());
 }
 
+#[actix_web::test]
+async fn test_folder_copy_preserves_multi_level_tree_and_storage_used() {
+    let state = common::setup().await;
+
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "copytree",
+        "copytree@example.com",
+        "pass1234",
+    )
+    .await
+    .unwrap();
+
+    let root = aster_drive::services::folder_service::create(&state, user.id, "Tree", None)
+        .await
+        .unwrap();
+    let child_a =
+        aster_drive::services::folder_service::create(&state, user.id, "ChildA", Some(root.id))
+            .await
+            .unwrap();
+    let child_b =
+        aster_drive::services::folder_service::create(&state, user.id, "ChildB", Some(root.id))
+            .await
+            .unwrap();
+    let grandchild = aster_drive::services::folder_service::create(
+        &state,
+        user.id,
+        "Grandchild",
+        Some(child_a.id),
+    )
+    .await
+    .unwrap();
+
+    let root_file_id = store_service_file(&state, user.id, Some(root.id), "root.txt", "root").await;
+    let child_a_file_id =
+        store_service_file(&state, user.id, Some(child_a.id), "child-a.txt", "alpha").await;
+    let child_b_file_id =
+        store_service_file(&state, user.id, Some(child_b.id), "child-b.txt", "bravo").await;
+    let grandchild_file_id = store_service_file(
+        &state,
+        user.id,
+        Some(grandchild.id),
+        "grandchild.txt",
+        "charlie",
+    )
+    .await;
+
+    let storage_before_copy = user_storage_used(&state, user.id).await;
+    let copied = aster_drive::services::folder_service::copy_folder(&state, root.id, user.id, None)
+        .await
+        .unwrap();
+    assert_eq!(copied.name, "Tree (1)");
+    assert_eq!(
+        user_storage_used(&state, user.id).await,
+        storage_before_copy * 2
+    );
+
+    let copied_root_files =
+        aster_drive::db::repository::file_repo::find_by_folder(&state.db, user.id, Some(copied.id))
+            .await
+            .unwrap();
+    assert_eq!(copied_root_files.len(), 1);
+    assert_eq!(copied_root_files[0].name, "root.txt");
+    assert_ne!(copied_root_files[0].id, root_file_id);
+    assert_eq!(
+        copied_root_files[0].blob_id,
+        aster_drive::db::repository::file_repo::find_by_id(&state.db, root_file_id)
+            .await
+            .unwrap()
+            .blob_id
+    );
+
+    let copied_children = aster_drive::db::repository::folder_repo::find_children(
+        &state.db,
+        user.id,
+        Some(copied.id),
+    )
+    .await
+    .unwrap();
+    let copied_child_names: BTreeSet<String> = copied_children
+        .iter()
+        .map(|folder| folder.name.clone())
+        .collect();
+    assert_eq!(
+        copied_child_names,
+        BTreeSet::from(["ChildA".to_string(), "ChildB".to_string()])
+    );
+
+    let copied_child_a = copied_children
+        .iter()
+        .find(|folder| folder.name == "ChildA")
+        .unwrap();
+    let copied_child_b = copied_children
+        .iter()
+        .find(|folder| folder.name == "ChildB")
+        .unwrap();
+
+    let copied_child_a_files = aster_drive::db::repository::file_repo::find_by_folder(
+        &state.db,
+        user.id,
+        Some(copied_child_a.id),
+    )
+    .await
+    .unwrap();
+    assert_eq!(copied_child_a_files.len(), 1);
+    assert_eq!(copied_child_a_files[0].name, "child-a.txt");
+    assert_ne!(copied_child_a_files[0].id, child_a_file_id);
+
+    let copied_child_b_files = aster_drive::db::repository::file_repo::find_by_folder(
+        &state.db,
+        user.id,
+        Some(copied_child_b.id),
+    )
+    .await
+    .unwrap();
+    assert_eq!(copied_child_b_files.len(), 1);
+    assert_eq!(copied_child_b_files[0].name, "child-b.txt");
+    assert_ne!(copied_child_b_files[0].id, child_b_file_id);
+
+    let copied_grandchildren = aster_drive::db::repository::folder_repo::find_children(
+        &state.db,
+        user.id,
+        Some(copied_child_a.id),
+    )
+    .await
+    .unwrap();
+    assert_eq!(copied_grandchildren.len(), 1);
+    assert_eq!(copied_grandchildren[0].name, "Grandchild");
+
+    let copied_grandchild_files = aster_drive::db::repository::file_repo::find_by_folder(
+        &state.db,
+        user.id,
+        Some(copied_grandchildren[0].id),
+    )
+    .await
+    .unwrap();
+    assert_eq!(copied_grandchild_files.len(), 1);
+    assert_eq!(copied_grandchild_files[0].name, "grandchild.txt");
+    assert_ne!(copied_grandchild_files[0].id, grandchild_file_id);
+    assert_eq!(
+        copied_grandchild_files[0].blob_id,
+        aster_drive::db::repository::file_repo::find_by_id(&state.db, grandchild_file_id)
+            .await
+            .unwrap()
+            .blob_id
+    );
+}
+
+#[actix_web::test]
+async fn test_folder_copy_quota_failure_does_not_create_descendants() {
+    use sea_orm::{ActiveModelTrait, Set};
+
+    let state = common::setup().await;
+    let db = state.db.clone();
+
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "copyquota",
+        "copyquota@example.com",
+        "pass1234",
+    )
+    .await
+    .unwrap();
+
+    let root = aster_drive::services::folder_service::create(&state, user.id, "QuotaTree", None)
+        .await
+        .unwrap();
+    let nested =
+        aster_drive::services::folder_service::create(&state, user.id, "Nested", Some(root.id))
+            .await
+            .unwrap();
+
+    let root_file_id =
+        store_service_file(&state, user.id, Some(root.id), "root.txt", "root payload").await;
+    let nested_file_id = store_service_file(
+        &state,
+        user.id,
+        Some(nested.id),
+        "nested.txt",
+        "nested payload",
+    )
+    .await;
+
+    let storage_before_copy = user_storage_used(&state, user.id).await;
+    let mut user_active: aster_drive::entities::user::ActiveModel =
+        aster_drive::db::repository::user_repo::find_by_id(&db, user.id)
+            .await
+            .unwrap()
+            .into();
+    user_active.storage_quota = Set(storage_before_copy);
+    user_active.update(&db).await.unwrap();
+
+    let err = aster_drive::services::folder_service::copy_folder(&state, root.id, user.id, None)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "E032");
+    assert_eq!(
+        user_storage_used(&state, user.id).await,
+        storage_before_copy
+    );
+
+    let copied_root = aster_drive::db::repository::folder_repo::find_by_name_in_parent(
+        &db,
+        user.id,
+        None,
+        "QuotaTree (1)",
+    )
+    .await
+    .unwrap();
+    if let Some(copied_root) = copied_root {
+        let copied_root_files = aster_drive::db::repository::file_repo::find_by_folder(
+            &db,
+            user.id,
+            Some(copied_root.id),
+        )
+        .await
+        .unwrap();
+        assert!(
+            copied_root_files.is_empty(),
+            "quota failure should not leave copied files in the new root shell"
+        );
+        assert!(
+            aster_drive::db::repository::folder_repo::find_by_name_in_parent(
+                &db,
+                user.id,
+                Some(copied_root.id),
+                "Nested",
+            )
+            .await
+            .unwrap()
+            .is_none(),
+            "quota failure should not materialize descendant folders under the copy shell"
+        );
+    }
+
+    let source_root_files =
+        aster_drive::db::repository::file_repo::find_by_folder(&db, user.id, Some(root.id))
+            .await
+            .unwrap();
+    assert_eq!(source_root_files.len(), 1);
+    assert_eq!(source_root_files[0].id, root_file_id);
+
+    let source_nested = aster_drive::db::repository::folder_repo::find_by_name_in_parent(
+        &db,
+        user.id,
+        Some(root.id),
+        "Nested",
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(source_nested.id, nested.id);
+
+    let source_nested_files =
+        aster_drive::db::repository::file_repo::find_by_folder(&db, user.id, Some(nested.id))
+            .await
+            .unwrap();
+    assert_eq!(source_nested_files.len(), 1);
+    assert_eq!(source_nested_files[0].id, nested_file_id);
+}
+
 // ─── Property Service ─────────────────────────────────────────────
 
 #[actix_web::test]
@@ -2460,6 +2721,167 @@ async fn test_team_archive_cleanup_deletes_expired_team_data() {
         .await
         .unwrap()
         .is_empty()
+    );
+}
+
+#[actix_web::test]
+async fn test_team_archive_cleanup_processes_multiple_file_and_folder_batches() {
+    use chrono::{Duration, Utc};
+    use sea_orm::{IntoActiveModel, Set};
+
+    let state = common::setup().await;
+    let owner = aster_drive::services::auth_service::register(
+        &state,
+        "batchcleanup-owner",
+        "batchcleanup-owner@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let team = aster_drive::services::team_service::create_team(
+        &state,
+        owner.id,
+        aster_drive::services::team_service::CreateTeamInput {
+            name: "Batch Cleanup Team".to_string(),
+            description: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    let default_policy_id = aster_drive::db::repository::policy_repo::find_default(&state.db)
+        .await
+        .unwrap()
+        .expect("default policy should exist")
+        .id;
+    let now = Utc::now();
+    let blob = aster_drive::db::repository::file_repo::create_blob(
+        &state.db,
+        aster_drive::entities::file_blob::ActiveModel {
+            hash: Set(format!("batch-cleanup-blob-{}", uuid::Uuid::new_v4())),
+            size: Set(1),
+            policy_id: Set(default_policy_id),
+            storage_path: Set(format!("files/{}", uuid::Uuid::new_v4())),
+            ref_count: Set(1001),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let mut sample_file_ids = Vec::new();
+    for idx in 0..1001 {
+        let file = aster_drive::db::repository::file_repo::create(
+            &state.db,
+            aster_drive::entities::file::ActiveModel {
+                name: Set(format!("batched-file-{idx:04}.txt")),
+                folder_id: Set(None),
+                team_id: Set(Some(team.id)),
+                blob_id: Set(blob.id),
+                size: Set(1),
+                user_id: Set(owner.id),
+                mime_type: Set("text/plain".to_string()),
+                created_at: Set(now),
+                updated_at: Set(now),
+                deleted_at: Set(None),
+                is_locked: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        if idx == 0 || idx == 1000 {
+            sample_file_ids.push(file.id);
+        }
+    }
+
+    let mut sample_folder_ids = Vec::new();
+    for idx in 0..1001 {
+        let folder = aster_drive::db::repository::folder_repo::create(
+            &state.db,
+            aster_drive::entities::folder::ActiveModel {
+                name: Set(format!("batched-folder-{idx:04}")),
+                parent_id: Set(None),
+                team_id: Set(Some(team.id)),
+                user_id: Set(owner.id),
+                policy_id: Set(None),
+                created_at: Set(now),
+                updated_at: Set(now),
+                deleted_at: Set(None),
+                is_locked: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        if idx == 0 || idx == 1000 {
+            aster_drive::db::repository::property_repo::upsert(
+                &state.db,
+                aster_drive::types::EntityType::Folder,
+                folder.id,
+                "aster:",
+                "batch",
+                Some("cleanup"),
+            )
+            .await
+            .unwrap();
+            sample_folder_ids.push(folder.id);
+        }
+    }
+
+    aster_drive::services::team_service::archive_team(&state, team.id, owner.id)
+        .await
+        .unwrap();
+
+    let mut archived_team = aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
+        .await
+        .unwrap()
+        .into_active_model();
+    archived_team.archived_at = Set(Some(Utc::now() - Duration::days(8)));
+    archived_team.updated_at = Set(Utc::now() - Duration::days(8));
+    aster_drive::db::repository::team_repo::update(&state.db, archived_team)
+        .await
+        .unwrap();
+
+    let deleted = aster_drive::services::team_service::cleanup_expired_archived_teams(&state)
+        .await
+        .unwrap();
+    assert_eq!(deleted, 1);
+    assert!(
+        aster_drive::db::repository::team_repo::find_by_id(&state.db, team.id)
+            .await
+            .is_err()
+    );
+    for file_id in sample_file_ids {
+        assert!(
+            aster_drive::db::repository::file_repo::find_by_id(&state.db, file_id)
+                .await
+                .is_err()
+        );
+    }
+    for folder_id in sample_folder_ids {
+        assert!(
+            aster_drive::db::repository::folder_repo::find_by_id(&state.db, folder_id)
+                .await
+                .is_err()
+        );
+        assert!(
+            aster_drive::db::repository::property_repo::find_by_entity(
+                &state.db,
+                aster_drive::types::EntityType::Folder,
+                folder_id,
+            )
+            .await
+            .unwrap()
+            .is_empty()
+        );
+    }
+    assert!(
+        aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, blob.id)
+            .await
+            .is_err()
     );
 }
 

@@ -170,6 +170,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(actix_web::middleware::Compress::default())
             .wrap(aster_drive::api::middleware::request_id::RequestIdMiddleware)
             .wrap(aster_drive::api::middleware::cors::RuntimeCors)
+            .wrap(aster_drive::api::middleware::security_headers::default_headers())
             // payload 限制：chunk 上传最大 10MB，JSON 1MB
             .app_data(actix_web::web::PayloadConfig::new(10 * 1024 * 1024))
             .app_data(actix_web::web::JsonConfig::default().limit(1024 * 1024))

@@ -254,7 +254,7 @@ async fn find_by_name_in_parent_in_scope<C: ConnectionTrait>(
     parent_id: Option<i64>,
     name: &str,
 ) -> Result<Option<folder::Model>> {
-    Folder::find()
+    let exact = Folder::find()
         .filter(apply_parent_condition(
             active_scope_condition(scope),
             parent_id,
@@ -262,7 +262,16 @@ async fn find_by_name_in_parent_in_scope<C: ConnectionTrait>(
         .filter(folder::Column::Name.eq(name))
         .one(db)
         .await
-        .map_err(AsterError::from)
+        .map_err(AsterError::from)?;
+    if exact.is_some() {
+        return Ok(exact);
+    }
+
+    let normalized_name = crate::utils::normalize_name(name);
+    Ok(find_children_in_scope(db, scope, parent_id)
+        .await?
+        .into_iter()
+        .find(|folder| crate::utils::normalize_name(&folder.name) == normalized_name))
 }
 
 pub async fn find_by_name_in_parent<C: ConnectionTrait>(

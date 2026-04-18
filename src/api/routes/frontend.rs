@@ -14,6 +14,22 @@ struct FrontendAssets;
 const CUSTOM_FRONTEND_DIR: &str = "./frontend-panel/dist";
 const FILE_NOT_FOUND_MESSAGE: &str = "File not found";
 
+pub const FRONTEND_CSP: &str = concat!(
+    "default-src 'self'; ",
+    "base-uri 'self'; ",
+    "object-src 'none'; ",
+    "frame-ancestors 'self'; ",
+    "script-src 'self' 'unsafe-inline'; ",
+    "style-src 'self' 'unsafe-inline'; ",
+    "img-src 'self' data: blob: https:; ",
+    "font-src 'self' data:; ",
+    "connect-src 'self' ws: wss:; ",
+    "media-src 'self' blob:; ",
+    "worker-src 'self' blob:; ",
+    "frame-src 'self' https:; ",
+    "manifest-src 'self'"
+);
+
 pub struct FrontendService;
 
 impl FrontendService {
@@ -56,9 +72,11 @@ impl FrontendService {
             .replace(
                 "%ASTERDRIVE_FAVICON_URL%",
                 &escape_html(branding::favicon_url_or_default(&state.runtime_config)),
-            );
+            )
+            .replace("%ASTERDRIVE_CSP%", &escape_html(FRONTEND_CSP.to_string()));
 
         HttpResponse::Ok()
+            .insert_header(("Content-Security-Policy", FRONTEND_CSP))
             .content_type("text/html; charset=utf-8")
             .body(processed)
     }

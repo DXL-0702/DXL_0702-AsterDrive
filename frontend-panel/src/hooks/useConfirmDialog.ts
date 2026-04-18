@@ -20,16 +20,20 @@ export function useConfirmDialog<T = number>(
 		setConfirmId(id);
 	}, []);
 
+	const handleOpenChange = useCallback((open: boolean) => {
+		if (!open) setConfirmId(null);
+	}, []);
+
+	const handleConfirm = useCallback(() => {
+		const id = confirmId;
+		setConfirmId(null);
+		if (id !== null) void onConfirm(id);
+	}, [confirmId, onConfirm]);
+
 	const dialogProps = {
 		open: confirmId !== null,
-		onOpenChange: (open: boolean) => {
-			if (!open) setConfirmId(null);
-		},
-		onConfirm: () => {
-			const id = confirmId;
-			setConfirmId(null);
-			if (id !== null) void onConfirm(id);
-		},
+		onOpenChange: handleOpenChange,
+		onConfirm: handleConfirm,
 		confirmId,
 	};
 

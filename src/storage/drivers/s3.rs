@@ -10,7 +10,7 @@ use crate::utils::numbers;
 use async_trait::async_trait;
 use aws_credential_types::Credentials;
 use aws_sdk_s3::Client;
-use aws_sdk_s3::config::{BehaviorVersion, Region};
+use aws_sdk_s3::config::{BehaviorVersion, Region, timeout::TimeoutConfig};
 use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::{RequestId, RequestIdExt};
 use aws_sdk_s3::presigning::PresigningConfig;
@@ -159,6 +159,7 @@ impl S3Driver {
     pub fn new(policy: &storage_policy::Model) -> Result<Self> {
         let normalized = normalize_s3_endpoint_and_bucket(&policy.endpoint, &policy.bucket)
             .map_err(Self::rewrap_message_as_storage_error)?;
+        let options = crate::types::parse_storage_policy_options(policy.options.as_ref());
 
         let credentials = Credentials::new(
             &policy.access_key,
@@ -168,10 +169,17 @@ impl S3Driver {
             "aster-s3-driver",
         );
 
+        let timeout_config = TimeoutConfig::builder()
+            .connect_timeout(options.effective_s3_connect_timeout())
+            .read_timeout(options.effective_s3_read_timeout())
+            .operation_timeout(options.effective_s3_operation_timeout())
+            .build();
+
         let mut config_builder = aws_sdk_s3::Config::builder()
             .behavior_version(BehaviorVersion::latest())
             .region(Region::new("auto"))
             .credentials_provider(credentials)
+            .timeout_config(timeout_config)
             .force_path_style(true); // MinIO / R2 等需要
 
         // 自定义 endpoint（MinIO、R2、OSS 等）
@@ -886,9 +894,11 @@ mod tests {
     use crate::entities::storage_policy;
     use crate::errors::AsterError;
     use crate::storage::driver::StorageDriver;
+    use crate::types::{StoragePolicyOptions, serialize_storage_policy_options};
     use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
     use aws_smithy_http_client::test_util::capture_request;
     use aws_smithy_types::body::SdkBody;
+    use std::time::Duration;
 
     fn mocked_driver(
         response: http::Response<SdkBody>,
@@ -993,6 +1003,35 @@ mod tests {
             err.message().contains("Cloudflare R2 endpoint"),
             "expected R2 validation context in '{}'",
             err.message()
+        );
+    }
+
+    #[test]
+    fn new_applies_timeout_config_from_policy_options() {
+        let mut policy = sample_policy("https://s3.example.test", "bucket");
+        policy.options = serialize_storage_policy_options(&StoragePolicyOptions {
+            s3_connect_timeout_secs: Some(9),
+            s3_read_timeout_secs: Some(45),
+            s3_operation_timeout_secs: Some(1_200),
+            ..Default::default()
+        })
+        .expect("options should serialize");
+
+        let driver = S3Driver::new(&policy).expect("driver should build with timeout config");
+        let timeout_config = driver
+            .client
+            .config()
+            .timeout_config()
+            .expect("timeout config should be present");
+
+        assert_eq!(
+            timeout_config.connect_timeout(),
+            Some(Duration::from_secs(9))
+        );
+        assert_eq!(timeout_config.read_timeout(), Some(Duration::from_secs(45)));
+        assert_eq!(
+            timeout_config.operation_timeout(),
+            Some(Duration::from_secs(1_200))
         );
     }
 

@@ -8,13 +8,16 @@ use base64::{
     engine::general_purpose::{STANDARD, STANDARD_NO_PAD},
 };
 use sea_orm::ConnectionTrait;
-use sha2::{Digest, Sha256};
 
 use crate::db::repository::file_repo;
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
-use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
+use crate::services::{
+    file_service,
+    workspace_storage_service::{self, WorkspaceStorageScope},
+};
+use crate::utils::numbers::u64_to_i64;
 
 use super::session::{WopiAccessTokenPayload, build_public_wopi_src, create_access_token_for_file};
 use super::types::{WOPI_FILE_NAME_MAX_LEN, WopiPutRelativeResponse};
@@ -33,27 +36,58 @@ pub(crate) struct ParsedPutRelativeRequest {
     pub(crate) target_mode: PutRelativeTargetMode,
 }
 
+pub(crate) struct StoreRelativeTargetParams<'a> {
+    pub scope: WorkspaceStorageScope,
+    pub folder_id: Option<i64>,
+    pub filename: &'a str,
+    pub existing_file_id: Option<i64>,
+    pub payload: &'a mut actix_web::web::Payload,
+    pub declared_size: Option<i64>,
+    pub exact_name: bool,
+}
+
+impl<'a> StoreRelativeTargetParams<'a> {
+    pub(crate) fn new(
+        scope: WorkspaceStorageScope,
+        folder_id: Option<i64>,
+        filename: &'a str,
+        payload: &'a mut actix_web::web::Payload,
+    ) -> Self {
+        Self {
+            scope,
+            folder_id,
+            filename,
+            existing_file_id: None,
+            payload,
+            declared_size: None,
+            exact_name: false,
+        }
+    }
+
+    pub(crate) fn declared_size(mut self, declared_size: Option<i64>) -> Self {
+        self.declared_size = declared_size;
+        self
+    }
+
+    pub(crate) fn overwrite(mut self, existing_file_id: i64) -> Self {
+        self.existing_file_id = Some(existing_file_id);
+        self
+    }
+
+    pub(crate) fn exact_name(mut self) -> Self {
+        self.exact_name = true;
+        self
+    }
+}
+
 pub(crate) fn parse_put_relative_request(
     source_file_name: &str,
     suggested_target: Option<&str>,
     relative_target: Option<&str>,
     overwrite_relative_target: Option<&str>,
-    size_header: Option<&str>,
-    body_len: usize,
 ) -> Result<ParsedPutRelativeRequest> {
     // WOPI 规范要求 SuggestedTarget 和 RelativeTarget 二选一。
     // 这里先把 header 级别的协议约束收口，再交给后续逻辑处理实际文件操作。
-    if let Some(size_header) = size_header {
-        let declared_size = size_header.parse::<usize>().map_aster_err_with(|| {
-            AsterError::validation_error("X-WOPI-Size header must be a non-negative integer")
-        })?;
-        if declared_size != body_len {
-            return Err(AsterError::validation_error(
-                "X-WOPI-Size header does not match request body length",
-            ));
-        }
-    }
-
     match (suggested_target, relative_target) {
         (Some(_), Some(_)) => Err(AsterError::validation_error(
             "PUT_RELATIVE requires exactly one of X-WOPI-SuggestedTarget or X-WOPI-RelativeTarget",
@@ -81,6 +115,17 @@ pub(crate) fn parse_put_relative_request(
     }
 }
 
+pub(crate) fn parse_wopi_size_header(value: Option<&str>) -> Result<Option<i64>> {
+    let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+
+    let parsed = value.parse::<u64>().map_aster_err_with(|| {
+        AsterError::validation_error("X-WOPI-Size header must be a non-negative integer")
+    })?;
+    Ok(Some(u64_to_i64(parsed, "wopi size header")?))
+}
+
 fn parse_overwrite_relative_target(raw: Option<&str>) -> Result<bool> {
     let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
         return Ok(false);
@@ -98,8 +143,7 @@ fn parse_overwrite_relative_target(raw: Option<&str>) -> Result<bool> {
 }
 
 pub(crate) fn normalize_relative_target_name(value: &str) -> Result<String> {
-    crate::utils::validate_name(value)?;
-    Ok(value.to_string())
+    crate::utils::normalize_validate_name(value)
 }
 
 pub(crate) fn normalize_requested_rename_target(
@@ -129,8 +173,7 @@ fn build_requested_rename_filename(source_file_name: &str, requested_name: &str)
     }
 
     let full_name = rename_target_name(source_file_name, requested_name);
-    crate::utils::validate_name(&full_name)?;
-    Ok(full_name)
+    crate::utils::normalize_validate_name(&full_name)
 }
 
 fn sanitize_requested_rename_name(source_file_name: &str, requested_name: &str) -> Option<String> {
@@ -213,8 +256,8 @@ fn sanitize_suggested_target_name(candidate: &str, fallback: &str) -> String {
         sanitized = sanitized.trim().trim_end_matches('.').to_string();
     }
 
-    if crate::utils::validate_name(&sanitized).is_ok() {
-        sanitized
+    if let Ok(normalized) = crate::utils::normalize_validate_name(&sanitized) {
+        normalized
     } else {
         fallback.to_string()
     }
@@ -284,141 +327,79 @@ pub(crate) async fn resolve_available_rename_target(
     suggest_available_relative_target(state, scope, folder_id, requested_name).await
 }
 
-pub(crate) async fn store_relative_target_from_bytes(
+pub(crate) async fn store_relative_target_from_stream(
     state: &AppState,
-    scope: WorkspaceStorageScope,
-    folder_id: Option<i64>,
-    filename: &str,
-    existing_file_id: Option<i64>,
-    body: &actix_web::web::Bytes,
-    exact_name: bool,
+    params: StoreRelativeTargetParams<'_>,
 ) -> Result<file::Model> {
-    let size = i64::try_from(body.len())
-        .map_aster_err_with(|| AsterError::validation_error("PUT_RELATIVE body is too large"))?;
-    let resolved_policy =
-        workspace_storage_service::resolve_policy_for_size(state, scope, folder_id, size).await?;
+    let StoreRelativeTargetParams {
+        scope,
+        folder_id,
+        filename,
+        existing_file_id,
+        payload,
+        declared_size,
+        exact_name,
+    } = params;
+    let resolved_policy_hint = match declared_size {
+        Some(size) => Some(
+            workspace_storage_service::resolve_policy_for_size(state, scope, folder_id, size)
+                .await?,
+        ),
+        None => None,
+    };
+    let streamed = file_service::stream_request_body_to_temp_upload(
+        state,
+        payload,
+        resolved_policy_hint,
+        declared_size,
+    )
+    .await?;
+    let file_service::StreamedTempUpload {
+        temp_path,
+        size,
+        resolved_policy,
+        precomputed_hash,
+    } = streamed;
 
-    if resolved_policy.driver_type == crate::types::DriverType::Local {
-        // Local + PUT_RELATIVE：先把 body 落到 staging，再复用统一 store_from_temp 语义，
-        // 这样 dedup、覆盖、配额、版本等规则都和普通写入保持一致。
-        let should_dedup = workspace_storage_service::local_content_dedup_enabled(&resolved_policy);
-        let staging_token = format!("{}.upload", uuid::Uuid::new_v4());
-        let staging_path =
-            crate::storage::drivers::local::upload_staging_path(&resolved_policy, &staging_token)
-                .map_aster_err_ctx(
-                "resolve local staging path",
-                AsterError::storage_driver_error,
-            )?;
-        if let Some(parent) = staging_path.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_aster_err(AsterError::storage_driver_error)?;
-        }
-        tokio::fs::write(&staging_path, body)
-            .await
-            .map_aster_err(AsterError::storage_driver_error)?;
-
-        let precomputed_hash = should_dedup.then(|| {
-            let mut hasher = Sha256::new();
-            hasher.update(body);
-            crate::utils::hash::sha256_digest_to_hex(&hasher.finalize())
-        });
-        let staging_path = staging_path.to_string_lossy().into_owned();
-        let result = if exact_name {
-            workspace_storage_service::store_from_temp_exact_name_with_hints(
-                state,
-                workspace_storage_service::StoreFromTempParams {
-                    scope,
-                    folder_id,
-                    filename,
-                    temp_path: &staging_path,
-                    size,
-                    existing_file_id,
-                    skip_lock_check: existing_file_id.is_some(),
-                },
-                workspace_storage_service::StoreFromTempHints {
-                    resolved_policy: Some(resolved_policy),
-                    precomputed_hash: precomputed_hash.as_deref(),
-                },
-            )
-            .await
-        } else {
-            workspace_storage_service::store_from_temp_with_hints(
-                state,
-                workspace_storage_service::StoreFromTempParams {
-                    scope,
-                    folder_id,
-                    filename,
-                    temp_path: &staging_path,
-                    size,
-                    existing_file_id,
-                    skip_lock_check: existing_file_id.is_some(),
-                },
-                workspace_storage_service::StoreFromTempHints {
-                    resolved_policy: Some(resolved_policy),
-                    precomputed_hash: precomputed_hash.as_deref(),
-                },
-            )
-            .await
-        };
-        crate::utils::cleanup_temp_file(&staging_path).await;
-        result
+    let result = if exact_name {
+        workspace_storage_service::store_from_temp_exact_name_with_hints(
+            state,
+            workspace_storage_service::StoreFromTempParams {
+                scope,
+                folder_id,
+                filename,
+                temp_path: &temp_path,
+                size,
+                existing_file_id,
+                skip_lock_check: existing_file_id.is_some(),
+            },
+            workspace_storage_service::StoreFromTempHints {
+                resolved_policy,
+                precomputed_hash: precomputed_hash.as_deref(),
+            },
+        )
+        .await
     } else {
-        // 非 local 路径没有“先写 staging 文件再 rename”的优势，直接写 runtime temp，
-        // 然后走统一的 store_from_temp* 入口。
-        let temp_dir = &state.config.server.temp_dir;
-        let runtime_temp_dir = crate::utils::paths::runtime_temp_dir(temp_dir);
-        let temp_path = crate::utils::paths::runtime_temp_file_path(
-            temp_dir,
-            &uuid::Uuid::new_v4().to_string(),
-        );
-        tokio::fs::create_dir_all(&runtime_temp_dir)
-            .await
-            .map_aster_err(AsterError::storage_driver_error)?;
-        tokio::fs::write(&temp_path, body)
-            .await
-            .map_aster_err(AsterError::storage_driver_error)?;
-
-        let result = if exact_name {
-            workspace_storage_service::store_from_temp_exact_name_with_hints(
-                state,
-                workspace_storage_service::StoreFromTempParams {
-                    scope,
-                    folder_id,
-                    filename,
-                    temp_path: &temp_path,
-                    size,
-                    existing_file_id,
-                    skip_lock_check: existing_file_id.is_some(),
-                },
-                workspace_storage_service::StoreFromTempHints {
-                    resolved_policy: Some(resolved_policy),
-                    precomputed_hash: None,
-                },
-            )
-            .await
-        } else {
-            workspace_storage_service::store_from_temp_with_hints(
-                state,
-                workspace_storage_service::StoreFromTempParams {
-                    scope,
-                    folder_id,
-                    filename,
-                    temp_path: &temp_path,
-                    size,
-                    existing_file_id,
-                    skip_lock_check: existing_file_id.is_some(),
-                },
-                workspace_storage_service::StoreFromTempHints {
-                    resolved_policy: Some(resolved_policy),
-                    precomputed_hash: None,
-                },
-            )
-            .await
-        };
-        crate::utils::cleanup_temp_file(&temp_path).await;
-        result
-    }
+        workspace_storage_service::store_from_temp_with_hints(
+            state,
+            workspace_storage_service::StoreFromTempParams {
+                scope,
+                folder_id,
+                filename,
+                temp_path: &temp_path,
+                size,
+                existing_file_id,
+                skip_lock_check: existing_file_id.is_some(),
+            },
+            workspace_storage_service::StoreFromTempHints {
+                resolved_policy,
+                precomputed_hash: precomputed_hash.as_deref(),
+            },
+        )
+        .await
+    };
+    crate::utils::cleanup_temp_file(&temp_path).await;
+    result
 }
 
 pub(crate) async fn build_put_relative_response(

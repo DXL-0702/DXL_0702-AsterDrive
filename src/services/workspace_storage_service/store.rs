@@ -123,7 +123,7 @@ pub(crate) async fn create_empty(
     if let Some(folder_id) = folder_id {
         verify_folder_access(state, scope, folder_id).await?;
     }
-    crate::utils::validate_name(filename)?;
+    let filename = crate::utils::normalize_validate_name(filename)?;
 
     const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     const EMPTY_SIZE: i64 = 0;
@@ -159,7 +159,7 @@ pub(crate) async fn create_empty(
         blob
     };
 
-    let created = create_new_file_from_blob(&txn, scope, folder_id, filename, &blob, now).await?;
+    let created = create_new_file_from_blob(&txn, scope, folder_id, &filename, &blob, now).await?;
     crate::db::transaction::commit(txn).await?;
     storage_change_service::publish(
         state,
@@ -208,7 +208,7 @@ pub(crate) async fn store_preuploaded_nondedup(
         "storing file from preuploaded blob"
     );
 
-    crate::utils::validate_name(filename)?;
+    let filename = crate::utils::normalize_validate_name(filename)?;
 
     let driver = state.driver_registry.get_driver(policy)?;
 
@@ -254,7 +254,7 @@ pub(crate) async fn store_preuploaded_nondedup(
         check_quota(db, scope, storage_delta).await?;
     }
 
-    let mime = mime_guess::from_path(filename)
+    let mime = mime_guess::from_path(&filename)
         .first_or_octet_stream()
         .to_string();
 
@@ -299,7 +299,7 @@ pub(crate) async fn store_preuploaded_nondedup(
             updated
         } else {
             let created =
-                create_new_file_from_blob(&txn, scope, folder_id, filename, &blob, now).await?;
+                create_new_file_from_blob(&txn, scope, folder_id, &filename, &blob, now).await?;
             if storage_delta != 0 {
                 update_storage_used(&txn, scope, storage_delta).await?;
             }

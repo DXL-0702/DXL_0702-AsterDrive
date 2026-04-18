@@ -487,6 +487,41 @@ async fn test_audit_log_recorded_on_share_config_and_admin_user_actions_after_re
 }
 
 #[actix_web::test]
+async fn test_audit_log_recorded_on_admin_force_delete_user() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let managed_user_id = admin_create_user!(
+        app,
+        token,
+        "forcedeleteuser",
+        "forcedeleteuser@example.com",
+        "password123"
+    );
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/admin/users/{managed_user_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let items = fetch_audit_items!(app, token);
+    let delete_entry = assert_action_present(&items, "admin_force_delete_user");
+    assert_eq!(delete_entry["entity_type"], "user");
+    assert_eq!(delete_entry["entity_name"], "forcedeleteuser");
+    let details = delete_entry["details"]
+        .as_str()
+        .expect("force delete audit details should be serialized JSON");
+    assert!(details.contains("\"file_count\":0"));
+    assert!(details.contains("\"folder_count\":0"));
+    assert!(details.contains("\"share_count\":0"));
+}
+
+#[actix_web::test]
 async fn test_audit_log_recorded_on_admin_team_lifecycle() {
     let state = common::setup().await;
     let app = create_test_app!(state);

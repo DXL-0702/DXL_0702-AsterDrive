@@ -71,7 +71,32 @@ pub mod fallback {
     use super::*;
     use crate::errors::AsterError;
     use crate::storage::MapAsterErr;
+    use std::path::{Path, PathBuf};
     use tokio::io::AsyncWriteExt;
+
+    struct TempFileGuard {
+        path: PathBuf,
+    }
+
+    impl TempFileGuard {
+        fn new(path: PathBuf) -> Self {
+            Self { path }
+        }
+
+        fn path(&self) -> &Path {
+            &self.path
+        }
+    }
+
+    impl Drop for TempFileGuard {
+        fn drop(&mut self) {
+            if let Err(error) = std::fs::remove_file(&self.path)
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                tracing::warn!(path = ?self.path, "failed to cleanup put_reader temp file: {error}");
+            }
+        }
+    }
 
     /// 基于临时文件的 put_reader 通用实现
     pub async fn put_reader_with_temp_file<D>(
@@ -85,14 +110,14 @@ pub mod fallback {
     {
         // 创建临时文件
         let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join(format!(
+        let temp_path = TempFileGuard::new(temp_dir.join(format!(
             "aster_put_reader_{}_{}",
             std::process::id(),
             rand::random::<u64>()
-        ));
+        )));
 
         // 流式写入临时文件
-        let mut file = tokio::fs::File::create(&temp_path)
+        let mut file = tokio::fs::File::create(temp_path.path())
             .await
             .map_aster_err(AsterError::storage_driver_error)?;
 
@@ -108,22 +133,111 @@ pub mod fallback {
 
         // 使用驱动的 put_file 能力上传（如果驱动实现了 StreamUploadDriver）
         // 否则退化为 put + read file
-        let result = if let Some(stream_driver) = driver.as_stream_upload() {
-            let temp_path_str = temp_path.to_str().ok_or_else(|| {
+
+        if let Some(stream_driver) = driver.as_stream_upload() {
+            let temp_path_str = temp_path.path().to_str().ok_or_else(|| {
                 AsterError::storage_driver_error("temp upload path is not valid UTF-8")
             })?;
             stream_driver.put_file(storage_path, temp_path_str).await
         } else {
             // 终极 fallback：读文件到内存再 put
-            let data = tokio::fs::read(&temp_path)
+            let data = tokio::fs::read(temp_path.path())
                 .await
                 .map_aster_err(AsterError::storage_driver_error)?;
             driver.put(storage_path, &data).await
-        };
+        }
+    }
+}
 
-        // 清理临时文件（忽略错误）
-        let _ = tokio::fs::remove_file(&temp_path).await;
+#[cfg(test)]
+mod tests {
+    use super::fallback::put_reader_with_temp_file;
+    use crate::errors::Result;
+    use crate::storage::driver::{BlobMetadata, StorageDriver};
+    use async_trait::async_trait;
+    use std::collections::HashSet;
+    use std::path::PathBuf;
+    use std::pin::Pin;
+    use std::task::{Context, Poll};
+    use tokio::io::{AsyncRead, ReadBuf};
 
-        result
+    struct NoopDriver;
+
+    #[async_trait]
+    impl StorageDriver for NoopDriver {
+        async fn put(&self, _path: &str, _data: &[u8]) -> Result<String> {
+            unreachable!("put should not be called when temp write fails")
+        }
+
+        async fn get(&self, _path: &str) -> Result<Vec<u8>> {
+            unreachable!()
+        }
+
+        async fn get_stream(&self, _path: &str) -> Result<Box<dyn AsyncRead + Unpin + Send>> {
+            unreachable!()
+        }
+
+        async fn delete(&self, _path: &str) -> Result<()> {
+            unreachable!()
+        }
+
+        async fn exists(&self, _path: &str) -> Result<bool> {
+            unreachable!()
+        }
+
+        async fn metadata(&self, _path: &str) -> Result<BlobMetadata> {
+            unreachable!()
+        }
+    }
+
+    struct FailingReader {
+        emitted_chunk: bool,
+    }
+
+    impl AsyncRead for FailingReader {
+        fn poll_read(
+            mut self: Pin<&mut Self>,
+            _cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<std::io::Result<()>> {
+            if !self.emitted_chunk {
+                self.emitted_chunk = true;
+                buf.put_slice(b"partial");
+                Poll::Ready(Ok(()))
+            } else {
+                Poll::Ready(Err(std::io::Error::other("boom")))
+            }
+        }
+    }
+
+    fn collect_put_reader_temp_files() -> HashSet<PathBuf> {
+        let prefix = format!("aster_put_reader_{}_", std::process::id());
+        std::fs::read_dir(std::env::temp_dir())
+            .expect("temp dir should be readable")
+            .filter_map(|entry| {
+                let path = entry.ok()?.path();
+                let name = path.file_name()?.to_str()?;
+                name.starts_with(&prefix).then_some(path)
+            })
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn put_reader_with_temp_file_cleans_up_temp_file_on_copy_error() {
+        let before = collect_put_reader_temp_files();
+
+        let error = put_reader_with_temp_file(
+            &NoopDriver,
+            "broken-upload.bin",
+            Box::new(FailingReader {
+                emitted_chunk: false,
+            }),
+            7,
+        )
+        .await
+        .expect_err("copy failure should surface as error");
+
+        assert!(error.message().contains("write temp file"));
+        assert_eq!(collect_put_reader_temp_files(), before);
     }
 }

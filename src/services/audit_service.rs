@@ -26,6 +26,12 @@ pub struct AuditContext {
     pub user_agent: Option<String>,
 }
 
+/// 从 HttpRequest 提取的请求级审计元信息。
+pub struct AuditRequestInfo {
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
 pub struct AuditLogFilterQuery {
@@ -129,6 +135,16 @@ pub struct AdminUpdateUserDetails {
     pub status: UserStatus,
     pub storage_quota: i64,
     pub policy_group_id: Option<i64>,
+}
+
+#[derive(Serialize)]
+pub struct AdminForceDeleteUserDetails {
+    pub file_count: usize,
+    pub folder_count: usize,
+    pub share_count: u64,
+    pub webdav_account_count: u64,
+    pub upload_session_count: u64,
+    pub lock_count: u64,
 }
 
 #[derive(Serialize)]
@@ -266,19 +282,30 @@ impl AuditContext {
     }
 
     pub fn from_request(req: &HttpRequest, claims: &Claims) -> Self {
-        let ip_address = req
-            .connection_info()
-            .realip_remote_addr()
-            .map(|s| s.to_string());
-        let user_agent = req
-            .headers()
-            .get("user-agent")
-            .and_then(|v| v.to_str().ok())
-            .map(|s| s.to_string());
+        AuditRequestInfo::from_request(req).to_context(claims.user_id)
+    }
+}
+
+impl AuditRequestInfo {
+    pub fn from_request(req: &HttpRequest) -> Self {
         Self {
-            user_id: claims.user_id,
-            ip_address,
-            user_agent,
+            ip_address: req
+                .connection_info()
+                .realip_remote_addr()
+                .map(|s| s.to_string()),
+            user_agent: req
+                .headers()
+                .get("user-agent")
+                .and_then(|v| v.to_str().ok())
+                .map(|s| s.to_string()),
+        }
+    }
+
+    pub fn to_context(&self, user_id: i64) -> AuditContext {
+        AuditContext {
+            user_id,
+            ip_address: self.ip_address.clone(),
+            user_agent: self.user_agent.clone(),
         }
     }
 }
@@ -465,6 +492,7 @@ mod tests {
     fn audit_action_strings_match_existing_contract() {
         let cases = [
             (AuditAction::AdminCreateUser, "admin_create_user"),
+            (AuditAction::AdminForceDeleteUser, "admin_force_delete_user"),
             (AuditAction::AdminCreateTeam, "admin_create_team"),
             (
                 AuditAction::AdminCreatePolicyGroup,

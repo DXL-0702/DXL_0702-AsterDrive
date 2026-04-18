@@ -14,6 +14,7 @@ use crate::services::workspace_storage_service::WorkspaceStorageScope;
 use crate::types::EntityType;
 
 const DEFAULT_TEAM_ARCHIVE_RETENTION_DAYS: i64 = 7;
+const TEAM_ARCHIVE_BATCH_SIZE: u64 = 1_000;
 
 fn load_team_archive_retention_days(state: &AppState) -> i64 {
     let Some(raw) = state.runtime_config.get("team_archive_retention_days") else {
@@ -96,21 +97,62 @@ async fn clear_team_locks<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<()
     Ok(())
 }
 
+async fn purge_archived_team_files(state: &AppState, team: &team::Model) -> Result<()> {
+    let scope = WorkspaceStorageScope::Team {
+        team_id: team.id,
+        actor_user_id: team.created_by,
+    };
+    let mut after_file_id = None;
+
+    loop {
+        let files = file_repo::find_all_by_team_paginated(
+            &state.db,
+            team.id,
+            after_file_id,
+            TEAM_ARCHIVE_BATCH_SIZE,
+        )
+        .await?;
+        if files.is_empty() {
+            break;
+        }
+
+        after_file_id = files.last().map(|file| file.id);
+        crate::services::file_service::batch_purge_in_scope(state, scope, files).await?;
+    }
+
+    Ok(())
+}
+
+async fn delete_archived_team_folders<C: ConnectionTrait>(db: &C, team_id: i64) -> Result<()> {
+    let mut after_folder_id = None;
+
+    loop {
+        let folders = folder_repo::find_all_by_team_paginated(
+            db,
+            team_id,
+            after_folder_id,
+            TEAM_ARCHIVE_BATCH_SIZE,
+        )
+        .await?;
+        if folders.is_empty() {
+            break;
+        }
+
+        after_folder_id = folders.last().map(|folder| folder.id);
+        let folder_ids: Vec<i64> = folders.into_iter().map(|folder| folder.id).collect();
+        property_repo::delete_all_for_entities(db, EntityType::Folder, &folder_ids).await?;
+        folder_repo::delete_many(db, &folder_ids).await?;
+    }
+
+    Ok(())
+}
+
 async fn force_delete_archived_team(state: &AppState, team: team::Model) -> Result<()> {
     let team_id = team.id;
     let upload_sessions = upload_session_repo::find_by_team(&state.db, team_id).await?;
     cleanup_team_upload_sessions(state, &upload_sessions).await?;
 
-    let all_files = file_repo::find_all_by_team(&state.db, team_id).await?;
-    crate::services::file_service::batch_purge_in_scope(
-        state,
-        WorkspaceStorageScope::Team {
-            team_id,
-            actor_user_id: team.created_by,
-        },
-        all_files,
-    )
-    .await?;
+    purge_archived_team_files(state, &team).await?;
 
     let txn = crate::db::transaction::begin(&state.db).await?;
     team_repo::lock_archived_by_id(&txn, team_id).await?;
@@ -118,10 +160,7 @@ async fn force_delete_archived_team(state: &AppState, team: team::Model) -> Resu
     clear_team_locks(&txn, team_id).await?;
     share_repo::delete_all_by_team(&txn, team_id).await?;
 
-    let all_folders = folder_repo::find_all_by_team(&txn, team_id).await?;
-    let folder_ids: Vec<i64> = all_folders.iter().map(|folder| folder.id).collect();
-    property_repo::delete_all_for_entities(&txn, EntityType::Folder, &folder_ids).await?;
-    folder_repo::delete_many(&txn, &folder_ids).await?;
+    delete_archived_team_folders(&txn, team_id).await?;
     team_repo::delete(&txn, team_id).await?;
     crate::db::transaction::commit(txn).await?;
 

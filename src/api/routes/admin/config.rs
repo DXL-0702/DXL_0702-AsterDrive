@@ -163,31 +163,20 @@ pub async fn execute_config_action(
     body: web::Json<ExecuteConfigActionReq>,
 ) -> Result<HttpResponse> {
     let key = path.into_inner();
-    let action_result = config_service::execute_action(
+    let ctx = audit_service::AuditContext::from_request(&req, &claims);
+    let action_result = config_service::execute_action_with_audit(
         &state,
-        &key,
-        body.action,
-        claims.user_id,
-        body.target_email.as_deref(),
-        body.value.as_deref(),
-        body.discovery_url.as_deref(),
+        config_service::ExecuteConfigActionInput {
+            key: &key,
+            action: body.action,
+            actor_user_id: claims.user_id,
+            target_email: body.target_email.as_deref(),
+            value: body.value.as_deref(),
+            discovery_url: body.discovery_url.as_deref(),
+        },
+        &ctx,
     )
     .await?;
-
-    let ctx = audit_service::AuditContext::from_request(&req, &claims);
-    audit_service::log(
-        &state,
-        &ctx,
-        audit_service::AuditAction::ConfigActionExecute,
-        None,
-        None,
-        Some(&key),
-        audit_service::details(audit_service::ConfigActionDetails {
-            action: body.action.as_str(),
-            target_email: action_result.target_email.as_deref(),
-        }),
-    )
-    .await;
 
     Ok(
         HttpResponse::Ok().json(ApiResponse::ok(ExecuteConfigActionResp {

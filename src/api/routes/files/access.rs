@@ -6,10 +6,8 @@ use crate::api::routes::team_scope;
 use crate::errors::Result;
 use crate::runtime::AppState;
 use crate::services::{
-    audit_service::{self, AuditContext},
-    auth_service::Claims,
-    direct_link_service, file_service, preview_link_service, thumbnail_service, wopi_service,
-    workspace_models::FileInfo,
+    audit_service::AuditContext, auth_service::Claims, direct_link_service, file_service,
+    preview_link_service, thumbnail_service, wopi_service, workspace_models::FileInfo,
     workspace_storage_service::WorkspaceStorageScope,
 };
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -420,18 +418,10 @@ pub(crate) async fn download_response(
         .headers()
         .get("If-None-Match")
         .and_then(|value| value.to_str().ok());
-    let outcome = file_service::download_in_scope(state, scope, file_id, if_none_match).await?;
     let ctx = AuditContext::from_request(req, claims);
-    audit_service::log(
-        state,
-        &ctx,
-        audit_service::AuditAction::FileDownload,
-        Some("file"),
-        Some(file_id),
-        None,
-        None,
-    )
-    .await;
+    let outcome =
+        file_service::download_in_scope_with_audit(state, scope, file_id, if_none_match, &ctx)
+            .await?;
     Ok(file_service::outcome_to_response(outcome))
 }
 

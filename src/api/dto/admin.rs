@@ -80,6 +80,7 @@ pub struct CreatePolicyReq {
     pub chunk_size: Option<i64>,
     pub is_default: Option<bool>,
     pub allowed_types: Option<Vec<String>>,
+    #[validate(nested)]
     pub options: Option<crate::types::StoragePolicyOptions>,
 }
 
@@ -100,6 +101,7 @@ pub struct PatchPolicyReq {
     pub chunk_size: Option<i64>,
     pub is_default: Option<bool>,
     pub allowed_types: Option<Vec<String>>,
+    #[validate(nested)]
     pub options: Option<crate::types::StoragePolicyOptions>,
 }
 

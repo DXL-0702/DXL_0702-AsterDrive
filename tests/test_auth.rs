@@ -175,6 +175,24 @@ where
     }
 }
 
+async fn expect_sse_stream_end<B>(body: &mut B)
+where
+    B: MessageBody + Unpin,
+    B::Error: std::fmt::Debug,
+{
+    let frame = tokio::time::timeout(
+        Duration::from_secs(2),
+        std::future::poll_fn(|cx| std::pin::Pin::new(&mut *body).poll_next(cx)),
+    )
+    .await
+    .expect("timed out waiting for SSE stream to close");
+
+    assert!(
+        frame.is_none(),
+        "SSE stream should close after auth revalidation fails"
+    );
+}
+
 #[actix_web::test]
 async fn test_register_and_login() {
     let state = common::setup().await;
@@ -1505,6 +1523,122 @@ async fn test_storage_events_stream_hides_team_frames_from_non_members() {
     );
 
     let _file_id = upload_test_file_named!(app, outsider_token, "outsider-visible.txt");
+    let event = read_next_sse_json(&mut body).await;
+    assert_eq!(event["kind"], "file.created");
+    assert_eq!(event["workspace"]["kind"], "personal");
+    assert_eq!(event["root_affected"], true);
+}
+
+#[actix_web::test]
+async fn test_storage_events_stream_closes_after_session_revocation() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (admin_token, _) = register_and_login!(app);
+    let user_id = admin_create_user_with_credentials!(
+        app,
+        admin_token,
+        "sse_revoke_user",
+        "sse_revoke_user@example.com",
+        "password123"
+    );
+    let revoked_token = login_user_with_credentials!(app, "sse_revoke_user", "password123");
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/events/storage")
+        .insert_header(("Cookie", common::access_cookie_header(&revoked_token)))
+        .insert_header(common::csrf_header_for(&revoked_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let (_req, resp) = resp.into_parts();
+    let mut body = resp.into_body();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/admin/users/{user_id}/sessions/revoke"))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let fresh_token = login_user_with_credentials!(app, "sse_revoke_user", "password123");
+    let _file_id = upload_test_file_named!(app, fresh_token, "post-revoke-personal.txt");
+
+    expect_sse_stream_end(&mut body).await;
+}
+
+#[actix_web::test]
+async fn test_storage_events_stream_refreshes_team_visibility_after_member_removal() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (owner_token, _) = register_and_login!(app);
+    let member_id = admin_create_user_with_credentials!(
+        app,
+        owner_token,
+        "formermember",
+        "formermember@example.com",
+        "password123"
+    );
+    let member_token = login_user_with_credentials!(app, "formermember", "password123");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .set_json(serde_json::json!({ "name": "Removal Visibility Team" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/v1/teams/{team_id}/members"))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .set_json(serde_json::json!({ "user_id": member_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/events/storage")
+        .insert_header(("Cookie", common::access_cookie_header(&member_token)))
+        .insert_header(common::csrf_header_for(&member_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let (_req, resp) = resp.into_parts();
+    let mut body = resp.into_body();
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/teams/{team_id}/members/{member_id}"))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = team_upload_request!(
+        team_id,
+        &owner_token,
+        "removed-member-hidden.txt",
+        "team event"
+    );
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let hidden_event = read_next_sse_json_with_timeout(&mut body, Duration::from_millis(500)).await;
+    assert!(
+        hidden_event.is_none(),
+        "removed member should not receive team storage event: {hidden_event:?}"
+    );
+
+    let _file_id = upload_test_file_named!(app, member_token, "formermember-visible.txt");
     let event = read_next_sse_json(&mut body).await;
     assert_eq!(event["kind"], "file.created");
     assert_eq!(event["workspace"]["kind"], "personal");

@@ -51,9 +51,10 @@ pub(crate) async fn update_in_scope(
         workspace_storage_service::verify_folder_access(state, scope, fid).await?;
     }
 
-    if let Some(ref n) = name {
-        crate::utils::validate_name(n)?;
-    }
+    let name = match name {
+        Some(name) => Some(crate::utils::normalize_validate_name(&name)?),
+        None => None,
+    };
 
     let final_name = name.clone().unwrap_or_else(|| f.name.clone());
     let existing = match scope {

@@ -6,6 +6,8 @@ mod common;
 use actix_web::test;
 use serde_json::Value;
 
+const OVER_LIMIT_BODY_SIZE: usize = 10 * 1024 * 1024 + 1;
+
 macro_rules! register_user {
     ($app:expr, $db:expr, $mail_sender:expr, $username:expr, $email:expr, $password:expr) => {{
         let req = test::TestRequest::post()
@@ -1141,6 +1143,69 @@ async fn test_team_space_content_versions_and_locks() {
     assert_eq!(resp.status(), 200);
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["data"]["name"], "Renamed Docs");
+}
+
+#[actix_web::test]
+async fn test_team_update_content_allows_body_larger_than_global_payload_limit() {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let mail_sender = state.mail_sender.clone();
+    let app = create_test_app!(state);
+
+    let _owner_id = register_user!(
+        app,
+        db,
+        mail_sender,
+        "spaceownlarge",
+        "spaceownlarge@example.com",
+        "password123"
+    );
+    let owner_token = login_user!(app, "spaceownlarge", "password123");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/teams")
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .set_json(serde_json::json!({ "name": "Large Update Team" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let team_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = multipart_request!(
+        &format!("/api/v1/teams/{team_id}/files/upload"),
+        &owner_token,
+        "large-team.txt",
+        "seed",
+    );
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let file_id = body["data"]["id"].as_i64().unwrap();
+
+    let payload = vec![b't'; OVER_LIMIT_BODY_SIZE];
+    let req = test::TestRequest::put()
+        .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/content"))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .insert_header(("Content-Type", "application/octet-stream"))
+        .set_payload(payload.clone())
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["size"], payload.len() as i64);
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/teams/{team_id}/files/{file_id}/download"))
+        .insert_header(("Cookie", common::access_cookie_header(&owner_token)))
+        .insert_header(common::csrf_header_for(&owner_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body = test::read_body(resp).await;
+    assert_eq!(&body[..], payload.as_slice());
 }
 
 #[actix_web::test]

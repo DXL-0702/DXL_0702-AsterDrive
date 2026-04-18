@@ -230,6 +230,23 @@ pub async fn find_all_by_user<C: ConnectionTrait>(
         .map_err(AsterError::from)
 }
 
+pub async fn find_all_by_user_paginated<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    after_id: Option<i64>,
+    limit: u64,
+) -> Result<Vec<file::Model>> {
+    let mut query = File::find()
+        .filter(file::Column::UserId.eq(user_id))
+        .filter(file::Column::TeamId.is_null())
+        .order_by_asc(file::Column::Id)
+        .limit(limit);
+    if let Some(after_id) = after_id {
+        query = query.filter(file::Column::Id.gt(after_id));
+    }
+    query.all(db).await.map_err(AsterError::from)
+}
+
 pub async fn find_all_by_team<C: ConnectionTrait>(
     db: &C,
     team_id: i64,
@@ -239,4 +256,20 @@ pub async fn find_all_by_team<C: ConnectionTrait>(
         .all(db)
         .await
         .map_err(AsterError::from)
+}
+
+pub async fn find_all_by_team_paginated<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    after_id: Option<i64>,
+    limit: u64,
+) -> Result<Vec<file::Model>> {
+    let mut query = File::find()
+        .filter(file::Column::TeamId.eq(team_id))
+        .order_by_asc(file::Column::Id)
+        .limit(limit);
+    if let Some(after_id) = after_id {
+        query = query.filter(file::Column::Id.gt(after_id));
+    }
+    query.all(db).await.map_err(AsterError::from)
 }

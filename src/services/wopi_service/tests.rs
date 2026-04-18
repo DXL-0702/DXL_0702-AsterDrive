@@ -13,7 +13,8 @@ use super::discovery::{
 use super::operations::parse_wopi_max_expected_size;
 use super::session::access_token_hash;
 use super::targets::{
-    PutRelativeTargetMode, decode_wopi_filename, encode_wopi_filename, parse_put_relative_request,
+    PutRelativeTargetMode, decode_wopi_filename, encode_wopi_filename,
+    normalize_relative_target_name, normalize_requested_rename_target, parse_put_relative_request,
 };
 use super::types::{
     DiscoveredWopiPreviewApp, WOPI_FILE_NAME_MAX_LEN, WopiCheckFileInfo, WopiRequestSource,
@@ -298,14 +299,30 @@ fn utf7_roundtrip_handles_non_ascii_targets() {
 
 #[test]
 fn parse_put_relative_request_allows_extension_only_suggested_target() {
-    let request =
-        parse_put_relative_request("report 1.docx", Some(".docx"), None, None, Some("4"), 4)
-            .unwrap();
+    let request = parse_put_relative_request("report 1.docx", Some(".docx"), None, None).unwrap();
 
     match request.target_mode {
         PutRelativeTargetMode::Suggested(name) => assert_eq!(name, "report 1.docx"),
         PutRelativeTargetMode::Relative { .. } => panic!("expected suggested target"),
     }
+}
+
+#[test]
+fn normalize_relative_target_name_normalizes_nfd_and_rejects_windows_reserved_name() {
+    assert_eq!(
+        normalize_relative_target_name("cafe\u{0301}.docx").unwrap(),
+        "caf\u{00e9}.docx"
+    );
+    assert!(normalize_relative_target_name("CON.docx").is_err());
+}
+
+#[test]
+fn normalize_requested_rename_target_normalizes_nfd_and_rejects_windows_reserved_name() {
+    assert_eq!(
+        normalize_requested_rename_target("report 1.docx", Some("cafe\u{0301}")).unwrap(),
+        "caf\u{00e9}.docx"
+    );
+    assert!(normalize_requested_rename_target("report 1.docx", Some("NUL")).is_err());
 }
 
 #[test]

@@ -562,6 +562,117 @@ async fn test_batch_copy_duplicate_ids_allocate_unique_names() {
 }
 
 #[actix_web::test]
+async fn test_batch_copy_duplicate_folder_ids_allocate_unique_names_and_preserve_descendants() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "CopyTree", "parent_id": null }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let source_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "Nested", "parent_id": source_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let nested_id = body["data"]["id"].as_i64().unwrap();
+
+    let boundary = "----TestBoundary123";
+    for (folder_id, name, content) in [
+        (source_id, "root.txt", "root-content"),
+        (nested_id, "nested.txt", "nested-content"),
+    ] {
+        let payload = upload_named_file(name, content, "text/plain", boundary);
+        let req = test::TestRequest::post()
+            .uri(&format!("/api/v1/files/upload?folder_id={folder_id}"))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .insert_header((
+                "Content-Type",
+                format!("multipart/form-data; boundary={boundary}"),
+            ))
+            .set_payload(payload)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 201);
+    }
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/batch/copy")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "file_ids": [],
+            "folder_ids": [source_id, source_id],
+            "target_folder_id": null
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["succeeded"], 2);
+    assert_eq!(body["data"]["failed"], 0);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let root_folders = body["data"]["folders"].as_array().unwrap();
+    let mut copy_folder_ids = Vec::new();
+    for expected_name in ["CopyTree (1)", "CopyTree (2)"] {
+        let folder = root_folders
+            .iter()
+            .find(|folder| folder["name"] == expected_name)
+            .unwrap_or_else(|| panic!("missing copied folder '{expected_name}' in root listing"));
+        copy_folder_ids.push(folder["id"].as_i64().unwrap());
+    }
+
+    for copy_folder_id in copy_folder_ids {
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{copy_folder_id}"))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(body["data"]["files"].as_array().unwrap().len(), 1);
+        assert_eq!(body["data"]["files"][0]["name"], "root.txt");
+        assert_eq!(body["data"]["folders"].as_array().unwrap().len(), 1);
+        assert_eq!(body["data"]["folders"][0]["name"], "Nested");
+
+        let copied_nested_id = body["data"]["folders"][0]["id"].as_i64().unwrap();
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{copied_nested_id}"))
+            .insert_header(("Cookie", common::access_cookie_header(&token)))
+            .insert_header(common::csrf_header_for(&token))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), 200);
+        let body: Value = test::read_body_json(resp).await;
+        assert_eq!(body["data"]["files"].as_array().unwrap().len(), 1);
+        assert_eq!(body["data"]["files"][0]["name"], "nested.txt");
+        assert!(body["data"]["folders"].as_array().unwrap().is_empty());
+    }
+}
+
+#[actix_web::test]
 async fn test_batch_delete_preserves_partial_failures_for_locked_items() {
     let state = common::setup().await;
     let app = create_test_app!(state);

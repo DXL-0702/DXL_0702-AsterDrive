@@ -40,11 +40,9 @@ export function BatchActionBar({
 		"move" | "copy" | null
 	>(null);
 
-	const count = selectedFileIds.size + selectedFolderIds.size;
-	if (count === 0) return null;
-
 	const fileIds = Array.from(selectedFileIds);
 	const folderIds = Array.from(selectedFolderIds);
+	const count = fileIds.length + folderIds.length;
 
 	const handleDelete = async () => {
 		try {
@@ -67,6 +65,8 @@ export function BatchActionBar({
 		requestConfirm: requestDeleteConfirm,
 		dialogProps: deleteDialogProps,
 	} = useConfirmDialog<true>(handleDelete);
+
+	if (count === 0) return null;
 
 	const handleMove = () => {
 		setTargetDialogMode("move");

@@ -4,8 +4,10 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::time::Duration;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
+use validator::Validate;
 
 /// PATCH 请求里的可空字段三态：
 /// - `Absent`：字段未传，保持不变
@@ -493,6 +495,8 @@ impl From<StoredUserConfig> for String {
 pub enum AuditAction {
     #[sea_orm(string_value = "admin_create_user")]
     AdminCreateUser,
+    #[sea_orm(string_value = "admin_force_delete_user")]
+    AdminForceDeleteUser,
     #[sea_orm(string_value = "admin_create_team")]
     AdminCreateTeam,
     #[sea_orm(string_value = "admin_create_policy_group")]
@@ -605,6 +609,7 @@ impl AuditAction {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::AdminCreateUser => "admin_create_user",
+            Self::AdminForceDeleteUser => "admin_force_delete_user",
             Self::AdminCreateTeam => "admin_create_team",
             Self::AdminCreatePolicyGroup => "admin_create_policy_group",
             Self::AdminArchiveTeam => "admin_archive_team",
@@ -664,6 +669,7 @@ impl AuditAction {
     pub fn from_str_name(value: &str) -> Option<Self> {
         match value {
             "admin_create_user" => Some(Self::AdminCreateUser),
+            "admin_force_delete_user" => Some(Self::AdminForceDeleteUser),
             "admin_create_team" => Some(Self::AdminCreateTeam),
             "admin_create_policy_group" => Some(Self::AdminCreatePolicyGroup),
             "admin_archive_team" => Some(Self::AdminArchiveTeam),
@@ -939,7 +945,11 @@ impl From<StoredStoragePolicyOptions> for String {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+const DEFAULT_S3_CONNECT_TIMEOUT_SECS: u64 = 5;
+const DEFAULT_S3_READ_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_S3_OPERATION_TIMEOUT_SECS: u64 = 60 * 60;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, Validate)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct StoragePolicyOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -948,6 +958,15 @@ pub struct StoragePolicyOptions {
     pub s3_download_strategy: Option<S3DownloadStrategy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_dedup: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1, message = "s3_connect_timeout_secs must be greater than 0"))]
+    pub s3_connect_timeout_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1, message = "s3_read_timeout_secs must be greater than 0"))]
+    pub s3_read_timeout_secs: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(range(min = 1, message = "s3_operation_timeout_secs must be greater than 0"))]
+    pub s3_operation_timeout_secs: Option<u64>,
 }
 
 impl StoragePolicyOptions {
@@ -959,6 +978,30 @@ impl StoragePolicyOptions {
     pub fn effective_s3_download_strategy(&self) -> S3DownloadStrategy {
         self.s3_download_strategy
             .unwrap_or(S3DownloadStrategy::RelayStream)
+    }
+
+    pub fn effective_s3_connect_timeout(&self) -> Duration {
+        Duration::from_secs(
+            self.s3_connect_timeout_secs
+                .filter(|secs| *secs > 0)
+                .unwrap_or(DEFAULT_S3_CONNECT_TIMEOUT_SECS),
+        )
+    }
+
+    pub fn effective_s3_read_timeout(&self) -> Duration {
+        Duration::from_secs(
+            self.s3_read_timeout_secs
+                .filter(|secs| *secs > 0)
+                .unwrap_or(DEFAULT_S3_READ_TIMEOUT_SECS),
+        )
+    }
+
+    pub fn effective_s3_operation_timeout(&self) -> Duration {
+        Duration::from_secs(
+            self.s3_operation_timeout_secs
+                .filter(|secs| *secs > 0)
+                .unwrap_or(DEFAULT_S3_OPERATION_TIMEOUT_SECS),
+        )
     }
 }
 
@@ -1037,6 +1080,7 @@ mod tests {
     use super::{
         S3DownloadStrategy, S3UploadStrategy, StoragePolicyOptions, parse_storage_policy_options,
     };
+    use std::time::Duration;
 
     #[test]
     fn s3_strategy_defaults_to_relay_stream() {
@@ -1084,6 +1128,52 @@ mod tests {
     }
 
     #[test]
+    fn s3_timeouts_default_to_safe_values() {
+        let options = StoragePolicyOptions::default();
+        assert_eq!(
+            options.effective_s3_connect_timeout(),
+            Duration::from_secs(5)
+        );
+        assert_eq!(options.effective_s3_read_timeout(), Duration::from_secs(30));
+        assert_eq!(
+            options.effective_s3_operation_timeout(),
+            Duration::from_secs(60 * 60)
+        );
+    }
+
+    #[test]
+    fn explicit_s3_timeouts_override_defaults() {
+        let options = parse_storage_policy_options(
+            r#"{"s3_connect_timeout_secs":9,"s3_read_timeout_secs":45,"s3_operation_timeout_secs":1200}"#,
+        );
+        assert_eq!(
+            options.effective_s3_connect_timeout(),
+            Duration::from_secs(9)
+        );
+        assert_eq!(options.effective_s3_read_timeout(), Duration::from_secs(45));
+        assert_eq!(
+            options.effective_s3_operation_timeout(),
+            Duration::from_secs(1200)
+        );
+    }
+
+    #[test]
+    fn zero_s3_timeouts_fall_back_to_safe_defaults() {
+        let options = parse_storage_policy_options(
+            r#"{"s3_connect_timeout_secs":0,"s3_read_timeout_secs":0,"s3_operation_timeout_secs":0}"#,
+        );
+        assert_eq!(
+            options.effective_s3_connect_timeout(),
+            Duration::from_secs(5)
+        );
+        assert_eq!(options.effective_s3_read_timeout(), Duration::from_secs(30));
+        assert_eq!(
+            options.effective_s3_operation_timeout(),
+            Duration::from_secs(60 * 60)
+        );
+    }
+
+    #[test]
     fn serialize_storage_policy_options_omits_default_fields() {
         let json = serde_json::to_string(&StoragePolicyOptions::default()).unwrap();
         assert_eq!(json, "{}");
@@ -1101,5 +1191,12 @@ mod tests {
         })
         .unwrap();
         assert_eq!(json, r#"{"s3_download_strategy":"presigned"}"#);
+
+        let json = serde_json::to_string(&StoragePolicyOptions {
+            s3_operation_timeout_secs: Some(600),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(json, r#"{"s3_operation_timeout_secs":600}"#);
     }
 }

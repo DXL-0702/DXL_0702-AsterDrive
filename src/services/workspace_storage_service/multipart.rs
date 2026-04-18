@@ -75,7 +75,7 @@ async fn upload_local_direct(
             } else {
                 name
             };
-            crate::utils::validate_name(&filename)?;
+            let filename = crate::utils::normalize_validate_name(&filename)?;
 
             let staging_token = format!("{}.upload", crate::utils::id::new_uuid());
             let staging_path =
@@ -192,7 +192,7 @@ async fn upload_s3_relay_direct(
             } else {
                 name
             };
-            crate::utils::validate_name(&filename)?;
+            let filename = crate::utils::normalize_validate_name(&filename)?;
 
             let upload_id = crate::utils::id::new_uuid();
             let storage_path = format!("files/{upload_id}");

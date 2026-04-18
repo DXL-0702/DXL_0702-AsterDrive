@@ -78,28 +78,28 @@ pub(super) async fn create_folder_exact_in_scope(
     parent_id: Option<i64>,
     name: &str,
 ) -> Result<folder::Model> {
-    crate::utils::validate_name(name)?;
+    let name = crate::utils::normalize_validate_name(name)?;
     let exists = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
-            folder_repo::find_by_name_in_parent(&state.db, user_id, parent_id, name)
+            folder_repo::find_by_name_in_parent(&state.db, user_id, parent_id, &name)
                 .await?
                 .is_some()
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
-            folder_repo::find_by_name_in_team_parent(&state.db, team_id, parent_id, name)
+            folder_repo::find_by_name_in_team_parent(&state.db, team_id, parent_id, &name)
                 .await?
                 .is_some()
         }
     };
     if exists {
-        return Err(folder_repo::duplicate_name_error(name));
+        return Err(folder_repo::duplicate_name_error(&name));
     }
 
     let now = Utc::now();
     folder_repo::create(
         &state.db,
         folder::ActiveModel {
-            name: Set(name.to_string()),
+            name: Set(name),
             parent_id: Set(parent_id),
             team_id: Set(scope.team_id()),
             user_id: Set(scope.actor_user_id()),
@@ -118,7 +118,7 @@ async fn resolve_unique_folder_name_in_scope(
     parent_id: Option<i64>,
     base_name: &str,
 ) -> Result<String> {
-    let mut candidate = base_name.to_string();
+    let mut candidate = crate::utils::normalize_validate_name(base_name)?;
     loop {
         let exists = match scope {
             WorkspaceStorageScope::Personal { user_id } => {

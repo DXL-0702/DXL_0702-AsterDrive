@@ -110,7 +110,7 @@ pub async fn put_file_contents(
     req: HttpRequest,
     path: web::Path<i64>,
     query: web::Query<WopiAccessQuery>,
-    body: web::Bytes,
+    mut payload: web::Payload,
 ) -> HttpResponse {
     if let Err(error) = validate_request(&*query) {
         return protocol_error_response(error);
@@ -124,7 +124,8 @@ pub async fn put_file_contents(
         &state,
         *path,
         &query.access_token,
-        body,
+        &mut payload,
+        request_content_length(&req),
         optional_header_value(&req, "X-WOPI-Lock"),
         request_source(&state, &req),
     )
@@ -143,7 +144,7 @@ pub async fn file_operation(
     req: HttpRequest,
     path: web::Path<i64>,
     query: web::Query<WopiAccessQuery>,
-    body: web::Bytes,
+    mut payload: web::Payload,
 ) -> HttpResponse {
     if let Err(error) = validate_request(&*query) {
         return protocol_error_response(error);
@@ -158,7 +159,7 @@ pub async fn file_operation(
             wopi_service::WopiPutRelativeRequest {
                 file_id: *path,
                 access_token: &query.access_token,
-                body,
+                payload: &mut payload,
                 suggested_target: optional_header_value(&req, "X-WOPI-SuggestedTarget"),
                 relative_target: optional_header_value(&req, "X-WOPI-RelativeTarget"),
                 overwrite_relative_target: optional_header_value(
@@ -166,6 +167,7 @@ pub async fn file_operation(
                     "X-WOPI-OverwriteRelativeTarget",
                 ),
                 size_header: optional_header_value(&req, "X-WOPI-Size"),
+                content_length: request_content_length(&req),
                 request_source: request_source(&state, &req),
             },
         )
@@ -227,7 +229,7 @@ pub async fn file_operation(
             &state,
             *path,
             &query.access_token,
-            body,
+            &mut payload,
             request_source(&state, &req),
         )
         .await
@@ -350,4 +352,12 @@ fn request_source<'a>(
         public_url: crate::config::site_url::public_site_url(&state.runtime_config)
             .map(|base| format!("{base}{}", req.uri())),
     }
+}
+
+fn request_content_length(req: &HttpRequest) -> Option<i64> {
+    req.headers()
+        .get(actix_web::http::header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+        .and_then(|value| crate::utils::numbers::u64_to_i64(value, "content length").ok())
 }

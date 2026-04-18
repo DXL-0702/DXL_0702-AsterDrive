@@ -238,20 +238,21 @@ pub async fn update(
         .map(Into::into)
 }
 
+pub async fn test_default_connection(state: &AppState) -> Result<()> {
+    let policy = state
+        .policy_snapshot
+        .system_default_policy()
+        .ok_or_else(|| {
+            AsterError::storage_policy_not_found("system default storage policy not found")
+        })?;
+    let driver = state.driver_registry.get_driver(&policy)?;
+    probe_storage_driver(driver.as_ref(), "default storage readiness probe failed").await
+}
+
 pub async fn test_connection(state: &AppState, id: i64) -> Result<()> {
     let policy = policy_repo::find_by_id(&state.db, id).await?;
     let driver = state.driver_registry.get_driver(&policy)?;
-
-    let test_path = "_aster_connection_test";
-    driver
-        .put(test_path, b"ok")
-        .await
-        .map_aster_err_ctx("write test failed", AsterError::storage_driver_error)?;
-    if let Err(e) = driver.delete(test_path).await {
-        tracing::warn!("failed to clean up connection test file: {e}");
-    }
-
-    Ok(())
+    probe_storage_driver(driver.as_ref(), "write test failed").await
 }
 
 pub async fn test_connection_params(input: StoragePolicyConnectionInput) -> Result<()> {
@@ -291,14 +292,20 @@ pub async fn test_connection_params(input: StoragePolicyConnectionInput) -> Resu
         DriverType::S3 => Box::new(S3Driver::new(&fake_policy)?),
     };
 
-    let test_path = "_aster_connection_test";
-    driver
-        .put(test_path, b"ok")
-        .await
-        .map_aster_err_ctx("connection test failed", AsterError::storage_driver_error)?;
-    if let Err(e) = driver.delete(test_path).await {
-        tracing::warn!("failed to clean up connection test file: {e}");
-    }
+    probe_storage_driver(driver.as_ref(), "connection test failed").await
+}
 
+async fn probe_storage_driver(
+    driver: &dyn crate::storage::driver::StorageDriver,
+    write_error_context: &'static str,
+) -> Result<()> {
+    let test_path = format!("_aster_connection_test/{}", uuid::Uuid::new_v4());
+    driver
+        .put(&test_path, b"ok")
+        .await
+        .map_aster_err_ctx(write_error_context, AsterError::storage_driver_error)?;
+    if let Err(e) = driver.delete(&test_path).await {
+        tracing::warn!(path = %test_path, "failed to clean up connection test file: {e}");
+    }
     Ok(())
 }

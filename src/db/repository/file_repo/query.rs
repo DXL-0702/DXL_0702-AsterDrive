@@ -1,8 +1,10 @@
 //! `file_repo` 仓储子模块：`query`。
 
+use std::collections::HashSet;
+
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait, FromQueryResult,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Statement, sea_query::Expr,
+    ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
 };
 
 use crate::api::pagination::{SortBy, SortOrder};
@@ -10,11 +12,6 @@ use crate::entities::file::{self, Entity as File};
 use crate::errors::{AsterError, MapAsterErr, Result};
 
 use super::common::{FileScope, active_scope_condition, apply_folder_condition, scope_condition};
-
-#[derive(Debug, FromQueryResult)]
-struct ResolvedUniqueFilenameRow {
-    candidate: String,
-}
 
 fn sum_as_i64_expr(
     backend: DbBackend,
@@ -405,7 +402,7 @@ async fn find_by_name_in_folder_in_scope<C: ConnectionTrait>(
     folder_id: Option<i64>,
     name: &str,
 ) -> Result<Option<file::Model>> {
-    File::find()
+    let exact = File::find()
         .filter(apply_folder_condition(
             active_scope_condition(scope),
             folder_id,
@@ -413,7 +410,16 @@ async fn find_by_name_in_folder_in_scope<C: ConnectionTrait>(
         .filter(file::Column::Name.eq(name))
         .one(db)
         .await
-        .map_err(AsterError::from)
+        .map_err(AsterError::from)?;
+    if exact.is_some() {
+        return Ok(exact);
+    }
+
+    let normalized_name = crate::utils::normalize_name(name);
+    Ok(find_by_folder_in_scope(db, scope, folder_id)
+        .await?
+        .into_iter()
+        .find(|file| crate::utils::normalize_name(&file.name) == normalized_name))
 }
 
 async fn find_by_names_in_folder_in_scope<C: ConnectionTrait>(
@@ -473,130 +479,49 @@ pub async fn find_by_names_in_team_folder<C: ConnectionTrait>(
     find_by_names_in_folder_in_scope(db, FileScope::Team { team_id }, folder_id, names).await
 }
 
-/// 查找不冲突的文件名：如果 name 已存在则递增 " (1)", " (2)" ...
+/// 基于当前目录快照建议一个不冲突的文件名：
+/// 如果 `name` 已存在则递增 " (1)", " (2)" ...
+///
+/// 注意：这里故意只做“读当前快照并给出候选名”，不承诺并发写入下该名字
+/// 在后续 `INSERT` 时仍然可用。真正创建文件时，调用方必须继续依赖数据库
+/// live-name 唯一索引兜底，并在唯一约束冲突时自动推进到下一个副本名。
 async fn resolve_unique_filename_in_scope<C: ConnectionTrait>(
     db: &C,
     scope: FileScope,
     folder_id: Option<i64>,
     name: &str,
 ) -> Result<String> {
-    let template = crate::utils::copy_name_template(name);
-    let backend = db.get_database_backend();
-    let seed_select = match backend {
-        DbBackend::Postgres => {
-            "SELECT $1::BIGINT, $2::BIGINT, $3::TEXT, $4::BIGINT, $5::TEXT, $6::TEXT"
-        }
-        DbBackend::MySql => {
-            "SELECT CAST(? AS SIGNED), CAST(? AS SIGNED), CAST(? AS CHAR), CAST(? AS SIGNED), CAST(? AS CHAR), CAST(? AS CHAR)"
-        }
-        _ => {
-            "SELECT CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS TEXT), CAST(? AS INTEGER), CAST(? AS TEXT), CAST(? AS TEXT)"
-        }
-    };
-    let candidate_expr = match backend {
-        DbBackend::MySql => {
-            "CONCAT(chain.base_name, ' (', CAST(chain.next_copy_number AS CHAR), ')', COALESCE(chain.ext, ''))"
-        }
-        _ => {
-            "chain.base_name || ' (' || CAST(chain.next_copy_number AS TEXT) || ')' || COALESCE(chain.ext, '')"
-        }
-    };
-    let scope_condition = match scope {
-        FileScope::Personal { .. } => "f.user_id = seed.scope_owner_id AND f.team_id IS NULL",
-        FileScope::Team { .. } => "f.team_id = seed.scope_owner_id",
-    };
-    let recursive_scope_condition = match scope {
-        FileScope::Personal { .. } => "f.user_id = chain.scope_owner_id AND f.team_id IS NULL",
-        FileScope::Team { .. } => "f.team_id = chain.scope_owner_id",
-    };
-    let seed_name_match_condition = match backend {
-        DbBackend::MySql => {
-            "CONVERT(f.name USING utf8mb4) COLLATE utf8mb4_0900_ai_ci = CONVERT(seed.candidate USING utf8mb4) COLLATE utf8mb4_0900_ai_ci"
-        }
-        _ => "f.name = seed.candidate",
-    };
-    let recursive_name_match_condition = match backend {
-        DbBackend::MySql => format!(
-            "CONVERT(f.name USING utf8mb4) COLLATE utf8mb4_0900_ai_ci = CONVERT({candidate_expr} USING utf8mb4) COLLATE utf8mb4_0900_ai_ci"
-        ),
-        _ => format!("f.name = {candidate_expr}"),
-    };
-    let sql = format!(
-        "WITH RECURSIVE seed (scope_owner_id, folder_id, candidate, next_copy_number, base_name, ext) AS ( \
-             {seed_select} \
-         ), \
-         candidate_chain (step, scope_owner_id, folder_id, candidate, next_copy_number, base_name, ext, taken) AS ( \
-             SELECT \
-                 0, \
-                 seed.scope_owner_id, \
-                 seed.folder_id, \
-                 seed.candidate, \
-                 seed.next_copy_number, \
-                 seed.base_name, \
-                 seed.ext, \
-                 EXISTS ( \
-                     SELECT 1 \
-                     FROM files f \
-                     WHERE {scope_condition} \
-                       AND ((seed.folder_id IS NULL AND f.folder_id IS NULL) OR f.folder_id = seed.folder_id) \
-                       AND f.deleted_at IS NULL \
-                       AND {seed_name_match_condition} \
-                 ) \
-             FROM seed \
-             UNION ALL \
-             SELECT \
-                 chain.step + 1, \
-                 chain.scope_owner_id, \
-                 chain.folder_id, \
-                 {candidate_expr}, \
-                 chain.next_copy_number + 1, \
-                 chain.base_name, \
-                 chain.ext, \
-                 EXISTS ( \
-                     SELECT 1 \
-                     FROM files f \
-                     WHERE {recursive_scope_condition} \
-                       AND ((chain.folder_id IS NULL AND f.folder_id IS NULL) OR f.folder_id = chain.folder_id) \
-                       AND f.deleted_at IS NULL \
-                       AND {recursive_name_match_condition} \
-                 ) \
-             FROM candidate_chain chain \
-             WHERE chain.taken \
-         ) \
-         SELECT candidate \
-         FROM candidate_chain \
-         WHERE NOT taken \
-         ORDER BY step ASC \
-         LIMIT 1"
-    );
-    let scope_owner_id = match scope {
-        FileScope::Personal { user_id } => user_id,
-        FileScope::Team { team_id } => team_id,
-    };
-    let row = ResolvedUniqueFilenameRow::find_by_statement(Statement::from_sql_and_values(
-        backend,
-        sql,
-        [
-            scope_owner_id.into(),
-            folder_id.into(),
-            name.to_string().into(),
-            i64::from(template.next_copy_number).into(),
-            template.base_name.into(),
-            template.ext.into(),
-        ],
-    ))
-    .one(db)
-    .await
-    .map_err(AsterError::from)?
-    .ok_or_else(|| {
-        AsterError::internal_error(format!(
-            "failed to resolve a unique file name candidate for '{name}'"
-        ))
-    })?;
+    let normalized_name = crate::utils::normalize_validate_name(name)?;
+    let template = crate::utils::copy_name_template(&normalized_name);
+    let existing_names: HashSet<String> = find_by_folder_in_scope(db, scope, folder_id)
+        .await?
+        .into_iter()
+        .map(|file| crate::utils::normalize_name(&file.name))
+        .collect();
 
-    Ok(row.candidate)
+    if !existing_names.contains(&normalized_name) {
+        return Ok(normalized_name);
+    }
+
+    let mut copy_number = template.next_copy_number;
+    loop {
+        let candidate = crate::utils::format_copy_name(&template, copy_number);
+        if !existing_names.contains(&candidate) {
+            return Ok(candidate);
+        }
+        copy_number = copy_number.checked_add(1).ok_or_else(|| {
+            AsterError::validation_error(format!(
+                "failed to resolve a unique file name candidate for '{name}'"
+            ))
+        })?;
+    }
 }
 
+/// 基于当前目录快照建议一个可用文件名。
+///
+/// 这个 helper 不持锁，也不保证调用方随后立刻 `INSERT` 就一定成功；
+/// 并发写入场景仍然必须依赖 live-name 唯一索引兜底，并在唯一键冲突时
+/// 自动推进到下一个副本名重试。
 pub async fn resolve_unique_filename<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
@@ -606,6 +531,7 @@ pub async fn resolve_unique_filename<C: ConnectionTrait>(
     resolve_unique_filename_in_scope(db, FileScope::Personal { user_id }, folder_id, name).await
 }
 
+/// 团队空间版本的 `resolve_unique_filename()`。
 pub async fn resolve_unique_team_filename<C: ConnectionTrait>(
     db: &C,
     team_id: i64,

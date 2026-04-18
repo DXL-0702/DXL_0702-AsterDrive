@@ -270,49 +270,6 @@ export function AdminTeamDetailDialog({
 		},
 	);
 
-	useEffect(() => {
-		if (!open || teamId == null) {
-			auditRequestIdRef.current += 1;
-			detailRequestIdRef.current += 1;
-			memberRequestIdRef.current += 1;
-			overviewSyncAllowedRef.current = true;
-			setArchiveConfirmValue("");
-			archiveDialogProps.onOpenChange(false);
-			setArchiving(false);
-			setAuditEntries([]);
-			setAuditLoading(false);
-			setAuditOffset(0);
-			setAuditTotal(0);
-			setDescription("");
-			setDetailLoading(false);
-			setMemberIdentifier("");
-			setMemberLoading(false);
-			setMemberMutating(false);
-			setMemberOffset(0);
-			setMemberTotal(0);
-			setMembers([]);
-			setManagerCount(0);
-			setMemberQuery("");
-			setMemberRole("member");
-			setMemberRoleFilter("__all__");
-			setMemberStatusFilter("__all__");
-			setName("");
-			setOwnerCount(0);
-			setPolicyGroupId("");
-			setRestoring(false);
-			setSaving(false);
-			setTeam(null);
-			setDialogTab("overview");
-			return;
-		}
-
-		overviewSyncAllowedRef.current = true;
-		setAuditOffset(0);
-		setMemberOffset(0);
-		setDialogTab("overview");
-		void loadTeamDetail(teamId);
-	}, [open, teamId]);
-
 	useLayoutEffect(() => {
 		if (!isPageLayout || teamId == null || pageTab == null) {
 			return;
@@ -655,6 +612,50 @@ export function AdminTeamDetailDialog({
 		requestConfirm: requestArchiveConfirm,
 		dialogProps: archiveDialogProps,
 	} = useConfirmDialog<true>(handleArchive);
+
+	useEffect(() => {
+		if (!open || teamId == null) {
+			auditRequestIdRef.current += 1;
+			detailRequestIdRef.current += 1;
+			memberRequestIdRef.current += 1;
+			overviewSyncAllowedRef.current = true;
+			setArchiveConfirmValue("");
+			archiveDialogProps.onOpenChange(false);
+			setArchiving(false);
+			setAuditEntries([]);
+			setAuditLoading(false);
+			setAuditOffset(0);
+			setAuditTotal(0);
+			setDescription("");
+			setDetailLoading(false);
+			setMemberIdentifier("");
+			setMemberLoading(false);
+			setMemberMutating(false);
+			setMemberOffset(0);
+			setMemberTotal(0);
+			setMembers([]);
+			setManagerCount(0);
+			setMemberQuery("");
+			setMemberRole("member");
+			setMemberRoleFilter("__all__");
+			setMemberStatusFilter("__all__");
+			setName("");
+			setOwnerCount(0);
+			setPolicyGroupId("");
+			setRestoring(false);
+			setSaving(false);
+			setTeam(null);
+			setDialogTab("overview");
+			return;
+		}
+
+		overviewSyncAllowedRef.current = true;
+		setAuditOffset(0);
+		setMemberOffset(0);
+		setDialogTab("overview");
+		void loadTeamDetail(teamId);
+	}, [archiveDialogProps.onOpenChange, open, teamId]);
+
 	const removeMember =
 		members.find((member) => member.user_id === removeMemberId) ?? null;
 

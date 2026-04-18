@@ -23,25 +23,31 @@ async fn create_file_from_blob_with_name_mode<C: ConnectionTrait>(
     now: chrono::DateTime<Utc>,
     name_mode: NewFileNameMode,
 ) -> Result<file::Model> {
-    crate::utils::validate_name(filename)?;
+    let normalized_filename = crate::utils::normalize_validate_name(filename)?;
 
     let (mut final_name, team_id) = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
             let final_name = match name_mode {
                 NewFileNameMode::ResolveUnique => {
-                    file_repo::resolve_unique_filename(db, user_id, folder_id, filename).await?
+                    file_repo::resolve_unique_filename(db, user_id, folder_id, &normalized_filename)
+                        .await?
                 }
-                NewFileNameMode::Exact => filename.to_string(),
+                NewFileNameMode::Exact => normalized_filename.clone(),
             };
             (final_name, None)
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
             let final_name = match name_mode {
                 NewFileNameMode::ResolveUnique => {
-                    file_repo::resolve_unique_team_filename(db, team_id, folder_id, filename)
-                        .await?
+                    file_repo::resolve_unique_team_filename(
+                        db,
+                        team_id,
+                        folder_id,
+                        &normalized_filename,
+                    )
+                    .await?
                 }
-                NewFileNameMode::Exact => filename.to_string(),
+                NewFileNameMode::Exact => normalized_filename.clone(),
             };
             (final_name, Some(team_id))
         }
@@ -81,7 +87,7 @@ async fn create_file_from_blob_with_name_mode<C: ConnectionTrait>(
                 if attempt + 1 == max_attempts {
                     return Err(AsterError::validation_error(format!(
                         "failed to allocate a unique file name for '{}'",
-                        filename
+                        normalized_filename
                     )));
                 }
                 final_name = crate::utils::next_copy_name(&final_name);
@@ -92,7 +98,7 @@ async fn create_file_from_blob_with_name_mode<C: ConnectionTrait>(
 
     Err(AsterError::validation_error(format!(
         "failed to allocate a unique file name for '{}'",
-        filename
+        normalized_filename
     )))
 }
 
