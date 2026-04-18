@@ -81,6 +81,18 @@ describe("format helpers", () => {
 		);
 	});
 
+	it("falls back to stable English relative strings when i18n is omitted", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-03-28T12:00:00Z"));
+		const value = "2026-02-25T12:00:00Z";
+
+		expect(formatDate("2026-03-28T11:59:40Z")).toBe("just now");
+		expect(formatDate("2026-03-28T11:55:00Z")).toBe("5m ago");
+		expect(formatDate("2026-03-28T10:00:00Z")).toBe("2h ago");
+		expect(formatDate("2026-03-25T12:00:00Z")).toBe("3d ago");
+		expect(formatDate(value)).toBe(new Date(value).toLocaleDateString());
+	});
+
 	it("delegates absolute date formatting to the built-in locale helpers", () => {
 		const value = "2026-03-28T12:34:56Z";
 

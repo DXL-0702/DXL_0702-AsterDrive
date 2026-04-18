@@ -4,8 +4,25 @@ const INTEGER_FORMATTER = new Intl.NumberFormat();
 
 type DateFormatI18n = Pick<I18n, "language" | "resolvedLanguage" | "t">;
 
-function getDateLocale(i18n: DateFormatI18n): string | undefined {
-	return i18n.resolvedLanguage ?? (i18n.language || undefined);
+function getDateLocale(i18n?: DateFormatI18n): string | undefined {
+	return i18n?.resolvedLanguage ?? (i18n?.language || undefined);
+}
+
+function translateRelativeDate(
+	i18n: DateFormatI18n | undefined,
+	key: string,
+	fallback: string,
+	count?: number,
+): string {
+	if (!i18n) {
+		return fallback;
+	}
+
+	if (count === undefined) {
+		return i18n.t(key);
+	}
+
+	return i18n.t(key, { count });
 }
 
 export function formatBytes(bytes: number): string {
@@ -23,22 +40,43 @@ export function formatNumber(value: number): string {
 	return INTEGER_FORMATTER.format(value);
 }
 
-export function formatDate(dateStr: string, i18n: DateFormatI18n): string {
+export function formatDate(dateStr: string, i18n?: DateFormatI18n): string {
 	const date = new Date(dateStr);
 	const now = new Date();
 	const diff = now.getTime() - date.getTime();
 	const minutes = Math.floor(diff / 60000);
-	if (minutes < 1) return i18n.t("core:date_relative_just_now");
+	if (minutes < 1) {
+		return translateRelativeDate(
+			i18n,
+			"core:date_relative_just_now",
+			"just now",
+		);
+	}
 	if (minutes < 60) {
-		return i18n.t("core:date_relative_minutes_ago", { count: minutes });
+		return translateRelativeDate(
+			i18n,
+			"core:date_relative_minutes_ago",
+			`${minutes}m ago`,
+			minutes,
+		);
 	}
 	const hours = Math.floor(minutes / 60);
 	if (hours < 24) {
-		return i18n.t("core:date_relative_hours_ago", { count: hours });
+		return translateRelativeDate(
+			i18n,
+			"core:date_relative_hours_ago",
+			`${hours}h ago`,
+			hours,
+		);
 	}
 	const days = Math.floor(hours / 24);
 	if (days < 30) {
-		return i18n.t("core:date_relative_days_ago", { count: days });
+		return translateRelativeDate(
+			i18n,
+			"core:date_relative_days_ago",
+			`${days}d ago`,
+			days,
+		);
 	}
 	return date.toLocaleDateString(getDateLocale(i18n));
 }
