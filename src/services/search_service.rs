@@ -169,15 +169,17 @@ pub(crate) async fn search_in_scope(
                         search_repo::search_files(
                             &state.db,
                             user_id,
-                            query,
-                            params.mime_type.as_deref(),
-                            params.min_size,
-                            params.max_size,
-                            created_after,
-                            created_before,
-                            params.folder_id,
-                            limit,
-                            offset,
+                            search_repo::FileSearchFilters {
+                                query,
+                                mime_type: params.mime_type.as_deref(),
+                                min_size: params.min_size,
+                                max_size: params.max_size,
+                                created_after,
+                                created_before,
+                                folder_id: params.folder_id,
+                                limit,
+                                offset,
+                            },
                         )
                         .await
                     }
@@ -189,12 +191,14 @@ pub(crate) async fn search_in_scope(
                         search_repo::search_folders(
                             &state.db,
                             user_id,
-                            query,
-                            created_after,
-                            created_before,
-                            params.folder_id,
-                            limit,
-                            offset,
+                            search_repo::FolderSearchFilters {
+                                query,
+                                created_after,
+                                created_before,
+                                parent_id: params.folder_id,
+                                limit,
+                                offset,
+                            },
                         )
                         .await
                     }
@@ -226,15 +230,17 @@ pub(crate) async fn search_in_scope(
                         search_repo::search_team_files(
                             &state.db,
                             team_id,
-                            query,
-                            params.mime_type.as_deref(),
-                            params.min_size,
-                            params.max_size,
-                            created_after,
-                            created_before,
-                            params.folder_id,
-                            limit,
-                            offset,
+                            search_repo::FileSearchFilters {
+                                query,
+                                mime_type: params.mime_type.as_deref(),
+                                min_size: params.min_size,
+                                max_size: params.max_size,
+                                created_after,
+                                created_before,
+                                folder_id: params.folder_id,
+                                limit,
+                                offset,
+                            },
                         )
                         .await
                     }
@@ -246,12 +252,14 @@ pub(crate) async fn search_in_scope(
                         search_repo::search_team_folders(
                             &state.db,
                             team_id,
-                            query,
-                            created_after,
-                            created_before,
-                            params.folder_id,
-                            limit,
-                            offset,
+                            search_repo::FolderSearchFilters {
+                                query,
+                                created_after,
+                                created_before,
+                                parent_id: params.folder_id,
+                                limit,
+                                offset,
+                            },
                         )
                         .await
                     }

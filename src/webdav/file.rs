@@ -451,15 +451,19 @@ impl DavFile for AsterDavFile {
 
                     workspace_storage_service::store_from_temp_with_hints(
                         state,
-                        WorkspaceStorageScope::Personal { user_id: *user_id },
-                        *folder_id,
-                        filename,
-                        temp_path,
-                        written_size,
-                        *existing_file_id,
-                        true, // WebDAV: skip lock check, handler 已验证 lock token
-                        resolved_policy_hint,
-                        precomputed_hash.as_deref(),
+                        workspace_storage_service::StoreFromTempParams {
+                            scope: WorkspaceStorageScope::Personal { user_id: *user_id },
+                            folder_id: *folder_id,
+                            filename,
+                            temp_path,
+                            size: written_size,
+                            existing_file_id: *existing_file_id,
+                            skip_lock_check: true, // WebDAV: handler 已验证 lock token
+                        },
+                        workspace_storage_service::StoreFromTempHints {
+                            resolved_policy: resolved_policy_hint,
+                            precomputed_hash: precomputed_hash.as_deref(),
+                        },
                     )
                     .await
                     .map_err(map_store_error)?;
@@ -524,14 +528,16 @@ impl DavFile for AsterDavFile {
                     let prepared_upload = prepared_upload.take().ok_or(FsError::GeneralFailure)?;
                     workspace_storage_service::store_preuploaded_nondedup(
                         state,
-                        WorkspaceStorageScope::Personal { user_id: *user_id },
-                        *folder_id,
-                        filename,
-                        *declared_size,
-                        *existing_file_id,
-                        true,
-                        policy,
-                        prepared_upload,
+                        workspace_storage_service::StorePreuploadedNondedupParams {
+                            scope: WorkspaceStorageScope::Personal { user_id: *user_id },
+                            folder_id: *folder_id,
+                            filename,
+                            size: *declared_size,
+                            existing_file_id: *existing_file_id,
+                            skip_lock_check: true,
+                            policy,
+                            preuploaded_blob: prepared_upload,
+                        },
                     )
                     .await
                     .map_err(map_store_error)?;

@@ -45,40 +45,24 @@ pub async fn download_shared_folder_file(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn list_shared_folder(
     state: &AppState,
     token: &str,
-    folder_limit: u64,
-    folder_offset: u64,
-    file_limit: u64,
-    file_cursor: Option<(String, i64)>,
-    sort_by: crate::api::pagination::SortBy,
-    sort_order: crate::api::pagination::SortOrder,
+    params: &folder_service::FolderListParams,
 ) -> Result<folder_service::FolderContents> {
     let (_, folder_id) = load_valid_folder_share_root(state, token).await?;
     tracing::debug!(
         folder_id,
-        folder_limit,
-        folder_offset,
-        file_limit,
-        has_file_cursor = file_cursor.is_some(),
-        sort_by = ?sort_by,
-        sort_order = ?sort_order,
+        folder_limit = params.folder_limit,
+        folder_offset = params.folder_offset,
+        file_limit = params.file_limit,
+        has_file_cursor = params.file_cursor.is_some(),
+        sort_by = ?params.sort_by,
+        sort_order = ?params.sort_order,
         "listing shared folder root"
     );
 
-    let contents = folder_service::list_shared(
-        state,
-        folder_id,
-        folder_limit,
-        folder_offset,
-        file_limit,
-        file_cursor,
-        sort_by,
-        sort_order,
-    )
-    .await?;
+    let contents = folder_service::list_shared(state, folder_id, params).await?;
     tracing::debug!(
         folder_id,
         folders_total = contents.folders_total,
@@ -159,41 +143,25 @@ pub(crate) async fn load_preview_shared_folder_file(
     load_shared_folder_file_target(state, token, file_id).await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn list_shared_subfolder(
     state: &AppState,
     token: &str,
     folder_id: i64,
-    folder_limit: u64,
-    folder_offset: u64,
-    file_limit: u64,
-    file_cursor: Option<(String, i64)>,
-    sort_by: crate::api::pagination::SortBy,
-    sort_order: crate::api::pagination::SortOrder,
+    params: &folder_service::FolderListParams,
 ) -> Result<folder_service::FolderContents> {
     let (_, target) = load_shared_subfolder_target(state, token, folder_id).await?;
     tracing::debug!(
         folder_id = target.id,
-        folder_limit,
-        folder_offset,
-        file_limit,
-        has_file_cursor = file_cursor.is_some(),
-        sort_by = ?sort_by,
-        sort_order = ?sort_order,
+        folder_limit = params.folder_limit,
+        folder_offset = params.folder_offset,
+        file_limit = params.file_limit,
+        has_file_cursor = params.file_cursor.is_some(),
+        sort_by = ?params.sort_by,
+        sort_order = ?params.sort_order,
         "listing shared subfolder"
     );
 
-    let contents = folder_service::list_shared(
-        state,
-        target.id,
-        folder_limit,
-        folder_offset,
-        file_limit,
-        file_cursor,
-        sort_by,
-        sort_order,
-    )
-    .await?;
+    let contents = folder_service::list_shared(state, target.id, params).await?;
     tracing::debug!(
         folder_id = target.id,
         folders_total = contents.folders_total,

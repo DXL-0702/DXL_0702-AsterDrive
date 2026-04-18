@@ -616,12 +616,12 @@ async fn test_cleanup_expired_falls_back_to_default_retention_for_invalid_config
     let root_file = file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "expired-root.txt",
-        &root_path,
-        "expired root file".len() as i64,
-        None,
-        false,
+        file_service::StoreFromTempRequest::new(
+            None,
+            "expired-root.txt",
+            &root_path,
+            "expired root file".len() as i64,
+        ),
     )
     .await
     .unwrap();
@@ -633,12 +633,12 @@ async fn test_cleanup_expired_falls_back_to_default_retention_for_invalid_config
     let nested_file = file_service::store_from_temp(
         &state,
         user.id,
-        Some(folder.id),
-        "expired-nested.txt",
-        &nested_path,
-        "expired nested file".len() as i64,
-        None,
-        false,
+        file_service::StoreFromTempRequest::new(
+            Some(folder.id),
+            "expired-nested.txt",
+            &nested_path,
+            "expired nested file".len() as i64,
+        ),
     )
     .await
     .unwrap();
@@ -752,12 +752,12 @@ async fn test_cleanup_expired_keeps_recently_deleted_items() {
     let file = file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "recent-trash.txt",
-        &temp_path,
-        "recent trash".len() as i64,
-        None,
-        false,
+        file_service::StoreFromTempRequest::new(
+            None,
+            "recent-trash.txt",
+            &temp_path,
+            "recent trash".len() as i64,
+        ),
     )
     .await
     .unwrap();

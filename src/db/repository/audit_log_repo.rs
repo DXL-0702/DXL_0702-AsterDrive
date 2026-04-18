@@ -9,6 +9,17 @@ use sea_orm::{
 use crate::entities::audit_log::{self, Entity as AuditLog};
 use crate::errors::{AsterError, Result};
 
+pub struct AuditLogQuery<'a> {
+    pub user_id: Option<i64>,
+    pub action: Option<&'a str>,
+    pub entity_type: Option<&'a str>,
+    pub entity_id: Option<i64>,
+    pub after: Option<DateTime<Utc>>,
+    pub before: Option<DateTime<Utc>>,
+    pub limit: u64,
+    pub offset: u64,
+}
+
 pub async fn create<C: ConnectionTrait>(
     db: &C,
     model: audit_log::ActiveModel,
@@ -17,45 +28,37 @@ pub async fn create<C: ConnectionTrait>(
 }
 
 /// 带过滤条件的分页查询
-#[allow(clippy::too_many_arguments)]
 pub async fn find_with_filters<C: ConnectionTrait>(
     db: &C,
-    user_id: Option<i64>,
-    action: Option<&str>,
-    entity_type: Option<&str>,
-    entity_id: Option<i64>,
-    after: Option<DateTime<Utc>>,
-    before: Option<DateTime<Utc>>,
-    limit: u64,
-    offset: u64,
+    query: AuditLogQuery<'_>,
 ) -> Result<(Vec<audit_log::Model>, u64)> {
     let mut q = AuditLog::find()
         .order_by_desc(audit_log::Column::CreatedAt)
         .order_by_desc(audit_log::Column::Id);
 
-    if let Some(uid) = user_id {
+    if let Some(uid) = query.user_id {
         q = q.filter(audit_log::Column::UserId.eq(uid));
     }
-    if let Some(act) = action {
+    if let Some(act) = query.action {
         q = q.filter(audit_log::Column::Action.eq(act));
     }
-    if let Some(et) = entity_type {
+    if let Some(et) = query.entity_type {
         q = q.filter(audit_log::Column::EntityType.eq(et));
     }
-    if let Some(eid) = entity_id {
+    if let Some(eid) = query.entity_id {
         q = q.filter(audit_log::Column::EntityId.eq(eid));
     }
-    if let Some(after) = after {
+    if let Some(after) = query.after {
         q = q.filter(audit_log::Column::CreatedAt.gte(after));
     }
-    if let Some(before) = before {
+    if let Some(before) = query.before {
         q = q.filter(audit_log::Column::CreatedAt.lte(before));
     }
 
     let total = q.clone().count(db).await.map_err(AsterError::from)?;
     let items = q
-        .limit(limit)
-        .offset(offset)
+        .limit(query.limit)
+        .offset(query.offset)
         .all(db)
         .await
         .map_err(AsterError::from)?;

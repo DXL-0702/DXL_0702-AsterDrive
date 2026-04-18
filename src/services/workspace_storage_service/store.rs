@@ -19,77 +19,100 @@ use super::{
     verify_folder_access,
 };
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+pub(crate) struct StoreFromTempParams<'a> {
+    pub scope: WorkspaceStorageScope,
+    pub folder_id: Option<i64>,
+    pub filename: &'a str,
+    pub temp_path: &'a str,
+    pub size: i64,
+    pub existing_file_id: Option<i64>,
+    pub skip_lock_check: bool,
+}
+
+impl<'a> StoreFromTempParams<'a> {
+    pub(crate) fn new(
+        scope: WorkspaceStorageScope,
+        folder_id: Option<i64>,
+        filename: &'a str,
+        temp_path: &'a str,
+        size: i64,
+    ) -> Self {
+        Self {
+            scope,
+            folder_id,
+            filename,
+            temp_path,
+            size,
+            existing_file_id: None,
+            skip_lock_check: false,
+        }
+    }
+
+    pub(crate) fn overwrite(mut self, existing_file_id: i64) -> Self {
+        self.existing_file_id = Some(existing_file_id);
+        self
+    }
+
+    pub(crate) fn skip_lock_check(mut self) -> Self {
+        self.skip_lock_check = true;
+        self
+    }
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct StoreFromTempHints<'a> {
+    pub resolved_policy: Option<crate::entities::storage_policy::Model>,
+    pub precomputed_hash: Option<&'a str>,
+}
+
+pub(crate) struct StorePreuploadedNondedupParams<'a> {
+    pub scope: WorkspaceStorageScope,
+    pub folder_id: Option<i64>,
+    pub filename: &'a str,
+    pub size: i64,
+    pub existing_file_id: Option<i64>,
+    pub skip_lock_check: bool,
+    pub policy: &'a crate::entities::storage_policy::Model,
+    pub preuploaded_blob: PreparedNonDedupBlobUpload,
+}
+
 pub(crate) async fn store_from_temp(
     state: &AppState,
-    scope: WorkspaceStorageScope,
-    folder_id: Option<i64>,
-    filename: &str,
-    temp_path: &str,
-    size: i64,
-    existing_file_id: Option<i64>,
-    skip_lock_check: bool,
+    params: StoreFromTempParams<'_>,
 ) -> Result<file::Model> {
     store_from_temp_internal(
         state,
-        scope,
-        folder_id,
-        filename,
-        temp_path,
-        size,
-        existing_file_id,
-        skip_lock_check,
-        None,
-        None,
+        params,
+        StoreFromTempHints::default(),
         NewFileMode::ResolveUnique,
     )
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn store_from_temp_with_hints(
     state: &AppState,
-    scope: WorkspaceStorageScope,
-    folder_id: Option<i64>,
-    filename: &str,
-    temp_path: &str,
-    size: i64,
-    existing_file_id: Option<i64>,
-    skip_lock_check: bool,
-    resolved_policy: Option<crate::entities::storage_policy::Model>,
-    precomputed_hash: Option<&str>,
+    params: StoreFromTempParams<'_>,
+    hints: StoreFromTempHints<'_>,
 ) -> Result<file::Model> {
-    store_from_temp_internal(
-        state,
-        scope,
-        folder_id,
-        filename,
-        temp_path,
-        size,
-        existing_file_id,
-        skip_lock_check,
-        resolved_policy,
-        precomputed_hash,
-        NewFileMode::ResolveUnique,
-    )
-    .await
+    store_from_temp_internal(state, params, hints, NewFileMode::ResolveUnique).await
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn store_from_temp_exact_name_with_hints(
     state: &AppState,
-    scope: WorkspaceStorageScope,
-    folder_id: Option<i64>,
-    filename: &str,
-    temp_path: &str,
-    size: i64,
-    existing_file_id: Option<i64>,
-    skip_lock_check: bool,
-    resolved_policy: Option<crate::entities::storage_policy::Model>,
-    precomputed_hash: Option<&str>,
+    params: StoreFromTempParams<'_>,
+    hints: StoreFromTempHints<'_>,
 ) -> Result<file::Model> {
-    store_from_temp_internal(
-        state,
+    store_from_temp_internal(state, params, hints, NewFileMode::Exact).await
+}
+
+async fn store_from_temp_internal(
+    state: &AppState,
+    params: StoreFromTempParams<'_>,
+    hints: StoreFromTempHints<'_>,
+    new_file_mode: NewFileMode,
+) -> Result<file::Model> {
+    let StoreFromTempParams {
         scope,
         folder_id,
         filename,
@@ -97,27 +120,11 @@ pub(crate) async fn store_from_temp_exact_name_with_hints(
         size,
         existing_file_id,
         skip_lock_check,
+    } = params;
+    let StoreFromTempHints {
         resolved_policy,
         precomputed_hash,
-        NewFileMode::Exact,
-    )
-    .await
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn store_from_temp_internal(
-    state: &AppState,
-    scope: WorkspaceStorageScope,
-    folder_id: Option<i64>,
-    filename: &str,
-    temp_path: &str,
-    size: i64,
-    existing_file_id: Option<i64>,
-    skip_lock_check: bool,
-    resolved_policy: Option<crate::entities::storage_policy::Model>,
-    precomputed_hash: Option<&str>,
-    new_file_mode: NewFileMode,
-) -> Result<file::Model> {
+    } = hints;
     let db = &state.db;
 
     tracing::debug!(
@@ -437,18 +444,20 @@ pub(crate) async fn create_empty(
     Ok(created)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn store_preuploaded_nondedup(
     state: &AppState,
-    scope: WorkspaceStorageScope,
-    folder_id: Option<i64>,
-    filename: &str,
-    size: i64,
-    existing_file_id: Option<i64>,
-    skip_lock_check: bool,
-    policy: &crate::entities::storage_policy::Model,
-    preuploaded_blob: PreparedNonDedupBlobUpload,
+    params: StorePreuploadedNondedupParams<'_>,
 ) -> Result<file::Model> {
+    let StorePreuploadedNondedupParams {
+        scope,
+        folder_id,
+        filename,
+        size,
+        existing_file_id,
+        skip_lock_check,
+        policy,
+        preuploaded_blob,
+    } = params;
     let db = &state.db;
 
     tracing::debug!(

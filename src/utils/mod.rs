@@ -118,33 +118,51 @@ pub fn is_hidden_name(name: &str) -> bool {
 /// - `test (99).txt` → `test (100).txt`
 /// - `folder` → `folder (1)` （无扩展名）
 /// - `folder (3)` → `folder (4)`
-pub fn next_copy_name(name: &str) -> String {
-    // 分离扩展名
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct CopyNameTemplate {
+    pub base_name: String,
+    pub ext: Option<String>,
+    pub next_copy_number: u32,
+}
+
+pub(crate) fn copy_name_template(name: &str) -> CopyNameTemplate {
     let (stem, ext) = match name.rfind('.') {
-        Some(dot) if dot > 0 => (&name[..dot], Some(&name[dot..])),
+        Some(dot) if dot > 0 => (&name[..dot], Some(name[dot..].to_string())),
         _ => (name, None),
     };
 
-    // 检查 stem 是否已经有 " (N)" 后缀
-    let (base, next_n) = if let Some(paren_start) = stem.rfind(" (") {
+    let (base_name, next_copy_number) = if let Some(paren_start) = stem.rfind(" (") {
         let after_paren = &stem[paren_start + 2..];
         if let Some(num_str) = after_paren.strip_suffix(')') {
             if let Ok(n) = num_str.parse::<u32>() {
-                (&stem[..paren_start], n + 1)
+                (stem[..paren_start].to_string(), n + 1)
             } else {
-                (stem, 1)
+                (stem.to_string(), 1)
             }
         } else {
-            (stem, 1)
+            (stem.to_string(), 1)
         }
     } else {
-        (stem, 1)
+        (stem.to_string(), 1)
     };
 
-    match ext {
-        Some(ext) => format!("{base} ({next_n}){ext}"),
-        None => format!("{base} ({next_n})"),
+    CopyNameTemplate {
+        base_name,
+        ext,
+        next_copy_number,
     }
+}
+
+pub(crate) fn format_copy_name(template: &CopyNameTemplate, copy_number: u32) -> String {
+    match template.ext.as_deref() {
+        Some(ext) => format!("{} ({copy_number}){ext}", template.base_name),
+        None => format!("{} ({copy_number})", template.base_name),
+    }
+}
+
+pub fn next_copy_name(name: &str) -> String {
+    let template = copy_name_template(name);
+    format_copy_name(&template, template.next_copy_number)
 }
 
 #[cfg(test)]
@@ -214,6 +232,18 @@ mod tests {
         assert_eq!(next_copy_name("my.file.tar.gz"), "my.file.tar (1).gz");
         assert_eq!(next_copy_name("photo (1).jpg"), "photo (2).jpg");
         assert_eq!(next_copy_name(".hidden"), ".hidden (1)");
+    }
+
+    #[test]
+    fn test_copy_name_template_parses_existing_suffix() {
+        let template = copy_name_template("photo (41).jpg");
+        assert_eq!(template.base_name, "photo");
+        assert_eq!(template.ext.as_deref(), Some(".jpg"));
+        assert_eq!(template.next_copy_number, 42);
+        assert_eq!(
+            format_copy_name(&template, template.next_copy_number),
+            "photo (42).jpg"
+        );
     }
 
     #[test]

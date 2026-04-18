@@ -215,18 +215,21 @@ pub async fn mark_progress<C: ConnectionTrait>(
     Ok(result.rows_affected == 1)
 }
 
-#[allow(clippy::too_many_arguments)]
+pub struct TaskSuccessUpdate<'a> {
+    pub id: i64,
+    pub processing_token: i64,
+    pub result_json: Option<&'a str>,
+    pub steps_json: Option<&'a str>,
+    pub current: i64,
+    pub total: i64,
+    pub status_text: Option<&'a str>,
+    pub finished_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+}
+
 pub async fn mark_succeeded<C: ConnectionTrait>(
     db: &C,
-    id: i64,
-    processing_token: i64,
-    result_json: Option<&str>,
-    steps_json: Option<&str>,
-    current: i64,
-    total: i64,
-    status_text: Option<&str>,
-    finished_at: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
+    success: TaskSuccessUpdate<'_>,
 ) -> Result<bool> {
     let mut update = BackgroundTask::update_many()
         .col_expr(
@@ -235,16 +238,19 @@ pub async fn mark_succeeded<C: ConnectionTrait>(
         )
         .col_expr(
             background_task::Column::ResultJson,
-            Expr::value(result_json.map(str::to_string)),
+            Expr::value(success.result_json.map(str::to_string)),
         )
         .col_expr(
             background_task::Column::ProgressCurrent,
-            Expr::value(current),
+            Expr::value(success.current),
         )
-        .col_expr(background_task::Column::ProgressTotal, Expr::value(total))
+        .col_expr(
+            background_task::Column::ProgressTotal,
+            Expr::value(success.total),
+        )
         .col_expr(
             background_task::Column::StatusText,
-            Expr::value(status_text.map(str::to_string)),
+            Expr::value(success.status_text.map(str::to_string)),
         )
         .col_expr(
             background_task::Column::ProcessingStartedAt,
@@ -260,14 +266,20 @@ pub async fn mark_succeeded<C: ConnectionTrait>(
         )
         .col_expr(
             background_task::Column::FinishedAt,
-            Expr::value(Some(finished_at)),
+            Expr::value(Some(success.finished_at)),
         )
-        .col_expr(background_task::Column::ExpiresAt, Expr::value(expires_at))
-        .col_expr(background_task::Column::UpdatedAt, Expr::value(finished_at))
-        .filter(background_task::Column::Id.eq(id))
+        .col_expr(
+            background_task::Column::ExpiresAt,
+            Expr::value(success.expires_at),
+        )
+        .col_expr(
+            background_task::Column::UpdatedAt,
+            Expr::value(success.finished_at),
+        )
+        .filter(background_task::Column::Id.eq(success.id))
         .filter(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
-        .filter(background_task::Column::ProcessingToken.eq(processing_token));
-    if let Some(steps_json) = steps_json {
+        .filter(background_task::Column::ProcessingToken.eq(success.processing_token));
+    if let Some(steps_json) = success.steps_json {
         update = update.col_expr(
             background_task::Column::StepsJson,
             Expr::value(Some(steps_json.to_string())),

@@ -632,18 +632,8 @@ pub(crate) async fn list_folder_response(
     parent_id: Option<i64>,
     query: &FolderListQuery,
 ) -> Result<HttpResponse> {
-    let contents = folder_service::list_in_scope(
-        state,
-        scope,
-        parent_id,
-        query.folder_limit(),
-        query.folder_offset(),
-        query.file_limit(),
-        query.file_cursor(),
-        query.sort_by(),
-        query.sort_order(),
-    )
-    .await?;
+    let params = folder_service::FolderListParams::from(query);
+    let contents = folder_service::list_in_scope(state, scope, parent_id, &params).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 

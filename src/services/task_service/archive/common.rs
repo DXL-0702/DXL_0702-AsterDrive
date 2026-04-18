@@ -137,13 +137,16 @@ async fn resolve_unique_folder_name_in_scope(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(super) struct ArchiveSinkContext<'a> {
+    pub handle: &'a tokio::runtime::Handle,
+    pub db: &'a DatabaseConnection,
+    pub driver_registry: &'a DriverRegistry,
+    pub policy_snapshot: &'a PolicySnapshot,
+    pub lease_guard: Option<&'a TaskLeaseGuard>,
+}
+
 pub(super) fn write_archive_to_sink<W, F>(
-    handle: &tokio::runtime::Handle,
-    db: &DatabaseConnection,
-    driver_registry: &DriverRegistry,
-    policy_snapshot: &PolicySnapshot,
-    lease_guard: Option<&TaskLeaseGuard>,
+    ctx: ArchiveSinkContext<'_>,
     entries: Vec<ArchiveEntry>,
     total_bytes: i64,
     output: W,
@@ -161,7 +164,7 @@ where
     let mut processed_bytes = 0_i64;
 
     for entry in entries {
-        ensure_task_lease_active(lease_guard)?;
+        ensure_task_lease_active(ctx.lease_guard)?;
         match entry {
             ArchiveEntry::Directory { entry_path } => {
                 zip.add_directory(&entry_path, dir_options)
@@ -171,15 +174,16 @@ where
                 zip.start_file(&entry_path, file_options)
                     .map_aster_err(AsterError::storage_driver_error)?;
 
-                let stream = handle.block_on(async {
-                    let blob = file_repo::find_blob_by_id(db, file.blob_id).await?;
-                    let policy = policy_snapshot.get_policy_or_err(blob.policy_id)?;
-                    let driver = driver_registry.get_driver(&policy)?;
+                let stream = ctx.handle.block_on(async {
+                    let blob = file_repo::find_blob_by_id(ctx.db, file.blob_id).await?;
+                    let policy = ctx.policy_snapshot.get_policy_or_err(blob.policy_id)?;
+                    let driver = ctx.driver_registry.get_driver(&policy)?;
                     driver.get_stream(&blob.storage_path).await
                 })?;
 
                 let mut reader = tokio_util::io::SyncIoBridge::new(stream);
-                let copied = copy_reader_to_writer_with_lease(lease_guard, &mut reader, &mut zip)?;
+                let copied =
+                    copy_reader_to_writer_with_lease(ctx.lease_guard, &mut reader, &mut zip)?;
                 processed_bytes = processed_bytes
                     .checked_add(i64::try_from(copied).map_err(|_| {
                         AsterError::internal_error(format!(

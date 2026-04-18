@@ -3,6 +3,7 @@
 #[macro_use]
 mod common;
 
+use aster_drive::services::file_service::StoreFromTempRequest;
 use std::collections::BTreeSet;
 
 fn assert_share_target_check_violation(db: &sea_orm::DatabaseConnection, err: &sea_orm::DbErr) {
@@ -69,12 +70,7 @@ async fn store_service_file(
     aster_drive::services::file_service::store_from_temp(
         state,
         user_id,
-        folder_id,
-        name,
-        &path,
-        contents.len() as i64,
-        None,
-        false,
+        StoreFromTempRequest::new(folder_id, name, &path, contents.len() as i64),
     )
     .await
     .unwrap()
@@ -258,12 +254,7 @@ async fn test_file_service_get_info() {
     let file = aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "service_test.txt",
-        &temp_path,
-        18,
-        None,
-        false,
+        StoreFromTempRequest::new(None, "service_test.txt", &temp_path, 18),
     )
     .await
     .unwrap();
@@ -722,12 +713,7 @@ async fn test_lock_service_unlock_by_token_clears_file_lock_state() {
     let file = file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "locked.txt",
-        &temp_path,
-        "lock by token".len() as i64,
-        None,
-        false,
+        StoreFromTempRequest::new(None, "locked.txt", &temp_path, "lock by token".len() as i64),
     )
     .await
     .unwrap();
@@ -848,12 +834,7 @@ async fn test_version_service_list_delete() {
     let file = aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "versioned.txt",
-        &temp1,
-        9,
-        None,
-        false,
+        StoreFromTempRequest::new(None, "versioned.txt", &temp1, 9),
     )
     .await
     .unwrap();
@@ -871,12 +852,7 @@ async fn test_version_service_list_delete() {
     let _ = aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "versioned.txt",
-        &temp2,
-        17,
-        Some(file.id),
-        false,
+        StoreFromTempRequest::new(None, "versioned.txt", &temp2, 17).overwrite(file.id),
     )
     .await
     .unwrap();
@@ -921,12 +897,7 @@ async fn test_delete_version_keeps_history_numbers_dense() {
     let file = aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "dense-versioned.txt",
-        &temp1,
-        4,
-        None,
-        false,
+        StoreFromTempRequest::new(None, "dense-versioned.txt", &temp1, 4),
     )
     .await
     .unwrap();
@@ -935,12 +906,7 @@ async fn test_delete_version_keeps_history_numbers_dense() {
     aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "dense-versioned.txt",
-        &temp2,
-        4,
-        Some(file.id),
-        false,
+        StoreFromTempRequest::new(None, "dense-versioned.txt", &temp2, 4).overwrite(file.id),
     )
     .await
     .unwrap();
@@ -949,12 +915,7 @@ async fn test_delete_version_keeps_history_numbers_dense() {
     aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "dense-versioned.txt",
-        &temp3,
-        4,
-        Some(file.id),
-        false,
+        StoreFromTempRequest::new(None, "dense-versioned.txt", &temp3, 4).overwrite(file.id),
     )
     .await
     .unwrap();
@@ -989,12 +950,7 @@ async fn test_delete_version_keeps_history_numbers_dense() {
     aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "dense-versioned.txt",
-        &temp4,
-        4,
-        Some(file.id),
-        false,
+        StoreFromTempRequest::new(None, "dense-versioned.txt", &temp4, 4).overwrite(file.id),
     )
     .await
     .unwrap();
@@ -1028,12 +984,7 @@ async fn test_version_storage_used_tracks_overwrite_delete_and_restore() {
     let file = aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "quota-versioned.txt",
-        &temp1,
-        4,
-        None,
-        false,
+        StoreFromTempRequest::new(None, "quota-versioned.txt", &temp1, 4),
     )
     .await
     .unwrap();
@@ -1043,12 +994,7 @@ async fn test_version_storage_used_tracks_overwrite_delete_and_restore() {
     aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "quota-versioned.txt",
-        &temp2,
-        6,
-        Some(file.id),
-        false,
+        StoreFromTempRequest::new(None, "quota-versioned.txt", &temp2, 6).overwrite(file.id),
     )
     .await
     .unwrap();
@@ -1058,12 +1004,7 @@ async fn test_version_storage_used_tracks_overwrite_delete_and_restore() {
     aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "quota-versioned.txt",
-        &temp3,
-        8,
-        Some(file.id),
-        false,
+        StoreFromTempRequest::new(None, "quota-versioned.txt", &temp3, 8).overwrite(file.id),
     )
     .await
     .unwrap();
@@ -1135,12 +1076,7 @@ async fn test_version_cleanup_excess_reclaims_storage_used() {
     let file = aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "limit-versioned.txt",
-        &temp1,
-        4,
-        None,
-        false,
+        StoreFromTempRequest::new(None, "limit-versioned.txt", &temp1, 4),
     )
     .await
     .unwrap();
@@ -1150,12 +1086,7 @@ async fn test_version_cleanup_excess_reclaims_storage_used() {
     aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "limit-versioned.txt",
-        &temp2,
-        6,
-        Some(file.id),
-        false,
+        StoreFromTempRequest::new(None, "limit-versioned.txt", &temp2, 6).overwrite(file.id),
     )
     .await
     .unwrap();
@@ -1165,12 +1096,7 @@ async fn test_version_cleanup_excess_reclaims_storage_used() {
     aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "limit-versioned.txt",
-        &temp3,
-        8,
-        Some(file.id),
-        false,
+        StoreFromTempRequest::new(None, "limit-versioned.txt", &temp3, 8).overwrite(file.id),
     )
     .await
     .unwrap();
@@ -1205,12 +1131,7 @@ async fn test_version_restore_truncates_future_versions_without_deleting_target_
     let file = aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "restore.txt",
-        &temp1,
-        9,
-        None,
-        false,
+        StoreFromTempRequest::new(None, "restore.txt", &temp1, 9),
     )
     .await
     .unwrap();
@@ -1220,12 +1141,7 @@ async fn test_version_restore_truncates_future_versions_without_deleting_target_
     aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "restore.txt",
-        &temp2,
-        9,
-        Some(file.id),
-        false,
+        StoreFromTempRequest::new(None, "restore.txt", &temp2, 9).overwrite(file.id),
     )
     .await
     .unwrap();
@@ -1235,12 +1151,7 @@ async fn test_version_restore_truncates_future_versions_without_deleting_target_
     aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "restore.txt",
-        &temp3,
-        9,
-        Some(file.id),
-        false,
+        StoreFromTempRequest::new(None, "restore.txt", &temp3, 9).overwrite(file.id),
     )
     .await
     .unwrap();
@@ -1250,12 +1161,7 @@ async fn test_version_restore_truncates_future_versions_without_deleting_target_
     let latest = aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "restore.txt",
-        &temp4,
-        9,
-        Some(file.id),
-        false,
+        StoreFromTempRequest::new(None, "restore.txt", &temp4, 9).overwrite(file.id),
     )
     .await
     .unwrap();
@@ -1313,12 +1219,7 @@ async fn test_version_restore_truncates_future_versions_without_deleting_target_
     aster_drive::services::file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "restore.txt",
-        &temp5,
-        9,
-        Some(file.id),
-        false,
+        StoreFromTempRequest::new(None, "restore.txt", &temp5, 9).overwrite(file.id),
     )
     .await
     .unwrap();
@@ -1353,7 +1254,9 @@ async fn test_copy_file_naming() {
     std::fs::write(&temp, "copy me").unwrap();
 
     let file = aster_drive::services::file_service::store_from_temp(
-        &state, user.id, None, "doc.txt", &temp, 7, None, false,
+        &state,
+        user.id,
+        StoreFromTempRequest::new(None, "doc.txt", &temp, 7),
     )
     .await
     .unwrap();

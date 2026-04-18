@@ -25,7 +25,7 @@ use crate::types::NullablePatch;
 pub use access::verify_folder_access;
 pub use copy::copy_folder;
 pub use hierarchy::{build_folder_paths, get_ancestors};
-pub use listing::{list, list_shared};
+pub use listing::{FolderListParams, list, list_shared};
 pub use models::{
     FileCursor, FileListItem, FolderAncestorItem, FolderContents, FolderListItem,
     build_file_list_items, build_folder_list_items,

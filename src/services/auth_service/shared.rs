@@ -114,17 +114,28 @@ pub(super) async fn ensure_email_available<C: ConnectionTrait>(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(super) struct CreateUserWithRoleInput<'a> {
+    pub username: &'a str,
+    pub email: &'a str,
+    pub password: &'a str,
+    pub role: UserRole,
+    pub status: UserStatus,
+    pub email_verified_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 pub(super) async fn create_user_with_role<C: ConnectionTrait>(
     db: &C,
     state: &AppState,
-    username: &str,
-    email: &str,
-    password: &str,
-    role: UserRole,
-    status: UserStatus,
-    email_verified_at: Option<chrono::DateTime<chrono::Utc>>,
+    input: CreateUserWithRoleInput<'_>,
 ) -> Result<user::Model> {
+    let CreateUserWithRoleInput {
+        username,
+        email,
+        password,
+        role,
+        status,
+        email_verified_at,
+    } = input;
     let username = normalize_username(username)?;
     let email = normalize_email(email)?;
     validate_password(password)?;
@@ -200,12 +211,14 @@ pub(super) async fn create_first_admin(
     create_user_with_role(
         &state.db,
         state,
-        username,
-        email,
-        password,
-        UserRole::Admin,
-        UserStatus::Active,
-        Some(Utc::now()),
+        CreateUserWithRoleInput {
+            username,
+            email,
+            password,
+            role: UserRole::Admin,
+            status: UserStatus::Active,
+            email_verified_at: Some(Utc::now()),
+        },
     )
     .await
 }

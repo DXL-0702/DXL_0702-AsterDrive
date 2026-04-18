@@ -14,6 +14,12 @@ import { useAuthStore } from "@/stores/authStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 
+/** SSE 应用层重连：指数退避，避免服务端 5xx/401 时浏览器默认 ~3s 间隔的快速重连风暴。 */
+const SSE_RECONNECT_BASE_MS = 1_000;
+const SSE_RECONNECT_MAX_MS = 30_000;
+/** 连续失败次数到阈值后熔断，要求用户刷新或重新登录；防止永久打 backend。 */
+const SSE_RECONNECT_FAILURE_LIMIT = 8;
+
 type StorageChangeWorkspace =
 	| { kind: "personal" }
 	| { kind: "team"; team_id: number };
@@ -107,56 +113,107 @@ export function useStorageChangeEvents() {
 			return;
 		}
 
-		const source = new EventSource(
-			joinApiUrl(config.apiBaseUrl, "/auth/events/storage"),
-			{
-				withCredentials: true,
-			},
-		);
+		// 应用层重连状态：浏览器内置重连只能等固定 3s，且无法感知"该停下来"的情况
+		// （比如服务器持续 5xx）。我们手动管理 EventSource 生命周期：
+		// 失败 → close → 退避 setTimeout → new EventSource，连续失败超阈值后停止。
+		let source: EventSource | null = null;
+		let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+		let failureCount = 0;
+		let cancelled = false;
 
-		source.onmessage = (message) => {
-			let event: StorageChangeEventPayload;
-			try {
-				event = JSON.parse(message.data) as StorageChangeEventPayload;
-			} catch (error) {
-				logger.warn("failed to parse storage change event", error);
+		const scheduleReconnect = () => {
+			if (cancelled) return;
+			if (failureCount >= SSE_RECONNECT_FAILURE_LIMIT) {
+				logger.warn(
+					`storage event stream gave up after ${failureCount} consecutive failures; reload to retry`,
+				);
 				return;
 			}
+			// 指数退避：第 1 次失败后 1s，第 2 次 2s, 4s, ..., 上限 30s。
+			// failureCount 在 onerror 里 +1，所以这里指数用 (failureCount - 1)。
+			const delay = Math.min(
+				SSE_RECONNECT_BASE_MS * 2 ** Math.max(0, failureCount - 1),
+				SSE_RECONNECT_MAX_MS,
+			);
+			logger.debug(
+				`scheduling SSE reconnect in ${delay}ms (failure #${failureCount})`,
+			);
+			reconnectTimer = setTimeout(() => {
+				reconnectTimer = null;
+				connect();
+			}, delay);
+		};
 
-			const workspace = useWorkspaceStore.getState().workspace;
-			if (!eventMatchesWorkspace(event.workspace, workspace)) {
-				return;
-			}
+		const connect = () => {
+			if (cancelled) return;
+			source = new EventSource(
+				joinApiUrl(config.apiBaseUrl, "/auth/events/storage"),
+				{ withCredentials: true },
+			);
 
-			if (event.kind === "sync.required") {
-				invalidateBlobUrl();
-				invalidateTextContent();
-				if (!useFileStore.getState().searchQuery) {
+			source.onopen = () => {
+				// 连接确认建立后才重置失败计数；浏览器在 onopen 之前的重连不算成功
+				failureCount = 0;
+			};
+
+			source.onmessage = (message) => {
+				let event: StorageChangeEventPayload;
+				try {
+					event = JSON.parse(message.data) as StorageChangeEventPayload;
+				} catch (error) {
+					logger.warn("failed to parse storage change event", error);
+					return;
+				}
+
+				const workspace = useWorkspaceStore.getState().workspace;
+				if (!eventMatchesWorkspace(event.workspace, workspace)) {
+					return;
+				}
+
+				if (event.kind === "sync.required") {
+					invalidateBlobUrl();
+					invalidateTextContent();
+					if (!useFileStore.getState().searchQuery) {
+						if (isStorageRefreshGateActive()) {
+							deferStorageRefresh();
+							return;
+						}
+						void refreshCurrentFolder();
+					}
+					return;
+				}
+
+				invalidatePreviewCaches(event.file_ids);
+				if (shouldRefreshCurrentFolder(event)) {
 					if (isStorageRefreshGateActive()) {
 						deferStorageRefresh();
 						return;
 					}
 					void refreshCurrentFolder();
 				}
-				return;
-			}
+			};
 
-			invalidatePreviewCaches(event.file_ids);
-			if (shouldRefreshCurrentFolder(event)) {
-				if (isStorageRefreshGateActive()) {
-					deferStorageRefresh();
-					return;
-				}
-				void refreshCurrentFolder();
-			}
+			source.onerror = (error) => {
+				// EventSource 的 onerror 不带 HTTP 状态码，无法区分 401/5xx/网络断开。
+				// 统一关闭当前连接、走退避重连，不让浏览器默认 3s 重连风暴。
+				logger.debug("storage change event stream error", error);
+				failureCount += 1;
+				source?.close();
+				source = null;
+				scheduleReconnect();
+			};
 		};
 
-		source.onerror = (error) => {
-			logger.debug("storage change event stream error", error);
-		};
+		connect();
 
 		return () => {
-			source.close();
+			cancelled = true;
+			if (reconnectTimer !== null) {
+				clearTimeout(reconnectTimer);
+				reconnectTimer = null;
+			}
+			source?.close();
+			source = null;
 		};
 	}, [isAuthenticated, storageEventStreamEnabled]);
 }

@@ -330,12 +330,14 @@ async fn finalize_s3_upload_session(
     // 记成 blob + file，并原子更新配额和 session 状态。
     workspace_storage_service::finalize_upload_session_file(
         state,
-        session,
-        &format!("s3-{}", session.id),
-        size,
-        policy_id,
-        storage_path,
-        Utc::now(),
+        workspace_storage_service::FinalizeUploadSessionFileParams {
+            session,
+            file_hash: &format!("s3-{}", session.id),
+            size,
+            policy_id,
+            storage_path,
+            now: Utc::now(),
+        },
     )
     .await
 }

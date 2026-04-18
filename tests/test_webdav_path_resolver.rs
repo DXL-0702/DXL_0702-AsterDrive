@@ -70,12 +70,12 @@ async fn seed_nested_file(
     let file = file_service::store_from_temp(
         state,
         user_id,
-        Some(reports.id),
-        "q1.txt",
-        &temp_path,
-        contents.len() as i64,
-        None,
-        false,
+        file_service::StoreFromTempRequest::new(
+            Some(reports.id),
+            "q1.txt",
+            &temp_path,
+            contents.len() as i64,
+        ),
     )
     .await
     .unwrap();
@@ -208,12 +208,12 @@ async fn test_path_resolver_handles_root_level_and_missing_path_boundaries() {
     let file = file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "root.txt",
-        &temp_path,
-        contents.len() as i64,
-        None,
-        false,
+        file_service::StoreFromTempRequest::new(
+            None,
+            "root.txt",
+            &temp_path,
+            contents.len() as i64,
+        ),
     )
     .await
     .unwrap();
@@ -296,12 +296,7 @@ async fn test_path_resolver_prefers_folder_when_file_and_folder_share_name() {
     let file = file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "shared-name",
-        &temp_path,
-        19,
-        None,
-        false,
+        file_service::StoreFromTempRequest::new(None, "shared-name", &temp_path, 19),
     )
     .await
     .unwrap();

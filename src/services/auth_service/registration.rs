@@ -10,7 +10,7 @@ use crate::services::{mail_outbox_service, mail_template::MailTemplatePayload};
 use crate::types::{UserRole, UserStatus, VerificationPurpose};
 
 use super::shared::{
-    create_first_admin, create_user_with_role, find_user_by_identifier,
+    CreateUserWithRoleInput, create_first_admin, create_user_with_role, find_user_by_identifier,
     is_active_verification_request_error, issue_contact_verification_token, resend_allowed,
 };
 use super::{AuthUserInfo, UserAuditInfo, is_email_verified, user_audit_info};
@@ -24,12 +24,14 @@ pub async fn create_user_by_admin(
     create_user_with_role(
         &state.db,
         state,
-        username,
-        email,
-        password,
-        UserRole::User,
-        UserStatus::Active,
-        Some(Utc::now()),
+        CreateUserWithRoleInput {
+            username,
+            email,
+            password,
+            role: UserRole::User,
+            status: UserStatus::Active,
+            email_verified_at: Some(Utc::now()),
+        },
     )
     .await
     .map(AuthUserInfo::from)
@@ -65,12 +67,14 @@ pub async fn register(
     let user = create_user_with_role(
         &txn,
         state,
-        username,
-        email,
-        password,
-        UserRole::User,
-        UserStatus::Active,
-        email_verified_at,
+        CreateUserWithRoleInput {
+            username,
+            email,
+            password,
+            role: UserRole::User,
+            status: UserStatus::Active,
+            email_verified_at,
+        },
     )
     .await?;
     if auth_policy.register_activation_enabled {

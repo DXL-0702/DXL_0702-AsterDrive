@@ -15,10 +15,10 @@ use crate::types::{
 };
 
 use super::{
-    WorkspaceStorageScope, check_quota, create_new_file_from_blob, create_s3_nondedup_blob,
-    ensure_upload_parent_path, local_content_dedup_enabled, parse_relative_upload_path,
-    resolve_policy_for_size, store_from_temp, store_from_temp_with_hints, update_storage_used,
-    verify_folder_access,
+    StoreFromTempHints, StoreFromTempParams, WorkspaceStorageScope, check_quota,
+    create_new_file_from_blob, create_s3_nondedup_blob, ensure_upload_parent_path,
+    local_content_dedup_enabled, parse_relative_upload_path, resolve_policy_for_size,
+    store_from_temp, store_from_temp_with_hints, update_storage_used, verify_folder_access,
 };
 use crate::utils::numbers::usize_to_i64;
 
@@ -38,17 +38,29 @@ pub(crate) fn relay_stream_direct_upload_eligible(
     policy.chunk_size == 0 || declared_size <= effective_s3_multipart_chunk_size(policy.chunk_size)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Copy)]
+struct DirectUploadParams<'a> {
+    scope: WorkspaceStorageScope,
+    folder_id: Option<i64>,
+    relative_path: Option<&'a str>,
+    resolved_filename: &'a str,
+    policy: &'a crate::entities::storage_policy::Model,
+    declared_size: i64,
+}
+
 async fn upload_local_direct(
     state: &AppState,
-    scope: WorkspaceStorageScope,
     payload: &mut Multipart,
-    folder_id: Option<i64>,
-    relative_path: Option<&str>,
-    resolved_filename: &str,
-    policy: &crate::entities::storage_policy::Model,
-    declared_size: i64,
+    params: DirectUploadParams<'_>,
 ) -> Result<file::Model> {
+    let DirectUploadParams {
+        scope,
+        folder_id,
+        relative_path,
+        resolved_filename,
+        policy,
+        declared_size,
+    } = params;
     let should_dedup = local_content_dedup_enabled(policy);
 
     while let Some(field) = payload.next().await {
@@ -123,15 +135,11 @@ async fn upload_local_direct(
             let resolved_policy = (size == declared_size).then_some(policy.clone());
             let result = store_from_temp_with_hints(
                 state,
-                scope,
-                folder_id,
-                &filename,
-                &staging_path,
-                size,
-                None,
-                false,
-                resolved_policy,
-                precomputed_hash.as_deref(),
+                StoreFromTempParams::new(scope, folder_id, &filename, &staging_path, size),
+                StoreFromTempHints {
+                    resolved_policy,
+                    precomputed_hash: precomputed_hash.as_deref(),
+                },
             )
             .await;
 
@@ -143,17 +151,19 @@ async fn upload_local_direct(
     Err(AsterError::validation_error("empty file"))
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn upload_s3_relay_direct(
     state: &AppState,
-    scope: WorkspaceStorageScope,
     payload: &mut Multipart,
-    folder_id: Option<i64>,
-    relative_path: Option<&str>,
-    resolved_filename: &str,
-    policy: &crate::entities::storage_policy::Model,
-    declared_size: i64,
+    params: DirectUploadParams<'_>,
 ) -> Result<file::Model> {
+    let DirectUploadParams {
+        scope,
+        folder_id,
+        relative_path,
+        resolved_filename,
+        policy,
+        declared_size,
+    } = params;
     const RELAY_DIRECT_BUFFER_SIZE: usize = 64 * 1024;
 
     if policy.max_file_size > 0 && declared_size > policy.max_file_size {
@@ -350,13 +360,15 @@ pub(crate) async fn upload(
 
             let result = upload_s3_relay_direct(
                 state,
-                scope,
                 payload,
-                effective_folder_id,
-                relative_path,
-                &resolved_filename,
-                &policy,
-                declared_size,
+                DirectUploadParams {
+                    scope,
+                    folder_id: effective_folder_id,
+                    relative_path,
+                    resolved_filename: &resolved_filename,
+                    policy: &policy,
+                    declared_size,
+                },
             )
             .await;
             if let Ok(file) = &result {
@@ -383,13 +395,15 @@ pub(crate) async fn upload(
 
             let result = upload_local_direct(
                 state,
-                scope,
                 payload,
-                effective_folder_id,
-                relative_path,
-                &resolved_filename,
-                &policy,
-                declared_size,
+                DirectUploadParams {
+                    scope,
+                    folder_id: effective_folder_id,
+                    relative_path,
+                    resolved_filename: &resolved_filename,
+                    policy: &policy,
+                    declared_size,
+                },
             )
             .await;
             if let Ok(file) = &result {
@@ -461,13 +475,7 @@ pub(crate) async fn upload(
 
     let result = store_from_temp(
         state,
-        scope,
-        effective_folder_id,
-        &filename,
-        &temp_path,
-        size,
-        None,
-        false,
+        StoreFromTempParams::new(scope, effective_folder_id, &filename, &temp_path, size),
     )
     .await;
 

@@ -142,6 +142,7 @@ export function AdminTeamDetailDialog({
 	const contentRef = useRef<HTMLDivElement | null>(null);
 	const detailRequestIdRef = useRef(0);
 	const memberRequestIdRef = useRef(0);
+	const overviewSyncAllowedRef = useRef(true);
 	const sidebarRef = useRef<HTMLElement | null>(null);
 	const roleOptions: TeamMemberRole[] = ["owner", "admin", "member"];
 	const statusFilterOptions = [
@@ -275,6 +276,7 @@ export function AdminTeamDetailDialog({
 			auditRequestIdRef.current += 1;
 			detailRequestIdRef.current += 1;
 			memberRequestIdRef.current += 1;
+			overviewSyncAllowedRef.current = true;
 			setArchiveConfirmValue("");
 			setArchiveDialogOpen(false);
 			setArchiving(false);
@@ -305,6 +307,7 @@ export function AdminTeamDetailDialog({
 			return;
 		}
 
+		overviewSyncAllowedRef.current = true;
 		setAuditOffset(0);
 		setMemberOffset(0);
 		setDialogTab("overview");
@@ -390,12 +393,31 @@ export function AdminTeamDetailDialog({
 
 	useEffect(() => {
 		setArchiveConfirmValue("");
+		if (!overviewSyncAllowedRef.current) {
+			return;
+		}
+
 		setName(team?.name ?? "");
 		setDescription(team?.description ?? "");
 		setPolicyGroupId(
 			team?.policy_group_id != null ? String(team.policy_group_id) : "",
 		);
 	}, [team]);
+
+	const handleNameChange = (value: string) => {
+		overviewSyncAllowedRef.current = false;
+		setName(value);
+	};
+
+	const handleDescriptionChange = (value: string) => {
+		overviewSyncAllowedRef.current = false;
+		setDescription(value);
+	};
+
+	const handlePolicyGroupChange = (value: string) => {
+		overviewSyncAllowedRef.current = false;
+		setPolicyGroupId(value);
+	};
 
 	const quota = team?.storage_quota ?? 0;
 	const used = team?.storage_used ?? 0;
@@ -480,6 +502,7 @@ export function AdminTeamDetailDialog({
 
 		try {
 			setSaving(true);
+			overviewSyncAllowedRef.current = true;
 			await adminTeamService.update(team.id, {
 				name: nextName,
 				description: description.trim() || undefined,
@@ -505,6 +528,7 @@ export function AdminTeamDetailDialog({
 
 		try {
 			setArchiving(true);
+			overviewSyncAllowedRef.current = true;
 			await adminTeamService.delete(team.id);
 			await Promise.all([
 				loadTeamDetail(team.id),
@@ -527,6 +551,7 @@ export function AdminTeamDetailDialog({
 
 		try {
 			setRestoring(true);
+			overviewSyncAllowedRef.current = true;
 			await adminTeamService.restore(team.id);
 			await Promise.all([
 				loadTeamDetail(team.id),
@@ -704,9 +729,9 @@ export function AdminTeamDetailDialog({
 			detailLoading={detailLoading}
 			hasChanges={hasChanges}
 			name={name}
-			onDescriptionChange={setDescription}
-			onNameChange={setName}
-			onPolicyGroupChange={setPolicyGroupId}
+			onDescriptionChange={handleDescriptionChange}
+			onNameChange={handleNameChange}
+			onPolicyGroupChange={handlePolicyGroupChange}
 			onRefreshPolicyGroups={onRefreshPolicyGroups}
 			onSave={handleSave}
 			policyGroupId={policyGroupId}

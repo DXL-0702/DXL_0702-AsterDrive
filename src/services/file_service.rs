@@ -22,7 +22,8 @@ pub(crate) use common::{
 };
 pub(crate) use content::update_content_in_scope;
 pub use content::{
-    create_empty, resolve_policy, resolve_policy_for_size, store_from_temp, update_content, upload,
+    StoreFromTempRequest, create_empty, resolve_policy, resolve_policy_for_size, store_from_temp,
+    update_content, upload,
 };
 pub use deletion::{batch_purge, delete, purge};
 pub(crate) use deletion::{batch_purge_in_scope, cleanup_unreferenced_blob, delete_in_scope};

@@ -1,8 +1,8 @@
 //! `file_repo` 仓储子模块：`query`。
 
 use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
+    ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait, FromQueryResult,
+    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, Statement, sea_query::Expr,
 };
 
 use crate::api::pagination::{SortBy, SortOrder};
@@ -10,6 +10,11 @@ use crate::entities::file::{self, Entity as File};
 use crate::errors::{AsterError, MapAsterErr, Result};
 
 use super::common::{FileScope, active_scope_condition, apply_folder_condition, scope_condition};
+
+#[derive(Debug, FromQueryResult)]
+struct ResolvedUniqueFilenameRow {
+    candidate: String,
+}
 
 fn sum_as_i64_expr(
     backend: DbBackend,
@@ -475,14 +480,121 @@ async fn resolve_unique_filename_in_scope<C: ConnectionTrait>(
     folder_id: Option<i64>,
     name: &str,
 ) -> Result<String> {
-    let mut final_name = name.to_string();
-    while find_by_name_in_folder_in_scope(db, scope, folder_id, &final_name)
-        .await?
-        .is_some()
-    {
-        final_name = crate::utils::next_copy_name(&final_name);
-    }
-    Ok(final_name)
+    let template = crate::utils::copy_name_template(name);
+    let backend = db.get_database_backend();
+    let seed_select = match backend {
+        DbBackend::Postgres => {
+            "SELECT $1::BIGINT, $2::BIGINT, $3::TEXT, $4::BIGINT, $5::TEXT, $6::TEXT"
+        }
+        DbBackend::MySql => {
+            "SELECT CAST(? AS SIGNED), CAST(? AS SIGNED), CAST(? AS CHAR), CAST(? AS SIGNED), CAST(? AS CHAR), CAST(? AS CHAR)"
+        }
+        _ => {
+            "SELECT CAST(? AS INTEGER), CAST(? AS INTEGER), CAST(? AS TEXT), CAST(? AS INTEGER), CAST(? AS TEXT), CAST(? AS TEXT)"
+        }
+    };
+    let candidate_expr = match backend {
+        DbBackend::MySql => {
+            "CONCAT(chain.base_name, ' (', CAST(chain.next_copy_number AS CHAR), ')', COALESCE(chain.ext, ''))"
+        }
+        _ => {
+            "chain.base_name || ' (' || CAST(chain.next_copy_number AS TEXT) || ')' || COALESCE(chain.ext, '')"
+        }
+    };
+    let scope_condition = match scope {
+        FileScope::Personal { .. } => "f.user_id = seed.scope_owner_id AND f.team_id IS NULL",
+        FileScope::Team { .. } => "f.team_id = seed.scope_owner_id",
+    };
+    let recursive_scope_condition = match scope {
+        FileScope::Personal { .. } => "f.user_id = chain.scope_owner_id AND f.team_id IS NULL",
+        FileScope::Team { .. } => "f.team_id = chain.scope_owner_id",
+    };
+    let seed_name_match_condition = match backend {
+        DbBackend::MySql => {
+            "CONVERT(f.name USING utf8mb4) COLLATE utf8mb4_0900_ai_ci = CONVERT(seed.candidate USING utf8mb4) COLLATE utf8mb4_0900_ai_ci"
+        }
+        _ => "f.name = seed.candidate",
+    };
+    let recursive_name_match_condition = match backend {
+        DbBackend::MySql => format!(
+            "CONVERT(f.name USING utf8mb4) COLLATE utf8mb4_0900_ai_ci = CONVERT({candidate_expr} USING utf8mb4) COLLATE utf8mb4_0900_ai_ci"
+        ),
+        _ => format!("f.name = {candidate_expr}"),
+    };
+    let sql = format!(
+        "WITH RECURSIVE seed (scope_owner_id, folder_id, candidate, next_copy_number, base_name, ext) AS ( \
+             {seed_select} \
+         ), \
+         candidate_chain (step, scope_owner_id, folder_id, candidate, next_copy_number, base_name, ext, taken) AS ( \
+             SELECT \
+                 0, \
+                 seed.scope_owner_id, \
+                 seed.folder_id, \
+                 seed.candidate, \
+                 seed.next_copy_number, \
+                 seed.base_name, \
+                 seed.ext, \
+                 EXISTS ( \
+                     SELECT 1 \
+                     FROM files f \
+                     WHERE {scope_condition} \
+                       AND ((seed.folder_id IS NULL AND f.folder_id IS NULL) OR f.folder_id = seed.folder_id) \
+                       AND f.deleted_at IS NULL \
+                       AND {seed_name_match_condition} \
+                 ) \
+             FROM seed \
+             UNION ALL \
+             SELECT \
+                 chain.step + 1, \
+                 chain.scope_owner_id, \
+                 chain.folder_id, \
+                 {candidate_expr}, \
+                 chain.next_copy_number + 1, \
+                 chain.base_name, \
+                 chain.ext, \
+                 EXISTS ( \
+                     SELECT 1 \
+                     FROM files f \
+                     WHERE {recursive_scope_condition} \
+                       AND ((chain.folder_id IS NULL AND f.folder_id IS NULL) OR f.folder_id = chain.folder_id) \
+                       AND f.deleted_at IS NULL \
+                       AND {recursive_name_match_condition} \
+                 ) \
+             FROM candidate_chain chain \
+             WHERE chain.taken \
+         ) \
+         SELECT candidate \
+         FROM candidate_chain \
+         WHERE NOT taken \
+         ORDER BY step ASC \
+         LIMIT 1"
+    );
+    let scope_owner_id = match scope {
+        FileScope::Personal { user_id } => user_id,
+        FileScope::Team { team_id } => team_id,
+    };
+    let row = ResolvedUniqueFilenameRow::find_by_statement(Statement::from_sql_and_values(
+        backend,
+        sql,
+        [
+            scope_owner_id.into(),
+            folder_id.into(),
+            name.to_string().into(),
+            i64::from(template.next_copy_number).into(),
+            template.base_name.into(),
+            template.ext.into(),
+        ],
+    ))
+    .one(db)
+    .await
+    .map_err(AsterError::from)?
+    .ok_or_else(|| {
+        AsterError::internal_error(format!(
+            "failed to resolve a unique file name candidate for '{name}'"
+        ))
+    })?;
+
+    Ok(row.candidate)
 }
 
 pub async fn resolve_unique_filename<C: ConnectionTrait>(

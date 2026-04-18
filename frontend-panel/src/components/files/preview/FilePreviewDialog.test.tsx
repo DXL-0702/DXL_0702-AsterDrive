@@ -169,9 +169,19 @@ vi.mock("@/components/files/preview/WopiPreview", () => ({
 	),
 }));
 
-vi.mock("@/components/files/preview/file-capabilities", () => ({
-	detectFilePreviewProfile: () => mockState.profile,
-}));
+vi.mock(
+	"@/components/files/preview/file-capabilities",
+	async (importOriginal) => {
+		const actual =
+			await importOriginal<
+				typeof import("@/components/files/preview/file-capabilities")
+			>();
+		return {
+			...actual,
+			detectFilePreviewProfile: () => mockState.profile,
+		};
+	},
+);
 
 vi.mock("@/components/files/preview/video-browser-config", () => ({
 	getVideoBrowserOpenWithOption: () => mockState.videoBrowserOption,
@@ -409,7 +419,7 @@ describe("FilePreviewDialog", () => {
 		await chooseOpenMethod("files:mode_code");
 		await screen.findByText("code:/files/7/download:true");
 		fireEvent.click(screen.getByRole("button", { name: "mark-dirty" }));
-		fireEvent.click(screen.getByRole("button", { name: "X" }));
+		fireEvent.click(screen.getByRole("button", { name: "core:close" }));
 
 		expect(screen.getByText("unsaved-guard")).toBeInTheDocument();
 		expect(onClose).not.toHaveBeenCalled();

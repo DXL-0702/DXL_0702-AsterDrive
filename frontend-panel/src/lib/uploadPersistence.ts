@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 import {
 	PERSONAL_WORKSPACE,
 	type Workspace,
@@ -40,11 +41,64 @@ function readAll(): ResumableSession[] {
 	}
 }
 
+/** 检测错误是否为 localStorage 配额超限。各浏览器 DOMException name 不一致。 */
+function isQuotaExceededError(error: unknown): boolean {
+	if (!(error instanceof DOMException)) return false;
+	// `DOMException.code` 已 deprecated，只用 name 比较；
+	// QuotaExceededError = Chrome/Safari，NS_ERROR_DOM_QUOTA_REACHED = Firefox 旧版。
+	return (
+		error.name === "QuotaExceededError" ||
+		error.name === "NS_ERROR_DOM_QUOTA_REACHED"
+	);
+}
+
+/**
+ * 写入 localStorage，遇到 QuotaExceededError 时优雅降级：
+ * 1. 第一次 quota 错：丢弃最旧的一半 session 后重试（保留更近的恢复机会）
+ * 2. 仍失败：清空整个 key 并 warn，避免一次写失败让整页 crash
+ *
+ * 真实场景触发条件：多 workspace + 大量并发分片上传 + 巨型 completedParts 数组
+ * 累积体积可能突破浏览器 5–10MB 的 origin quota。
+ */
 function writeAll(sessions: ResumableSession[]): void {
 	if (sessions.length === 0) {
-		localStorage.removeItem(STORAGE_KEY);
-	} else {
+		try {
+			localStorage.removeItem(STORAGE_KEY);
+		} catch (error) {
+			logger.warn("failed to remove resumable uploads", error);
+		}
+		return;
+	}
+
+	try {
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+		return;
+	} catch (error) {
+		if (!isQuotaExceededError(error)) {
+			logger.warn("failed to persist resumable uploads", error);
+			return;
+		}
+
+		// quota 超限：按 savedAt 降序保留较新的一半，丢掉较旧的
+		const sorted = [...sessions].sort((a, b) => b.savedAt - a.savedAt);
+		const trimmed = sorted.slice(0, Math.max(1, Math.floor(sorted.length / 2)));
+		try {
+			localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+			logger.warn(
+				`localStorage quota exceeded; dropped ${sessions.length - trimmed.length} older resumable upload sessions`,
+			);
+		} catch (innerError) {
+			// 仍然失败：彻底放弃持久化，清空 key 防止下次读到坏 JSON
+			try {
+				localStorage.removeItem(STORAGE_KEY);
+			} catch {
+				/* ignore */
+			}
+			logger.warn(
+				"localStorage quota still exceeded after trimming; cleared resumable uploads to prevent crash",
+				innerError,
+			);
+		}
 	}
 }
 

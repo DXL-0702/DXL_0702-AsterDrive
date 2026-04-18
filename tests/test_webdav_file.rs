@@ -141,12 +141,12 @@ async fn test_aster_dav_fs_reports_quota_and_roundtrips_custom_props() {
     file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "quota-props.txt",
-        &temp_path,
-        content.len() as i64,
-        None,
-        false,
+        file_service::StoreFromTempRequest::new(
+            None,
+            "quota-props.txt",
+            &temp_path,
+            content.len() as i64,
+        ),
     )
     .await
     .unwrap();
@@ -245,12 +245,12 @@ async fn test_aster_dav_fs_open_read_is_rejected_without_temp_files() {
     file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "read-fallback.txt",
-        &temp_path,
-        content.len() as i64,
-        None,
-        false,
+        file_service::StoreFromTempRequest::new(
+            None,
+            "read-fallback.txt",
+            &temp_path,
+            content.len() as i64,
+        ),
     )
     .await
     .unwrap();

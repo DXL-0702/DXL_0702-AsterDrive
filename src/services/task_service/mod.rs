@@ -408,15 +408,17 @@ pub(super) async fn mark_task_succeeded(
     let lease = lease_guard.lease();
     if background_task_repo::mark_succeeded(
         &state.db,
-        lease.task_id,
-        lease.processing_token,
-        result_json.map(AsRef::as_ref),
-        Some(steps_json.as_ref()),
-        current,
-        total,
-        status_text.as_deref(),
-        now,
-        task_expiration_from(state, now),
+        background_task_repo::TaskSuccessUpdate {
+            id: lease.task_id,
+            processing_token: lease.processing_token,
+            result_json: result_json.map(AsRef::as_ref),
+            steps_json: Some(steps_json.as_ref()),
+            current,
+            total,
+            status_text: status_text.as_deref(),
+            finished_at: now,
+            expires_at: task_expiration_from(state, now),
+        },
     )
     .await?
     {

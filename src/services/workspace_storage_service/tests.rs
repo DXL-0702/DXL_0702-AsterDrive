@@ -22,7 +22,8 @@ use tokio::io::AsyncRead;
 use tokio::sync::{Notify, oneshot};
 
 use super::{
-    WorkspaceStorageScope, store_from_temp_exact_name_with_hints, store_from_temp_with_hints,
+    StoreFromTempHints, StoreFromTempParams, WorkspaceStorageScope,
+    store_from_temp_exact_name_with_hints, store_from_temp_with_hints,
 };
 
 struct BlockingPutFileDriver {
@@ -259,15 +260,17 @@ async fn exact_name_conflict_cleans_preuploaded_local_blob() {
     tokio::fs::write(&first_temp, first_bytes).await.unwrap();
     store_from_temp_with_hints(
         &state,
-        scope,
-        None,
-        "dup.txt",
-        &first_temp.to_string_lossy(),
-        first_bytes.len() as i64,
-        None,
-        false,
-        Some(policy.clone()),
-        None,
+        StoreFromTempParams::new(
+            scope,
+            None,
+            "dup.txt",
+            &first_temp.to_string_lossy(),
+            first_bytes.len() as i64,
+        ),
+        StoreFromTempHints {
+            resolved_policy: Some(policy.clone()),
+            precomputed_hash: None,
+        },
     )
     .await
     .unwrap();
@@ -280,15 +283,17 @@ async fn exact_name_conflict_cleans_preuploaded_local_blob() {
     tokio::fs::write(&second_temp, second_bytes).await.unwrap();
     let err = store_from_temp_exact_name_with_hints(
         &state,
-        scope,
-        None,
-        "dup.txt",
-        &second_temp.to_string_lossy(),
-        second_bytes.len() as i64,
-        None,
-        false,
-        Some(policy),
-        None,
+        StoreFromTempParams::new(
+            scope,
+            None,
+            "dup.txt",
+            &second_temp.to_string_lossy(),
+            second_bytes.len() as i64,
+        ),
+        StoreFromTempHints {
+            resolved_policy: Some(policy),
+            precomputed_hash: None,
+        },
     )
     .await
     .expect_err("exact-name conflict should fail");
@@ -327,15 +332,17 @@ async fn slow_nondedup_preupload_does_not_block_task_listing() {
     let store_task = tokio::spawn(async move {
         store_from_temp_with_hints(
             &state_for_store,
-            scope,
-            None,
-            "slow-upload.bin",
-            &temp_path,
-            payload.len() as i64,
-            None,
-            false,
-            Some(policy_for_store),
-            None,
+            StoreFromTempParams::new(
+                scope,
+                None,
+                "slow-upload.bin",
+                &temp_path,
+                payload.len() as i64,
+            ),
+            StoreFromTempHints {
+                resolved_policy: Some(policy_for_store),
+                precomputed_hash: None,
+            },
         )
         .await
     });

@@ -15,7 +15,9 @@ use crate::services::{
 };
 
 use super::super::types::CreateArchiveTaskParams;
-use super::common::{ArchiveEntry, is_client_disconnect_error_text, write_archive_to_sink};
+use super::common::{
+    ArchiveEntry, ArchiveSinkContext, is_client_disconnect_error_text, write_archive_to_sink,
+};
 
 pub(crate) struct PreparedArchiveDownload {
     pub file_ids: Vec<i64>,
@@ -49,11 +51,13 @@ pub(crate) async fn stream_archive_download_in_scope(
         let writer = tokio_util::io::SyncIoBridge::new(writer);
         let writer = std::io::BufWriter::new(writer);
         if let Err(error) = write_archive_to_sink(
-            &handle,
-            &db,
-            driver_registry.as_ref(),
-            policy_snapshot.as_ref(),
-            None,
+            ArchiveSinkContext {
+                handle: &handle,
+                db: &db,
+                driver_registry: driver_registry.as_ref(),
+                policy_snapshot: policy_snapshot.as_ref(),
+                lease_guard: None,
+            },
             entries,
             total_bytes,
             writer,

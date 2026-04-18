@@ -84,6 +84,7 @@ export function AdminTeamDetailOverviewSection({
 	team,
 }: OverviewSectionProps) {
 	const { t } = useTranslation(["admin", "core", "settings"]);
+	const formDisabled = saving || archiving || restoring || !canMutateTeam;
 
 	return (
 		<section className="rounded-2xl border bg-background/60 p-6">
@@ -128,13 +129,7 @@ export function AdminTeamDetailOverviewSection({
 								id="admin-team-detail-name"
 								value={name}
 								maxLength={128}
-								disabled={
-									detailLoading ||
-									saving ||
-									archiving ||
-									restoring ||
-									!canMutateTeam
-								}
+								disabled={formDisabled}
 								className={ADMIN_CONTROL_HEIGHT_CLASS}
 								onChange={(event) => onNameChange(event.target.value)}
 							/>
@@ -146,16 +141,7 @@ export function AdminTeamDetailOverviewSection({
 								value={policyGroupId}
 								onValueChange={(value) => onPolicyGroupChange(value ?? "")}
 							>
-								<SelectTrigger
-									disabled={
-										detailLoading ||
-										saving ||
-										archiving ||
-										restoring ||
-										policyGroupsLoading ||
-										!canMutateTeam
-									}
-								>
+								<SelectTrigger disabled={formDisabled || policyGroupsLoading}>
 									<SelectValue placeholder={t("select_policy_group")} />
 								</SelectTrigger>
 								<SelectContent>
@@ -191,13 +177,7 @@ export function AdminTeamDetailOverviewSection({
 							<textarea
 								id="admin-team-detail-description"
 								value={description}
-								disabled={
-									detailLoading ||
-									saving ||
-									archiving ||
-									restoring ||
-									!canMutateTeam
-								}
+								disabled={formDisabled}
 								rows={6}
 								className="min-h-32 w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50"
 								onChange={(event) => onDescriptionChange(event.target.value)}
@@ -208,12 +188,7 @@ export function AdminTeamDetailOverviewSection({
 						<Button
 							type="submit"
 							disabled={
-								detailLoading ||
-								saving ||
-								!canMutateTeam ||
-								!name.trim() ||
-								!policyGroupId ||
-								!hasChanges
+								formDisabled || !name.trim() || !policyGroupId || !hasChanges
 							}
 						>
 							{saving ? (

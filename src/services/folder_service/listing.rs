@@ -14,22 +14,53 @@ use super::{
     ensure_personal_folder_scope,
 };
 
-#[allow(clippy::too_many_arguments)]
-async fn build_folder_contents(
-    state: &AppState,
-    scope: WorkspaceStorageScope,
+#[derive(Debug, Clone)]
+pub struct FolderListParams {
+    pub(crate) folder_limit: u64,
+    pub(crate) folder_offset: u64,
+    pub(crate) file_limit: u64,
+    pub(crate) file_cursor: Option<(String, i64)>,
+    pub(crate) sort_by: crate::api::pagination::SortBy,
+    pub(crate) sort_order: crate::api::pagination::SortOrder,
+}
+
+impl From<&crate::api::pagination::FolderListQuery> for FolderListParams {
+    fn from(query: &crate::api::pagination::FolderListQuery) -> Self {
+        Self {
+            folder_limit: query.folder_limit(),
+            folder_offset: query.folder_offset(),
+            file_limit: query.file_limit(),
+            file_cursor: query.file_cursor(),
+            sort_by: query.sort_by(),
+            sort_order: query.sort_order(),
+        }
+    }
+}
+
+struct FolderListingResult {
     folders: Vec<crate::entities::folder::Model>,
     folders_total: u64,
     files: Vec<crate::entities::file::Model>,
     files_total: u64,
-    sort_by: crate::api::pagination::SortBy,
-    file_limit: u64,
+}
+
+async fn build_folder_contents(
+    state: &AppState,
+    scope: WorkspaceStorageScope,
+    listing: FolderListingResult,
+    params: &FolderListParams,
 ) -> Result<FolderContents> {
+    let FolderListingResult {
+        folders,
+        folders_total,
+        files,
+        files_total,
+    } = listing;
     // 列表接口除了返回文件/目录本身，还要顺手标注“是否已有活跃分享”。
     // 这里一次性批量查 share 状态，避免前端列表页出现 N+1。
-    let next_file_cursor = if files.len() as u64 == file_limit && file_limit > 0 {
+    let next_file_cursor = if files.len() as u64 == params.file_limit && params.file_limit > 0 {
         files.last().map(|f| FileCursor {
-            value: crate::api::pagination::SortBy::cursor_value(f, sort_by),
+            value: crate::api::pagination::SortBy::cursor_value(f, params.sort_by),
             id: f.id,
         })
     } else {
@@ -58,27 +89,21 @@ async fn build_folder_contents(
     })
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn list_in_scope(
     state: &AppState,
     scope: WorkspaceStorageScope,
     parent_id: Option<i64>,
-    folder_limit: u64,
-    folder_offset: u64,
-    file_limit: u64,
-    file_cursor: Option<(String, i64)>,
-    sort_by: crate::api::pagination::SortBy,
-    sort_order: crate::api::pagination::SortOrder,
+    params: &FolderListParams,
 ) -> Result<FolderContents> {
     tracing::debug!(
         scope = ?scope,
         parent_id,
-        folder_limit,
-        folder_offset,
-        file_limit,
-        has_file_cursor = file_cursor.is_some(),
-        sort_by = ?sort_by,
-        sort_order = ?sort_order,
+        folder_limit = params.folder_limit,
+        folder_offset = params.folder_offset,
+        file_limit = params.file_limit,
+        has_file_cursor = params.file_cursor.is_some(),
+        sort_by = ?params.sort_by,
+        sort_order = ?params.sort_order,
         "listing folder contents"
     );
     if let WorkspaceStorageScope::Team {
@@ -98,11 +123,17 @@ pub(crate) async fn list_in_scope(
     let (folders, folders_total, files, files_total) = match scope {
         WorkspaceStorageScope::Personal { user_id } => {
             let folder_task = async {
-                if folder_limit == 0 {
+                if params.folder_limit == 0 {
                     Ok((
                         vec![],
                         folder_repo::find_children_paginated(
-                            &state.db, user_id, parent_id, 0, 0, sort_by, sort_order,
+                            &state.db,
+                            user_id,
+                            parent_id,
+                            0,
+                            0,
+                            params.sort_by,
+                            params.sort_order,
                         )
                         .await?
                         .1,
@@ -112,20 +143,26 @@ pub(crate) async fn list_in_scope(
                         &state.db,
                         user_id,
                         parent_id,
-                        folder_limit,
-                        folder_offset,
-                        sort_by,
-                        sort_order,
+                        params.folder_limit,
+                        params.folder_offset,
+                        params.sort_by,
+                        params.sort_order,
                     )
                     .await
                 }
             };
             let file_task = async {
-                if file_limit == 0 {
+                if params.file_limit == 0 {
                     Ok((
                         vec![],
                         file_repo::find_by_folder_cursor(
-                            &state.db, user_id, parent_id, 0, None, sort_by, sort_order,
+                            &state.db,
+                            user_id,
+                            parent_id,
+                            0,
+                            None,
+                            params.sort_by,
+                            params.sort_order,
                         )
                         .await?
                         .1,
@@ -135,10 +172,10 @@ pub(crate) async fn list_in_scope(
                         &state.db,
                         user_id,
                         parent_id,
-                        file_limit,
-                        file_cursor,
-                        sort_by,
-                        sort_order,
+                        params.file_limit,
+                        params.file_cursor.clone(),
+                        params.sort_by,
+                        params.sort_order,
                     )
                     .await
                 }
@@ -150,11 +187,17 @@ pub(crate) async fn list_in_scope(
         }
         WorkspaceStorageScope::Team { team_id, .. } => {
             let folder_task = async {
-                if folder_limit == 0 {
+                if params.folder_limit == 0 {
                     Ok((
                         vec![],
                         folder_repo::find_team_children_paginated(
-                            &state.db, team_id, parent_id, 0, 0, sort_by, sort_order,
+                            &state.db,
+                            team_id,
+                            parent_id,
+                            0,
+                            0,
+                            params.sort_by,
+                            params.sort_order,
                         )
                         .await?
                         .1,
@@ -164,20 +207,26 @@ pub(crate) async fn list_in_scope(
                         &state.db,
                         team_id,
                         parent_id,
-                        folder_limit,
-                        folder_offset,
-                        sort_by,
-                        sort_order,
+                        params.folder_limit,
+                        params.folder_offset,
+                        params.sort_by,
+                        params.sort_order,
                     )
                     .await
                 }
             };
             let file_task = async {
-                if file_limit == 0 {
+                if params.file_limit == 0 {
                     Ok((
                         vec![],
                         file_repo::find_by_team_folder_cursor(
-                            &state.db, team_id, parent_id, 0, None, sort_by, sort_order,
+                            &state.db,
+                            team_id,
+                            parent_id,
+                            0,
+                            None,
+                            params.sort_by,
+                            params.sort_order,
                         )
                         .await?
                         .1,
@@ -187,10 +236,10 @@ pub(crate) async fn list_in_scope(
                         &state.db,
                         team_id,
                         parent_id,
-                        file_limit,
-                        file_cursor,
-                        sort_by,
-                        sort_order,
+                        params.file_limit,
+                        params.file_cursor.clone(),
+                        params.sort_by,
+                        params.sort_order,
                     )
                     .await
                 }
@@ -205,12 +254,13 @@ pub(crate) async fn list_in_scope(
     let contents = build_folder_contents(
         state,
         scope,
-        folders,
-        folders_total,
-        files,
-        files_total,
-        sort_by,
-        file_limit,
+        FolderListingResult {
+            folders,
+            folders_total,
+            files,
+            files_total,
+        },
+        params,
     )
     .await?;
     tracing::debug!(
@@ -226,52 +276,35 @@ pub(crate) async fn list_in_scope(
     Ok(contents)
 }
 
-#[allow(clippy::too_many_arguments)]
 pub async fn list(
     state: &AppState,
     user_id: i64,
     parent_id: Option<i64>,
-    folder_limit: u64,
-    folder_offset: u64,
-    file_limit: u64,
-    file_cursor: Option<(String, i64)>,
-    sort_by: crate::api::pagination::SortBy,
-    sort_order: crate::api::pagination::SortOrder,
+    params: &FolderListParams,
 ) -> Result<FolderContents> {
     list_in_scope(
         state,
         WorkspaceStorageScope::Personal { user_id },
         parent_id,
-        folder_limit,
-        folder_offset,
-        file_limit,
-        file_cursor,
-        sort_by,
-        sort_order,
+        params,
     )
     .await
 }
 
 /// 列出文件夹内容（无用户校验，用于分享链接）
-#[allow(clippy::too_many_arguments)]
 pub async fn list_shared(
     state: &AppState,
     folder_id: i64,
-    folder_limit: u64,
-    folder_offset: u64,
-    file_limit: u64,
-    file_cursor: Option<(String, i64)>,
-    sort_by: crate::api::pagination::SortBy,
-    sort_order: crate::api::pagination::SortOrder,
+    params: &FolderListParams,
 ) -> Result<FolderContents> {
     tracing::debug!(
         folder_id,
-        folder_limit,
-        folder_offset,
-        file_limit,
-        has_file_cursor = file_cursor.is_some(),
-        sort_by = ?sort_by,
-        sort_order = ?sort_order,
+        folder_limit = params.folder_limit,
+        folder_offset = params.folder_offset,
+        file_limit = params.file_limit,
+        has_file_cursor = params.file_cursor.is_some(),
+        sort_by = ?params.sort_by,
+        sort_order = ?params.sort_order,
         "listing shared folder contents"
     );
     let folder = folder_repo::find_by_id(&state.db, folder_id).await?;
@@ -281,20 +314,20 @@ pub async fn list_shared(
             &state.db,
             team_id,
             Some(folder_id),
-            folder_limit,
-            folder_offset,
-            sort_by,
-            sort_order,
+            params.folder_limit,
+            params.folder_offset,
+            params.sort_by,
+            params.sort_order,
         )
         .await?;
         let (files, files_total) = file_repo::find_by_team_folder_cursor(
             &state.db,
             team_id,
             Some(folder_id),
-            file_limit,
-            file_cursor,
-            sort_by,
-            sort_order,
+            params.file_limit,
+            params.file_cursor.clone(),
+            params.sort_by,
+            params.sort_order,
         )
         .await?;
 
@@ -305,12 +338,13 @@ pub async fn list_shared(
                 team_id,
                 actor_user_id: folder.user_id,
             },
-            folders,
-            folders_total,
-            files,
-            files_total,
-            sort_by,
-            file_limit,
+            FolderListingResult {
+                folders,
+                folders_total,
+                files,
+                files_total,
+            },
+            params,
         )
         .await?
     } else {
@@ -319,20 +353,20 @@ pub async fn list_shared(
             &state.db,
             folder.user_id,
             Some(folder_id),
-            folder_limit,
-            folder_offset,
-            sort_by,
-            sort_order,
+            params.folder_limit,
+            params.folder_offset,
+            params.sort_by,
+            params.sort_order,
         )
         .await?;
         let (files, files_total) = file_repo::find_by_folder_cursor(
             &state.db,
             folder.user_id,
             Some(folder_id),
-            file_limit,
-            file_cursor,
-            sort_by,
-            sort_order,
+            params.file_limit,
+            params.file_cursor.clone(),
+            params.sort_by,
+            params.sort_order,
         )
         .await?;
 
@@ -341,12 +375,13 @@ pub async fn list_shared(
             WorkspaceStorageScope::Personal {
                 user_id: folder.user_id,
             },
-            folders,
-            folders_total,
-            files,
-            files_total,
-            sort_by,
-            file_limit,
+            FolderListingResult {
+                folders,
+                folders_total,
+                files,
+                files_total,
+            },
+            params,
         )
         .await?
     };

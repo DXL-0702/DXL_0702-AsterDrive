@@ -334,17 +334,8 @@ pub async fn list_shared_content(
     let cookie_value = share_cookie_value(&req, path.as_str());
     share_service::check_share_password_cookie(&state, &path, cookie_value.as_deref()).await?;
 
-    let contents = share_service::list_shared_folder(
-        &state,
-        &path,
-        query.folder_limit(),
-        query.folder_offset(),
-        query.file_limit(),
-        query.file_cursor(),
-        query.sort_by(),
-        query.sort_order(),
-    )
-    .await?;
+    let params = crate::services::folder_service::FolderListParams::from(&query.0);
+    let contents = share_service::list_shared_folder(&state, &path, &params).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 
@@ -374,18 +365,8 @@ pub async fn list_shared_subfolder_content(
     let cookie_value = share_cookie_value(&req, &token);
     share_service::check_share_password_cookie(&state, &token, cookie_value.as_deref()).await?;
 
-    let contents = share_service::list_shared_subfolder(
-        &state,
-        &token,
-        folder_id,
-        query.folder_limit(),
-        query.folder_offset(),
-        query.file_limit(),
-        query.file_cursor(),
-        query.sort_by(),
-        query.sort_order(),
-    )
-    .await?;
+    let params = crate::services::folder_service::FolderListParams::from(&query.0);
+    let contents = share_service::list_shared_subfolder(&state, &token, folder_id, &params).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(contents)))
 }
 

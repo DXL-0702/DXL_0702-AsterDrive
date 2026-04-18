@@ -8,7 +8,9 @@ use crate::runtime::AppState;
 use crate::services::{
     policy_service::StoragePolicy,
     workspace_models::FileInfo,
-    workspace_storage_service::{self, WorkspaceStorageScope},
+    workspace_storage_service::{
+        self, StoreFromTempHints, StoreFromTempParams, WorkspaceStorageScope,
+    },
 };
 
 use super::get_info_in_scope;
@@ -26,26 +28,54 @@ use crate::utils::numbers::usize_to_i64;
 ///
 /// 返回创建/更新的文件记录。临时文件可能被 put_file rename 走，调用方不要依赖它存在。
 /// `skip_lock_check`: WebDAV 持锁者写入时为 true（WebDAV handler 已验证 lock token）
-#[allow(clippy::too_many_arguments)]
+pub struct StoreFromTempRequest<'a> {
+    pub folder_id: Option<i64>,
+    pub filename: &'a str,
+    pub temp_path: &'a str,
+    pub size: i64,
+    pub existing_file_id: Option<i64>,
+    pub skip_lock_check: bool,
+}
+
+impl<'a> StoreFromTempRequest<'a> {
+    pub fn new(folder_id: Option<i64>, filename: &'a str, temp_path: &'a str, size: i64) -> Self {
+        Self {
+            folder_id,
+            filename,
+            temp_path,
+            size,
+            existing_file_id: None,
+            skip_lock_check: false,
+        }
+    }
+
+    pub fn overwrite(mut self, existing_file_id: i64) -> Self {
+        self.existing_file_id = Some(existing_file_id);
+        self
+    }
+
+    pub fn skip_lock_check(mut self) -> Self {
+        self.skip_lock_check = true;
+        self
+    }
+}
+
 pub async fn store_from_temp(
     state: &AppState,
     user_id: i64,
-    folder_id: Option<i64>,
-    filename: &str,
-    temp_path: &str,
-    size: i64,
-    existing_file_id: Option<i64>,
-    skip_lock_check: bool,
+    request: StoreFromTempRequest<'_>,
 ) -> Result<FileInfo> {
     workspace_storage_service::store_from_temp(
         state,
-        WorkspaceStorageScope::Personal { user_id },
-        folder_id,
-        filename,
-        temp_path,
-        size,
-        existing_file_id,
-        skip_lock_check,
+        StoreFromTempParams {
+            scope: WorkspaceStorageScope::Personal { user_id },
+            folder_id: request.folder_id,
+            filename: request.filename,
+            temp_path: request.temp_path,
+            size: request.size,
+            existing_file_id: request.existing_file_id,
+            skip_lock_check: request.skip_lock_check,
+        },
     )
     .await
     .map(Into::into)
@@ -140,15 +170,13 @@ pub(crate) async fn update_content_in_scope(
         let staging_path = staging_path.to_string_lossy().into_owned();
         let result = workspace_storage_service::store_from_temp_with_hints(
             state,
-            scope,
-            f.folder_id,
-            &f.name,
-            &staging_path,
-            size,
-            Some(file_id),
-            true,
-            Some(resolved_policy),
-            precomputed_hash.as_deref(),
+            StoreFromTempParams::new(scope, f.folder_id, &f.name, &staging_path, size)
+                .overwrite(file_id)
+                .skip_lock_check(),
+            StoreFromTempHints {
+                resolved_policy: Some(resolved_policy),
+                precomputed_hash: precomputed_hash.as_deref(),
+            },
         )
         .await;
         crate::utils::cleanup_temp_file(&staging_path).await;
@@ -169,13 +197,9 @@ pub(crate) async fn update_content_in_scope(
 
         let result = workspace_storage_service::store_from_temp(
             state,
-            scope,
-            f.folder_id,
-            &f.name,
-            &temp_path,
-            size,
-            Some(file_id),
-            true,
+            StoreFromTempParams::new(scope, f.folder_id, &f.name, &temp_path, size)
+                .overwrite(file_id)
+                .skip_lock_check(),
         )
         .await;
         crate::utils::cleanup_temp_file(&temp_path).await;

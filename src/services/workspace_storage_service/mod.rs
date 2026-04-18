@@ -19,11 +19,11 @@ pub(crate) use crate::services::workspace_scope_service::{
     verify_folder_access,
 };
 pub(crate) use crate::services::workspace_storage_core::{
-    check_quota, create_exact_file_from_blob, create_new_file_from_blob, create_nondedup_blob,
-    create_nondedup_blob_with_key, create_s3_nondedup_blob, ensure_upload_parent_path,
-    finalize_upload_session_blob, finalize_upload_session_file, load_storage_limits,
-    local_content_dedup_enabled, parse_relative_upload_path, resolve_policy_for_size,
-    update_storage_used,
+    FinalizeUploadSessionFileParams, check_quota, create_exact_file_from_blob,
+    create_new_file_from_blob, create_nondedup_blob, create_nondedup_blob_with_key,
+    create_s3_nondedup_blob, ensure_upload_parent_path, finalize_upload_session_blob,
+    finalize_upload_session_file, load_storage_limits, local_content_dedup_enabled,
+    parse_relative_upload_path, resolve_policy_for_size, update_storage_used,
 };
 
 pub(crate) use blob_upload::{
@@ -32,8 +32,9 @@ pub(crate) use blob_upload::{
 };
 pub(crate) use multipart::{relay_stream_direct_upload_eligible, upload};
 pub(crate) use store::{
-    create_empty, store_from_temp, store_from_temp_exact_name_with_hints,
-    store_from_temp_with_hints, store_preuploaded_nondedup,
+    StoreFromTempHints, StoreFromTempParams, StorePreuploadedNondedupParams, create_empty,
+    store_from_temp, store_from_temp_exact_name_with_hints, store_from_temp_with_hints,
+    store_preuploaded_nondedup,
 };
 
 // Local content-dedup 会在不把整文件读入内存的前提下流式计算 SHA-256。

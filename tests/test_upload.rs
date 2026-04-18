@@ -66,12 +66,12 @@ async fn upload_same_content_direct_and_chunked(
     let direct_file = file_service::store_from_temp(
         state,
         user_id,
-        None,
-        "same-direct.txt",
-        &temp_path,
-        content.len() as i64,
-        None,
-        false,
+        file_service::StoreFromTempRequest::new(
+            None,
+            "same-direct.txt",
+            &temp_path,
+            content.len() as i64,
+        ),
     )
     .await
     .unwrap();
@@ -114,18 +114,57 @@ async fn upload_same_content_direct_and_chunked(
     (direct_blob, chunked_blob)
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn create_upload_session(
-    state: &aster_drive::runtime::AppState,
-    user_id: i64,
-    upload_id: &str,
+struct UploadSessionSpec<'a> {
+    upload_id: &'a str,
     status: aster_drive::types::UploadSessionStatus,
     expires_at: chrono::DateTime<chrono::Utc>,
     total_chunks: i32,
     received_count: i32,
-    s3_temp_key: Option<&str>,
-    s3_multipart_id: Option<&str>,
+    s3_temp_key: Option<&'a str>,
+    s3_multipart_id: Option<&'a str>,
     file_id: Option<i64>,
+}
+
+impl<'a> UploadSessionSpec<'a> {
+    fn new(
+        upload_id: &'a str,
+        status: aster_drive::types::UploadSessionStatus,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> Self {
+        Self {
+            upload_id,
+            status,
+            expires_at,
+            total_chunks: 0,
+            received_count: 0,
+            s3_temp_key: None,
+            s3_multipart_id: None,
+            file_id: None,
+        }
+    }
+
+    fn chunks(mut self, total_chunks: i32, received_count: i32) -> Self {
+        self.total_chunks = total_chunks;
+        self.received_count = received_count;
+        self
+    }
+
+    fn s3(mut self, s3_temp_key: Option<&'a str>, s3_multipart_id: Option<&'a str>) -> Self {
+        self.s3_temp_key = s3_temp_key;
+        self.s3_multipart_id = s3_multipart_id;
+        self
+    }
+
+    fn file_id(mut self, file_id: i64) -> Self {
+        self.file_id = Some(file_id);
+        self
+    }
+}
+
+async fn create_upload_session(
+    state: &aster_drive::runtime::AppState,
+    user_id: i64,
+    spec: UploadSessionSpec<'_>,
 ) {
     use aster_drive::db::repository::{policy_repo, upload_session_repo};
     use sea_orm::Set;
@@ -138,22 +177,22 @@ async fn create_upload_session(
     upload_session_repo::create(
         &state.db,
         aster_drive::entities::upload_session::ActiveModel {
-            id: Set(upload_id.to_string()),
+            id: Set(spec.upload_id.to_string()),
             user_id: Set(user_id),
             team_id: Set(None),
             filename: Set("manual-upload.bin".to_string()),
             total_size: Set(10),
             chunk_size: Set(5),
-            total_chunks: Set(total_chunks),
-            received_count: Set(received_count),
+            total_chunks: Set(spec.total_chunks),
+            received_count: Set(spec.received_count),
             folder_id: Set(None),
             policy_id: Set(policy.id),
-            status: Set(status),
-            s3_temp_key: Set(s3_temp_key.map(str::to_string)),
-            s3_multipart_id: Set(s3_multipart_id.map(str::to_string)),
-            file_id: Set(file_id),
+            status: Set(spec.status),
+            s3_temp_key: Set(spec.s3_temp_key.map(str::to_string)),
+            s3_multipart_id: Set(spec.s3_multipart_id.map(str::to_string)),
+            file_id: Set(spec.file_id),
             created_at: Set(now),
-            expires_at: Set(expires_at),
+            expires_at: Set(spec.expires_at),
             updated_at: Set(now),
         },
     )
@@ -374,12 +413,12 @@ async fn store_temp_file_in_personal_space(
     let file = aster_drive::services::file_service::store_from_temp(
         state,
         user_id,
-        None,
-        filename,
-        &temp_path,
-        data.len() as i64,
-        None,
-        false,
+        aster_drive::services::file_service::StoreFromTempRequest::new(
+            None,
+            filename,
+            &temp_path,
+            data.len() as i64,
+        ),
     )
     .await
     .unwrap();
@@ -1046,14 +1085,12 @@ async fn test_concurrent_chunk_upload_idempotent() {
     create_upload_session(
         &state,
         user.id,
-        &upload_id,
-        aster_drive::types::UploadSessionStatus::Uploading,
-        chrono::Utc::now() + chrono::Duration::hours(1),
-        2,
-        0,
-        None,
-        None,
-        None,
+        UploadSessionSpec::new(
+            &upload_id,
+            aster_drive::types::UploadSessionStatus::Uploading,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(2, 0),
     )
     .await;
     tokio::fs::create_dir_all(aster_drive::utils::paths::upload_temp_dir(
@@ -1114,14 +1151,12 @@ async fn test_upload_session_part_upsert_updates_existing_row_without_duplicates
     create_upload_session(
         &state,
         user.id,
-        &upload_id,
-        aster_drive::types::UploadSessionStatus::Uploading,
-        chrono::Utc::now() + chrono::Duration::hours(1),
-        2,
-        0,
-        None,
-        None,
-        None,
+        UploadSessionSpec::new(
+            &upload_id,
+            aster_drive::types::UploadSessionStatus::Uploading,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(2, 0),
     )
     .await;
 
@@ -1303,14 +1338,12 @@ async fn test_upload_service_complete_rejects_assembling_session() {
     create_upload_session(
         &state,
         user.id,
-        &upload_id,
-        aster_drive::types::UploadSessionStatus::Assembling,
-        chrono::Utc::now() + chrono::Duration::hours(1),
-        2,
-        2,
-        None,
-        None,
-        None,
+        UploadSessionSpec::new(
+            &upload_id,
+            aster_drive::types::UploadSessionStatus::Assembling,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(2, 2),
     )
     .await;
 
@@ -1332,14 +1365,12 @@ async fn test_upload_service_complete_completed_without_file_id_returns_refresh_
     create_upload_session(
         &state,
         user.id,
-        &upload_id,
-        aster_drive::types::UploadSessionStatus::Completed,
-        chrono::Utc::now() + chrono::Duration::hours(1),
-        0,
-        0,
-        None,
-        None,
-        None,
+        UploadSessionSpec::new(
+            &upload_id,
+            aster_drive::types::UploadSessionStatus::Completed,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(0, 0),
     )
     .await;
 
@@ -1367,14 +1398,13 @@ async fn test_upload_service_complete_presigned_multipart_requires_parts() {
     create_upload_session(
         &state,
         user.id,
-        &upload_id,
-        aster_drive::types::UploadSessionStatus::Presigned,
-        chrono::Utc::now() + chrono::Duration::hours(1),
-        2,
-        0,
-        Some("files/temp-key"),
-        Some("multipart-id"),
-        None,
+        UploadSessionSpec::new(
+            &upload_id,
+            aster_drive::types::UploadSessionStatus::Presigned,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(2, 0)
+        .s3(Some("files/temp-key"), Some("multipart-id")),
     )
     .await;
 
@@ -1396,14 +1426,12 @@ async fn test_upload_service_get_progress_scans_and_sorts_local_chunks() {
     create_upload_session(
         &state,
         user.id,
-        &upload_id,
-        aster_drive::types::UploadSessionStatus::Uploading,
-        chrono::Utc::now() + chrono::Duration::hours(1),
-        3,
-        2,
-        None,
-        None,
-        None,
+        UploadSessionSpec::new(
+            &upload_id,
+            aster_drive::types::UploadSessionStatus::Uploading,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(3, 2),
     )
     .await;
 
@@ -1523,14 +1551,13 @@ async fn test_upload_service_presign_parts_rejects_non_multipart_session() {
     create_upload_session(
         &state,
         user.id,
-        &upload_id,
-        aster_drive::types::UploadSessionStatus::Presigned,
-        chrono::Utc::now() + chrono::Duration::hours(1),
-        1,
-        0,
-        Some("files/temp-key"),
-        None,
-        None,
+        UploadSessionSpec::new(
+            &upload_id,
+            aster_drive::types::UploadSessionStatus::Presigned,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(1, 0)
+        .s3(Some("files/temp-key"), None),
     )
     .await;
 
@@ -1554,14 +1581,12 @@ async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
     create_upload_session(
         &state,
         user.id,
-        &expired_id,
-        aster_drive::types::UploadSessionStatus::Uploading,
-        chrono::Utc::now() - chrono::Duration::minutes(5),
-        2,
-        1,
-        None,
-        None,
-        None,
+        UploadSessionSpec::new(
+            &expired_id,
+            aster_drive::types::UploadSessionStatus::Uploading,
+            chrono::Utc::now() - chrono::Duration::minutes(5),
+        )
+        .chunks(2, 1),
     )
     .await;
 
@@ -1569,14 +1594,13 @@ async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
     create_upload_session(
         &state,
         user.id,
-        &completed_id,
-        aster_drive::types::UploadSessionStatus::Completed,
-        chrono::Utc::now() - chrono::Duration::minutes(5),
-        0,
-        0,
-        None,
-        None,
-        Some(123),
+        UploadSessionSpec::new(
+            &completed_id,
+            aster_drive::types::UploadSessionStatus::Completed,
+            chrono::Utc::now() - chrono::Duration::minutes(5),
+        )
+        .chunks(0, 0)
+        .file_id(123),
     )
     .await;
 
@@ -1626,14 +1650,13 @@ async fn test_cancel_upload_keeps_multipart_session_for_grace_cleanup() {
     create_upload_session(
         &state,
         user.id,
-        &upload_id,
-        UploadSessionStatus::Uploading,
-        chrono::Utc::now() + chrono::Duration::hours(1),
-        2,
-        0,
-        Some("files/temp-key"),
-        Some("multipart-id"),
-        None,
+        UploadSessionSpec::new(
+            &upload_id,
+            UploadSessionStatus::Uploading,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(2, 0)
+        .s3(Some("files/temp-key"), Some("multipart-id")),
     )
     .await;
 
@@ -1697,14 +1720,13 @@ async fn test_upload_chunk_returns_session_expired_for_failed_multipart_session(
     create_upload_session(
         &state,
         user.id,
-        &upload_id,
-        UploadSessionStatus::Failed,
-        chrono::Utc::now() + chrono::Duration::hours(1),
-        2,
-        0,
-        Some("files/temp-key"),
-        Some("multipart-id"),
-        None,
+        UploadSessionSpec::new(
+            &upload_id,
+            UploadSessionStatus::Failed,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(2, 0)
+        .s3(Some("files/temp-key"), Some("multipart-id")),
     )
     .await;
 

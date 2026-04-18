@@ -1,7 +1,7 @@
 //! `folder_repo` 仓储子模块：`path`。
 
 use sea_orm::{
-    Condition, ConnectionTrait, EntityTrait, ExprTrait, FromQueryResult,
+    Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait, FromQueryResult, Statement,
     entity::prelude::DeriveIden,
     sea_query::{Asterisk, CommonTableExpression, Expr, Order, Query, UnionType, WithClause},
 };
@@ -44,6 +44,39 @@ impl From<ResolvedPathFolderRow> for folder::Model {
     }
 }
 
+#[derive(Debug, Clone, FromQueryResult)]
+struct AncestorFolderRow {
+    depth: i64,
+    id: i64,
+    name: String,
+    parent_id: Option<i64>,
+    team_id: Option<i64>,
+    user_id: i64,
+    policy_id: Option<i64>,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+    deleted_at: Option<chrono::DateTime<chrono::Utc>>,
+    is_locked: bool,
+}
+
+impl From<AncestorFolderRow> for folder::Model {
+    fn from(row: AncestorFolderRow) -> Self {
+        let _ = row.depth;
+        Self {
+            id: row.id,
+            name: row.name,
+            parent_id: row.parent_id,
+            team_id: row.team_id,
+            user_id: row.user_id,
+            policy_id: row.policy_id,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            deleted_at: row.deleted_at,
+            is_locked: row.is_locked,
+        }
+    }
+}
+
 #[derive(DeriveIden)]
 enum RequestedSegments {
     Table,
@@ -70,6 +103,229 @@ enum FolderChain {
     UpdatedAt,
     DeletedAt,
     IsLocked,
+}
+
+#[derive(Clone, Copy)]
+enum AncestorScope {
+    Owner { user_id: i64 },
+    Team { team_id: i64 },
+}
+
+fn build_find_ancestors_statement(
+    backend: DbBackend,
+    scope: AncestorScope,
+    folder_id: i64,
+) -> Statement {
+    let root_depth_expr = match backend {
+        DbBackend::Postgres => "CAST(0 AS BIGINT)",
+        DbBackend::MySql => "CAST(0 AS SIGNED)",
+        _ => "CAST(0 AS INTEGER)",
+    };
+    let (sql, values) = match (backend, scope) {
+        (DbBackend::Postgres, AncestorScope::Owner { user_id }) => (
+            format!(
+                "WITH RECURSIVE folder_ancestors ( \
+                 depth, id, name, parent_id, team_id, user_id, policy_id, created_at, updated_at, deleted_at, is_locked \
+             ) AS ( \
+                 SELECT \
+                     {root_depth_expr} AS depth, \
+                     f.id, \
+                     f.name, \
+                     f.parent_id, \
+                     f.team_id, \
+                     f.user_id, \
+                     f.policy_id, \
+                     f.created_at, \
+                     f.updated_at, \
+                     f.deleted_at, \
+                     f.is_locked \
+                 FROM folders f \
+                 WHERE f.id = $1 \
+                   AND f.user_id = $2 \
+                   AND f.deleted_at IS NULL \
+                 UNION ALL \
+                 SELECT \
+                     fa.depth + 1, \
+                     parent.id, \
+                     parent.name, \
+                     parent.parent_id, \
+                     parent.team_id, \
+                     parent.user_id, \
+                     parent.policy_id, \
+                     parent.created_at, \
+                     parent.updated_at, \
+                     parent.deleted_at, \
+                     parent.is_locked \
+                 FROM folders parent \
+                 JOIN folder_ancestors fa ON fa.parent_id = parent.id \
+                 WHERE parent.user_id = $2 \
+                   AND parent.deleted_at IS NULL \
+             ) \
+             SELECT \
+                 depth, id, name, parent_id, team_id, user_id, policy_id, created_at, updated_at, deleted_at, is_locked \
+             FROM folder_ancestors \
+             ORDER BY depth DESC"
+            ),
+            vec![folder_id.into(), user_id.into()],
+        ),
+        (DbBackend::Postgres, AncestorScope::Team { team_id }) => (
+            format!(
+                "WITH RECURSIVE folder_ancestors ( \
+                 depth, id, name, parent_id, team_id, user_id, policy_id, created_at, updated_at, deleted_at, is_locked \
+             ) AS ( \
+                 SELECT \
+                     {root_depth_expr} AS depth, \
+                     f.id, \
+                     f.name, \
+                     f.parent_id, \
+                     f.team_id, \
+                     f.user_id, \
+                     f.policy_id, \
+                     f.created_at, \
+                     f.updated_at, \
+                     f.deleted_at, \
+                     f.is_locked \
+                 FROM folders f \
+                 WHERE f.id = $1 \
+                   AND f.team_id = $2 \
+                   AND f.deleted_at IS NULL \
+                 UNION ALL \
+                 SELECT \
+                     fa.depth + 1, \
+                     parent.id, \
+                     parent.name, \
+                     parent.parent_id, \
+                     parent.team_id, \
+                     parent.user_id, \
+                     parent.policy_id, \
+                     parent.created_at, \
+                     parent.updated_at, \
+                     parent.deleted_at, \
+                     parent.is_locked \
+                 FROM folders parent \
+                 JOIN folder_ancestors fa ON fa.parent_id = parent.id \
+                 WHERE parent.team_id = $2 \
+                   AND parent.deleted_at IS NULL \
+             ) \
+             SELECT \
+                 depth, id, name, parent_id, team_id, user_id, policy_id, created_at, updated_at, deleted_at, is_locked \
+             FROM folder_ancestors \
+             ORDER BY depth DESC"
+            ),
+            vec![folder_id.into(), team_id.into()],
+        ),
+        (_, AncestorScope::Owner { user_id }) => (
+            format!(
+                "WITH RECURSIVE folder_ancestors ( \
+                 depth, id, name, parent_id, team_id, user_id, policy_id, created_at, updated_at, deleted_at, is_locked \
+             ) AS ( \
+                 SELECT \
+                     {root_depth_expr} AS depth, \
+                     f.id, \
+                     f.name, \
+                     f.parent_id, \
+                     f.team_id, \
+                     f.user_id, \
+                     f.policy_id, \
+                     f.created_at, \
+                     f.updated_at, \
+                     f.deleted_at, \
+                     f.is_locked \
+                 FROM folders f \
+                 WHERE f.id = ? \
+                   AND f.user_id = ? \
+                   AND f.deleted_at IS NULL \
+                 UNION ALL \
+                 SELECT \
+                     fa.depth + 1, \
+                     parent.id, \
+                     parent.name, \
+                     parent.parent_id, \
+                     parent.team_id, \
+                     parent.user_id, \
+                     parent.policy_id, \
+                     parent.created_at, \
+                     parent.updated_at, \
+                     parent.deleted_at, \
+                     parent.is_locked \
+                 FROM folders parent \
+                 JOIN folder_ancestors fa ON fa.parent_id = parent.id \
+                 WHERE parent.user_id = ? \
+                   AND parent.deleted_at IS NULL \
+             ) \
+             SELECT \
+                 depth, id, name, parent_id, team_id, user_id, policy_id, created_at, updated_at, deleted_at, is_locked \
+             FROM folder_ancestors \
+             ORDER BY depth DESC"
+            ),
+            vec![folder_id.into(), user_id.into(), user_id.into()],
+        ),
+        (_, AncestorScope::Team { team_id }) => (
+            format!(
+                "WITH RECURSIVE folder_ancestors ( \
+                 depth, id, name, parent_id, team_id, user_id, policy_id, created_at, updated_at, deleted_at, is_locked \
+             ) AS ( \
+                 SELECT \
+                     {root_depth_expr} AS depth, \
+                     f.id, \
+                     f.name, \
+                     f.parent_id, \
+                     f.team_id, \
+                     f.user_id, \
+                     f.policy_id, \
+                     f.created_at, \
+                     f.updated_at, \
+                     f.deleted_at, \
+                     f.is_locked \
+                 FROM folders f \
+                 WHERE f.id = ? \
+                   AND f.team_id = ? \
+                   AND f.deleted_at IS NULL \
+                 UNION ALL \
+                 SELECT \
+                     fa.depth + 1, \
+                     parent.id, \
+                     parent.name, \
+                     parent.parent_id, \
+                     parent.team_id, \
+                     parent.user_id, \
+                     parent.policy_id, \
+                     parent.created_at, \
+                     parent.updated_at, \
+                     parent.deleted_at, \
+                     parent.is_locked \
+                 FROM folders parent \
+                 JOIN folder_ancestors fa ON fa.parent_id = parent.id \
+                 WHERE parent.team_id = ? \
+                   AND parent.deleted_at IS NULL \
+             ) \
+             SELECT \
+                 depth, id, name, parent_id, team_id, user_id, policy_id, created_at, updated_at, deleted_at, is_locked \
+             FROM folder_ancestors \
+             ORDER BY depth DESC"
+            ),
+            vec![folder_id.into(), team_id.into(), team_id.into()],
+        ),
+    };
+
+    Statement::from_sql_and_values(backend, sql, values)
+}
+
+async fn find_ancestor_models_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: AncestorScope,
+    folder_id: i64,
+) -> Result<Vec<folder::Model>> {
+    let rows = AncestorFolderRow::find_by_statement(build_find_ancestors_statement(
+        db.get_database_backend(),
+        scope,
+        folder_id,
+    ))
+    .all(db)
+    .await
+    .map_err(AsterError::from)?;
+
+    Ok(rows.into_iter().map(Into::into).collect())
 }
 
 fn requested_segments_subquery(segments: &[String]) -> sea_orm::sea_query::SelectStatement {
@@ -280,30 +536,39 @@ pub async fn resolve_path_chain<C: ConnectionTrait>(
     Ok(rows.into_iter().map(Into::into).collect())
 }
 
+pub(crate) async fn find_ancestor_models<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    folder_id: i64,
+) -> Result<Vec<folder::Model>> {
+    find_ancestor_models_in_scope(db, AncestorScope::Owner { user_id }, folder_id).await
+}
+
+pub(crate) async fn find_team_ancestor_models<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    folder_id: i64,
+) -> Result<Vec<folder::Model>> {
+    find_ancestor_models_in_scope(db, AncestorScope::Team { team_id }, folder_id).await
+}
+
 /// 查找文件夹的祖先链（从根下第一层到当前文件夹），校验归属与未删除
 pub async fn find_ancestors<C: ConnectionTrait>(
     db: &C,
     user_id: i64,
     folder_id: i64,
 ) -> Result<Vec<(i64, String)>> {
-    let mut path = Vec::new();
-    let mut current_id = folder_id;
-
-    loop {
-        let folder = find_by_id(db, current_id).await?;
-        crate::utils::verify_owner(folder.user_id, user_id, "folder")?;
-        if folder.deleted_at.is_some() {
-            return Err(AsterError::file_not_found(format!(
-                "folder #{current_id} is in trash"
-            )));
-        }
-        path.push((folder.id, folder.name));
-        match folder.parent_id {
-            Some(pid) => current_id = pid,
-            None => break,
-        }
+    let folder = find_by_id(db, folder_id).await?;
+    crate::utils::verify_owner(folder.user_id, user_id, "folder")?;
+    if folder.deleted_at.is_some() {
+        return Err(AsterError::file_not_found(format!(
+            "folder #{folder_id} is in trash"
+        )));
     }
 
-    path.reverse();
-    Ok(path)
+    let ancestors = find_ancestor_models(db, user_id, folder_id).await?;
+    Ok(ancestors
+        .into_iter()
+        .map(|folder| (folder.id, folder.name))
+        .collect())
 }

@@ -12,6 +12,14 @@ use crate::services::{
 };
 use actix_web::{HttpRequest, HttpResponse, web};
 
+#[derive(Clone, Copy)]
+pub(crate) struct UploadResponseParams<'a> {
+    pub scope: WorkspaceStorageScope,
+    pub folder_id: Option<i64>,
+    pub relative_path: Option<&'a str>,
+    pub declared_size: Option<i64>,
+}
+
 #[api_docs_macros::path(
     post,
     path = "/api/v1/files/upload",
@@ -36,13 +44,15 @@ pub async fn upload(
         &state,
         &claims,
         &req,
-        WorkspaceStorageScope::Personal {
-            user_id: claims.user_id,
-        },
-        query.folder_id,
-        query.relative_path.as_deref(),
-        query.declared_size,
         &mut payload,
+        UploadResponseParams {
+            scope: WorkspaceStorageScope::Personal {
+                user_id: claims.user_id,
+            },
+            folder_id: query.folder_id,
+            relative_path: query.relative_path.as_deref(),
+            declared_size: query.declared_size,
+        },
     )
     .await
 }
@@ -247,11 +257,13 @@ pub(crate) async fn team_upload(
         &state,
         &claims,
         &req,
-        team_scope(*path, claims.user_id),
-        query.folder_id,
-        query.relative_path.as_deref(),
-        query.declared_size,
         &mut payload,
+        UploadResponseParams {
+            scope: team_scope(*path, claims.user_id),
+            folder_id: query.folder_id,
+            relative_path: query.relative_path.as_deref(),
+            declared_size: query.declared_size,
+        },
     )
     .await
 }
@@ -463,25 +475,23 @@ pub(crate) async fn team_presign_parts(
     Ok(HttpResponse::Ok().json(ApiResponse::ok(urls)))
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) async fn upload_response(
     state: &AppState,
     claims: &Claims,
     req: &HttpRequest,
-    scope: WorkspaceStorageScope,
-    folder_id: Option<i64>,
-    relative_path: Option<&str>,
-    declared_size: Option<i64>,
     payload: &mut actix_multipart::Multipart,
+    params: UploadResponseParams<'_>,
 ) -> Result<HttpResponse> {
     let ctx = AuditContext::from_request(req, claims);
     let file = upload_service::upload_in_scope_with_audit(
         state,
-        scope,
-        folder_id,
-        relative_path,
-        declared_size,
         payload,
+        upload_service::UploadInScopeParams {
+            scope: params.scope,
+            folder_id: params.folder_id,
+            relative_path: params.relative_path,
+            declared_size: params.declared_size,
+        },
         &ctx,
     )
     .await?;

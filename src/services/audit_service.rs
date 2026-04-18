@@ -328,14 +328,16 @@ async fn query_models(
     load_offset_page(limit, offset, 200, |limit, offset| async move {
         audit_log_repo::find_with_filters(
             &state.db,
-            filters.user_id,
-            filters.action.as_deref(),
-            filters.entity_type.as_deref(),
-            filters.entity_id,
-            filters.after,
-            filters.before,
-            limit,
-            offset,
+            audit_log_repo::AuditLogQuery {
+                user_id: filters.user_id,
+                action: filters.action.as_deref(),
+                entity_type: filters.entity_type.as_deref(),
+                entity_id: filters.entity_id,
+                after: filters.after,
+                before: filters.before,
+                limit,
+                offset,
+            },
         )
         .await
     })

@@ -323,29 +323,37 @@ pub(crate) async fn store_relative_target_from_bytes(
         let result = if exact_name {
             workspace_storage_service::store_from_temp_exact_name_with_hints(
                 state,
-                scope,
-                folder_id,
-                filename,
-                &staging_path,
-                size,
-                existing_file_id,
-                existing_file_id.is_some(),
-                Some(resolved_policy),
-                precomputed_hash.as_deref(),
+                workspace_storage_service::StoreFromTempParams {
+                    scope,
+                    folder_id,
+                    filename,
+                    temp_path: &staging_path,
+                    size,
+                    existing_file_id,
+                    skip_lock_check: existing_file_id.is_some(),
+                },
+                workspace_storage_service::StoreFromTempHints {
+                    resolved_policy: Some(resolved_policy),
+                    precomputed_hash: precomputed_hash.as_deref(),
+                },
             )
             .await
         } else {
             workspace_storage_service::store_from_temp_with_hints(
                 state,
-                scope,
-                folder_id,
-                filename,
-                &staging_path,
-                size,
-                existing_file_id,
-                existing_file_id.is_some(),
-                Some(resolved_policy),
-                precomputed_hash.as_deref(),
+                workspace_storage_service::StoreFromTempParams {
+                    scope,
+                    folder_id,
+                    filename,
+                    temp_path: &staging_path,
+                    size,
+                    existing_file_id,
+                    skip_lock_check: existing_file_id.is_some(),
+                },
+                workspace_storage_service::StoreFromTempHints {
+                    resolved_policy: Some(resolved_policy),
+                    precomputed_hash: precomputed_hash.as_deref(),
+                },
             )
             .await
         };
@@ -370,29 +378,37 @@ pub(crate) async fn store_relative_target_from_bytes(
         let result = if exact_name {
             workspace_storage_service::store_from_temp_exact_name_with_hints(
                 state,
-                scope,
-                folder_id,
-                filename,
-                &temp_path,
-                size,
-                existing_file_id,
-                existing_file_id.is_some(),
-                Some(resolved_policy),
-                None,
+                workspace_storage_service::StoreFromTempParams {
+                    scope,
+                    folder_id,
+                    filename,
+                    temp_path: &temp_path,
+                    size,
+                    existing_file_id,
+                    skip_lock_check: existing_file_id.is_some(),
+                },
+                workspace_storage_service::StoreFromTempHints {
+                    resolved_policy: Some(resolved_policy),
+                    precomputed_hash: None,
+                },
             )
             .await
         } else {
             workspace_storage_service::store_from_temp_with_hints(
                 state,
-                scope,
-                folder_id,
-                filename,
-                &temp_path,
-                size,
-                existing_file_id,
-                existing_file_id.is_some(),
-                Some(resolved_policy),
-                None,
+                workspace_storage_service::StoreFromTempParams {
+                    scope,
+                    folder_id,
+                    filename,
+                    temp_path: &temp_path,
+                    size,
+                    existing_file_id,
+                    skip_lock_check: existing_file_id.is_some(),
+                },
+                workspace_storage_service::StoreFromTempHints {
+                    resolved_policy: Some(resolved_policy),
+                    precomputed_hash: None,
+                },
             )
             .await
         };

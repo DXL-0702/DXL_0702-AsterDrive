@@ -4,6 +4,7 @@
 mod common;
 
 use actix_web::test;
+use aster_drive::db::repository::{file_repo, user_repo};
 use serde_json::Value;
 
 macro_rules! upload_test_file_with_name_and_mime {
@@ -250,6 +251,37 @@ async fn test_file_preview_link_supports_public_inline_access_and_usage_limit() 
     let req = test::TestRequest::get().uri(&preview_path).to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 403);
+}
+
+#[actix_web::test]
+async fn test_file_repo_resolve_unique_filename_prefers_first_gap_and_preserves_suffix() {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let app = create_test_app!(state);
+
+    let (token, _) = register_and_login!(app);
+    let user = user_repo::find_by_username(&db, "testuser")
+        .await
+        .unwrap()
+        .expect("registered user should exist");
+    let initial_candidate = file_repo::resolve_unique_filename(&db, user.id, None, "report.txt")
+        .await
+        .unwrap();
+    assert_eq!(initial_candidate, "report.txt");
+
+    upload_test_file_named!(app, token, "report.txt");
+    upload_test_file_named!(app, token, "report (2).txt");
+    upload_test_file_named!(app, token, "draft (3).txt");
+
+    let gap_candidate = file_repo::resolve_unique_filename(&db, user.id, None, "report.txt")
+        .await
+        .unwrap();
+    assert_eq!(gap_candidate, "report (1).txt");
+
+    let suffix_candidate = file_repo::resolve_unique_filename(&db, user.id, None, "draft (3).txt")
+        .await
+        .unwrap();
+    assert_eq!(suffix_candidate, "draft (4).txt");
 }
 
 #[actix_web::test]

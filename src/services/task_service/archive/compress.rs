@@ -23,7 +23,7 @@ use super::super::{
     TaskLeaseGuard, cleanup_task_temp_dir_for_task, create_task_record, mark_task_progress,
     mark_task_succeeded, prepare_task_temp_dir, task_scope,
 };
-use super::common::{build_file_display_path, write_archive_to_sink};
+use super::common::{ArchiveSinkContext, build_file_display_path, write_archive_to_sink};
 use super::selection::{
     collect_archive_entries_from_selection_in_scope, ensure_archive_selection_active,
     resolve_archive_compress_target_folder_id, resolve_archive_download_in_scope,
@@ -145,11 +145,13 @@ pub(super) async fn process_archive_compress_task(
             let writer = std::io::BufWriter::new(file);
             let mut steps = steps_for_worker;
             let (writer, _) = write_archive_to_sink(
-                &handle,
-                &db,
-                driver_registry.as_ref(),
-                policy_snapshot.as_ref(),
-                Some(&lease_guard_for_worker),
+                ArchiveSinkContext {
+                    handle: &handle,
+                    db: &db,
+                    driver_registry: driver_registry.as_ref(),
+                    policy_snapshot: policy_snapshot.as_ref(),
+                    lease_guard: Some(&lease_guard_for_worker),
+                },
                 entries,
                 progress_total,
                 writer,
@@ -216,13 +218,13 @@ pub(super) async fn process_archive_compress_task(
     .await?;
     let stored = workspace_storage_service::store_from_temp(
         state,
-        scope,
-        payload.target_folder_id,
-        &payload.archive_name,
-        &archive_temp_path_string,
-        archive_size,
-        None,
-        false,
+        workspace_storage_service::StoreFromTempParams::new(
+            scope,
+            payload.target_folder_id,
+            &payload.archive_name,
+            &archive_temp_path_string,
+            archive_size,
+        ),
     )
     .await?;
     cleanup_task_temp_dir_for_task(state, task.id).await?;

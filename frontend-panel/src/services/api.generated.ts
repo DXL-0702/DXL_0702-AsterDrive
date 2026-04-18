@@ -2621,9 +2621,11 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description Generic message-only response (used after email operations). */
         ActionMessageResp: {
             message: string;
         };
+        /** @description Add a user to a team. */
         AddTeamMemberReq: {
             identifier?: string | null;
             role?: null | components["schemas"]["TeamMemberRole"];
@@ -2649,6 +2651,7 @@ export interface components {
             team_id?: number | null;
             updated_at: string;
         };
+        /** @description Create a team (admin operation). */
         AdminCreateTeamReq: {
             admin_identifier?: string | null;
             /** Format: int64 */
@@ -2709,6 +2712,7 @@ export interface components {
             /** Format: int64 */
             uploads_today: number;
         };
+        /** @description Patch a team (admin operation). */
         AdminPatchTeamReq: {
             description?: string | null;
             name?: string | null;
@@ -2735,6 +2739,7 @@ export interface components {
             storage_used: number;
             updated_at: string;
         };
+        /** @description Query parameters for the admin team list. */
         AdminTeamListQuery: {
             archived?: boolean | null;
             keyword?: string | null;
@@ -2797,6 +2802,7 @@ export interface components {
             }[];
             msg: string;
         };
+        /** @description Request an archive compression task for the selected files and folders. */
         ArchiveCompressReq: {
             archive_name?: string | null;
             file_ids?: number[];
@@ -2819,6 +2825,7 @@ export interface components {
             target_folder_id?: number | null;
             target_path: string;
         };
+        /** @description Request an archive download ticket for the selected files and folders. */
         ArchiveDownloadReq: {
             archive_name?: string | null;
             file_ids?: number[];
@@ -2862,6 +2869,7 @@ export interface components {
             /** Format: int64 */
             user_id: number;
         };
+        /** @description Response body for token issuance (login / refresh / password change). */
         AuthTokenResp: {
             /** Format: int64 */
             expires_in: number;
@@ -2882,25 +2890,28 @@ export interface components {
          * @description 后台任务类型
          * @enum {string}
          */
-        BackgroundTaskKind: "archive_extract" | "archive_compress" | "system_runtime";
+        BackgroundTaskKind: "archive_extract" | "archive_compress" | "thumbnail_generate" | "system_runtime";
         /**
          * @description 后台任务状态
          * @enum {string}
          */
         BackgroundTaskStatus: "pending" | "processing" | "retry" | "succeeded" | "failed" | "canceled";
+        /** @description Batch copy files and folders to a target folder. */
         BatchCopyReq: {
             file_ids?: number[];
             folder_ids?: number[];
             /**
              * Format: int64
-             * @description 目标文件夹 ID（null = 根目录）
+             * @description Target folder ID (`None` = root directory).
              */
             target_folder_id?: number | null;
         };
+        /** @description Batch delete files and folders. */
         BatchDeleteReq: {
             file_ids?: number[];
             folder_ids?: number[];
         };
+        /** @description Batch delete shares. */
         BatchDeleteSharesReq: {
             share_ids?: number[];
         };
@@ -2910,12 +2921,13 @@ export interface components {
             entity_type: string;
             error: string;
         };
+        /** @description Batch move files and folders to a target folder. */
         BatchMoveReq: {
             file_ids?: number[];
             folder_ids?: number[];
             /**
              * Format: int64
-             * @description 目标文件夹 ID（null = 根目录）
+             * @description Target folder ID (`None` = root directory).
              */
             target_folder_id?: number | null;
         };
@@ -2931,10 +2943,12 @@ export interface components {
          * @enum {string}
          */
         BrowserOpenMode: "single_click" | "double_click";
+        /** @description Change the authenticated user's password. */
         ChangePasswordReq: {
             current_password: string;
             new_password: string;
         };
+        /** @description Response for the `/auth/check` endpoint. */
         CheckResp: {
             allow_user_registration: boolean;
             has_users: boolean;
@@ -2950,9 +2964,11 @@ export interface components {
          * @enum {string}
          */
         ColorPreset: "blue" | "green" | "purple" | "orange";
+        /** @description Complete a chunked upload session. */
         CompleteUploadReq: {
             parts?: components["schemas"]["CompletedPartReq"][] | null;
         };
+        /** @description A single completed part for multipart completion. */
         CompletedPartReq: {
             etag: string;
             /** Format: int32 */
@@ -2971,30 +2987,35 @@ export interface components {
             requires_restart: boolean;
             value_type: components["schemas"]["SystemConfigValueType"];
         };
+        /** @description Copy a file to a target folder. */
         CopyFileReq: {
             /**
              * Format: int64
-             * @description 目标文件夹 ID（null = 根目录）
+             * @description Target folder ID (`None` = root directory).
              */
             folder_id?: number | null;
         };
+        /** @description Copy a folder to a target location. */
         CopyFolderReq: {
             /**
              * Format: int64
-             * @description 目标父文件夹 ID（null = 根目录）
+             * @description Target parent folder ID (`None` = root directory).
              */
             parent_id?: number | null;
         };
+        /** @description Create an empty file. */
         CreateEmptyRequest: {
             /** Format: int64 */
             folder_id?: number | null;
             name: string;
         };
+        /** @description Create a new folder. */
         CreateFolderReq: {
             name: string;
             /** Format: int64 */
             parent_id?: number | null;
         };
+        /** @description Create a storage policy group. */
         CreatePolicyGroupReq: {
             description?: string | null;
             is_default?: boolean;
@@ -3002,6 +3023,7 @@ export interface components {
             items: components["schemas"]["PolicyGroupItemReq"][];
             name: string;
         };
+        /** @description Create a storage policy. */
         CreatePolicyReq: {
             access_key?: string | null;
             allowed_types?: string[] | null;
@@ -3018,6 +3040,7 @@ export interface components {
             options?: null | components["schemas"]["StoragePolicyOptions"];
             secret_key?: string | null;
         };
+        /** @description Create a new share. */
         CreateShareReq: {
             expires_at?: string | null;
             /** Format: int64 */
@@ -3025,15 +3048,18 @@ export interface components {
             password?: string | null;
             target: components["schemas"]["ShareTarget"];
         };
+        /** @description Create a new team. */
         CreateTeamReq: {
             description?: string | null;
             name: string;
         };
+        /** @description Create a new user (admin operation). */
         CreateUserReq: {
             email: string;
             password: string;
             username: string;
         };
+        /** @description Create a new WebDAV sub-account. */
         CreateWebdavAccountReq: {
             password?: string | null;
             /** Format: int64 */
@@ -3069,16 +3095,19 @@ export interface components {
          * @enum {integer}
          */
         ErrorCode: 0 | 1000 | 1001 | 1002 | 1003 | 1004 | 1005 | 1006 | 1007 | 1008 | 2000 | 2001 | 2002 | 2003 | 2004 | 2005 | 2006 | 3000 | 3001 | 3002 | 3003 | 3004 | 3005 | 3006 | 3007 | 3008 | 3009 | 3010 | 3011 | 4000 | 4001 | 4002 | 4003 | 5000 | 6000 | 6001 | 6002 | 6003;
+        /** @description Execute a config action (e.g., send test email). */
         ExecuteConfigActionReq: {
             action: components["schemas"]["ConfigActionType"];
             discovery_url?: string | null;
             target_email?: string | null;
             value?: string | null;
         };
+        /** @description Response from a config action execution. */
         ExecuteConfigActionResp: {
             message: string;
             value?: string | null;
         };
+        /** @description Extract an archive file. */
         ExtractArchiveRequest: {
             output_folder_name?: string | null;
             /** Format: int64 */
@@ -3121,6 +3150,7 @@ export interface components {
             size: number;
             updated_at: string;
         };
+        /** @description Query parameters for file upload. */
         FileQuery: {
             /** Format: int64 */
             declared_size?: number | null;
@@ -3203,6 +3233,7 @@ export interface components {
             status: string;
             version: string;
         };
+        /** @description Initialize a chunked upload session. */
         InitUploadReq: {
             filename: string;
             /** Format: int64 */
@@ -3232,6 +3263,7 @@ export interface components {
             /** Format: int64 */
             offset?: number | null;
         };
+        /** @description Standard login credentials. */
         LoginReq: {
             identifier: string;
             password: string;
@@ -3263,6 +3295,7 @@ export interface components {
             heap_allocated_mb: string;
             heap_peak_mb: string;
         };
+        /** @description Migrate all users from one policy group to another. */
         MigratePolicyGroupUsersReq: {
             /** Format: int64 */
             target_group_id: number;
@@ -3507,6 +3540,7 @@ export interface components {
                 id: number;
                 kind: components["schemas"]["BackgroundTaskKind"];
                 last_error?: string | null;
+                lease_expires_at?: string | null;
                 /** Format: int32 */
                 max_attempts: number;
                 payload: components["schemas"]["TaskPayload"];
@@ -3600,21 +3634,26 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        /** @description WOPI open file request. */
         OpenWopiRequest: {
             app_key: string;
         };
+        /** @description Confirm a password reset with the token from the email. */
         PasswordResetConfirmReq: {
             new_password: string;
             token: string;
         };
+        /** @description Request a password reset email. */
         PasswordResetRequestReq: {
             email: string;
         };
+        /** @description Patch (partial update) a file. */
         PatchFileReq: {
             /** Format: int64 */
             folder_id?: number | null;
             name?: string | null;
         };
+        /** @description Patch (partial update) a folder. */
         PatchFolderReq: {
             name?: string | null;
             /** Format: int64 */
@@ -3622,6 +3661,7 @@ export interface components {
             /** Format: int64 */
             policy_id?: number | null;
         };
+        /** @description Patch a storage policy group. */
         PatchPolicyGroupReq: {
             description?: string | null;
             is_default?: boolean | null;
@@ -3629,6 +3669,7 @@ export interface components {
             items?: components["schemas"]["PolicyGroupItemReq"][] | null;
             name?: string | null;
         };
+        /** @description Patch a storage policy. */
         PatchPolicyReq: {
             access_key?: string | null;
             allowed_types?: string[] | null;
@@ -3644,20 +3685,22 @@ export interface components {
             options?: null | components["schemas"]["StoragePolicyOptions"];
             secret_key?: string | null;
         };
+        /** @description Patch a team member's role. */
         PatchTeamMemberReq: {
             role: components["schemas"]["TeamMemberRole"];
         };
+        /** @description Patch (partial update) a team. */
         PatchTeamReq: {
             description?: string | null;
             name?: string | null;
         };
+        /** @description Patch an existing user (admin operation). */
         PatchUserReq: {
             email_verified?: boolean | null;
             /**
              * Format: int64
-             * @description Omitted means "leave unchanged". Explicit `null` is rejected because this
-             *     endpoint only supports assigning a policy group, not unassigning one. To
-             *     change the assignment, provide a valid policy group ID.
+             * @description Omitted = leave unchanged. Explicit `null` is rejected because this
+             *     endpoint only supports assigning a policy group, not unassigning one.
              */
             policy_group_id?: number;
             role?: null | components["schemas"]["UserRole"];
@@ -3665,6 +3708,7 @@ export interface components {
             /** Format: int64 */
             storage_quota?: number | null;
         };
+        /** @description A single item within a policy group. */
         PolicyGroupItemReq: {
             /** Format: int64 */
             max_file_size?: number;
@@ -3690,6 +3734,7 @@ export interface components {
          * @enum {string}
          */
         PrefViewMode: "list" | "grid";
+        /** @description Request presigned URLs for S3 multipart upload parts. */
         PresignPartsReq: {
             part_numbers: number[];
         };
@@ -3755,6 +3800,7 @@ export interface components {
             /** Format: int32 */
             purged: number;
         };
+        /** @description Registration request for new users. */
         RegisterReq: {
             email: string;
             password: string;
@@ -3764,12 +3810,15 @@ export interface components {
             /** Format: int64 */
             removed: number;
         };
+        /** @description Request an email address change. */
         RequestEmailChangeReq: {
             new_email: string;
         };
+        /** @description Resend registration activation email. */
         ResendRegisterActivationReq: {
             identifier: string;
         };
+        /** @description Reset a user's password (admin operation). */
         ResetUserPasswordReq: {
             password: string;
         };
@@ -3862,17 +3911,21 @@ export interface components {
             /** Format: int64 */
             total_folders: number;
         };
+        /** @description Set a system configuration value. */
         SetConfigReq: {
             value: string;
         };
+        /** @description Lock or unlock a file. */
         SetLockReq: {
             locked: boolean;
         };
+        /** @description Set or delete a custom property on an entity. */
         SetPropReq: {
             name: string;
             namespace: string;
             value?: string | null;
         };
+        /** @description Initial system setup (first admin account). */
         SetupReq: {
             email: string;
             password: string;
@@ -4063,6 +4116,7 @@ export interface components {
             id: number;
             kind: components["schemas"]["BackgroundTaskKind"];
             last_error?: string | null;
+            lease_expires_at?: string | null;
             /** Format: int32 */
             max_attempts: number;
             payload: components["schemas"]["TaskPayload"];
@@ -4089,6 +4143,9 @@ export interface components {
         }) | (components["schemas"]["ArchiveExtractTaskPayload"] & {
             /** @enum {string} */
             kind: "archive_extract";
+        }) | (components["schemas"]["ThumbnailGenerateTaskPayload"] & {
+            /** @enum {string} */
+            kind: "thumbnail_generate";
         }) | (components["schemas"]["RuntimeTaskPayload"] & {
             /** @enum {string} */
             kind: "system_runtime";
@@ -4099,6 +4156,9 @@ export interface components {
         }) | (components["schemas"]["ArchiveExtractTaskResult"] & {
             /** @enum {string} */
             kind: "archive_extract";
+        }) | (components["schemas"]["ThumbnailGenerateTaskResult"] & {
+            /** @enum {string} */
+            kind: "thumbnail_generate";
         }) | (components["schemas"]["RuntimeTaskResult"] & {
             /** @enum {string} */
             kind: "system_runtime";
@@ -4192,10 +4252,12 @@ export interface components {
             label_i18n_key: string;
             token: string;
         };
+        /** @description Test WebDAV credentials. */
         TestConnectionReq: {
             password: string;
             username: string;
         };
+        /** @description Test a storage policy connection by parameters (without saving). */
         TestPolicyParamsReq: {
             access_key?: string | null;
             base_path?: string | null;
@@ -4212,6 +4274,18 @@ export interface components {
          * @enum {string}
          */
         ThemeMode: "system" | "light" | "dark";
+        ThumbnailGenerateTaskPayload: {
+            blob_hash: string;
+            /** Format: int64 */
+            blob_id: number;
+            source_mime_type: string;
+        };
+        ThumbnailGenerateTaskResult: {
+            /** Format: int64 */
+            blob_id: number;
+            reused_existing_thumbnail: boolean;
+            thumbnail_path: string;
+        };
         TrashContents: {
             files: components["schemas"]["TrashFileItem"][];
             /** Format: int64 */
@@ -4250,11 +4324,13 @@ export interface components {
             original_path: string;
             updated_at: string;
         };
+        /** @description Path parameters for trash restore/purge operations. */
         TrashItemPath: {
             entity_type: components["schemas"]["EntityType"];
             /** Format: int64 */
             id: number;
         };
+        /** @description Update the user's avatar source. */
         UpdateAvatarSourceReq: {
             source: components["schemas"]["AvatarSource"];
         };
@@ -4269,14 +4345,19 @@ export interface components {
             theme_mode?: null | components["schemas"]["ThemeMode"];
             view_mode?: null | components["schemas"]["PrefViewMode"];
         };
+        /** @description Update display name in user profile. */
         UpdateProfileReq: {
             display_name?: string | null;
         };
+        /** @description Update an existing share. */
         UpdateShareReq: {
             expires_at?: string | null;
             /** Format: int64 */
             max_downloads: number;
-            /** @description `None` = keep existing password, `Some(\"\")` = remove password, non-empty = replace password */
+            /**
+             * @description `None` = keep existing password, `Some("")` = remove password,
+             *     non-empty = replace password.
+             */
             password?: string | null;
         };
         /**
@@ -4404,6 +4485,7 @@ export interface components {
          * @enum {string}
          */
         VerificationPurpose: "register_activation" | "contact_change" | "password_reset";
+        /** @description Verify a share password. */
         VerifyPasswordReq: {
             password: string;
         };
@@ -4444,6 +4526,7 @@ export interface components {
         WebdavLockOwnerInfo: {
             xml: string;
         };
+        /** @description WebDAV account settings for the current user. */
         WebdavSettingsInfo: {
             endpoint: string;
             prefix: string;
@@ -4864,6 +4947,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description Response from a config action execution. */
                         data?: {
                             message: string;
                             value?: string | null;
@@ -5964,6 +6048,7 @@ export interface operations {
                                 id: number;
                                 kind: components["schemas"]["BackgroundTaskKind"];
                                 last_error?: string | null;
+                                lease_expires_at?: string | null;
                                 /** Format: int32 */
                                 max_attempts: number;
                                 payload: components["schemas"]["TaskPayload"];
@@ -6207,7 +6292,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Team not found */
+            /** @description Not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -6249,7 +6334,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Team not found */
+            /** @description Not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -6327,7 +6412,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Team not found */
+            /** @description Not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -6711,7 +6796,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Team not found */
+            /** @description Not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -7208,6 +7293,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description Response for the `/auth/check` endpoint. */
                         data?: {
                             allow_user_registration: boolean;
                             has_users: boolean;
@@ -7316,6 +7402,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description Generic message-only response (used after email operations). */
                         data?: {
                             message: string;
                         };
@@ -7353,6 +7440,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description Response body for token issuance (login / refresh / password change). */
                         data?: {
                             /** Format: int64 */
                             expires_in: number;
@@ -7462,6 +7550,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description Response body for token issuance (login / refresh / password change). */
                         data?: {
                             /** Format: int64 */
                             expires_in: number;
@@ -7507,6 +7596,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description Generic message-only response (used after email operations). */
                         data?: {
                             message: string;
                         };
@@ -7551,6 +7641,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description Generic message-only response (used after email operations). */
                         data?: {
                             message: string;
                         };
@@ -7803,6 +7894,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description Response body for token issuance (login / refresh / password change). */
                         data?: {
                             /** Format: int64 */
                             expires_in: number;
@@ -7895,6 +7987,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description Generic message-only response (used after email operations). */
                         data?: {
                             message: string;
                         };
@@ -7993,6 +8086,7 @@ export interface operations {
                             id: number;
                             kind: components["schemas"]["BackgroundTaskKind"];
                             last_error?: string | null;
+                            lease_expires_at?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
                             payload: components["schemas"]["TaskPayload"];
@@ -9075,6 +9169,7 @@ export interface operations {
                             id: number;
                             kind: components["schemas"]["BackgroundTaskKind"];
                             last_error?: string | null;
+                            lease_expires_at?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
                             payload: components["schemas"]["TaskPayload"];
@@ -11110,6 +11205,7 @@ export interface operations {
                                 id: number;
                                 kind: components["schemas"]["BackgroundTaskKind"];
                                 last_error?: string | null;
+                                lease_expires_at?: string | null;
                                 /** Format: int32 */
                                 max_attempts: number;
                                 payload: components["schemas"]["TaskPayload"];
@@ -11184,6 +11280,7 @@ export interface operations {
                             id: number;
                             kind: components["schemas"]["BackgroundTaskKind"];
                             last_error?: string | null;
+                            lease_expires_at?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
                             payload: components["schemas"]["TaskPayload"];
@@ -11258,6 +11355,7 @@ export interface operations {
                             id: number;
                             kind: components["schemas"]["BackgroundTaskKind"];
                             last_error?: string | null;
+                            lease_expires_at?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
                             payload: components["schemas"]["TaskPayload"];
@@ -12032,6 +12130,7 @@ export interface operations {
                             id: number;
                             kind: components["schemas"]["BackgroundTaskKind"];
                             last_error?: string | null;
+                            lease_expires_at?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
                             payload: components["schemas"]["TaskPayload"];
@@ -13318,6 +13417,7 @@ export interface operations {
                             id: number;
                             kind: components["schemas"]["BackgroundTaskKind"];
                             last_error?: string | null;
+                            lease_expires_at?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
                             payload: components["schemas"]["TaskPayload"];
@@ -14807,6 +14907,7 @@ export interface operations {
                                 id: number;
                                 kind: components["schemas"]["BackgroundTaskKind"];
                                 last_error?: string | null;
+                                lease_expires_at?: string | null;
                                 /** Format: int32 */
                                 max_attempts: number;
                                 payload: components["schemas"]["TaskPayload"];
@@ -14890,6 +14991,7 @@ export interface operations {
                             id: number;
                             kind: components["schemas"]["BackgroundTaskKind"];
                             last_error?: string | null;
+                            lease_expires_at?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
                             payload: components["schemas"]["TaskPayload"];
@@ -14973,6 +15075,7 @@ export interface operations {
                             id: number;
                             kind: components["schemas"]["BackgroundTaskKind"];
                             last_error?: string | null;
+                            lease_expires_at?: string | null;
                             /** Format: int32 */
                             max_attempts: number;
                             payload: components["schemas"]["TaskPayload"];
@@ -15494,6 +15597,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
+                        /** @description WebDAV account settings for the current user. */
                         data?: {
                             endpoint: string;
                             prefix: string;

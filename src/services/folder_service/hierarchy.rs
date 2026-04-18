@@ -78,26 +78,25 @@ pub(crate) async fn get_ancestors_in_scope(
     scope: WorkspaceStorageScope,
     folder_id: i64,
 ) -> Result<Vec<FolderAncestorItem>> {
-    workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;
+    let folder = workspace_storage_service::verify_folder_access(state, scope, folder_id).await?;
+    ensure_folder_model_in_scope(&folder, scope)?;
 
-    let mut path = Vec::new();
-    let mut current_id = folder_id;
+    let ancestors = match scope {
+        WorkspaceStorageScope::Personal { user_id } => {
+            folder_repo::find_ancestor_models(&state.db, user_id, folder_id).await?
+        }
+        WorkspaceStorageScope::Team { team_id, .. } => {
+            folder_repo::find_team_ancestor_models(&state.db, team_id, folder_id).await?
+        }
+    };
 
-    loop {
-        let folder = folder_repo::find_by_id(&state.db, current_id).await?;
-        ensure_folder_model_in_scope(&folder, scope)?;
-        path.push(FolderAncestorItem {
+    Ok(ancestors
+        .into_iter()
+        .map(|folder| FolderAncestorItem {
             id: folder.id,
             name: folder.name,
-        });
-        match folder.parent_id {
-            Some(pid) => current_id = pid,
-            None => break,
-        }
-    }
-
-    path.reverse();
-    Ok(path)
+        })
+        .collect())
 }
 
 /// 获取文件夹的祖先链（从根下第一层到当前文件夹）

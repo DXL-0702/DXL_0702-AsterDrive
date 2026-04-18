@@ -46,17 +46,54 @@ async fn default_policy(
         .expect("default policy should exist in test setup")
 }
 
-#[allow(clippy::too_many_arguments)]
+struct UploadSessionSpec<'a> {
+    team_id: Option<i64>,
+    upload_id: &'a str,
+    status: aster_drive::types::UploadSessionStatus,
+    expires_at: chrono::DateTime<chrono::Utc>,
+    s3_temp_key: Option<&'a str>,
+    s3_multipart_id: Option<&'a str>,
+    file_id: Option<i64>,
+}
+
+impl<'a> UploadSessionSpec<'a> {
+    fn new(
+        upload_id: &'a str,
+        status: aster_drive::types::UploadSessionStatus,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> Self {
+        Self {
+            team_id: None,
+            upload_id,
+            status,
+            expires_at,
+            s3_temp_key: None,
+            s3_multipart_id: None,
+            file_id: None,
+        }
+    }
+
+    fn team(mut self, team_id: i64) -> Self {
+        self.team_id = Some(team_id);
+        self
+    }
+
+    fn s3(mut self, s3_temp_key: Option<&'a str>, s3_multipart_id: Option<&'a str>) -> Self {
+        self.s3_temp_key = s3_temp_key;
+        self.s3_multipart_id = s3_multipart_id;
+        self
+    }
+
+    fn file_id(mut self, file_id: i64) -> Self {
+        self.file_id = Some(file_id);
+        self
+    }
+}
+
 async fn create_upload_session(
     state: &aster_drive::runtime::AppState,
     user_id: i64,
-    team_id: Option<i64>,
-    upload_id: &str,
-    status: aster_drive::types::UploadSessionStatus,
-    expires_at: chrono::DateTime<chrono::Utc>,
-    s3_temp_key: Option<&str>,
-    s3_multipart_id: Option<&str>,
-    file_id: Option<i64>,
+    spec: UploadSessionSpec<'_>,
 ) {
     use aster_drive::db::repository::upload_session_repo;
 
@@ -65,9 +102,9 @@ async fn create_upload_session(
     upload_session_repo::create(
         &state.db,
         aster_drive::entities::upload_session::ActiveModel {
-            id: Set(upload_id.to_string()),
+            id: Set(spec.upload_id.to_string()),
             user_id: Set(user_id),
-            team_id: Set(team_id),
+            team_id: Set(spec.team_id),
             filename: Set("manual-upload.bin".to_string()),
             total_size: Set(10),
             chunk_size: Set(5),
@@ -75,12 +112,12 @@ async fn create_upload_session(
             received_count: Set(2),
             folder_id: Set(None),
             policy_id: Set(policy.id),
-            status: Set(status),
-            s3_temp_key: Set(s3_temp_key.map(str::to_string)),
-            s3_multipart_id: Set(s3_multipart_id.map(str::to_string)),
-            file_id: Set(file_id),
+            status: Set(spec.status),
+            s3_temp_key: Set(spec.s3_temp_key.map(str::to_string)),
+            s3_multipart_id: Set(spec.s3_multipart_id.map(str::to_string)),
+            file_id: Set(spec.file_id),
             created_at: Set(now),
-            expires_at: Set(expires_at),
+            expires_at: Set(spec.expires_at),
             updated_at: Set(now),
         },
     )
@@ -106,12 +143,12 @@ async fn store_test_file(
     aster_drive::services::file_service::store_from_temp(
         state,
         user_id,
-        None,
-        filename,
-        &temp_path,
-        bytes.len() as i64,
-        None,
-        false,
+        aster_drive::services::file_service::StoreFromTempRequest::new(
+            None,
+            filename,
+            &temp_path,
+            bytes.len() as i64,
+        ),
     )
     .await
     .unwrap()
@@ -210,13 +247,12 @@ async fn test_cleanup_expired_completed_upload_sessions_removes_broken_temp_obje
     create_upload_session(
         &state,
         user.id,
-        None,
-        "broken-completed",
-        aster_drive::types::UploadSessionStatus::Completed,
-        Utc::now() - Duration::hours(1),
-        Some(temp_key),
-        None,
-        None,
+        UploadSessionSpec::new(
+            "broken-completed",
+            aster_drive::types::UploadSessionStatus::Completed,
+            Utc::now() - Duration::hours(1),
+        )
+        .s3(Some(temp_key), None),
     )
     .await;
 
@@ -255,13 +291,12 @@ async fn test_cleanup_expired_completed_upload_sessions_removes_broken_completed
     create_upload_session(
         &state,
         user.id,
-        None,
-        "broken-completed-multipart",
-        aster_drive::types::UploadSessionStatus::Completed,
-        Utc::now() - Duration::hours(1),
-        Some(temp_key),
-        Some("already-completed-upload"),
-        None,
+        UploadSessionSpec::new(
+            "broken-completed-multipart",
+            aster_drive::types::UploadSessionStatus::Completed,
+            Utc::now() - Duration::hours(1),
+        )
+        .s3(Some(temp_key), Some("already-completed-upload")),
     )
     .await;
 
@@ -298,13 +333,13 @@ async fn test_cleanup_expired_completed_upload_sessions_keeps_live_blob() {
     create_upload_session(
         &state,
         user.id,
-        None,
-        "completed-with-file",
-        aster_drive::types::UploadSessionStatus::Completed,
-        Utc::now() - Duration::hours(1),
-        Some(&blob.storage_path),
-        None,
-        Some(file.id),
+        UploadSessionSpec::new(
+            "completed-with-file",
+            aster_drive::types::UploadSessionStatus::Completed,
+            Utc::now() - Duration::hours(1),
+        )
+        .s3(Some(&blob.storage_path), None)
+        .file_id(file.id),
     )
     .await;
 
@@ -397,13 +432,23 @@ async fn test_cleanup_expired_completed_upload_sessions_processes_all_batches() 
         create_upload_session(
             &state,
             user.id,
-            None,
-            &upload_id,
-            aster_drive::types::UploadSessionStatus::Completed,
-            Utc::now() - Duration::hours(1),
-            None,
-            None,
-            file_id,
+            file_id.map_or_else(
+                || {
+                    UploadSessionSpec::new(
+                        &upload_id,
+                        aster_drive::types::UploadSessionStatus::Completed,
+                        Utc::now() - Duration::hours(1),
+                    )
+                },
+                |file_id| {
+                    UploadSessionSpec::new(
+                        &upload_id,
+                        aster_drive::types::UploadSessionStatus::Completed,
+                        Utc::now() - Duration::hours(1),
+                    )
+                    .file_id(file_id)
+                },
+            ),
         )
         .await;
     }
@@ -444,13 +489,13 @@ async fn test_cleanup_expired_completed_upload_sessions_cleans_team_sessions() {
     create_upload_session(
         &state,
         user.id,
-        Some(team.id),
-        "team-broken-completed",
-        aster_drive::types::UploadSessionStatus::Completed,
-        Utc::now() - Duration::hours(1),
-        Some(temp_key),
-        None,
-        None,
+        UploadSessionSpec::new(
+            "team-broken-completed",
+            aster_drive::types::UploadSessionStatus::Completed,
+            Utc::now() - Duration::hours(1),
+        )
+        .team(team.id)
+        .s3(Some(temp_key), None),
     )
     .await;
 

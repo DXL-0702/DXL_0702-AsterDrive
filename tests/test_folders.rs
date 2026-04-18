@@ -4,7 +4,7 @@
 mod common;
 
 use actix_web::test;
-use aster_drive::db::repository::folder_repo;
+use aster_drive::db::repository::{folder_repo, user_repo};
 use serde_json::Value;
 
 #[actix_web::test]
@@ -171,6 +171,64 @@ async fn test_folder_name_validation_returns_400() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400);
+}
+
+#[actix_web::test]
+async fn test_folder_repo_find_ancestors_returns_full_chain() {
+    let state = common::setup().await;
+    let db = state.db.clone();
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "Projects" }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let projects_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "2026", "parent_id": projects_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let year_id = body["data"]["id"].as_i64().unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/folders")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "name": "Q1", "parent_id": year_id }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let body: Value = test::read_body_json(resp).await;
+    let quarter_id = body["data"]["id"].as_i64().unwrap();
+
+    let user = user_repo::find_by_username(&db, "testuser")
+        .await
+        .unwrap()
+        .expect("registered user should exist");
+    let ancestors = folder_repo::find_ancestors(&db, user.id, quarter_id)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        ancestors,
+        vec![
+            (projects_id, "Projects".to_string()),
+            (year_id, "2026".to_string()),
+            (quarter_id, "Q1".to_string()),
+        ]
+    );
 }
 
 #[actix_web::test]

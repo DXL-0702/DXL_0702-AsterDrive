@@ -15,7 +15,9 @@ pub(crate) use blob::{
     create_nondedup_blob, create_nondedup_blob_with_key, create_s3_nondedup_blob,
 };
 pub(crate) use file_record::{create_exact_file_from_blob, create_new_file_from_blob};
-pub(crate) use finalize::{finalize_upload_session_blob, finalize_upload_session_file};
+pub(crate) use finalize::{
+    FinalizeUploadSessionFileParams, finalize_upload_session_blob, finalize_upload_session_file,
+};
 #[allow(unused_imports)]
 pub(crate) use path::ParsedUploadPath;
 pub(crate) use path::{ensure_upload_parent_path, parse_relative_upload_path};

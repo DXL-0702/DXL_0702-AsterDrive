@@ -206,6 +206,9 @@ describe("AdminTeamDetailDialog", () => {
 		const input = (await screen.findByLabelText(
 			"core:name",
 		)) as HTMLInputElement;
+		await waitFor(() => {
+			expect(input).not.toBeDisabled();
+		});
 		fireEvent.change(input, { target: { value: "Product Ops" } });
 
 		expect(input.isConnected).toBe(true);

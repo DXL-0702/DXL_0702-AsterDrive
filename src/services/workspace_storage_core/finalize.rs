@@ -30,16 +30,27 @@ pub(crate) async fn finalize_upload_session_blob<C: ConnectionTrait>(
     Ok(created)
 }
 
-#[allow(clippy::too_many_arguments)]
+pub(crate) struct FinalizeUploadSessionFileParams<'a> {
+    pub session: &'a upload_session::Model,
+    pub file_hash: &'a str,
+    pub size: i64,
+    pub policy_id: i64,
+    pub storage_path: &'a str,
+    pub now: chrono::DateTime<Utc>,
+}
+
 pub(crate) async fn finalize_upload_session_file(
     state: &AppState,
-    session: &upload_session::Model,
-    file_hash: &str,
-    size: i64,
-    policy_id: i64,
-    storage_path: &str,
-    now: chrono::DateTime<Utc>,
+    params: FinalizeUploadSessionFileParams<'_>,
 ) -> Result<file::Model> {
+    let FinalizeUploadSessionFileParams {
+        session,
+        file_hash,
+        size,
+        policy_id,
+        storage_path,
+        now,
+    } = params;
     let scope = scope_from_session(session);
     let txn = crate::db::transaction::begin(&state.db).await?;
     check_quota(&txn, scope, size).await?;

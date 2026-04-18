@@ -81,15 +81,14 @@ pub(super) async fn materialize_archive_extract_stage(
         })?;
         workspace_storage_service::store_from_temp_exact_name_with_hints(
             state,
-            scope,
-            Some(parent_id),
-            name,
-            &temp_path.to_string_lossy(),
-            size,
-            None,
-            false,
-            None,
-            None,
+            workspace_storage_service::StoreFromTempParams::new(
+                scope,
+                Some(parent_id),
+                name,
+                &temp_path.to_string_lossy(),
+                size,
+            ),
+            workspace_storage_service::StoreFromTempHints::default(),
         )
         .await?;
         imported_bytes = imported_bytes

@@ -37,12 +37,12 @@ async fn test_db_lock_system_deep_lock_supports_check_refresh_discover_and_delet
     file_service::store_from_temp(
         &state,
         user.id,
-        Some(docs.id),
-        "note.txt",
-        &temp_path,
-        "deep lock content".len() as i64,
-        None,
-        false,
+        file_service::StoreFromTempRequest::new(
+            Some(docs.id),
+            "note.txt",
+            &temp_path,
+            "deep lock content".len() as i64,
+        ),
     )
     .await
     .unwrap();
@@ -144,12 +144,12 @@ async fn test_db_lock_system_replaces_expired_locks_and_rejects_active_conflicts
     let file = file_service::store_from_temp(
         &state,
         user.id,
-        None,
-        "expired.txt",
-        &temp_path,
-        "expired lock content".len() as i64,
-        None,
-        false,
+        file_service::StoreFromTempRequest::new(
+            None,
+            "expired.txt",
+            &temp_path,
+            "expired lock content".len() as i64,
+        ),
     )
     .await
     .unwrap();
