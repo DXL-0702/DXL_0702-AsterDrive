@@ -5,11 +5,244 @@ use crate::entities::share;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::services::{file_service, folder_service};
+use sea_orm::DatabaseConnection;
+use std::collections::HashMap;
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+use tokio::sync::mpsc::{self, error::TrySendError};
+use tokio_util::sync::CancellationToken;
 
 use super::shared::{
     load_share_file_resource, load_shared_folder_file_target, load_shared_subfolder_target,
     load_valid_folder_share_root, load_valid_share,
 };
+
+#[derive(Clone)]
+pub struct ShareDownloadRollbackQueue {
+    db: DatabaseConnection,
+    sender: mpsc::Sender<DownloadCountRollbackJob>,
+    overflow: Arc<parking_lot::Mutex<HashMap<i64, u64>>>,
+    stats: Arc<DownloadCountRollbackStats>,
+}
+
+pub struct ShareDownloadRollbackWorker {
+    db: DatabaseConnection,
+    receiver: mpsc::Receiver<DownloadCountRollbackJob>,
+    overflow: Arc<parking_lot::Mutex<HashMap<i64, u64>>>,
+    stats: Arc<DownloadCountRollbackStats>,
+}
+
+#[derive(Clone, Copy)]
+struct DownloadCountRollbackJob {
+    share_id: i64,
+    count: u64,
+}
+
+#[derive(Default)]
+struct DownloadCountRollbackStats {
+    pending: AtomicU64,
+}
+
+impl DownloadCountRollbackStats {
+    fn enqueue(&self, count: u64) -> u64 {
+        self.pending.fetch_add(count, Ordering::SeqCst) + count
+    }
+
+    fn complete(&self, count: u64) -> u64 {
+        self.pending.fetch_sub(count, Ordering::SeqCst) - count
+    }
+}
+
+pub fn build_share_download_rollback_queue(
+    db: DatabaseConnection,
+    capacity: usize,
+) -> (ShareDownloadRollbackQueue, ShareDownloadRollbackWorker) {
+    let (sender, receiver) = mpsc::channel(capacity);
+    let overflow = Arc::new(parking_lot::Mutex::new(HashMap::new()));
+    let stats = Arc::new(DownloadCountRollbackStats::default());
+
+    (
+        ShareDownloadRollbackQueue {
+            db: db.clone(),
+            sender,
+            overflow: overflow.clone(),
+            stats: stats.clone(),
+        },
+        ShareDownloadRollbackWorker {
+            db,
+            receiver,
+            overflow,
+            stats,
+        },
+    )
+}
+
+pub fn spawn_detached_share_download_rollback_queue(
+    db: DatabaseConnection,
+    capacity: usize,
+) -> ShareDownloadRollbackQueue {
+    let (queue, worker) = build_share_download_rollback_queue(db, capacity);
+    drop(tokio::spawn(run_share_download_rollback_worker(
+        worker, None,
+    )));
+    queue
+}
+
+pub fn share_download_rollback_worker_task(
+    shutdown_token: CancellationToken,
+    worker: ShareDownloadRollbackWorker,
+) -> impl std::future::Future<Output = ()> + Send + 'static {
+    run_share_download_rollback_worker(worker, Some(shutdown_token))
+}
+
+impl ShareDownloadRollbackQueue {
+    pub fn enqueue(&self, share_id: i64) {
+        let job = DownloadCountRollbackJob { share_id, count: 1 };
+        let pending = self.stats.enqueue(job.count);
+        set_share_download_rollback_pending_metric(pending);
+
+        match self.sender.try_send(job) {
+            Ok(()) => record_share_download_rollback_event("queued", job.count),
+            Err(TrySendError::Full(job)) => {
+                self.push_overflow(job);
+                record_share_download_rollback_event("overflow", job.count);
+            }
+            Err(TrySendError::Closed(job)) => {
+                record_share_download_rollback_event("fallback_spawn", job.count);
+                self.spawn_fallback(job);
+            }
+        }
+    }
+
+    fn push_overflow(&self, job: DownloadCountRollbackJob) {
+        *self.overflow.lock().entry(job.share_id).or_default() += job.count;
+    }
+
+    fn spawn_fallback(&self, job: DownloadCountRollbackJob) {
+        let db = self.db.clone();
+        let stats = self.stats.clone();
+        tracing::warn!(
+            share_id = job.share_id,
+            rollback_count = job.count,
+            "download rollback worker unavailable; falling back to direct task spawn"
+        );
+        drop(tokio::spawn(async move {
+            apply_download_count_rollback(&db, &stats, job.share_id, job.count).await;
+        }));
+    }
+}
+
+async fn run_share_download_rollback_worker(
+    mut worker: ShareDownloadRollbackWorker,
+    shutdown_token: Option<CancellationToken>,
+) {
+    let mut shutting_down = false;
+
+    loop {
+        let mut batch = take_overflow_batch(&worker.overflow);
+
+        if batch.is_empty() && shutting_down {
+            drain_receiver_into_batch(&mut worker.receiver, &mut batch);
+            merge_batch(&mut batch, take_overflow_batch(&worker.overflow));
+            if batch.is_empty() {
+                break;
+            }
+        }
+
+        if batch.is_empty() {
+            tokio::select! {
+                biased;
+                _ = async {
+                    match &shutdown_token {
+                        Some(token) => token.cancelled().await,
+                        None => std::future::pending::<()>().await,
+                    }
+                } => {
+                    shutting_down = true;
+                    continue;
+                }
+                received = worker.receiver.recv() => match received {
+                    Some(job) => {
+                        push_job(&mut batch, job);
+                        drain_receiver_into_batch(&mut worker.receiver, &mut batch);
+                        merge_batch(&mut batch, take_overflow_batch(&worker.overflow));
+                    }
+                    None => {
+                        shutting_down = true;
+                        continue;
+                    }
+                }
+            }
+        } else {
+            drain_receiver_into_batch(&mut worker.receiver, &mut batch);
+            merge_batch(&mut batch, take_overflow_batch(&worker.overflow));
+        }
+
+        for (share_id, count) in batch {
+            apply_download_count_rollback(&worker.db, &worker.stats, share_id, count).await;
+        }
+    }
+}
+
+async fn apply_download_count_rollback(
+    db: &DatabaseConnection,
+    stats: &DownloadCountRollbackStats,
+    share_id: i64,
+    count: u64,
+) {
+    let event = match share_repo::decrement_download_count_by(db, share_id, count).await {
+        Ok(true) => "processed_ok",
+        Ok(false) => "processed_noop",
+        Err(error) => {
+            tracing::warn!(
+                share_id,
+                rollback_count = count,
+                "failed to roll back download count on client abort: {error}"
+            );
+            "processed_error"
+        }
+    };
+
+    let pending = stats.complete(count);
+    record_share_download_rollback_event(event, count);
+    set_share_download_rollback_pending_metric(pending);
+}
+
+fn take_overflow_batch(overflow: &parking_lot::Mutex<HashMap<i64, u64>>) -> HashMap<i64, u64> {
+    let mut guard = overflow.lock();
+    std::mem::take(&mut *guard)
+}
+
+fn merge_batch(target: &mut HashMap<i64, u64>, source: HashMap<i64, u64>) {
+    for (share_id, count) in source {
+        *target.entry(share_id).or_default() += count;
+    }
+}
+
+fn drain_receiver_into_batch(
+    receiver: &mut mpsc::Receiver<DownloadCountRollbackJob>,
+    batch: &mut HashMap<i64, u64>,
+) {
+    while let Ok(job) = receiver.try_recv() {
+        push_job(batch, job);
+    }
+}
+
+fn push_job(batch: &mut HashMap<i64, u64>, job: DownloadCountRollbackJob) {
+    *batch.entry(job.share_id).or_default() += job.count;
+}
+
+fn record_share_download_rollback_event(_event: &'static str, _count: u64) {
+    #[cfg(feature = "metrics")]
+    crate::metrics::record_share_download_rollback_event(_event, _count);
+}
+
+fn set_share_download_rollback_pending_metric(_pending: u64) {
+    #[cfg(feature = "metrics")]
+    crate::metrics::set_share_download_rollback_pending(_pending);
+}
 
 pub async fn download_shared_file(
     state: &AppState,
@@ -235,17 +468,10 @@ async fn download_share_resource_with_disposition(
             // 回滚刚才的 increment，避免 `download_count` 虚增、提前触碰 `max_downloads`。
             // NotModified/PresignedRedirect 一次性响应不需要挂 hook。
             if let file_service::DownloadOutcome::Stream(ref mut s) = outcome {
-                let db = state.db.clone();
+                let queue = state.share_download_rollback.clone();
                 let share_id = share.id;
                 s.on_abort = Some(Box::new(move || {
-                    tokio::spawn(async move {
-                        if let Err(e) = share_repo::decrement_download_count(&db, share_id).await {
-                            tracing::warn!(
-                                share_id,
-                                "failed to roll back download count on client abort: {e}"
-                            );
-                        }
-                    });
+                    queue.enqueue(share_id);
                 }));
             }
             tracing::debug!(

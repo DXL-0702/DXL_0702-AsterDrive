@@ -35,7 +35,7 @@ const mockState = vi.hoisted(() => ({
 			return `shared-with-you:${opts?.name}:${opts?.resource}`;
 		}
 		if (key === "share:password_verified") return "password-verified";
-		return key;
+		return key.replace(/^core:/, "");
 	},
 	verifyPassword: vi.fn(),
 }));
@@ -392,7 +392,7 @@ describe("ShareViewPage", () => {
 
 		await screen.findByText("Secret Folder");
 		expect(mockState.previewAppStore.load).toHaveBeenCalledTimes(1);
-		fireEvent.change(screen.getByPlaceholderText("auth:password"), {
+		fireEvent.change(screen.getByPlaceholderText("password"), {
 			target: { value: "letmein" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "verify" }));

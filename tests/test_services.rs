@@ -84,6 +84,30 @@ async fn user_storage_used(state: &aster_drive::runtime::AppState, user_id: i64)
         .storage_used
 }
 
+async fn wait_for_share_download_count(
+    state: &aster_drive::runtime::AppState,
+    share_id: i64,
+    expected: i64,
+) {
+    for _ in 0..40 {
+        let reloaded = aster_drive::db::repository::share_repo::find_by_id(&state.db, share_id)
+            .await
+            .unwrap();
+        if reloaded.download_count == expected {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+
+    let reloaded = aster_drive::db::repository::share_repo::find_by_id(&state.db, share_id)
+        .await
+        .unwrap();
+    panic!(
+        "share #{share_id} download_count did not reach {expected}, got {}",
+        reloaded.download_count
+    );
+}
+
 // ─── Auth Service ─────────────────────────────────────────────────
 
 #[actix_web::test]
@@ -338,7 +362,7 @@ async fn test_collect_folder_tree_respects_deleted_visibility() {
         .unwrap();
 
     let (visible_files, visible_folder_ids) =
-        webdav_service::collect_folder_tree(&state.db, user.id, root.id, false)
+        webdav_service::collect_folder_tree(&state, user.id, root.id, false)
             .await
             .unwrap();
     let visible_file_ids = visible_files
@@ -357,7 +381,7 @@ async fn test_collect_folder_tree_respects_deleted_visibility() {
     );
 
     let (all_files, all_folder_ids) =
-        webdav_service::collect_folder_tree(&state.db, user.id, root.id, true)
+        webdav_service::collect_folder_tree(&state, user.id, root.id, true)
             .await
             .unwrap();
     let all_file_ids = all_files
@@ -404,14 +428,14 @@ async fn test_collect_folder_tree_handles_empty_leaf_folder() {
         .unwrap();
 
     let (visible_files, visible_folder_ids) =
-        webdav_service::collect_folder_tree(&state.db, user.id, leaf.id, false)
+        webdav_service::collect_folder_tree(&state, user.id, leaf.id, false)
             .await
             .unwrap();
     assert!(visible_files.is_empty());
     assert_eq!(visible_folder_ids, vec![leaf.id]);
 
     let (all_files, all_folder_ids) =
-        webdav_service::collect_folder_tree(&state.db, user.id, leaf.id, true)
+        webdav_service::collect_folder_tree(&state, user.id, leaf.id, true)
             .await
             .unwrap();
     assert!(all_files.is_empty());
@@ -1525,6 +1549,59 @@ async fn test_share_download_failure_rolls_back_download_quota() {
         .await
         .unwrap();
     assert_eq!(reloaded.download_count, 0);
+}
+
+#[actix_web::test]
+async fn test_share_download_abort_rolls_back_download_quota() {
+    use actix_web::test;
+
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+    let user = aster_drive::services::auth_service::register(
+        &state,
+        "sdlabort",
+        "sdlabort@example.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+
+    let file_id = store_service_file(
+        &state,
+        user.id,
+        None,
+        "abort-download.txt",
+        "abort-download",
+    )
+    .await;
+    let share = aster_drive::services::share_service::create_share(
+        &state,
+        user.id,
+        aster_drive::services::share_service::ShareTarget::file(file_id),
+        None,
+        None,
+        1,
+    )
+    .await
+    .unwrap();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{}/download", share.token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    drop(resp);
+
+    wait_for_share_download_count(&state, share.id, 0).await;
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/s/{}/download", share.token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    drop(resp);
+
+    wait_for_share_download_count(&state, share.id, 0).await;
 }
 
 #[actix_web::test]

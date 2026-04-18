@@ -9,13 +9,15 @@ pub use crate::config::definitions::{
     BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY, BACKGROUND_TASK_MAX_ATTEMPTS_KEY,
     BACKGROUND_TASK_MAX_CONCURRENCY_KEY, BLOB_RECONCILE_INTERVAL_SECS_KEY,
     MAIL_OUTBOX_DISPATCH_INTERVAL_SECS_KEY, MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY,
-    TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY, THUMBNAIL_MAX_SOURCE_BYTES_KEY,
+    SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY, TASK_LIST_MAX_LIMIT_KEY,
+    TEAM_MEMBER_LIST_MAX_LIMIT_KEY, THUMBNAIL_MAX_SOURCE_BYTES_KEY,
 };
 
 pub const DEFAULT_MAIL_OUTBOX_DISPATCH_INTERVAL_SECS: u64 = 5;
 pub const DEFAULT_BACKGROUND_TASK_DISPATCH_INTERVAL_SECS: u64 = 5;
 pub const DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY: usize = 1;
 pub const DEFAULT_BACKGROUND_TASK_MAX_ATTEMPTS: i32 = 3;
+pub const DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY: usize = 1024;
 pub const DEFAULT_MAINTENANCE_CLEANUP_INTERVAL_SECS: u64 = 3600;
 pub const DEFAULT_BLOB_RECONCILE_INTERVAL_SECS: u64 = 6 * 3600;
 pub const DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT: u64 = 100;
@@ -98,6 +100,26 @@ pub fn background_task_max_attempts(runtime_config: &RuntimeConfig) -> i32 {
         BACKGROUND_TASK_MAX_ATTEMPTS_KEY,
         DEFAULT_BACKGROUND_TASK_MAX_ATTEMPTS,
     )
+}
+
+pub fn share_download_rollback_queue_capacity(runtime_config: &RuntimeConfig) -> usize {
+    let default_value = usize_to_u64(
+        DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY,
+        SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
+    )
+    .unwrap_or(u64::MAX);
+    usize::try_from(read_positive_u64(
+        runtime_config,
+        SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
+        default_value,
+    ))
+    .unwrap_or_else(|_| {
+        tracing::warn!(
+            key = SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
+            "share download rollback queue capacity exceeds usize; using default"
+        );
+        DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY
+    })
 }
 
 pub fn maintenance_cleanup_interval_secs(runtime_config: &RuntimeConfig) -> u64 {
@@ -283,13 +305,15 @@ mod tests {
         BLOB_RECONCILE_INTERVAL_SECS_KEY, DEFAULT_ARCHIVE_EXTRACT_MAX_STAGING_BYTES,
         DEFAULT_AVATAR_MAX_UPLOAD_SIZE_BYTES, DEFAULT_BACKGROUND_TASK_MAX_ATTEMPTS,
         DEFAULT_BACKGROUND_TASK_MAX_CONCURRENCY, DEFAULT_BLOB_RECONCILE_INTERVAL_SECS,
-        DEFAULT_TASK_LIST_MAX_LIMIT, DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT, TASK_LIST_MAX_LIMIT_KEY,
-        TEAM_MEMBER_LIST_MAX_LIMIT_KEY, archive_extract_max_staging_bytes,
+        DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY, DEFAULT_TASK_LIST_MAX_LIMIT,
+        DEFAULT_TEAM_MEMBER_LIST_MAX_LIMIT, SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
+        TASK_LIST_MAX_LIMIT_KEY, TEAM_MEMBER_LIST_MAX_LIMIT_KEY, archive_extract_max_staging_bytes,
         avatar_max_upload_size_bytes, background_task_max_attempts,
         background_task_max_concurrency, blob_reconcile_interval_secs,
         normalize_attempts_config_value, normalize_bytes_config_value,
         normalize_concurrency_config_value, normalize_interval_config_value,
-        normalize_list_max_limit_config_value, task_list_max_limit, team_member_list_max_limit,
+        normalize_list_max_limit_config_value, share_download_rollback_queue_capacity,
+        task_list_max_limit, team_member_list_max_limit,
     };
     use crate::config::RuntimeConfig;
     use crate::entities::system_config;
@@ -378,6 +402,33 @@ mod tests {
         assert_eq!(
             background_task_max_attempts(&runtime_config),
             DEFAULT_BACKGROUND_TASK_MAX_ATTEMPTS
+        );
+    }
+
+    #[test]
+    fn share_download_rollback_queue_capacity_reader_uses_runtime_value_and_default() {
+        let runtime_config = RuntimeConfig::new();
+        assert_eq!(
+            share_download_rollback_queue_capacity(&runtime_config),
+            DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY
+        );
+
+        runtime_config.apply(config_model(
+            SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
+            "2048",
+        ));
+        assert_eq!(
+            share_download_rollback_queue_capacity(&runtime_config),
+            2048
+        );
+
+        runtime_config.apply(config_model(
+            SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
+            "0",
+        ));
+        assert_eq!(
+            share_download_rollback_queue_capacity(&runtime_config),
+            DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY
         );
     }
 

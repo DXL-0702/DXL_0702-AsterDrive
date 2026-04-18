@@ -532,7 +532,7 @@ export default function AdminPolicyGroupsPage() {
 									name={refreshing ? "Spinner" : "ArrowsClockwise"}
 									className={`mr-1 h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
 								/>
-								{t("refresh")}
+								{t("core:refresh")}
 							</Button>
 						</>
 					}

@@ -19,6 +19,7 @@ import { Icon } from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { formatDateAbsolute, formatNumber } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { workspaceFolderPath } from "@/lib/workspace";
@@ -562,8 +563,10 @@ export default function TasksPage() {
 
 	return (
 		<AppLayout>
-			<div className="min-h-0 flex-1 overflow-auto">
-				<div className="mx-auto flex w-full max-w-6xl flex-col gap-5 p-4 md:p-6">
+			<div className="flex min-h-0 flex-1 flex-col overflow-auto">
+				<div
+					className={`mx-auto flex w-full max-w-6xl flex-col gap-5 py-4 md:py-6 ${PAGE_SECTION_PADDING_CLASS}`}
+				>
 					<div className="flex flex-wrap items-center gap-3">
 						<h1 className="text-2xl font-semibold tracking-tight">
 							{t("tasks:title")}

@@ -225,7 +225,7 @@ interface PendingActivationState {
 // ── Component ───────────────────────────────────────────────
 
 export default function LoginPage() {
-	const { t } = useTranslation(["auth", "settings"]);
+	const { t } = useTranslation(["auth", "core", "settings"]);
 	const location = useLocation();
 	const navigate = useNavigate();
 	const login = useAuthStore((s) => s.login);
@@ -257,8 +257,8 @@ export default function LoginPage() {
 
 	// In register/setup: identifier is one field, extraField is the other
 	// If identifier is email → extraField is username (and vice versa)
-	const identifierLabel = isEmail ? t("email") : t("username");
-	const extraLabel = isEmail ? t("username") : t("email");
+	const identifierLabel = isEmail ? t("core:email") : t("core:username");
+	const extraLabel = isEmail ? t("core:username") : t("core:email");
 	const extraPlaceholder = isEmail ? t("choose_username") : "you@example.com";
 	const requiresExtraField = mode === "register" || mode === "setup";
 	const passwordResetPrefill = isEmail
@@ -671,12 +671,12 @@ export default function LoginPage() {
 											</p>
 											{pendingActivation.username ? (
 												<p className="text-xs text-muted-foreground">
-													{t("username")}: {pendingActivation.username}
+													{t("core:username")}: {pendingActivation.username}
 												</p>
 											) : null}
 											{pendingActivation.email ? (
 												<p className="text-xs text-muted-foreground">
-													{t("email")}: {pendingActivation.email}
+													{t("core:email")}: {pendingActivation.email}
 												</p>
 											) : null}
 										</div>
@@ -730,7 +730,7 @@ export default function LoginPage() {
 
 									<div className="space-y-1.5">
 										<Label htmlFor="password-reset-email" className="text-sm">
-											{t("email")}
+											{t("core:email")}
 										</Label>
 										<Input
 											id="password-reset-email"
@@ -908,13 +908,13 @@ export default function LoginPage() {
 									{/* Field 3: password — always visible */}
 									<div className="mt-4 space-y-1.5">
 										<Label htmlFor="password" className="text-sm">
-											{t("password")}
+											{t("core:password")}
 										</Label>
 										<div className="relative">
 											<Input
 												id="password"
 												type={showPassword ? "text" : "password"}
-												placeholder={t("password")}
+												placeholder={t("core:password")}
 												value={password}
 												onChange={(e) => {
 													const value = e.target.value;

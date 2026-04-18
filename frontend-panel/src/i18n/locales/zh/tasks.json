@@ -60,7 +60,6 @@
 	"summary_canceled_at": "取消于 {{date}}",
 	"finished_at": "{{date}} 完成",
 	"started_at": "{{date}} 开始",
-	"created_at": "{{date}} 创建",
 	"pagination_desc": "第 {{current}} / {{total}} 页，共 {{count}} 个任务",
 	"prev_page": "上一页",
 	"next_page": "下一页",

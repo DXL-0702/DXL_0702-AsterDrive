@@ -6,6 +6,7 @@ import { BatchTargetFolderDialog } from "@/components/files/BatchTargetFolderDia
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { formatBatchToast } from "@/lib/formatBatchToast";
 import { batchService } from "@/services/batchService";
 import { useAuthStore } from "@/stores/authStore";
@@ -38,7 +39,6 @@ export function BatchActionBar({
 	const [targetDialogMode, setTargetDialogMode] = useState<
 		"move" | "copy" | null
 	>(null);
-	const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
 
 	const count = selectedFileIds.size + selectedFolderIds.size;
 	if (count === 0) return null;
@@ -47,7 +47,6 @@ export function BatchActionBar({
 	const folderIds = Array.from(selectedFolderIds);
 
 	const handleDelete = async () => {
-		setDeleteConfirmOpen(false);
 		try {
 			const result = await batchService.batchDelete(fileIds, folderIds);
 			const batchToast = formatBatchToast(t, "delete", result);
@@ -64,6 +63,10 @@ export function BatchActionBar({
 			handleApiError(err);
 		}
 	};
+	const {
+		requestConfirm: requestDeleteConfirm,
+		dialogProps: deleteDialogProps,
+	} = useConfirmDialog<true>(handleDelete);
 
 	const handleMove = () => {
 		setTargetDialogMode("move");
@@ -128,7 +131,7 @@ export function BatchActionBar({
 					<Button
 						size="sm"
 						variant="destructive"
-						onClick={() => setDeleteConfirmOpen(true)}
+						onClick={() => requestDeleteConfirm(true)}
 					>
 						<Icon name="Trash" className="h-3.5 w-3.5 mr-1" />
 						{t("core:delete")}
@@ -160,13 +163,11 @@ export function BatchActionBar({
 			</div>
 
 			<ConfirmDialog
-				open={deleteConfirmOpen}
-				onOpenChange={setDeleteConfirmOpen}
+				{...deleteDialogProps}
 				title={t("batch_delete_confirm_title", { count })}
 				description={t("batch_delete_confirm_desc")}
 				confirmLabel={t("core:delete")}
 				variant="destructive"
-				onConfirm={handleDelete}
 			/>
 
 			<BatchTargetFolderDialog

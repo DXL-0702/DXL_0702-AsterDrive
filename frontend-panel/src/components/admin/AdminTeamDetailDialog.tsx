@@ -109,7 +109,6 @@ export function AdminTeamDetailDialog({
 		"forward",
 	);
 	const [archiveConfirmValue, setArchiveConfirmValue] = useState("");
-	const [archiveDialogOpen, setArchiveDialogOpen] = useState(false);
 	const [archiving, setArchiving] = useState(false);
 	const [auditEntries, setAuditEntries] = useState<TeamAuditEntryInfo[]>([]);
 	const [auditLoading, setAuditLoading] = useState(false);
@@ -278,7 +277,7 @@ export function AdminTeamDetailDialog({
 			memberRequestIdRef.current += 1;
 			overviewSyncAllowedRef.current = true;
 			setArchiveConfirmValue("");
-			setArchiveDialogOpen(false);
+			archiveDialogProps.onOpenChange(false);
 			setArchiving(false);
 			setAuditEntries([]);
 			setAuditLoading(false);
@@ -535,7 +534,7 @@ export function AdminTeamDetailDialog({
 				loadAuditEntries(team.id),
 				onListChange(),
 			]);
-			setArchiveDialogOpen(false);
+			archiveDialogProps.onOpenChange(false);
 			toast.success(t("team_deleted"));
 		} catch (error) {
 			handleApiError(error);
@@ -652,6 +651,10 @@ export function AdminTeamDetailDialog({
 		requestConfirm: requestRemoveConfirm,
 		dialogProps: removeDialogProps,
 	} = useConfirmDialog(handleRemoveMember);
+	const {
+		requestConfirm: requestArchiveConfirm,
+		dialogProps: archiveDialogProps,
+	} = useConfirmDialog<true>(handleArchive);
 	const removeMember =
 		members.find((member) => member.user_id === removeMemberId) ?? null;
 
@@ -693,9 +696,16 @@ export function AdminTeamDetailDialog({
 
 	const handleDialogOpenChange = (nextOpen: boolean) => {
 		if (!nextOpen) {
-			setArchiveDialogOpen(false);
+			archiveDialogProps.onOpenChange(false);
 		}
 		onOpenChange(nextOpen);
+	};
+	const handleArchiveDialogOpenChange = (nextOpen: boolean) => {
+		if (nextOpen) {
+			requestArchiveConfirm(true);
+			return;
+		}
+		archiveDialogProps.onOpenChange(false);
 	};
 
 	const handleContentScroll = () => {
@@ -805,7 +815,7 @@ export function AdminTeamDetailDialog({
 			ownerCount={ownerCount}
 			restoring={restoring}
 			setArchiveConfirmValue={setArchiveConfirmValue}
-			setArchiveDialogOpen={setArchiveDialogOpen}
+			setArchiveDialogOpen={handleArchiveDialogOpenChange}
 			team={team}
 			onRestore={handleRestore}
 		/>
@@ -852,12 +862,10 @@ export function AdminTeamDetailDialog({
 			/>
 
 			<ConfirmDialog
-				open={archiveDialogOpen}
-				onOpenChange={setArchiveDialogOpen}
+				{...archiveDialogProps}
 				title={team ? `${t("delete_team")} "${team.name}"?` : t("delete_team")}
 				description={t("archive_team_desc")}
 				confirmLabel={t("core:delete")}
-				onConfirm={() => void handleArchive()}
 				variant="destructive"
 			/>
 		</>

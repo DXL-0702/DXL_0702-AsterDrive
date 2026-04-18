@@ -276,7 +276,7 @@ export default function AdminTasksPage() {
 								name={loading ? "Spinner" : "ArrowsClockwise"}
 								className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
 							/>
-							{t("admin:refresh")}
+							{t("core:refresh")}
 						</Button>
 					}
 				/>

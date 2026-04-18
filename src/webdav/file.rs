@@ -818,6 +818,11 @@ mod tests {
         let (storage_change_tx, _) = tokio::sync::broadcast::channel(
             crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
         );
+        let share_download_rollback =
+            crate::services::share_service::spawn_detached_share_download_rollback_queue(
+                db.clone(),
+                crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
+            );
 
         let state = AppState {
             db,
@@ -828,6 +833,7 @@ mod tests {
             cache,
             mail_sender: mail_service::runtime_sender(runtime_config),
             storage_change_tx,
+            share_download_rollback,
         };
 
         (state, user, mock_driver)

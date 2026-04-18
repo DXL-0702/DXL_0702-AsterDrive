@@ -8,11 +8,12 @@ use actix_web::web;
 use chrono::Utc;
 use futures::FutureExt;
 use rand::RngExt;
-use tokio::task::JoinHandle;
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 
 use super::AppState;
+use crate::services::share_service::ShareDownloadRollbackWorker;
 use crate::utils::numbers::u128_to_u64;
 
 const BACKGROUND_TASK_SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
@@ -20,14 +21,14 @@ const MAINTENANCE_CLEANUP_JITTER_CAP: Duration = Duration::from_secs(30);
 
 pub struct BackgroundTasks {
     shutdown_token: CancellationToken,
-    handles: Vec<JoinHandle<()>>,
+    handles: JoinSet<()>,
 }
 
 impl BackgroundTasks {
     fn new() -> Self {
         Self {
             shutdown_token: CancellationToken::new(),
-            handles: Vec::new(),
+            handles: JoinSet::new(),
         }
     }
 
@@ -35,8 +36,11 @@ impl BackgroundTasks {
         self.shutdown_token.clone()
     }
 
-    fn push(&mut self, handle: JoinHandle<()>) {
-        self.handles.push(handle);
+    fn push<F>(&mut self, task: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
+        self.handles.spawn(task);
     }
 
     pub async fn shutdown(self) {
@@ -50,32 +54,22 @@ impl BackgroundTasks {
         shutdown_token.cancel();
 
         // 等所有 worker 自然退出，给 grace 时间让跑了一半的迭代完成。
-        // 用 join_all + timeout 代替 50ms 轮询，减少不必要的 wakeup。
-        let join_all = futures::future::join_all(handles.iter_mut().map(|h| async move {
-            let _ = h.await;
-        }));
-        if tokio::time::timeout(BACKGROUND_TASK_SHUTDOWN_GRACE, join_all)
+        // JoinSet 会在 join_next 时移除已完成任务，避免对同一个句柄重复 await。
+        let graceful_shutdown = async { while handles.join_next().await.is_some() {} };
+        if tokio::time::timeout(BACKGROUND_TASK_SHUTDOWN_GRACE, graceful_shutdown)
             .await
             .is_err()
         {
             // grace 期内未能结束的 worker 才强制 abort。
             // 正常情况下 task_fn 的最长单次执行不会超 grace 时间。
-            let mut aborted = 0;
-            for handle in &handles {
-                if !handle.is_finished() {
-                    handle.abort();
-                    aborted += 1;
-                }
-            }
+            let aborted = handles.len();
+            handles.abort_all();
             tracing::warn!(
                 aborted,
                 grace_secs = BACKGROUND_TASK_SHUTDOWN_GRACE.as_secs(),
                 "background tasks did not stop before the shutdown grace period; aborting remaining workers"
             );
-        }
-
-        for handle in handles {
-            let _ = handle.await;
+            while handles.join_next().await.is_some() {}
         }
     }
 }
@@ -92,13 +86,13 @@ fn spawn_periodic<F, I, Fut>(
     shutdown_token: CancellationToken,
     state: web::Data<AppState>,
     task_fn: F,
-) -> JoinHandle<()>
+) -> impl Future<Output = ()> + Send + 'static
 where
     I: Fn(&AppState) -> Duration + Send + Sync + 'static,
     F: Fn(web::Data<AppState>) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = crate::services::task_service::RuntimeTaskRunOutcome> + Send + 'static,
 {
-    tokio::spawn(async move {
+    async move {
         // 每轮迭代独立 span，并发清理任务在 trace 里可按 task.name 区分。
         // 必须用 `Instrument::instrument` 而非 `Span::enter`：后者返回的 guard
         // 跨 await 会被 drop（tracing 文档警告），span 只对同步段生效，
@@ -123,7 +117,7 @@ where
                 .instrument(tracing::info_span!("bg_task", task.name = name))
                 .await;
         }
-    })
+    }
 }
 
 async fn run_periodic_iteration<F, Fut>(
@@ -203,9 +197,27 @@ fn effective_jitter_cap(base_interval: Duration, jitter_cap: Duration) -> Durati
 }
 
 /// Spawn all periodic background cleanup tasks.
-pub fn spawn_background_tasks(state: web::Data<AppState>) -> BackgroundTasks {
+pub fn spawn_background_tasks(
+    state: web::Data<AppState>,
+    share_download_rollback_worker: ShareDownloadRollbackWorker,
+) -> BackgroundTasks {
     let mut tasks = BackgroundTasks::new();
     let shutdown_token = tasks.shutdown_token();
+
+    #[cfg(feature = "metrics")]
+    tasks.push(crate::metrics::system_metrics_updater_task(
+        shutdown_token.clone(),
+    ));
+    tasks.push(
+        crate::services::share_service::share_download_rollback_worker_task(
+            shutdown_token.clone(),
+            share_download_rollback_worker,
+        )
+        .instrument(tracing::info_span!(
+            "bg_task",
+            task.name = "share-download-rollback"
+        )),
+    );
 
     tasks.push(spawn_periodic(
         "mail-outbox-dispatch",
@@ -584,5 +596,13 @@ mod tests {
             assert!(delay >= base);
             assert!(delay <= base + cap);
         }
+    }
+
+    #[tokio::test]
+    async fn shutdown_only_awaits_each_handle_once() {
+        let mut tasks = BackgroundTasks::new();
+        tasks.push(async {});
+
+        tasks.shutdown().await;
     }
 }

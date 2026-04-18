@@ -7,6 +7,7 @@ import {
 	type TeamManageTab,
 } from "@/components/settings/TeamManageDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { useAuthStore } from "@/stores/authStore";
 import { useTeamStore } from "@/stores/teamStore";
 
@@ -74,7 +75,9 @@ export default function TeamManagePage() {
 	return (
 		<AppLayout>
 			<div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-				<div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col p-4 md:p-6">
+				<div
+					className={`mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col py-4 md:py-6 ${PAGE_SECTION_PADDING_CLASS}`}
+				>
 					<TeamManageDialog
 						layout="page"
 						currentUserId={user?.id ?? null}

@@ -130,6 +130,9 @@ where
         operations::BACKGROUND_TASK_MAX_CONCURRENCY_KEY => {
             operations::normalize_concurrency_config_value(key, value)
         }
+        operations::SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY => {
+            operations::normalize_concurrency_config_value(key, value)
+        }
         operations::BACKGROUND_TASK_MAX_ATTEMPTS_KEY => {
             operations::normalize_attempts_config_value(key, value)
         }

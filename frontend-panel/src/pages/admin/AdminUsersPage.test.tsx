@@ -15,7 +15,7 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock("i18next", () => ({
 	default: {
-		t: (key: string) => key,
+		t: (key: string) => key.replace(/^core:/, ""),
 	},
 }));
 
@@ -28,7 +28,7 @@ vi.mock("react-i18next", () => ({
 			if (key === "page_size_option") {
 				return `page-size:${options?.count}`;
 			}
-			return key;
+			return key.replace(/^core:/, "");
 		},
 	}),
 }));
@@ -634,7 +634,7 @@ describe("AdminUsersPage", () => {
 			target: { value: "1234567" },
 		});
 
-		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
+		fireEvent.click(screen.getByRole("button", { name: /create/i }));
 
 		expect(mockState.create).not.toHaveBeenCalled();
 		expect(screen.getByText("username_length")).toBeInTheDocument();
@@ -651,7 +651,7 @@ describe("AdminUsersPage", () => {
 			target: { value: "secret12" },
 		});
 
-		fireEvent.click(screen.getByRole("button", { name: /core:create/i }));
+		fireEvent.click(screen.getByRole("button", { name: /create/i }));
 
 		await waitFor(() => {
 			expect(mockState.create).toHaveBeenCalledWith({
@@ -691,7 +691,7 @@ describe("AdminUsersPage", () => {
 
 		expect(screen.getByText("confirm_force_delete")).toBeInTheDocument();
 
-		fireEvent.click(screen.getByRole("button", { name: "core:delete" }));
+		fireEvent.click(screen.getByRole("button", { name: "delete" }));
 
 		await waitFor(() => {
 			expect(mockState.deleteUser).toHaveBeenCalledWith(21);

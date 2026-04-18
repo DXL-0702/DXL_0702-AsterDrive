@@ -249,7 +249,7 @@ export default function WebdavAccountsPage() {
 					<div className="space-y-4 py-2">
 						{/* username field */}
 						<div className="space-y-1.5">
-							<Label htmlFor="username">{t("admin:username")}</Label>
+							<Label htmlFor="username">{t("core:username")}</Label>
 							<Input
 								id="username"
 								value={newUsername}
@@ -259,7 +259,7 @@ export default function WebdavAccountsPage() {
 						</div>
 						{/* password field */}
 						<div className="space-y-1.5">
-							<Label htmlFor="password">{t("auth:password")}</Label>
+							<Label htmlFor="password">{t("core:password")}</Label>
 							<Input
 								id="password"
 								type="password"
@@ -338,14 +338,14 @@ export default function WebdavAccountsPage() {
 						</DialogHeader>
 						<div className="space-y-4 py-2">
 							<div className="space-y-1.5">
-								<Label>{t("admin:username")}</Label>
+								<Label>{t("core:username")}</Label>
 								<CopyField
 									value={showPassword.username}
 									onCopy={() => void copyToClipboard(showPassword.username)}
 								/>
 							</div>
 							<div className="space-y-1.5">
-								<Label>{t("auth:password")}</Label>
+								<Label>{t("core:password")}</Label>
 								<CopyField
 									value={showPassword.password}
 									onCopy={() => void copyToClipboard(showPassword.password)}
@@ -384,7 +384,7 @@ export default function WebdavAccountsPage() {
 				</Dialog>
 			)}
 
-			<div className="min-h-0 flex-1 overflow-auto">
+			<div className="flex min-h-0 flex-1 flex-col overflow-auto">
 				<div
 					className={`mx-auto flex w-full max-w-7xl flex-col gap-4 py-4 md:py-6 ${PAGE_SECTION_PADDING_CLASS}`}
 				>
@@ -435,7 +435,7 @@ export default function WebdavAccountsPage() {
 						headerRow={
 							<TableHeader>
 								<TableRow>
-									<TableHead>{t("admin:username")}</TableHead>
+									<TableHead>{t("core:username")}</TableHead>
 									<TableHead>{t("webdav:access_scope")}</TableHead>
 									<TableHead>{t("status")}</TableHead>
 									<TableHead>{t("created_at")}</TableHead>

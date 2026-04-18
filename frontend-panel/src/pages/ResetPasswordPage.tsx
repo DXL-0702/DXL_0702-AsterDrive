@@ -48,7 +48,7 @@ export default function ResetPasswordPage() {
 				? t("reset_password_invalid_desc")
 				: status === "expired"
 					? t("reset_password_expired_desc")
-					: t("reset_password_desc");
+					: t("auth:reset_password_desc");
 
 	const handleSubmit = async (event: React.FormEvent) => {
 		event.preventDefault();
@@ -105,7 +105,7 @@ export default function ResetPasswordPage() {
 					<form onSubmit={handleSubmit} className="space-y-4">
 						<div className="space-y-1.5">
 							<Label htmlFor="reset-password" className="text-sm">
-								{t("password")}
+								{t("core:password")}
 							</Label>
 							<div className="relative">
 								<Input

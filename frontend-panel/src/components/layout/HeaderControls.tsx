@@ -285,7 +285,7 @@ export function HeaderControls({
 										}}
 										aria-label={t("language_zh")}
 									>
-										中文
+										{t("language_zh")}
 									</Button>
 								</div>
 							</div>

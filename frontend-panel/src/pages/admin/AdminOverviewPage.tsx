@@ -596,7 +596,7 @@ export default function AdminOverviewPage() {
 									name={refreshing ? "Spinner" : "ArrowClockwise"}
 									className={cn("h-4 w-4", refreshing && "animate-spin")}
 								/>
-								{t("refresh")}
+								{t("core:refresh")}
 							</Button>
 						}
 					/>
@@ -665,7 +665,7 @@ export default function AdminOverviewPage() {
 									onClick={() => void load("refresh")}
 								>
 									<Icon name="ArrowClockwise" className="h-4 w-4" />
-									{t("refresh")}
+									{t("core:refresh")}
 								</Button>
 							}
 						/>

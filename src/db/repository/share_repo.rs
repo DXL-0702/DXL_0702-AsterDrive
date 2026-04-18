@@ -6,6 +6,7 @@ use std::collections::HashSet;
 use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::share::{self, Entity as Share};
 use crate::errors::{AsterError, Result};
+use crate::utils::numbers::u64_to_i64;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, EntityTrait, ExprTrait,
     PaginatorTrait, QueryFilter, QueryOrder, QuerySelect, sea_query::Expr,
@@ -355,10 +356,27 @@ pub async fn increment_download_count<C: ConnectionTrait>(db: &C, id: i64) -> Re
 /// 回滚一次 download_count 递增。
 /// 返回 false 表示分享不存在或计数已经是 0。
 pub async fn decrement_download_count<C: ConnectionTrait>(db: &C, id: i64) -> Result<bool> {
+    decrement_download_count_by(db, id, 1).await
+}
+
+/// 回滚多次 `download_count` 递增。
+/// 返回 false 表示分享不存在或计数已经是 0。
+pub async fn decrement_download_count_by<C: ConnectionTrait>(
+    db: &C,
+    id: i64,
+    count: u64,
+) -> Result<bool> {
+    if count == 0 {
+        return Ok(false);
+    }
+
+    let decrement_by = u64_to_i64(count, "share download rollback count")?;
     let result = Share::update_many()
         .col_expr(
             share::Column::DownloadCount,
-            Expr::col(share::Column::DownloadCount).sub(1i64),
+            Expr::case(Expr::col(share::Column::DownloadCount).lt(decrement_by), 0)
+                .finally(Expr::col(share::Column::DownloadCount).sub(decrement_by))
+                .into(),
         )
         .filter(share::Column::Id.eq(id))
         .filter(share::Column::DownloadCount.gt(0))

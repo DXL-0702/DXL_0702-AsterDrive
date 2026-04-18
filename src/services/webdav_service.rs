@@ -34,12 +34,12 @@ async fn collect_folder_tree_models(
 }
 
 pub async fn collect_folder_tree(
-    db: &sea_orm::DatabaseConnection,
+    state: &AppState,
     user_id: i64,
     folder_id: i64,
     include_deleted: bool,
 ) -> Result<(Vec<FileInfo>, Vec<i64>)> {
-    collect_folder_tree_models(db, user_id, folder_id, include_deleted)
+    collect_folder_tree_models(&state.db, user_id, folder_id, include_deleted)
         .await
         .map(|(files, folder_ids)| (files.into_iter().map(FileInfo::from).collect(), folder_ids))
 }

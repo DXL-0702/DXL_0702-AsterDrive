@@ -77,6 +77,7 @@ where
                 None => Err(AsterError::auth_invalid_credentials("missing token").into()),
                 Some(t) => match auth_service::authenticate_access_token(state, &t).await {
                     Ok((claims, snapshot)) => {
+                        tracing::Span::current().record("user_id", claims.user_id);
                         req.extensions_mut().insert(claims);
                         req.extensions_mut().insert(snapshot);
                         svc.call(req).await

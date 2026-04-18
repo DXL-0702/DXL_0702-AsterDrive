@@ -1669,6 +1669,7 @@ async fn test_user_status_cached_in_auth_middleware() {
         cache,
         mail_sender: base.mail_sender,
         storage_change_tx: base.storage_change_tx,
+        share_download_rollback: base.share_download_rollback,
     };
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
@@ -1713,6 +1714,7 @@ async fn test_disable_user_invalidates_status_cache() {
         cache,
         mail_sender: base.mail_sender,
         storage_change_tx: base.storage_change_tx,
+        share_download_rollback: base.share_download_rollback,
     };
     let app = create_test_app!(state);
     let (admin_token, _) = register_and_login!(app);

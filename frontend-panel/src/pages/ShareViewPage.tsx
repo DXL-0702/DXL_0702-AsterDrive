@@ -87,7 +87,7 @@ const FilePreview = lazy(async () => {
 });
 
 export default function ShareViewPage() {
-	const { t } = useTranslation(["core", "share"]);
+	const { t } = useTranslation(["core", "share", "errors"]);
 	const { token } = useParams<{ token: string }>();
 	const previewAppsLoaded = usePreviewAppStore((state) => state.isLoaded);
 	const loadPreviewApps = usePreviewAppStore((state) => state.load);
@@ -128,9 +128,9 @@ export default function ShareViewPage() {
 		} catch (e) {
 			if (e instanceof ApiError) {
 				if (e.code === ErrorCode.ShareExpired) {
-					setError(t("share:share_expired"));
+					setError(t("errors:share_expired"));
 				} else if (e.code === ErrorCode.ShareNotFound) {
-					setError(t("share:share_not_found"));
+					setError(t("errors:share_not_found"));
 				} else if (e.code === ErrorCode.ShareDownloadLimitReached) {
 					setError(t("share:download_limit_reached"));
 				} else {
@@ -386,7 +386,7 @@ export default function ShareViewPage() {
 							<form onSubmit={handleVerifyPassword} className="space-y-4">
 								<Input
 									type="password"
-									placeholder={t("auth:password")}
+									placeholder={t("core:password")}
 									value={password}
 									onChange={(e) => setPassword(e.target.value)}
 									autoFocus
@@ -517,7 +517,7 @@ export default function ShareViewPage() {
 					<ShareOwnerBanner owner={info.shared_by} text={shareOwnerText} />
 				</div>
 			</div>
-			<div className="min-h-0 flex-1 overflow-auto">
+			<div className="flex min-h-0 flex-1 flex-col overflow-auto">
 				{navigating ? (
 					<div className="p-6">
 						<SkeletonCard />

@@ -60,7 +60,6 @@
 	"summary_canceled_at": "Canceled {{date}}",
 	"finished_at": "Finished {{date}}",
 	"started_at": "Started {{date}}",
-	"created_at": "Created {{date}}",
 	"pagination_desc": "Page {{current}} of {{total}} · {{count}} total task(s)",
 	"prev_page": "Previous page",
 	"next_page": "Next page",

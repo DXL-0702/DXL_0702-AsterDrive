@@ -109,7 +109,7 @@ export function AdminTeamDetailOverviewSection({
 						name={policyGroupsLoading ? "Spinner" : "ArrowsClockwise"}
 						className={`mr-1 h-3.5 w-3.5 ${policyGroupsLoading ? "animate-spin" : ""}`}
 					/>
-					{t("refresh")}
+					{t("core:refresh")}
 				</Button>
 			</div>
 			{detailLoading && !team ? (
@@ -675,7 +675,7 @@ export function AdminTeamDetailAuditSection({
 										<div className="space-y-2">
 											<div className="flex flex-wrap items-center gap-2">
 												<Badge variant="outline">
-													{t(entry.action, {
+													{t(`settings:${entry.action}`, {
 														defaultValue: entry.action,
 													})}
 												</Badge>

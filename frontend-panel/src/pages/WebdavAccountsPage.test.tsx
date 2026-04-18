@@ -20,7 +20,7 @@ const mockState = vi.hoisted(() => ({
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
-		t: (key: string) => key,
+		t: (key: string) => key.replace(/^core:/, ""),
 	}),
 }));
 
@@ -365,10 +365,10 @@ describe("WebdavAccountsPage", () => {
 			screen.getByRole("button", { name: "webdav:create_webdav_account" }),
 		);
 
-		fireEvent.change(screen.getByLabelText("admin:username"), {
+		fireEvent.change(screen.getByLabelText("username"), {
 			target: { value: "  dav-user  " },
 		});
-		fireEvent.change(screen.getByLabelText("auth:password"), {
+		fireEvent.change(screen.getByLabelText("password"), {
 			target: { value: "secret" },
 		});
 		fireEvent.click(screen.getByRole("button", { name: "create" }));

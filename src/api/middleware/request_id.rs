@@ -63,6 +63,7 @@ where
             request_id = %request_id,
             method = %method,
             path = %path,
+            user_id = tracing::field::Empty,
         );
 
         Box::pin(

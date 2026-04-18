@@ -8,8 +8,10 @@ pub mod tasks;
 
 use crate::cache::CacheBackend;
 use crate::config::{Config, RuntimeConfig};
-use crate::services::mail_service::MailSender;
-use crate::services::storage_change_service::StorageChangeEvent;
+use crate::services::{
+    mail_service::MailSender, share_service::ShareDownloadRollbackQueue,
+    storage_change_service::StorageChangeEvent,
+};
 use crate::storage::{DriverRegistry, PolicySnapshot};
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
@@ -25,4 +27,6 @@ pub struct AppState {
     pub mail_sender: Arc<dyn MailSender>,
     /// 文件/文件夹变更广播（SSE 消费）
     pub storage_change_tx: tokio::sync::broadcast::Sender<StorageChangeEvent>,
+    /// 公开分享下载中途断连时的 download_count 回滚队列
+    pub share_download_rollback: ShareDownloadRollbackQueue,
 }

@@ -9,8 +9,13 @@ use crate::storage::DriverRegistry;
 use migration::{Migrator, MigratorTrait};
 use std::sync::Arc;
 
+pub struct PreparedRuntime {
+    pub state: AppState,
+    pub share_download_rollback_worker: crate::services::share_service::ShareDownloadRollbackWorker,
+}
+
 /// 准备应用上下文（配置和日志应在此之前初始化）
-pub async fn prepare() -> Result<AppState> {
+pub async fn prepare() -> Result<PreparedRuntime> {
     let cfg = config::get_config();
 
     // 1. 连接数据库
@@ -62,6 +67,13 @@ pub async fn prepare() -> Result<AppState> {
     let (storage_change_tx, _) = tokio::sync::broadcast::channel(
         crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
     );
+    let rollback_queue_capacity =
+        crate::config::operations::share_download_rollback_queue_capacity(&runtime_config);
+    let (share_download_rollback, share_download_rollback_worker) =
+        crate::services::share_service::build_share_download_rollback_queue(
+            database.clone(),
+            rollback_queue_capacity,
+        );
 
     tracing::info!(
         "startup complete — listening on {}:{}",
@@ -78,9 +90,13 @@ pub async fn prepare() -> Result<AppState> {
         cache,
         mail_sender,
         storage_change_tx,
+        share_download_rollback,
     };
 
-    Ok(state)
+    Ok(PreparedRuntime {
+        state,
+        share_download_rollback_worker,
+    })
 }
 
 /// 如果没有默认存储策略，自动创建一个本地存储策略

@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/tooltip";
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { loadAdminPolicyGroupLookup } from "@/lib/adminPolicyGroupLookup";
 import {
@@ -204,7 +205,6 @@ export default function AdminUsersPage() {
 	const [detailDialogUserId, setDetailDialogUserId] = useState<number | null>(
 		null,
 	);
-	const [deleteUserId, setDeleteUserId] = useState<number | null>(null);
 	const [createDialogOpen, setCreateDialogOpen] = useState(false);
 	const [creating, setCreating] = useState(false);
 	const [createErrors, setCreateErrors] = useState<Partial<CreateUserReq>>({});
@@ -452,6 +452,15 @@ export default function AdminUsersPage() {
 			handleApiError(e);
 		}
 	};
+	const {
+		confirmId: deleteUserId,
+		requestConfirm: requestDeleteUserConfirm,
+		dialogProps: deleteDialogProps,
+	} = useConfirmDialog<number>(async (id) => {
+		if (id !== 1) {
+			await deleteUser(id);
+		}
+	});
 
 	const selectedUser = useMemo(
 		() => users.find((user) => user.id === detailDialogUserId) ?? null,
@@ -503,7 +512,7 @@ export default function AdminUsersPage() {
 									name={loading ? "Spinner" : "ArrowsClockwise"}
 									className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
 								/>
-								{t("refresh")}
+								{t("core:refresh")}
 							</Button>
 						</>
 					}
@@ -593,8 +602,8 @@ export default function AdminUsersPage() {
 								<TableHeader>
 									<TableRow>
 										<TableHead className="w-16">{t("id")}</TableHead>
-										<TableHead>{t("username")}</TableHead>
-										<TableHead>{t("email")}</TableHead>
+										<TableHead>{t("core:username")}</TableHead>
+										<TableHead>{t("core:email")}</TableHead>
 										<TableHead className="w-32">{t("role")}</TableHead>
 										<TableHead className="w-32">{t("core:status")}</TableHead>
 										<TableHead className="w-[220px]">{t("storage")}</TableHead>
@@ -688,7 +697,9 @@ export default function AdminUsersPage() {
 																		variant="ghost"
 																		size="icon"
 																		className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
-																		onClick={() => setDeleteUserId(user.id)}
+																		onClick={() =>
+																			requestDeleteUserConfirm(user.id)
+																		}
 																		aria-label={t("delete_user")}
 																		title={t("delete_user")}
 																		disabled={user.id === 1}
@@ -754,10 +765,7 @@ export default function AdminUsersPage() {
 				onUpdate={updateUser}
 			/>
 			<ConfirmDialog
-				open={deleteUserId !== null}
-				onOpenChange={(open) => {
-					if (!open) setDeleteUserId(null);
-				}}
+				{...deleteDialogProps}
 				title={t("delete_user")}
 				description={
 					deleteTargetUser?.id === 1
@@ -765,13 +773,6 @@ export default function AdminUsersPage() {
 						: t("confirm_force_delete")
 				}
 				confirmLabel={t("core:delete")}
-				onConfirm={() => {
-					const id = deleteUserId;
-					setDeleteUserId(null);
-					if (id !== null && id !== 1) {
-						void deleteUser(id);
-					}
-				}}
 				variant="destructive"
 			/>
 		</AdminLayout>

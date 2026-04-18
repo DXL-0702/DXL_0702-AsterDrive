@@ -1,7 +1,5 @@
 {
 	"password_protected": "此分享受密码保护",
-	"share_expired": "此分享链接已过期。",
-	"share_not_found": "分享链接未找到。",
 	"download_limit_reached": "下载次数已达上限。",
 	"password_verified": "密码验证成功",
 	"failed_to_load_share": "加载分享失败。",

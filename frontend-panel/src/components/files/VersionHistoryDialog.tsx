@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { handleApiError } from "@/hooks/useApiError";
 import { invalidateBlobUrl } from "@/hooks/useBlobUrl";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { invalidateTextContent } from "@/hooks/useTextContent";
 import { formatBytes, formatDateTime } from "@/lib/format";
 import { fileService } from "@/services/fileService";
@@ -61,10 +62,6 @@ export function VersionHistoryDialog({
 	const [deletingVersionId, setDeletingVersionId] = useState<number | null>(
 		null,
 	);
-	const [confirmRestoreVersion, setConfirmRestoreVersion] =
-		useState<FileVersion | null>(null);
-	const [confirmDeleteVersion, setConfirmDeleteVersion] =
-		useState<FileVersion | null>(null);
 	const currentVersion = loading ? null : getCurrentVersionNumber(versions);
 
 	const load = useCallback(async () => {
@@ -78,20 +75,6 @@ export function VersionHistoryDialog({
 			setLoading(false);
 		}
 	}, [fileId]);
-
-	useEffect(() => {
-		if (open) {
-			load();
-			return;
-		}
-
-		setVersions([]);
-		setLoading(false);
-		setRestoringVersionId(null);
-		setDeletingVersionId(null);
-		setConfirmRestoreVersion(null);
-		setConfirmDeleteVersion(null);
-	}, [open, load]);
 
 	const handleRestore = async (versionId: number) => {
 		try {
@@ -123,6 +106,34 @@ export function VersionHistoryDialog({
 			setDeletingVersionId(null);
 		}
 	};
+	const {
+		confirmId: confirmRestoreVersion,
+		requestConfirm: requestRestoreConfirm,
+		dialogProps: restoreDialogProps,
+	} = useConfirmDialog<FileVersion>(async (version) => {
+		await handleRestore(version.id);
+	});
+	const {
+		confirmId: confirmDeleteVersion,
+		requestConfirm: requestDeleteConfirm,
+		dialogProps: deleteDialogProps,
+	} = useConfirmDialog<FileVersion>(async (version) => {
+		await handleDelete(version.id);
+	});
+
+	useEffect(() => {
+		if (open) {
+			load();
+			return;
+		}
+
+		setVersions([]);
+		setLoading(false);
+		setRestoringVersionId(null);
+		setDeletingVersionId(null);
+		restoreDialogProps.onOpenChange(false);
+		deleteDialogProps.onOpenChange(false);
+	}, [load, open]);
 
 	return (
 		<>
@@ -206,7 +217,7 @@ export function VersionHistoryDialog({
 														restoringVersionId !== null ||
 														deletingVersionId !== null
 													}
-													onClick={() => setConfirmRestoreVersion(v)}
+													onClick={() => requestRestoreConfirm(v)}
 												>
 													<Icon
 														name={
@@ -230,7 +241,7 @@ export function VersionHistoryDialog({
 														restoringVersionId !== null ||
 														deletingVersionId !== null
 													}
-													onClick={() => setConfirmDeleteVersion(v)}
+													onClick={() => requestDeleteConfirm(v)}
 												>
 													<Icon
 														name={
@@ -249,35 +260,21 @@ export function VersionHistoryDialog({
 				</DialogContent>
 			</Dialog>
 			<ConfirmDialog
-				open={confirmRestoreVersion !== null}
-				onOpenChange={(nextOpen) => {
-					if (!nextOpen) setConfirmRestoreVersion(null);
-				}}
+				{...restoreDialogProps}
 				title={t("version_restore_confirm_title")}
 				description={t("version_restore_confirm_desc", {
 					version: confirmRestoreVersion?.version,
 				})}
 				confirmLabel={t("version_restore")}
-				onConfirm={() => {
-					if (!confirmRestoreVersion) return;
-					handleRestore(confirmRestoreVersion.id);
-				}}
 			/>
 			<ConfirmDialog
-				open={confirmDeleteVersion !== null}
-				onOpenChange={(nextOpen) => {
-					if (!nextOpen) setConfirmDeleteVersion(null);
-				}}
+				{...deleteDialogProps}
 				title={t("version_delete_confirm_title")}
 				description={t("version_delete_confirm_desc", {
 					version: confirmDeleteVersion?.version,
 				})}
 				confirmLabel={t("version_delete")}
 				variant="destructive"
-				onConfirm={() => {
-					if (!confirmDeleteVersion) return;
-					handleDelete(confirmDeleteVersion.id);
-				}}
 			/>
 		</>
 	);

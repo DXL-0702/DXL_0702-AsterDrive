@@ -19,8 +19,10 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { ItemCheckbox } from "@/components/ui/item-checkbox";
 import { handleApiError } from "@/hooks/useApiError";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useSelectionShortcuts } from "@/hooks/useSelectionShortcuts";
+import { PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { formatDateAbsolute } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { shareService } from "@/services/shareService";
@@ -37,9 +39,6 @@ export default function MySharesPage() {
 	const [total, setTotal] = useState(0);
 	const [selectedShareIds, setSelectedShareIds] = useState<Set<number>>(
 		new Set(),
-	);
-	const [deleteTargets, setDeleteTargets] = useState<MyShareInfo[] | null>(
-		null,
 	);
 	const [editTarget, setEditTarget] = useState<MyShareInfo | null>(null);
 
@@ -72,6 +71,30 @@ export default function MySharesPage() {
 			setPage((current) => Math.max(0, current - 1));
 		}
 	}, [loadPage, page]);
+	const handleDelete = async (targets: MyShareInfo[]) => {
+		if (targets.length === 0) return;
+		try {
+			if (targets.length === 1) {
+				await shareService.delete(targets[0].id);
+				toast.success(t("share:my_shares_delete_success"));
+			} else {
+				const result = await shareService.batchDelete(
+					targets.map((target) => target.id),
+				);
+				showBatchDeleteToast(result);
+			}
+
+			clearSelection();
+			await reloadCurrentPage();
+		} catch (error) {
+			handleApiError(error);
+		}
+	};
+	const {
+		confirmId: deleteTargets,
+		requestConfirm: requestDeleteConfirm,
+		dialogProps: deleteDialogProps,
+	} = useConfirmDialog<MyShareInfo[]>(handleDelete);
 
 	const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 	const selectedShares = shares.filter((share) =>
@@ -152,30 +175,6 @@ export default function MySharesPage() {
 		);
 	};
 
-	const handleDelete = async () => {
-		const targets = deleteTargets;
-		if (!targets || targets.length === 0) return;
-
-		setDeleteTargets(null);
-
-		try {
-			if (targets.length === 1) {
-				await shareService.delete(targets[0].id);
-				toast.success(t("share:my_shares_delete_success"));
-			} else {
-				const result = await shareService.batchDelete(
-					targets.map((target) => target.id),
-				);
-				showBatchDeleteToast(result);
-			}
-
-			clearSelection();
-			await reloadCurrentPage();
-		} catch (error) {
-			handleApiError(error);
-		}
-	};
-
 	const statusBadge = (status: ShareStatus) => {
 		switch (status) {
 			case "active":
@@ -199,8 +198,10 @@ export default function MySharesPage() {
 
 	return (
 		<AppLayout>
-			<div className="min-h-0 flex-1 overflow-auto">
-				<div className="mx-auto flex w-full max-w-7xl flex-col gap-5 p-4 md:p-6">
+			<div className="flex min-h-0 flex-1 flex-col overflow-auto">
+				<div
+					className={`mx-auto flex w-full max-w-7xl flex-col gap-5 py-4 md:py-6 ${PAGE_SECTION_PADDING_CLASS}`}
+				>
 					<div className="flex flex-wrap items-center gap-3">
 						<h1 className="text-2xl font-semibold tracking-tight">
 							{t("share:my_shares_title")}
@@ -343,7 +344,7 @@ export default function MySharesPage() {
 												<ContextMenuSeparator />
 												<ContextMenuItem
 													variant="destructive"
-													onClick={() => setDeleteTargets([share])}
+													onClick={() => requestDeleteConfirm([share])}
 												>
 													<Icon name="Trash" />
 													{t("share:my_shares_card_delete")}
@@ -411,7 +412,7 @@ export default function MySharesPage() {
 						<Button
 							size="sm"
 							variant="destructive"
-							onClick={() => setDeleteTargets(selectedShares)}
+							onClick={() => requestDeleteConfirm(selectedShares)}
 						>
 							<Icon name="Trash" className="mr-1 h-3.5 w-3.5" />
 							{t("share:my_shares_batch_delete")}
@@ -424,10 +425,7 @@ export default function MySharesPage() {
 			)}
 
 			<ConfirmDialog
-				open={deleteTargets !== null}
-				onOpenChange={(open) => {
-					if (!open) setDeleteTargets(null);
-				}}
+				{...deleteDialogProps}
 				title={
 					singleDeleteTarget
 						? t("share:my_shares_delete_title", {
@@ -443,7 +441,6 @@ export default function MySharesPage() {
 						: t("share:my_shares_batch_delete_desc")
 				}
 				confirmLabel={t("delete")}
-				onConfirm={() => void handleDelete()}
 				variant="destructive"
 			/>
 

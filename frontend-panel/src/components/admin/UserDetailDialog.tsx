@@ -98,7 +98,7 @@ export function UserDetailDialog({
 	onOpenChange,
 	onUpdate,
 }: UserDetailDialogProps) {
-	const { t } = useTranslation("admin");
+	const { t } = useTranslation(["admin", "core"]);
 	const initialPolicyGroups = readAdminPolicyGroupLookup();
 	const [confirmPasswordValue, setConfirmPasswordValue] = useState("");
 	const [draftEmailVerified, setDraftEmailVerified] = useState(false);
@@ -417,7 +417,7 @@ export function UserDetailDialog({
 									</div>
 									<div className="grid gap-5 md:grid-cols-2">
 										<div className="space-y-2">
-											<Label>{t("email")}</Label>
+											<Label>{t("core:email")}</Label>
 											<Input
 												value={user.email}
 												readOnly
@@ -438,6 +438,7 @@ export function UserDetailDialog({
 													<TooltipTrigger>
 														<div>
 															<Select
+																items={emailVerificationOptions}
 																value={
 																	draftEmailVerified ? "verified" : "unverified"
 																}
@@ -449,11 +450,7 @@ export function UserDetailDialog({
 																<SelectTrigger
 																	className={ADMIN_CONTROL_HEIGHT_CLASS}
 																>
-																	<SelectValue>
-																		{draftEmailVerified
-																			? t("email_verified")
-																			: t("email_unverified")}
-																	</SelectValue>
+																	<SelectValue />
 																</SelectTrigger>
 																<SelectContent>
 																	{emailVerificationOptions.map((option) => (
@@ -477,7 +474,7 @@ export function UserDetailDialog({
 											</TooltipProvider>
 										</div>
 										<div className="space-y-2">
-											<Label>{t("username")}</Label>
+											<Label>{t("core:username")}</Label>
 											<Input
 												value={user.username}
 												readOnly
@@ -506,6 +503,7 @@ export function UserDetailDialog({
 													<TooltipTrigger>
 														<div>
 															<Select
+																items={statusOptions}
 																value={draftStatus}
 																onValueChange={(value) =>
 																	setDraftStatus(value as UserStatus)
@@ -513,13 +511,7 @@ export function UserDetailDialog({
 																disabled={isInitialAdmin || savingProfile}
 															>
 																<SelectTrigger>
-																	<SelectValue>
-																		{t(
-																			draftStatus === "active"
-																				? "core:active"
-																				: "core:disabled_status",
-																		)}
-																	</SelectValue>
+																	<SelectValue />
 																</SelectTrigger>
 																<SelectContent>
 																	{statusOptions.map((option) => (
@@ -556,6 +548,7 @@ export function UserDetailDialog({
 													<TooltipTrigger>
 														<div>
 															<Select
+																items={roleOptions}
 																value={draftRole}
 																onValueChange={(value) =>
 																	setDraftRole(value as UserRole)
@@ -563,11 +556,7 @@ export function UserDetailDialog({
 																disabled={isInitialAdmin || savingProfile}
 															>
 																<SelectTrigger>
-																	<SelectValue>
-																		{draftRole === "admin"
-																			? t("role_admin")
-																			: t("role_user")}
-																	</SelectValue>
+																	<SelectValue />
 																</SelectTrigger>
 																<SelectContent>
 																	{roleOptions.map((option) => (
@@ -640,7 +629,7 @@ export function UserDetailDialog({
 												}
 												className={`mr-1 h-3.5 w-3.5 ${policyGroupsLoading ? "animate-spin" : ""}`}
 											/>
-											{t("refresh")}
+											{t("core:refresh")}
 										</Button>
 									</div>
 
@@ -721,13 +710,13 @@ export function UserDetailDialog({
 													{t("reset_password")}
 												</h5>
 												<p className="mt-1 text-sm text-muted-foreground">
-													{t("reset_password_desc")}
+													{t("admin_reset_password_desc")}
 												</p>
 											</div>
 											<div className="grid gap-4 md:grid-cols-2">
 												<div className="space-y-2">
 													<Label htmlFor="user-reset-password">
-														{t("password")}
+														{t("core:password")}
 													</Label>
 													<Input
 														id="user-reset-password"

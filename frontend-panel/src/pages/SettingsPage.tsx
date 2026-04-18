@@ -52,7 +52,7 @@ export default function SettingsPage({
 
 	return (
 		<AppLayout>
-			<div className="min-h-0 flex-1 overflow-auto">
+			<div className="flex min-h-0 flex-1 flex-col overflow-auto">
 				<div
 					className={`mx-auto flex w-full max-w-6xl flex-col gap-5 ${SETTINGS_PAGE_CONTENT_PADDING_CLASS}`}
 				>

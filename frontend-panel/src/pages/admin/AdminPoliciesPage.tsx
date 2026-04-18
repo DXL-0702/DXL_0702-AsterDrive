@@ -104,7 +104,6 @@ export default function AdminPoliciesPage() {
 		null,
 	);
 	const [form, setForm] = useState<PolicyFormData>(emptyForm);
-	const [saveConfirmOpen, setSaveConfirmOpen] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
 	const [validatedS3Key, setValidatedS3Key] = useState<string | null>(null);
 	const [createStep, setCreateStep] = useState(0);
@@ -157,13 +156,19 @@ export default function AdminPoliciesPage() {
 		requestConfirm,
 		dialogProps,
 	} = useConfirmDialog(handleDelete);
+	const {
+		requestConfirm: requestSaveAnywayConfirm,
+		dialogProps: saveConfirmDialogProps,
+	} = useConfirmDialog<true>(async () => {
+		await submitPolicy(true);
+	});
 	const requestDeleteConfirm = (id: number) => {
 		if (id === PROTECTED_POLICY_ID) return;
 		requestConfirm(id);
 	};
 
 	const resetDialogState = () => {
-		setSaveConfirmOpen(false);
+		saveConfirmDialogProps.onOpenChange(false);
 		setValidatedS3Key(null);
 		setCreateStep(0);
 		setCreateStepTouched(false);
@@ -318,7 +323,7 @@ export default function AdminPoliciesPage() {
 					showFailureError: false,
 				});
 				if (!testPassed) {
-					setSaveConfirmOpen(true);
+					requestSaveAnywayConfirm(true);
 					return;
 				}
 			}
@@ -408,7 +413,7 @@ export default function AdminPoliciesPage() {
 									name={loading ? "Spinner" : "ArrowsClockwise"}
 									className={`mr-1 h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
 								/>
-								{t("refresh")}
+								{t("core:refresh")}
 							</Button>
 						</>
 					}
@@ -560,12 +565,7 @@ export default function AdminPoliciesPage() {
 					createStep={createStep}
 					createStepTouched={createStepTouched}
 					endpointValidationMessage={endpointValidationMessage}
-					saveConfirmOpen={saveConfirmOpen}
-					onSaveConfirmOpenChange={setSaveConfirmOpen}
-					onSaveAnyway={() => {
-						setSaveConfirmOpen(false);
-						void submitPolicy(true);
-					}}
+					saveConfirmDialogProps={saveConfirmDialogProps}
 					onDialogOpenChange={handleDialogOpenChange}
 					onSubmit={handleSubmit}
 					onRunConnectionTest={() => runConnectionTest()}

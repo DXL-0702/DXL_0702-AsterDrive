@@ -28,11 +28,13 @@ mod inner {
         // 业务
         pub file_uploads_total: IntCounter,
         pub file_downloads_total: IntCounter,
+        pub share_download_rollback_events_total: IntCounterVec,
 
         // 系统
         pub process_memory_rss_bytes: Gauge,
         pub process_cpu_seconds: Gauge,
         pub uptime_seconds: Gauge,
+        pub share_download_rollback_pending: Gauge,
     }
 
     impl Metrics {
@@ -72,12 +74,23 @@ mod inner {
             let file_uploads_total = IntCounter::new("file_uploads_total", "Total file uploads")?;
             let file_downloads_total =
                 IntCounter::new("file_downloads_total", "Total file downloads")?;
+            let share_download_rollback_events_total = IntCounterVec::new(
+                Opts::new(
+                    "share_download_rollback_events_total",
+                    "Total shared download rollback queue events",
+                ),
+                &["event"],
+            )?;
 
             let process_memory_rss_bytes =
                 Gauge::new("process_memory_rss_bytes", "Process RSS memory in bytes")?;
             let process_cpu_seconds =
                 Gauge::new("process_cpu_seconds_total", "Process CPU time in seconds")?;
             let uptime_seconds = Gauge::new("process_uptime_seconds", "Process uptime in seconds")?;
+            let share_download_rollback_pending = Gauge::new(
+                "share_download_rollback_pending",
+                "Pending shared download rollback operations",
+            )?;
 
             registry.register(Box::new(http_requests_total.clone()))?;
             registry.register(Box::new(http_request_duration_seconds.clone()))?;
@@ -85,9 +98,11 @@ mod inner {
             registry.register(Box::new(db_query_duration_seconds.clone()))?;
             registry.register(Box::new(file_uploads_total.clone()))?;
             registry.register(Box::new(file_downloads_total.clone()))?;
+            registry.register(Box::new(share_download_rollback_events_total.clone()))?;
             registry.register(Box::new(process_memory_rss_bytes.clone()))?;
             registry.register(Box::new(process_cpu_seconds.clone()))?;
             registry.register(Box::new(uptime_seconds.clone()))?;
+            registry.register(Box::new(share_download_rollback_pending.clone()))?;
 
             Ok(Metrics {
                 registry,
@@ -97,9 +112,11 @@ mod inner {
                 db_query_duration_seconds,
                 file_uploads_total,
                 file_downloads_total,
+                share_download_rollback_events_total,
                 process_memory_rss_bytes,
                 process_cpu_seconds,
                 uptime_seconds,
+                share_download_rollback_pending,
             })
         }
 
@@ -173,33 +190,83 @@ mod inner {
             .observe(info.elapsed.as_secs_f64());
     }
 
+    pub fn record_share_download_rollback_event(event: &'static str, count: u64) {
+        let Some(metrics) = get_metrics() else {
+            return;
+        };
+
+        metrics
+            .share_download_rollback_events_total
+            .with_label_values(&[event])
+            .inc_by(count);
+    }
+
+    pub fn set_share_download_rollback_pending(pending: u64) {
+        let Some(metrics) = get_metrics() else {
+            return;
+        };
+
+        metrics.share_download_rollback_pending.set(pending as f64);
+    }
+
+    fn panic_message(panic: Box<dyn std::any::Any + Send>) -> String {
+        if let Some(message) = panic.downcast_ref::<&str>() {
+            (*message).to_string()
+        } else if let Some(message) = panic.downcast_ref::<String>() {
+            message.clone()
+        } else {
+            "unknown panic payload".to_string()
+        }
+    }
+
     /// 后台任务：定期更新系统指标（RSS、CPU）
-    pub fn spawn_system_metrics_updater() {
+    pub fn system_metrics_updater_task(
+        shutdown_token: tokio_util::sync::CancellationToken,
+    ) -> impl std::future::Future<Output = ()> + Send + 'static {
         use parking_lot::Mutex;
         use sysinfo::{Pid, ProcessesToUpdate, System};
 
         static SYSTEM: OnceLock<Mutex<System>> = OnceLock::new();
 
-        tokio::spawn(async {
+        async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
             loop {
-                interval.tick().await;
+                tokio::select! {
+                    biased;
+                    _ = shutdown_token.cancelled() => break,
+                    _ = interval.tick() => {}
+                }
+
+                if shutdown_token.is_cancelled() {
+                    break;
+                }
+
                 let Some(metrics) = get_metrics() else {
                     continue;
                 };
-                let pid = Pid::from_u32(std::process::id());
-                let sys_mutex = SYSTEM.get_or_init(|| Mutex::new(System::new()));
-                let mut sys = sys_mutex.lock();
-                sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
-                if let Some(process) = sys.process(pid) {
-                    metrics
-                        .process_memory_rss_bytes
-                        .set(process.memory() as f64);
-                    let cpu_secs = process.run_time() as f64;
-                    metrics.process_cpu_seconds.set(cpu_secs);
+
+                let update = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    let pid = Pid::from_u32(std::process::id());
+                    let sys_mutex = SYSTEM.get_or_init(|| Mutex::new(System::new()));
+                    let mut sys = sys_mutex.lock();
+                    sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
+                    if let Some(process) = sys.process(pid) {
+                        metrics
+                            .process_memory_rss_bytes
+                            .set(process.memory() as f64);
+                        let cpu_secs = process.run_time() as f64;
+                        metrics.process_cpu_seconds.set(cpu_secs);
+                    }
+                }));
+
+                if let Err(panic) = update {
+                    tracing::error!(
+                        panic = %panic_message(panic),
+                        "system metrics updater panicked"
+                    );
                 }
             }
-        });
+        }
     }
 
     #[cfg(test)]

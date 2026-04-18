@@ -27,11 +27,12 @@ interface PolicyDialogsProps {
 		value: PolicyFormData[K],
 	) => void;
 	onRunConnectionTest: () => Promise<boolean>;
-	onSaveAnyway: () => void;
-	onSaveConfirmOpenChange: (open: boolean) => void;
 	onSubmit: () => void;
 	onSyncNormalizedS3Form: () => void;
-	saveConfirmOpen: boolean;
+	saveConfirmDialogProps: Pick<
+		ConfirmDialogProps,
+		"onConfirm" | "onOpenChange" | "open"
+	>;
 	submitting: boolean;
 }
 
@@ -51,11 +52,9 @@ export function PolicyDialogs({
 	onDriverTypeChange,
 	onFieldChange,
 	onRunConnectionTest,
-	onSaveAnyway,
-	onSaveConfirmOpenChange,
 	onSubmit,
 	onSyncNormalizedS3Form,
-	saveConfirmOpen,
+	saveConfirmDialogProps,
 	submitting,
 }: PolicyDialogsProps) {
 	const { t } = useTranslation("admin");
@@ -70,12 +69,10 @@ export function PolicyDialogs({
 				variant="destructive"
 			/>
 			<ConfirmDialog
-				open={saveConfirmOpen}
-				onOpenChange={onSaveConfirmOpenChange}
+				{...saveConfirmDialogProps}
 				title={t("connection_test_failed")}
 				description={t("policy_test_failed_confirm_desc")}
 				confirmLabel={t("save_anyway")}
-				onConfirm={onSaveAnyway}
 			/>
 			<StoragePolicyDialog
 				open={dialogOpen}

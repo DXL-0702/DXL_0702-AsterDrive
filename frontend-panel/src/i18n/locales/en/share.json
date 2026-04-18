@@ -1,7 +1,5 @@
 {
 	"password_protected": "This share is password protected",
-	"share_expired": "This share link has expired.",
-	"share_not_found": "Share link not found.",
 	"download_limit_reached": "Download limit reached.",
 	"password_verified": "Password verified",
 	"failed_to_load_share": "Failed to load share.",

@@ -192,11 +192,11 @@ export function ProfileSettingsView() {
 
 					<div className="grid gap-4 md:grid-cols-2">
 						<div className="space-y-1.5">
-							<p className="text-sm font-medium">{t("auth:username")}</p>
+							<p className="text-sm font-medium">{t("core:username")}</p>
 							<Input
 								readOnly
 								value={user?.username ?? ""}
-								aria-label={t("auth:username")}
+								aria-label={t("core:username")}
 								className="font-mono text-sm"
 							/>
 							<p className="text-xs text-muted-foreground">
@@ -204,11 +204,11 @@ export function ProfileSettingsView() {
 							</p>
 						</div>
 						<div className="space-y-1.5">
-							<p className="text-sm font-medium">{t("auth:email")}</p>
+							<p className="text-sm font-medium">{t("core:email")}</p>
 							<Input
 								readOnly
 								value={user?.email ?? ""}
-								aria-label={t("auth:email")}
+								aria-label={t("core:email")}
 								className="text-sm"
 							/>
 							<p className="text-xs text-muted-foreground">

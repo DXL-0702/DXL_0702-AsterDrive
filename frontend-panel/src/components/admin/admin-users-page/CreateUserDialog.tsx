@@ -36,7 +36,7 @@ export function CreateUserDialog({
 	onOpenChange,
 	onSubmit,
 }: CreateUserDialogProps) {
-	const { t } = useTranslation("admin");
+	const { t } = useTranslation(["admin", "core"]);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -47,7 +47,7 @@ export function CreateUserDialog({
 						<DialogDescription>{t("create_user_desc")}</DialogDescription>
 					</DialogHeader>
 					<div className="space-y-2">
-						<Label htmlFor="create-user-username">{t("username")}</Label>
+						<Label htmlFor="create-user-username">{t("core:username")}</Label>
 						<Input
 							id="create-user-username"
 							name="admin-create-user-username"
@@ -69,7 +69,7 @@ export function CreateUserDialog({
 						) : null}
 					</div>
 					<div className="space-y-2">
-						<Label htmlFor="create-user-email">{t("email")}</Label>
+						<Label htmlFor="create-user-email">{t("core:email")}</Label>
 						<Input
 							id="create-user-email"
 							name="admin-create-user-email"
@@ -89,7 +89,7 @@ export function CreateUserDialog({
 						) : null}
 					</div>
 					<div className="space-y-2">
-						<Label htmlFor="create-user-password">{t("password")}</Label>
+						<Label htmlFor="create-user-password">{t("core:password")}</Label>
 						<Input
 							id="create-user-password"
 							name="admin-create-user-password"

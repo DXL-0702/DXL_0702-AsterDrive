@@ -16,6 +16,7 @@ import { ItemCheckbox } from "@/components/ui/item-checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { STORAGE_KEYS } from "@/config/app";
 import { handleApiError } from "@/hooks/useApiError";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useSelectionShortcuts } from "@/hooks/useSelectionShortcuts";
 import { FOLDER_LIMIT } from "@/lib/constants";
@@ -73,8 +74,6 @@ export default function TrashPage() {
 	const [loading, setLoading] = useState(true);
 	const [viewMode, setViewMode] = useState<ViewMode>(getStoredViewMode);
 	const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
-	const [purgeTargets, setPurgeTargets] = useState<TrashItem[] | null>(null);
-	const [purgeAllOpen, setPurgeAllOpen] = useState(false);
 	const [loadingMore, setLoadingMore] = useState(false);
 	const sentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -179,12 +178,6 @@ export default function TrashPage() {
 		selectAllItems();
 	}, [allSelected, clearSelection, selectAllItems]);
 
-	useSelectionShortcuts({
-		selectAll: selectAllItems,
-		clearSelection,
-		enabled: purgeTargets === null && !purgeAllOpen,
-	});
-
 	const runOperation = useCallback(
 		async (targets: TrashItem[], operation: TrashOperation) => {
 			if (targets.length === 0) return;
@@ -255,7 +248,6 @@ export default function TrashPage() {
 
 	const handlePurgeAll = async () => {
 		try {
-			setPurgeAllOpen(false);
 			await trashService.purgeAll();
 			toast.success(t("trash_emptied"));
 			await Promise.all([load(), refreshUser()]);
@@ -263,6 +255,21 @@ export default function TrashPage() {
 			handleApiError(err);
 		}
 	};
+	const {
+		confirmId: purgeTargets,
+		requestConfirm: requestPurgeConfirm,
+		dialogProps: purgeDialogProps,
+	} = useConfirmDialog<TrashItem[]>(handlePurge);
+	const {
+		requestConfirm: requestPurgeAllConfirm,
+		dialogProps: purgeAllDialogProps,
+	} = useConfirmDialog<true>(handlePurgeAll);
+
+	useSelectionShortcuts({
+		selectAll: selectAllItems,
+		clearSelection,
+		enabled: purgeTargets === null && !purgeAllDialogProps.open,
+	});
 
 	return (
 		<AppLayout
@@ -287,7 +294,7 @@ export default function TrashPage() {
 								variant="destructive"
 								size="sm"
 								className="self-start"
-								onClick={() => setPurgeAllOpen(true)}
+								onClick={() => requestPurgeAllConfirm(true)}
 							>
 								<Icon name="Trash" className="mr-1 h-4 w-4" />
 								{t("admin:empty_trash")}
@@ -340,7 +347,7 @@ export default function TrashPage() {
 									onRestore={(item) => {
 										void handleRestore([item]);
 									}}
-									onPurge={(item) => setPurgeTargets([item])}
+									onPurge={(item) => requestPurgeConfirm([item])}
 								/>
 							) : (
 								<TrashTable
@@ -352,7 +359,7 @@ export default function TrashPage() {
 									onRestore={(item) => {
 										void handleRestore([item]);
 									}}
-									onPurge={(item) => setPurgeTargets([item])}
+									onPurge={(item) => requestPurgeConfirm([item])}
 								/>
 							)}
 							{hasMore && (
@@ -372,37 +379,25 @@ export default function TrashPage() {
 				onRestore={() => {
 					void handleRestore(selectedItems);
 				}}
-				onPurge={() => setPurgeTargets(selectedItems)}
+				onPurge={() => requestPurgeConfirm(selectedItems)}
 				onClearSelection={clearSelection}
 			/>
 
 			<ConfirmDialog
-				open={purgeTargets !== null}
-				onOpenChange={(open) => {
-					if (!open) setPurgeTargets(null);
-				}}
+				{...purgeDialogProps}
 				title={t("files:trash_purge_confirm_title", {
 					count: purgeTargets?.length ?? 0,
 				})}
 				description={t("files:trash_purge_confirm_desc")}
 				confirmLabel={t("files:trash_delete_permanently")}
-				onConfirm={() => {
-					const targets = purgeTargets;
-					setPurgeTargets(null);
-					if (targets) {
-						void handlePurge(targets);
-					}
-				}}
 				variant="destructive"
 			/>
 
 			<ConfirmDialog
-				open={purgeAllOpen}
-				onOpenChange={setPurgeAllOpen}
+				{...purgeAllDialogProps}
 				title={t("are_you_sure")}
 				description={t("admin:confirm_empty_trash")}
 				confirmLabel={t("admin:empty_trash")}
-				onConfirm={handlePurgeAll}
 				variant="destructive"
 			/>
 		</AppLayout>

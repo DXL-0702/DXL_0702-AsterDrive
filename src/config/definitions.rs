@@ -35,6 +35,8 @@ pub const BACKGROUND_TASK_DISPATCH_INTERVAL_SECS_KEY: &str =
     "background_task_dispatch_interval_secs";
 pub const BACKGROUND_TASK_MAX_CONCURRENCY_KEY: &str = "background_task_max_concurrency";
 pub const BACKGROUND_TASK_MAX_ATTEMPTS_KEY: &str = "background_task_max_attempts";
+pub const SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY: &str =
+    "share_download_rollback_queue_capacity";
 pub const MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY: &str = "maintenance_cleanup_interval_secs";
 pub const BLOB_RECONCILE_INTERVAL_SECS_KEY: &str = "blob_reconcile_interval_secs";
 pub const TEAM_MEMBER_LIST_MAX_LIMIT_KEY: &str = "team_member_list_max_limit";
@@ -320,6 +322,19 @@ pub static ALL_CONFIGS: &[ConfigDef] = &[
         is_sensitive: false,
         category: "operations",
         description: "Maximum number of attempts for workspace background tasks before they permanently fail",
+    },
+    ConfigDef {
+        key: SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY_KEY,
+        label_i18n_key: "settings_item_share_download_rollback_queue_capacity_label",
+        description_i18n_key: "settings_item_share_download_rollback_queue_capacity_desc",
+        value_type: SystemConfigValueType::Number,
+        default_fn: || {
+            crate::config::operations::DEFAULT_SHARE_DOWNLOAD_ROLLBACK_QUEUE_CAPACITY.to_string()
+        },
+        requires_restart: true,
+        is_sensitive: false,
+        category: "operations",
+        description: "Maximum buffered shared download rollback jobs before overflow aggregation is used",
     },
     ConfigDef {
         key: MAINTENANCE_CLEANUP_INTERVAL_SECS_KEY,

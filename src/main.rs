@@ -131,16 +131,19 @@ async fn main() -> std::io::Result<()> {
     }
 
     // 3. 启动剩余服务（DB、迁移、驱动注册）
-    let state = aster_drive::runtime::startup::prepare()
+    let prepared = aster_drive::runtime::startup::prepare()
         .await
         .expect("startup failed");
+    let aster_drive::runtime::startup::PreparedRuntime {
+        state,
+        share_download_rollback_worker,
+    } = prepared;
 
     // 4. 初始化 Prometheus 指标（metrics feature）
     #[cfg(feature = "metrics")]
     {
         match aster_drive::metrics::init_metrics() {
             Ok(()) => {
-                aster_drive::metrics::spawn_system_metrics_updater();
                 tracing::info!("prometheus metrics initialized");
             }
             Err(e) => tracing::warn!("failed to init metrics: {e}"),
@@ -186,7 +189,8 @@ async fn main() -> std::io::Result<()> {
     let server_handle = server.handle();
 
     // 后台清理任务（panic-safe，自动重启）
-    let background_tasks = aster_drive::runtime::tasks::spawn_background_tasks(value);
+    let background_tasks =
+        aster_drive::runtime::tasks::spawn_background_tasks(value, share_download_rollback_worker);
 
     // 优雅关闭监听
     tokio::spawn(async move {
