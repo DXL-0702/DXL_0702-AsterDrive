@@ -97,16 +97,16 @@ bootstrap_insecure_cookies = false
 
 ## 上线后先验收这几项
 
-1. 首页能正常打开并登录
-2. 首页响应头里已经能看到页面基线 `Content-Security-Policy`
-3. `/health` 和 `/health/ready` 返回正常
-4. 能创建文件夹并上传一个文件
-5. 回收站恢复正常
-6. 分享链接可以打开
-7. 如果要开放注册、找回密码或邮箱改绑，邮件已经能收到
-8. `管理 -> 存储策略` 和 `管理 -> 策略组` 能正常打开
-9. 如果启用了 WebDAV，桌面客户端能成功连接
-10. 如果启用了外部 Office / WOPI 打开方式，至少用一个真实 Office 文件试开并保存一次
+完整清单见 [首次启动检查](/deployment/runtime-behavior#启动后马上检查这些项)。
+
+部署完最少跑通这几项：
+
+1. `/health` 和 `/health/ready` 返回正常
+2. 首页能正常打开并登录
+3. 能创建文件夹并上传一个文件
+4. 管理后台能打开
+
+其他角色级（WebDAV、WOPI、邮件、回收站等）按 [首次启动检查](/deployment/runtime-behavior#启动后马上检查这些项) 对应章节验。
 
 ## 下一步看哪里
 

@@ -54,9 +54,10 @@ describe("useBlobUrl", () => {
 	});
 
 	it("loads blob URLs once and reuses the cache for concurrent consumers", async () => {
+		const imageBlob = new Blob(["image"]);
 		mockState.get.mockResolvedValue({
 			status: 200,
-			data: new Blob(["image"]),
+			data: imageBlob,
 			headers: { etag: '"etag-1"' },
 		});
 		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
@@ -64,11 +65,13 @@ describe("useBlobUrl", () => {
 		const first = renderHook(() => useBlobUrl("/thumb"));
 		await waitFor(() => {
 			expect(first.result.current.blobUrl).toBe("blob:1");
+			expect(first.result.current.blob).toBe(imageBlob);
 		});
 
 		const second = renderHook(() => useBlobUrl("/thumb"));
 		await waitFor(() => {
 			expect(second.result.current.blobUrl).toBe("blob:1");
+			expect(second.result.current.blob).toBe(imageBlob);
 		});
 
 		expect(mockState.get).toHaveBeenCalledTimes(1);
@@ -136,10 +139,11 @@ describe("useBlobUrl", () => {
 	});
 
 	it("revalidates cached blobs with etags and keeps the same object url on 304", async () => {
+		const imageBlob = new Blob(["image"]);
 		mockState.get
 			.mockResolvedValueOnce({
 				status: 200,
-				data: new Blob(["image"]),
+				data: imageBlob,
 				headers: { etag: '"etag-4"' },
 			})
 			.mockResolvedValueOnce({
@@ -158,6 +162,7 @@ describe("useBlobUrl", () => {
 		const second = renderHook(() => useBlobUrl("/thumb"));
 		await waitFor(() => {
 			expect(second.result.current.blobUrl).toBe("blob:1");
+			expect(second.result.current.blob).toBe(imageBlob);
 		});
 
 		expect(mockState.get).toHaveBeenNthCalledWith(2, "/thumb", {

@@ -49,6 +49,7 @@ interface PdfPreviewProps {
 export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 	const { t } = useTranslation("files");
 	const {
+		blob,
 		blobUrl,
 		error: blobError,
 		loading: blobLoading,
@@ -323,7 +324,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 		);
 	}
 
-	if (blobError || !blobUrl) {
+	if (blobError || !blobUrl || !blob) {
 		return <PreviewError onRetry={retry} />;
 	}
 
@@ -481,7 +482,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 				className="min-h-0 flex-1 overflow-auto bg-muted/20 px-3 py-3"
 			>
 				<Document
-					file={blobUrl}
+					file={blob}
 					options={pdfDocumentOptions}
 					onLoadSuccess={onDocumentLoadSuccess}
 					onLoadError={onDocumentLoadError}

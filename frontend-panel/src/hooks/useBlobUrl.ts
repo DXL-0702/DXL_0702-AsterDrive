@@ -5,6 +5,7 @@ import { api } from "@/services/http";
 type BlobFetchLane = "default" | "thumbnail";
 
 interface BlobCacheEntry {
+	blob?: Blob;
 	lane?: BlobFetchLane;
 	objectUrl?: string;
 	etag?: string | null;
@@ -135,6 +136,7 @@ async function acquireBlobUrl(
 	const entry: BlobCacheEntry = cached ?? { refCount: 0 };
 	entry.lane = lane;
 	entry.refCount += 1;
+	const previousBlob = entry.blob;
 	const previousObjectUrl = entry.objectUrl;
 	const previousEtag = entry.etag ?? null;
 	const headers: Record<string, string> = {};
@@ -172,12 +174,18 @@ async function acquireBlobUrl(
 
 		if (response.status === 304 && previousObjectUrl) {
 			current.objectUrl = previousObjectUrl;
+			current.blob = previousBlob;
 			current.etag = previousEtag;
 			current.promise = undefined;
 			return previousObjectUrl;
 		}
 
-		const objectUrl = URL.createObjectURL(response.data);
+		const blob =
+			response.data instanceof Blob
+				? response.data
+				: new Blob([response.data as BlobPart]);
+		const objectUrl = URL.createObjectURL(blob);
+		current.blob = blob;
 		current.objectUrl = objectUrl;
 		current.etag = response.headers.etag ?? null;
 		current.promise = undefined;
@@ -192,6 +200,7 @@ async function acquireBlobUrl(
 		const current = blobUrlCache.get(path);
 		if (current) {
 			current.promise = undefined;
+			current.blob = previousBlob;
 			current.objectUrl = previousObjectUrl;
 			current.etag = previousEtag;
 			if (!current.objectUrl && current.refCount <= 0) {
@@ -245,6 +254,7 @@ export function clearBlobUrlCache() {
 }
 
 export function useBlobUrl(path: string | null, options?: BlobUrlOptions) {
+	const [blob, setBlob] = useState<Blob | null>(null);
 	const [blobUrl, setBlobUrl] = useState<string | null>(null);
 	const [error, setError] = useState(false);
 	const [loading, setLoading] = useState(false);
@@ -260,6 +270,7 @@ export function useBlobUrl(path: string | null, options?: BlobUrlOptions) {
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: retryCount is an intentional re-fetch trigger
 	useEffect(() => {
+		setBlob(null);
 		setBlobUrl(null);
 		setError(false);
 		if (!path) {
@@ -268,6 +279,7 @@ export function useBlobUrl(path: string | null, options?: BlobUrlOptions) {
 		}
 
 		const unsubscribe = subscribeBlobUrlInvalidation(path, () => {
+			setBlob(null);
 			setBlobUrl(null);
 			setError(false);
 			setRetryCount((n) => n + 1);
@@ -275,6 +287,7 @@ export function useBlobUrl(path: string | null, options?: BlobUrlOptions) {
 
 		const cached = blobUrlCache.get(path);
 		if (cached?.objectUrl) {
+			setBlob(cached.blob ?? null);
 			setBlobUrl(cached.objectUrl);
 			setLoading(false);
 		}
@@ -284,10 +297,12 @@ export function useBlobUrl(path: string | null, options?: BlobUrlOptions) {
 		acquireBlobUrl(path, lane)
 			.then((nextBlobUrl) => {
 				if (cancelled) return;
+				setBlob(blobUrlCache.get(path)?.blob ?? null);
 				setBlobUrl(nextBlobUrl || null);
 			})
 			.catch(() => {
 				if (cancelled) return;
+				setBlob(null);
 				setError(true);
 			})
 			.finally(() => {
@@ -302,5 +317,5 @@ export function useBlobUrl(path: string | null, options?: BlobUrlOptions) {
 		};
 	}, [lane, path, retryCount]);
 
-	return { blobUrl, error, loading, retry };
+	return { blob, blobUrl, error, loading, retry };
 }

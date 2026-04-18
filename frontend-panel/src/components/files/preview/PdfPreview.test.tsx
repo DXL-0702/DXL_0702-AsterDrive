@@ -5,7 +5,9 @@ import { PdfPreview } from "@/components/files/preview/PdfPreview";
 const mockState = vi.hoisted(() => ({
 	documentProps: null as Record<string, unknown> | null,
 	retry: vi.fn(),
+	blob: new Blob(["pdf"]),
 	useBlobUrlResult: {
+		blob: new Blob(["pdf"]),
 		blobUrl: "blob:pdf-preview",
 		error: false,
 		loading: false,
@@ -68,7 +70,9 @@ vi.mock("@/components/files/preview/PreviewError", () => ({
 describe("PdfPreview", () => {
 	beforeEach(() => {
 		mockState.documentProps = null;
+		mockState.blob = new Blob(["pdf"]);
 		mockState.useBlobUrlResult = {
+			blob: mockState.blob,
 			blobUrl: "blob:pdf-preview",
 			error: false,
 			loading: false,
@@ -81,7 +85,7 @@ describe("PdfPreview", () => {
 
 		expect(screen.getByTestId("pdf-document")).toBeInTheDocument();
 		expect(mockState.documentProps).toMatchObject({
-			file: "blob:pdf-preview",
+			file: mockState.blob,
 			options: {
 				cMapPacked: true,
 				cMapUrl: "/pdfjs/5.4.296/cmaps/",

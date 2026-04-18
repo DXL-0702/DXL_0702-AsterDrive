@@ -87,7 +87,8 @@ export default defineConfig({
             { text: '分享与公开访问', link: '/guide/sharing' },
             { text: '文件编辑', link: '/guide/editing' },
             { text: '上传与大文件', link: '/guide/upload-modes' },
-            { text: '管理后台', link: '/guide/admin-console' }
+            { text: '管理后台', link: '/guide/admin-console' },
+            { text: '错误码处理', link: '/guide/errors' }
           ]
         }
       ],
@@ -119,7 +120,10 @@ export default defineConfig({
             { text: '运维 CLI', link: '/deployment/ops-cli' },
             { text: '反向代理', link: '/deployment/reverse-proxy' },
             { text: '首次启动检查', link: '/deployment/runtime-behavior' },
-            { text: '升级与浏览器缓存', link: '/deployment/frontend-assets' },
+            { text: '故障排查', link: '/deployment/troubleshooting' },
+            { text: '升级与版本迁移', link: '/deployment/upgrade' },
+            { text: '备份与恢复', link: '/deployment/backup' },
+            { text: '前端资源缓存', link: '/deployment/frontend-assets' },
             { text: '性能基准与压测', link: '/deployment/performance-benchmarking' }
           ]
         }

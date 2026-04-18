@@ -119,7 +119,9 @@ export async function expectPdfPreview(page: Page, fileName: string) {
 	await chooseOpenMethodIfPrompted(page, "PDF preview");
 	const dialog = page.getByRole("dialog");
 	await expect(dialog).toBeVisible();
-	await expect(dialog.getByText("Page 1 / 1")).toBeVisible({ timeout: 30_000 });
+	await expect(dialog.locator("canvas").first()).toBeVisible({
+		timeout: 30_000,
+	});
 }
 
 export async function expectCodePreview(page: Page, fileName: string) {
