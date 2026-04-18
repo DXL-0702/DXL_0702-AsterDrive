@@ -14,17 +14,33 @@ pub async fn create<C: ConnectionTrait>(db: &C, model: file::ActiveModel) -> Res
     model.insert(db).await.map_err(AsterError::from)
 }
 
+#[derive(Debug, Clone)]
+pub struct CreateFileWithBlobInput<'a> {
+    pub name: &'a str,
+    pub folder_id: Option<i64>,
+    pub team_id: Option<i64>,
+    pub blob_id: i64,
+    pub size: i64,
+    pub user_id: i64,
+    pub mime_type: &'a str,
+    pub now: chrono::DateTime<Utc>,
+}
+
 pub async fn create_with_blob<C: ConnectionTrait>(
     db: &C,
-    name: &str,
-    folder_id: Option<i64>,
-    team_id: Option<i64>,
-    blob_id: i64,
-    size: i64,
-    user_id: i64,
-    mime_type: &str,
-    now: chrono::DateTime<Utc>,
+    input: CreateFileWithBlobInput<'_>,
 ) -> Result<file::Model> {
+    let CreateFileWithBlobInput {
+        name,
+        folder_id,
+        team_id,
+        blob_id,
+        size,
+        user_id,
+        mime_type,
+        now,
+    } = input;
+
     File::insert(file::ActiveModel {
         name: Set(name.to_string()),
         folder_id: Set(folder_id),

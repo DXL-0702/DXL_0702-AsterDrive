@@ -66,7 +66,22 @@ pub fn init_logging(config: &LoggingConfig) -> LoggingInitResult {
     // 验证 log level
     let mut warning = warning;
     let filter = match tracing_subscriber::EnvFilter::try_from_default_env() {
-        Ok(f) => f,
+        Ok(f) => {
+            // RUST_LOG 优先于 config.toml 的 logging.level，这是 tracing-subscriber 的标准行为。
+            // 但如果用户在 config.toml 设了 level 而环境变量覆盖了，他们可能察觉不到。
+            // 在 warning 里留一行提示，让运维在启动日志里就能看到生效的 filter 来源。
+            let msg = format!(
+                "RUST_LOG environment variable detected; config.toml logging.level='{}' is overridden by RUST_LOG",
+                config.level
+            );
+            if let Some(existing) = warning.as_mut() {
+                existing.push(' ');
+                existing.push_str(&msg);
+            } else {
+                warning = Some(msg);
+            }
+            f
+        }
         Err(_) => match tracing_subscriber::EnvFilter::try_new(&config.level) {
             Ok(f) => f,
             Err(e) => {

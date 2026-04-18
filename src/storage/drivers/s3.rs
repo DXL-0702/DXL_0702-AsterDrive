@@ -33,6 +33,31 @@ pub struct S3Driver {
 
 const STREAM_UPLOAD_BUFFER_SIZE: usize = 64 * 1024;
 
+/// Presigned URL 的最长 TTL 上限。
+///
+/// AWS S3 SigV4 presigned URL 协议层最长支持 7 天，但任何超过 1 小时的链接一旦泄露
+/// 就是相对长寿的凭证；服务端调用方理论上不应该传超过这个值，这里在 driver 层做
+/// 兜底钳制（防御性编程，非业务逻辑），避免未来某处误传 30 天导致泄露窗口被放大。
+const MAX_PRESIGN_TTL: Duration = Duration::from_secs(60 * 60); // 1 hour
+
+/// 钳制 presigned TTL：不可超过 `MAX_PRESIGN_TTL`，也不可为 0。
+/// 0/超限都按上限处理，并记 warn 日志。
+fn clamp_presign_ttl(requested: Duration, ctx: &'static str) -> Duration {
+    if requested > MAX_PRESIGN_TTL {
+        tracing::warn!(
+            requested_secs = requested.as_secs(),
+            max_secs = MAX_PRESIGN_TTL.as_secs(),
+            "{ctx}: presign TTL exceeds MAX_PRESIGN_TTL, clamping"
+        );
+        MAX_PRESIGN_TTL
+    } else if requested.is_zero() {
+        tracing::warn!("{ctx}: zero presign TTL requested, falling back to MAX_PRESIGN_TTL");
+        MAX_PRESIGN_TTL
+    } else {
+        requested
+    }
+}
+
 struct SizedReaderBody<R> {
     stream: ReaderStream<R>,
     remaining: u64,
@@ -503,7 +528,7 @@ impl PresignedStorageDriver for S3Driver {
     ) -> Result<Option<String>> {
         let key = self.full_key(path);
         let presign_config = PresigningConfig::builder()
-            .expires_in(expires)
+            .expires_in(clamp_presign_ttl(expires, "S3 presigned_url"))
             .build()
             .map_aster_err_ctx("presign config", AsterError::storage_driver_error)?;
 
@@ -529,7 +554,7 @@ impl PresignedStorageDriver for S3Driver {
     async fn presigned_put_url(&self, path: &str, expires: Duration) -> Result<Option<String>> {
         let key = self.full_key(path);
         let presign_config = PresigningConfig::builder()
-            .expires_in(expires)
+            .expires_in(clamp_presign_ttl(expires, "S3 presigned_put_url"))
             .build()
             .map_aster_err_ctx("presign config", AsterError::storage_driver_error)?;
 
@@ -710,7 +735,7 @@ impl MultipartStorageDriver for S3Driver {
     ) -> Result<String> {
         let key = self.full_key(path);
         let presign_config = PresigningConfig::builder()
-            .expires_in(expires)
+            .expires_in(clamp_presign_ttl(expires, "S3 presigned_upload_part_url"))
             .build()
             .map_aster_err_ctx("presign config", AsterError::storage_driver_error)?;
 
@@ -1094,5 +1119,23 @@ mod tests {
         let captured = request.expect_request();
         let range = captured.headers().get("range").expect("Range header");
         assert_eq!(range, "bytes=100-");
+    }
+
+    #[test]
+    fn clamp_presign_ttl_caps_at_max() {
+        let clamped = super::clamp_presign_ttl(std::time::Duration::from_secs(7 * 24 * 3600), "t");
+        assert_eq!(clamped, super::MAX_PRESIGN_TTL);
+    }
+
+    #[test]
+    fn clamp_presign_ttl_passes_through_when_in_range() {
+        let req = std::time::Duration::from_secs(60);
+        assert_eq!(super::clamp_presign_ttl(req, "t"), req);
+    }
+
+    #[test]
+    fn clamp_presign_ttl_replaces_zero_with_max() {
+        let clamped = super::clamp_presign_ttl(std::time::Duration::ZERO, "t");
+        assert_eq!(clamped, super::MAX_PRESIGN_TTL);
     }
 }

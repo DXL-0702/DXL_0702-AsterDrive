@@ -71,7 +71,18 @@ fn render_runtime_relative_path(base_dir: &Path, resolved: &Path) -> String {
     match normalized_resolved.strip_prefix(&normalized_base_dir) {
         Ok(stripped) if stripped.as_os_str().is_empty() => ".".to_string(),
         Ok(stripped) => stripped.to_string_lossy().to_string(),
-        Err(_) => normalized_resolved.to_string_lossy().to_string(),
+        Err(_) => {
+            // 解析后的路径逃出了 base_dir。这通常意味着 admin 在 config.toml 里写了
+            // 含 `..` 的相对路径并跨过了 data/ 边界，或者直接给了绝对路径。
+            // 我们仍按"绝对路径"返回（保持向后兼容），但打 warn 让运维能在启动日志里
+            // 立刻发现"配置值实际指向的位置"，避免静默使用预期外的目录。
+            tracing::warn!(
+                base_dir = %normalized_base_dir.display(),
+                resolved = %normalized_resolved.display(),
+                "configured path resolved outside data base_dir; check config for unintended `..` segments"
+            );
+            normalized_resolved.to_string_lossy().to_string()
+        }
     }
 }
 

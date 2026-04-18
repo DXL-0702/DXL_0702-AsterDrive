@@ -10,6 +10,7 @@ use futures::FutureExt;
 use rand::RngExt;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use tracing::Instrument;
 
 use super::AppState;
 
@@ -97,7 +98,13 @@ where
     Fut: Future<Output = crate::services::task_service::RuntimeTaskRunOutcome> + Send + 'static,
 {
     tokio::spawn(async move {
-        run_periodic_iteration(name, &state, &task_fn).await;
+        // 每轮迭代独立 span，并发清理任务在 trace 里可按 task.name 区分。
+        // 必须用 `Instrument::instrument` 而非 `Span::enter`：后者返回的 guard
+        // 跨 await 会被 drop（tracing 文档警告），span 只对同步段生效，
+        // 而我们的 task_fn 全是 async 跨 await 的。
+        run_periodic_iteration(name, &state, &task_fn)
+            .instrument(tracing::info_span!("bg_task", task.name = name))
+            .await;
 
         loop {
             let sleep_duration = periodic_sleep_duration(interval_fn(state.get_ref()), jitter_cap);
@@ -111,7 +118,9 @@ where
                 break;
             }
 
-            run_periodic_iteration(name, &state, &task_fn).await;
+            run_periodic_iteration(name, &state, &task_fn)
+                .instrument(tracing::info_span!("bg_task", task.name = name))
+                .await;
         }
     })
 }
