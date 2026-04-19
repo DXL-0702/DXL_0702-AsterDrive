@@ -37,6 +37,7 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import { FOLDER_LIMIT, PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { formatDateShort } from "@/lib/format";
 import { ApiError } from "@/services/http";
@@ -104,6 +105,10 @@ export default function ShareViewPage() {
 	const [previewFile, setPreviewFile] = useState<
 		FileInfo | FileListItem | null
 	>(null);
+	const {
+		retainedValue: retainedPreviewFile,
+		handleOpenChangeComplete: handlePreviewOpenChangeComplete,
+	} = useRetainedDialogValue(previewFile, previewFile !== null);
 	const [breadcrumb, setBreadcrumb] = useState<ShareBreadcrumbItem[]>([]);
 	const [navigating, setNavigating] = useState(false);
 	const [loadingMore, setLoadingMore] = useState(false);
@@ -305,26 +310,32 @@ export default function ShareViewPage() {
 			</Breadcrumb>
 		) : null;
 
-	const previewElement =
-		previewFile && token ? (
-			<Suspense fallback={null}>
+	const previewElement = token ? (
+		<Suspense fallback={null}>
+			{retainedPreviewFile ? (
 				<FilePreview
-					file={previewFile}
+					file={retainedPreviewFile}
+					open={previewFile !== null}
 					onClose={() => setPreviewFile(null)}
+					onOpenChangeComplete={handlePreviewOpenChangeComplete}
 					downloadPath={
 						info?.share_type === "file"
 							? shareService.downloadPath(token)
-							: shareService.downloadFolderPath(token, previewFile.id)
+							: shareService.downloadFolderPath(token, retainedPreviewFile.id)
 					}
 					editable={false}
 					previewLinkFactory={() =>
 						info?.share_type === "file"
 							? shareService.createPreviewLink(token)
-							: shareService.createFolderFilePreviewLink(token, previewFile.id)
+							: shareService.createFolderFilePreviewLink(
+									token,
+									retainedPreviewFile.id,
+								)
 					}
 				/>
-			</Suspense>
-		) : null;
+			) : null}
+		</Suspense>
+	) : null;
 
 	// ── Centered states (loading, error, password) ──
 	if (loading) {

@@ -107,7 +107,7 @@ export default function AdminTeamDetailPage() {
 					onListChange={async () => undefined}
 					onOpenChange={(open) => {
 						if (!open) {
-							navigate("/admin/teams", { viewTransition: true });
+							navigate("/admin/teams", { viewTransition: false });
 						}
 					}}
 					onPageTabChange={(tab, options) => {

@@ -236,7 +236,7 @@ describe("AdminTeamsPage", () => {
 		expect(mockState.navigate).toHaveBeenCalledWith(
 			"/admin/teams/14/overview",
 			{
-				viewTransition: true,
+				viewTransition: false,
 			},
 		);
 	});

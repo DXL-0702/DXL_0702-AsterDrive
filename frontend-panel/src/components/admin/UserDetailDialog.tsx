@@ -34,6 +34,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { handleApiError } from "@/hooks/useApiError";
+import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import {
 	loadAdminPolicyGroupLookup,
 	readAdminPolicyGroupLookup,
@@ -93,12 +94,14 @@ function buildPolicyGroupOptions(
 }
 
 export function UserDetailDialog({
-	user,
+	user: inputUser,
 	open,
 	onOpenChange,
 	onUpdate,
 }: UserDetailDialogProps) {
 	const { t } = useTranslation(["admin", "core"]);
+	const { retainedValue: user, handleOpenChangeComplete } =
+		useRetainedDialogValue(inputUser, open);
 	const initialPolicyGroups = readAdminPolicyGroupLookup();
 	const [confirmPasswordValue, setConfirmPasswordValue] = useState("");
 	const [draftEmailVerified, setDraftEmailVerified] = useState(false);
@@ -312,7 +315,11 @@ export function UserDetailDialog({
 	};
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		<Dialog
+			open={open}
+			onOpenChange={onOpenChange}
+			onOpenChangeComplete={handleOpenChangeComplete}
+		>
 			<DialogContent
 				keepMounted
 				className="flex max-h-[min(860px,calc(100vh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[min(1100px,calc(100vw-2rem))]"

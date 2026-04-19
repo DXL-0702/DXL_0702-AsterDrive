@@ -1,14 +1,21 @@
 import i18n, { type ResourceKey } from "i18next";
 import { initReactI18next } from "react-i18next";
+import { runWhenIdle } from "@/lib/idleTask";
 
-function detectLanguage(): "en" | "zh" {
+type SupportedLanguage = "en" | "zh";
+
+function normalizeLanguage(language?: string | null): SupportedLanguage {
+	return language?.startsWith("zh") ? "zh" : "en";
+}
+
+function detectLanguage(): SupportedLanguage {
 	try {
 		const stored = localStorage.getItem("aster-language");
 		if (stored === "en" || stored === "zh") return stored;
 	} catch {
 		// ignore
 	}
-	return navigator.language?.startsWith("zh") ? "zh" : "en";
+	return normalizeLanguage(navigator.language);
 }
 
 const ALL_NAMESPACES = [
@@ -39,6 +46,20 @@ const DEFERRED_NAMESPACES = ["admin", "webdav", "settings", "search"] as const;
 
 type LocaleNamespace = (typeof ALL_NAMESPACES)[number];
 
+function isLocaleNamespace(namespace: string): namespace is LocaleNamespace {
+	return (ALL_NAMESPACES as readonly string[]).includes(namespace);
+}
+
+function getLanguageSwitchNamespaces(): LocaleNamespace[] {
+	const usedNamespaces = i18n.reportNamespaces?.getUsedNamespaces?.() ?? [];
+	return [
+		...new Set([
+			...INITIAL_NAMESPACES,
+			...usedNamespaces.filter(isLocaleNamespace),
+		]),
+	];
+}
+
 async function loadLocale(
 	lang: string,
 	namespaces: readonly LocaleNamespace[] = ALL_NAMESPACES,
@@ -68,6 +89,37 @@ async function ensureNamespaces(
 	}
 }
 
+export async function ensureI18nNamespaces(
+	namespaces: readonly LocaleNamespace[],
+	language: string = i18n.language,
+) {
+	await ensureNamespaces(normalizeLanguage(language), namespaces);
+}
+
+const pendingDeferredWarmups = new Set<SupportedLanguage>();
+
+function getAlternateLanguage(lang: SupportedLanguage): SupportedLanguage {
+	return lang === "zh" ? "en" : "zh";
+}
+
+function scheduleDeferredWarmup(lang: SupportedLanguage) {
+	if (
+		pendingDeferredWarmups.has(lang) ||
+		DEFERRED_NAMESPACES.every((namespace) =>
+			i18n.hasResourceBundle(lang, namespace),
+		)
+	) {
+		return;
+	}
+
+	pendingDeferredWarmups.add(lang);
+	runWhenIdle(() => {
+		void ensureNamespaces(lang, DEFERRED_NAMESPACES).finally(() => {
+			pendingDeferredWarmups.delete(lang);
+		});
+	});
+}
+
 const lang = detectLanguage();
 const resources = await loadLocale(lang, INITIAL_NAMESPACES);
 
@@ -77,21 +129,28 @@ i18n.use(initReactI18next).init({
 	fallbackLng: "en",
 	defaultNS: "core",
 	interpolation: { escapeValue: false },
+	react: {
+		bindI18nStore: "added",
+	},
 });
 
 void ensureNamespaces(lang, DEFERRED_NAMESPACES);
+scheduleDeferredWarmup(getAlternateLanguage(lang));
 
 // 切换语言时按需加载目标语言包
 const _changeLanguage = i18n.changeLanguage.bind(i18n);
 i18n.changeLanguage = async (newLang?: string, ...args) => {
 	if (newLang) {
+		const targetLang = normalizeLanguage(newLang);
 		try {
-			localStorage.setItem("aster-language", newLang);
+			localStorage.setItem("aster-language", targetLang);
 		} catch {
 			// ignore storage errors (private browsing, quota)
 		}
-		await ensureNamespaces(newLang, INITIAL_NAMESPACES);
-		void ensureNamespaces(newLang, DEFERRED_NAMESPACES);
+		await ensureNamespaces(targetLang, getLanguageSwitchNamespaces());
+		void ensureNamespaces(targetLang, DEFERRED_NAMESPACES);
+		scheduleDeferredWarmup(getAlternateLanguage(targetLang));
+		return _changeLanguage(targetLang, ...args);
 	}
 	return _changeLanguage(newLang, ...args);
 };

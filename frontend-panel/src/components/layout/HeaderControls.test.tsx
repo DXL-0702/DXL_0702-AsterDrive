@@ -11,6 +11,7 @@ import { HeaderControls } from "@/components/layout/HeaderControls";
 const mockState = vi.hoisted(() => ({
 	navigate: vi.fn(),
 	changeLanguage: vi.fn(),
+	ensureI18nNamespaces: vi.fn(),
 	queuePreferenceSync: vi.fn(),
 	auth: {
 		user: {
@@ -48,6 +49,15 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("react-router-dom", () => ({
 	useNavigate: () => mockState.navigate,
+}));
+
+vi.mock("@/i18n", () => ({
+	ensureI18nNamespaces: (...args: unknown[]) =>
+		mockState.ensureI18nNamespaces(...args),
+}));
+
+vi.mock("@/pages/SettingsPage", () => ({
+	default: () => null,
 }));
 
 vi.mock("@/stores/authStore", () => ({
@@ -186,6 +196,8 @@ describe("HeaderControls", () => {
 		mockState.navigate.mockReset();
 		mockState.changeLanguage.mockReset();
 		mockState.changeLanguage.mockResolvedValue(undefined);
+		mockState.ensureI18nNamespaces.mockReset();
+		mockState.ensureI18nNamespaces.mockResolvedValue(undefined);
 		mockState.queuePreferenceSync.mockReset();
 		mockState.auth.user = {
 			email: "alice@example.com",
@@ -303,14 +315,20 @@ describe("HeaderControls", () => {
 		expect(screen.queryByText("admin")).not.toBeInTheDocument();
 	});
 
-	it("navigates immediately from route entries with view transitions enabled", () => {
+	it("preloads settings before navigating while keeping other route entries on view transitions", async () => {
 		render(<HeaderControls showHomeButton homeLabel="Home" showAdminEntry />);
 
 		fireEvent.click(
 			screen.getByRole("button", { name: /translated:settings/i }),
 		);
-		expect(mockState.navigate).toHaveBeenNthCalledWith(1, "/settings", {
-			viewTransition: true,
+		await waitFor(() =>
+			expect(mockState.ensureI18nNamespaces).toHaveBeenCalledWith(
+				["settings"],
+				"en",
+			),
+		);
+		expect(mockState.navigate).toHaveBeenNthCalledWith(1, "/settings/profile", {
+			viewTransition: false,
 		});
 
 		const homeButtons = screen.getAllByRole("button", { name: /Home/i });

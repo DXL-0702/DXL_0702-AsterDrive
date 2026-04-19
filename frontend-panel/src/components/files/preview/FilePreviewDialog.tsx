@@ -24,8 +24,10 @@ import { getVideoBrowserOpenWithOption } from "./video-browser-config";
 const PREVIEW_DIALOG_OPEN_ANIMATION_MS = 120;
 
 interface FilePreviewDialogProps {
+	open: boolean;
 	file: FileInfo | FileListItem;
 	onClose: () => void;
+	onOpenChangeComplete?: (open: boolean) => void;
 	onFileUpdated?: () => void;
 	downloadPath?: string;
 	editable?: boolean;
@@ -47,8 +49,10 @@ function getEmbeddedOptionMode(option: OpenWithOption | null) {
 }
 
 export function FilePreviewDialog({
+	open,
 	file,
 	onClose,
+	onOpenChangeComplete,
 	onFileUpdated,
 	downloadPath,
 	editable = true,
@@ -299,7 +303,11 @@ export function FilePreviewDialog({
 
 	return (
 		<>
-			<Dialog open onOpenChange={handleDialogOpenChange}>
+			<Dialog
+				open={open}
+				onOpenChange={handleDialogOpenChange}
+				onOpenChangeComplete={onOpenChangeComplete}
+			>
 				<DialogContent
 					animated={showOpenMethodChooser ? true : isDialogAnimationEnabled}
 					keepMounted

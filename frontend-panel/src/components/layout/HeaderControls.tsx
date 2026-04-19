@@ -18,6 +18,7 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ensureI18nNamespaces } from "@/i18n";
 import { MENU_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { queuePreferenceSync } from "@/lib/preferenceSync";
 import { getNormalizedDisplayName, getUserDisplayName } from "@/lib/user";
@@ -63,8 +64,19 @@ export function HeaderControls({
 		"flex items-center gap-1 rounded-lg bg-muted/35 p-1";
 	const logoutButtonClass = `${MENU_SECTION_PADDING_CLASS} flex w-full cursor-default items-center gap-1.5 rounded-lg py-1.5 min-h-9 text-sm select-none text-muted-foreground transition-colors duration-150 hover:bg-destructive/8 hover:text-destructive disabled:pointer-events-none disabled:opacity-50`;
 
-	const handleRouteNavigation = (to: string) => {
-		navigate(to, { viewTransition: true });
+	const handleRouteNavigation = (
+		to: string,
+		{ viewTransition = true }: { viewTransition?: boolean } = {},
+	) => {
+		navigate(to, { viewTransition });
+	};
+
+	const handleSettingsNavigation = async () => {
+		await Promise.all([
+			import("@/pages/SettingsPage"),
+			ensureI18nNamespaces(["settings"], i18n.language),
+		]);
+		navigate("/settings/profile", { viewTransition: false });
 	};
 
 	const handleLogout = async () => {
@@ -190,7 +202,9 @@ export function HeaderControls({
 
 						<div className={`${menuSectionClass} p-1`}>
 							<DropdownMenuItem
-								onClick={() => handleRouteNavigation("/settings")}
+								onClick={() => {
+									void handleSettingsNavigation();
+								}}
 								className={menuItemClass}
 							>
 								<Icon name="Gear" className="mr-2 h-4 w-4" />

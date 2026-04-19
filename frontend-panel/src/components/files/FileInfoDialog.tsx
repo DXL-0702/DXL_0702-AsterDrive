@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileItemStatusIndicators } from "@/components/files/FileItemStatusIndicators";
 import { FileTypeIcon } from "@/components/files/FileTypeIcon";
@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import { formatBytes, formatDateAbsolute } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { fileService } from "@/services/fileService";
@@ -57,6 +58,10 @@ interface QuickAction {
 }
 
 const DESKTOP_PANEL_EXIT_MS = 220;
+type FileInfoDialogTarget = {
+	file?: FileInfo | FileListItem;
+	folder?: FolderInfo | FolderListItem;
+};
 
 function hasFileDetails(file: FileInfo | FileListItem): file is FileInfo {
 	return "blob_id" in file && "created_at" in file;
@@ -200,6 +205,12 @@ export function FileInfoDialog({
 	onToggleLock,
 }: FileInfoDialogProps) {
 	const { t } = useTranslation(["files", "core"]);
+	const retainedTargetInput = useMemo<FileInfoDialogTarget | null>(
+		() => (file ? { file } : folder ? { folder } : null),
+		[file, folder],
+	);
+	const { retainedValue: retainedTarget, handleOpenChangeComplete } =
+		useRetainedDialogValue<FileInfoDialogTarget>(retainedTargetInput, open);
 	const [resolvedFile, setResolvedFile] = useState<FileInfo | null>(null);
 	const [fileDetailsLoading, setFileDetailsLoading] = useState(false);
 	const [resolvedFolder, setResolvedFolder] = useState<FolderInfo | null>(null);
@@ -214,6 +225,8 @@ export function FileInfoDialog({
 	const isDesktop = useMediaQuery("(min-width: 1024px)");
 	const [desktopMounted, setDesktopMounted] = useState(open);
 	const [desktopVisible, setDesktopVisible] = useState(open);
+	const renderedFile = file ?? retainedTarget?.file;
+	const renderedFolder = folder ?? retainedTarget?.folder;
 
 	useEffect(() => {
 		if (!open || !file) {
@@ -352,38 +365,42 @@ export function FileInfoDialog({
 		};
 	}, [isDesktop, open]);
 
-	const activeFile = file ? (hasFileDetails(file) ? file : resolvedFile) : null;
-	const activeFolder = folder
-		? hasFolderDetails(folder)
-			? folder
+	const activeFile = renderedFile
+		? hasFileDetails(renderedFile)
+			? renderedFile
+			: resolvedFile
+		: null;
+	const activeFolder = renderedFolder
+		? hasFolderDetails(renderedFolder)
+			? renderedFolder
 			: resolvedFolder
 		: null;
 	const loadingText = t("info_loading");
 	const isShared =
-		file && "is_shared" in file
-			? file.is_shared
-			: folder && "is_shared" in folder
-				? folder.is_shared
+		renderedFile && "is_shared" in renderedFile
+			? renderedFile.is_shared
+			: renderedFolder && "is_shared" in renderedFolder
+				? renderedFolder.is_shared
 				: null;
 
-	const title = file
-		? (activeFile ?? file).name
-		: ((activeFolder ?? folder)?.name ?? "");
-	const targetKey = file
-		? `file:${file.id}`
-		: folder
-			? `folder:${folder.id}`
+	const title = renderedFile
+		? (activeFile ?? renderedFile).name
+		: ((activeFolder ?? renderedFolder)?.name ?? "");
+	const targetKey = renderedFile
+		? `file:${renderedFile.id}`
+		: renderedFolder
+			? `folder:${renderedFolder.id}`
 			: null;
-	const resolvedLocked = file
-		? (file.is_locked ?? activeFile?.is_locked ?? false)
-		: folder
-			? (folder.is_locked ?? activeFolder?.is_locked ?? false)
+	const resolvedLocked = renderedFile
+		? (renderedFile.is_locked ?? activeFile?.is_locked ?? false)
+		: renderedFolder
+			? (renderedFolder.is_locked ?? activeFolder?.is_locked ?? false)
 			: false;
 	const currentLocked = optimisticLocked ?? resolvedLocked;
 
-	const summaryLabel = file ? t("core:file") : t("core:folder");
-	const summarySubtitle = file
-		? formatBytes((activeFile ?? file).size)
+	const summaryLabel = renderedFile ? t("core:file") : t("core:folder");
+	const summarySubtitle = renderedFile
+		? formatBytes((activeFile ?? renderedFile).size)
 		: childCount != null
 			? t("info_children_count", {
 					folders: childCount.folders,
@@ -393,14 +410,17 @@ export function FileInfoDialog({
 				? loadingText
 				: t("core:folder");
 
-	const overviewRows: DetailRow[] = file
+	const overviewRows: DetailRow[] = renderedFile
 		? [
 				{ label: t("info_type"), value: t("core:file") },
 				{
 					label: t("info_size"),
-					value: formatBytes((activeFile ?? file).size),
+					value: formatBytes((activeFile ?? renderedFile).size),
 				},
-				{ label: t("info_mime"), value: (activeFile ?? file).mime_type },
+				{
+					label: t("info_mime"),
+					value: (activeFile ?? renderedFile).mime_type,
+				},
 				{
 					label: t("info_created"),
 					value: formatValueOrFallback(
@@ -413,10 +433,10 @@ export function FileInfoDialog({
 				},
 				{
 					label: t("info_modified"),
-					value: formatDateAbsolute((activeFile ?? file).updated_at),
+					value: formatDateAbsolute((activeFile ?? renderedFile).updated_at),
 				},
 			]
-		: folder
+		: renderedFolder
 			? [
 					{ label: t("info_type"), value: t("core:folder") },
 					{
@@ -441,7 +461,9 @@ export function FileInfoDialog({
 					},
 					{
 						label: t("info_modified"),
-						value: formatDateAbsolute((activeFolder ?? folder).updated_at),
+						value: formatDateAbsolute(
+							(activeFolder ?? renderedFolder).updated_at,
+						),
 					},
 				]
 			: [];
@@ -477,11 +499,11 @@ export function FileInfoDialog({
 	}, [targetKey]);
 
 	const handleQuickLockToggle = async () => {
-		if (!onToggleLock || (!file && !folder)) {
+		if (!onToggleLock || (!renderedFile && !renderedFolder)) {
 			return;
 		}
 
-		const targetId = file?.id ?? folder?.id;
+		const targetId = renderedFile?.id ?? renderedFolder?.id;
 		if (targetId == null) {
 			return;
 		}
@@ -490,7 +512,7 @@ export function FileInfoDialog({
 		setOptimisticLocked(nextLocked);
 
 		const result = await onToggleLock(
-			file ? "file" : "folder",
+			renderedFile ? "file" : "folder",
 			targetId,
 			currentLocked,
 		);
@@ -500,20 +522,20 @@ export function FileInfoDialog({
 		}
 	};
 
-	const quickActions: QuickAction[] = file
+	const quickActions: QuickAction[] = renderedFile
 		? [
 				onPreview
 					? {
 							icon: "Eye",
 							label: t("preview"),
-							onClick: () => onPreview(activeFile ?? file),
+							onClick: () => onPreview(activeFile ?? renderedFile),
 						}
 					: null,
 				onDownload
 					? {
 							icon: "Download",
 							label: t("download"),
-							onClick: () => onDownload((activeFile ?? file).id, title),
+							onClick: () => onDownload((activeFile ?? renderedFile).id, title),
 						}
 					: null,
 				onShare
@@ -522,7 +544,7 @@ export function FileInfoDialog({
 							label: t("share"),
 							onClick: () =>
 								onShare({
-									fileId: (activeFile ?? file).id,
+									fileId: (activeFile ?? renderedFile).id,
 									name: title,
 									initialMode: "page",
 								}),
@@ -532,14 +554,15 @@ export function FileInfoDialog({
 					? {
 							icon: "PencilSimple",
 							label: t("rename"),
-							onClick: () => onRename("file", (activeFile ?? file).id, title),
+							onClick: () =>
+								onRename("file", (activeFile ?? renderedFile).id, title),
 						}
 					: null,
 				onVersions
 					? {
 							icon: "Clock",
 							label: t("versions"),
-							onClick: () => onVersions((activeFile ?? file).id),
+							onClick: () => onVersions((activeFile ?? renderedFile).id),
 						}
 					: null,
 				onToggleLock
@@ -552,13 +575,13 @@ export function FileInfoDialog({
 						}
 					: null,
 			].filter((action): action is QuickAction => action != null)
-		: folder
+		: renderedFolder
 			? [
 					onOpenFolder
 						? {
 								icon: "FolderOpen",
 								label: t("open"),
-								onClick: () => onOpenFolder(activeFolder ?? folder),
+								onClick: () => onOpenFolder(activeFolder ?? renderedFolder),
 							}
 						: null,
 					onShare
@@ -567,7 +590,7 @@ export function FileInfoDialog({
 								label: t("share"),
 								onClick: () =>
 									onShare({
-										folderId: (activeFolder ?? folder).id,
+										folderId: (activeFolder ?? renderedFolder).id,
 										name: title,
 										initialMode: "page",
 									}),
@@ -578,7 +601,11 @@ export function FileInfoDialog({
 								icon: "PencilSimple",
 								label: t("rename"),
 								onClick: () =>
-									onRename("folder", (activeFolder ?? folder).id, title),
+									onRename(
+										"folder",
+										(activeFolder ?? renderedFolder).id,
+										title,
+									),
 							}
 						: null,
 					onToggleLock
@@ -593,7 +620,10 @@ export function FileInfoDialog({
 				].filter((action): action is QuickAction => action != null)
 			: [];
 
-	if ((!open && !desktopMounted) || (!file && !folder)) {
+	if (
+		(isDesktop && !open && !desktopMounted) ||
+		(!renderedFile && !renderedFolder)
+	) {
 		return null;
 	}
 
@@ -602,10 +632,10 @@ export function FileInfoDialog({
 			<Section className="gap-0 space-y-4 bg-gradient-to-br from-background via-background to-muted/30">
 				<div className="flex items-start gap-3">
 					<div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-muted/50 text-muted-foreground">
-						{file ? (
+						{renderedFile ? (
 							<FileTypeIcon
-								mimeType={(activeFile ?? file).mime_type}
-								fileName={(activeFile ?? file).name}
+								mimeType={(activeFile ?? renderedFile).mime_type}
+								fileName={(activeFile ?? renderedFile).name}
 								className="h-8 w-8"
 							/>
 						) : (
@@ -687,7 +717,11 @@ export function FileInfoDialog({
 	}
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		<Dialog
+			open={open}
+			onOpenChange={onOpenChange}
+			onOpenChangeComplete={handleOpenChangeComplete}
+		>
 			<DialogContent
 				keepMounted
 				className="w-[calc(100%-1rem)] max-w-[calc(100%-1rem)] gap-0 overflow-hidden p-0 sm:w-full sm:max-w-lg"

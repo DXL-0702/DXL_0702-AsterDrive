@@ -545,14 +545,14 @@ export default function AdminTeamsPage() {
 											className={INTERACTIVE_TABLE_ROW_CLASS}
 											onClick={() =>
 												navigate(`/admin/teams/${team.id}/overview`, {
-													viewTransition: true,
+													viewTransition: false,
 												})
 											}
 											onKeyDown={(event) => {
 												if (event.key === "Enter" || event.key === " ") {
 													event.preventDefault();
 													navigate(`/admin/teams/${team.id}/overview`, {
-														viewTransition: true,
+														viewTransition: false,
 													});
 												}
 											}}
@@ -623,7 +623,7 @@ export default function AdminTeamsPage() {
 														className={ADMIN_ICON_BUTTON_CLASS}
 														onClick={() =>
 															navigate(`/admin/teams/${team.id}/overview`, {
-																viewTransition: true,
+																viewTransition: false,
 															})
 														}
 														title={t("view_details")}

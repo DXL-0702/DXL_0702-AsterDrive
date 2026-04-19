@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { BatchActionBar } from "@/components/common/BatchActionBar";
 import { FilePreview } from "@/components/files/FilePreview";
+import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import {
 	ArchiveTaskNameDialog,
 	BatchTargetFolderDialog,
@@ -81,6 +82,9 @@ export function FileBrowserDialogs({
 	onVersionClose,
 	onVersionRestored,
 }: FileBrowserDialogsProps) {
+	const { retainedValue: retainedPreviewState, handleOpenChangeComplete } =
+		useRetainedDialogValue(previewState, previewState !== null);
+
 	return (
 		<>
 			<Suspense fallback={null}>
@@ -127,17 +131,19 @@ export function FileBrowserDialogs({
 				/>
 			</Suspense>
 
-			{previewState ? (
+			{retainedPreviewState ? (
 				<FilePreview
-					file={previewState.file}
-					openMode={previewState.openMode}
+					open={previewState !== null}
+					file={retainedPreviewState.file}
+					openMode={retainedPreviewState.openMode}
 					onClose={onPreviewClose}
+					onOpenChangeComplete={handleOpenChangeComplete}
 					onFileUpdated={onPreviewFileUpdated}
 					previewLinkFactory={() =>
-						fileService.createPreviewLink(previewState.file.id)
+						fileService.createPreviewLink(retainedPreviewState.file.id)
 					}
 					wopiSessionFactory={(appKey) =>
-						fileService.createWopiSession(previewState.file.id, appKey)
+						fileService.createWopiSession(retainedPreviewState.file.id, appKey)
 					}
 				/>
 			) : null}

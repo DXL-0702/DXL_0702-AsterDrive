@@ -4,12 +4,14 @@ import { FilePreview } from "@/components/files/FilePreview";
 
 vi.mock("@/components/files/preview/FilePreviewDialog", () => ({
 	FilePreviewDialog: ({
+		open,
 		file,
 		downloadPath,
 		editable,
 		previewLinkFactory,
 		wopiSessionFactory,
 	}: {
+		open: boolean;
 		file: { name: string };
 		downloadPath?: string;
 		editable?: boolean;
@@ -18,6 +20,7 @@ vi.mock("@/components/files/preview/FilePreviewDialog", () => ({
 	}) => (
 		<div
 			data-testid="preview-dialog"
+			data-open={String(open)}
 			data-file-name={file.name}
 			data-download-path={downloadPath ?? ""}
 			data-editable={String(Boolean(editable))}
@@ -32,6 +35,7 @@ describe("FilePreview", () => {
 		render(
 			<FilePreview
 				file={{ id: 7, name: "report.pdf" } as never}
+				open
 				onClose={vi.fn()}
 				onFileUpdated={vi.fn()}
 				downloadPath="/files/7/download"
@@ -41,6 +45,10 @@ describe("FilePreview", () => {
 			/>,
 		);
 
+		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(
+			"data-open",
+			"true",
+		);
 		expect(screen.getByTestId("preview-dialog")).toHaveAttribute(
 			"data-file-name",
 			"report.pdf",

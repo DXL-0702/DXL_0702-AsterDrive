@@ -792,7 +792,7 @@ describe("AdminSettingsPage", () => {
 		fireEvent.click(storageTab);
 
 		expect(mockState.navigate).toHaveBeenCalledWith("/admin/settings/storage", {
-			viewTransition: true,
+			viewTransition: false,
 		});
 	});
 

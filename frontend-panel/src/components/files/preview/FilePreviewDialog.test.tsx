@@ -277,6 +277,7 @@ function renderDialog(
 
 	render(
 		<FilePreviewDialog
+			open
 			file={
 				{
 					id: 7,

@@ -495,6 +495,7 @@ vi.mock("@/components/files/FileInfoDialog", () => ({
 vi.mock("@/components/files/FilePreview", () => ({
 	FilePreview: ({
 		file,
+		open = true,
 		openMode,
 		onClose,
 		onFileUpdated,
@@ -502,28 +503,30 @@ vi.mock("@/components/files/FilePreview", () => ({
 		wopiSessionFactory,
 	}: {
 		file: { name: string };
+		open?: boolean;
 		openMode?: string;
 		onClose: () => void;
 		onFileUpdated?: () => void;
 		previewLinkFactory?: () => unknown;
 		wopiSessionFactory?: (appKey: string) => unknown;
-	}) => (
-		<div>
-			<div>{`preview:${file.name}:${openMode ?? "auto"}`}</div>
-			<button type="button" onClick={onClose}>
-				close-preview
-			</button>
-			<button type="button" onClick={onFileUpdated}>
-				refresh-preview-file
-			</button>
-			<button type="button" onClick={() => previewLinkFactory?.()}>
-				create-preview-link
-			</button>
-			<button type="button" onClick={() => wopiSessionFactory?.("office")}>
-				create-wopi-session
-			</button>
-		</div>
-	),
+	}) =>
+		open ? (
+			<div>
+				<div>{`preview:${file.name}:${openMode ?? "auto"}`}</div>
+				<button type="button" onClick={onClose}>
+					close-preview
+				</button>
+				<button type="button" onClick={onFileUpdated}>
+					refresh-preview-file
+				</button>
+				<button type="button" onClick={() => previewLinkFactory?.()}>
+					create-preview-link
+				</button>
+				<button type="button" onClick={() => wopiSessionFactory?.("office")}>
+					create-wopi-session
+				</button>
+			</div>
+		) : null,
 }));
 
 vi.mock("@/components/files/RenameDialog", () => ({

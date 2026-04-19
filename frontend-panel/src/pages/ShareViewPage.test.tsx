@@ -116,20 +116,23 @@ vi.mock("@/components/common/ViewToggle", () => ({
 vi.mock("@/components/files/FilePreview", () => ({
 	FilePreview: ({
 		file,
+		open = true,
 		downloadPath,
 		editable,
 	}: {
 		file: { name: string };
+		open?: boolean;
 		downloadPath?: string;
 		editable?: boolean;
-	}) => (
-		<div
-			data-testid="file-preview"
-			data-name={file.name}
-			data-download-path={downloadPath ?? ""}
-			data-editable={String(Boolean(editable))}
-		/>
-	),
+	}) =>
+		open ? (
+			<div
+				data-testid="file-preview"
+				data-name={file.name}
+				data-download-path={downloadPath ?? ""}
+				data-editable={String(Boolean(editable))}
+			/>
+		) : null,
 }));
 
 vi.mock("@/components/files/FileThumbnail", () => ({

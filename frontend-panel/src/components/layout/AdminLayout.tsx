@@ -56,7 +56,6 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 						<NavLink
 							key={item.to}
 							to={item.to}
-							viewTransition
 							onClick={handleMobileClose}
 							className={({ isActive }) => sidebarNavItemClass(isActive)}
 						>
@@ -72,7 +71,6 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 						<NavLink
 							key={item.to}
 							to={item.to}
-							viewTransition
 							onClick={handleMobileClose}
 							className={({ isActive }) => sidebarNavItemClass(isActive)}
 						>

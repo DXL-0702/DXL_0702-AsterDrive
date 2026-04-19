@@ -34,6 +34,7 @@ import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
+import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import { FOLDER_LIMIT, PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
 import { formatDateShort } from "@/lib/format";
 import { absoluteAppUrl } from "@/lib/publicSiteUrl";
@@ -100,6 +101,10 @@ export default function WebdavAccountsPage() {
 	const [createDialogOpen, setCreateDialogOpen] = useState(false);
 	const [credentialsDialogOpen, setCredentialsDialogOpen] = useState(false);
 	const [webdavPrefix, setWebdavPrefix] = useState("/webdav");
+	const {
+		retainedValue: recentCredentials,
+		handleOpenChangeComplete: handleCredentialsDialogOpenChangeComplete,
+	} = useRetainedDialogValue(showPassword, credentialsDialogOpen);
 
 	const fetchFolders = useCallback(async () => {
 		try {
@@ -217,13 +222,13 @@ export default function WebdavAccountsPage() {
 	};
 
 	const handleTest = async () => {
-		if (!showPassword) return;
+		if (!recentCredentials) return;
 		setTesting(true);
 		setTestResult(null);
 		try {
 			await webdavAccountService.test(
-				showPassword.username,
-				showPassword.password,
+				recentCredentials.username,
+				recentCredentials.password,
 			);
 			setTestResult(true);
 			toast.success(t("admin:connection_success"));
@@ -318,13 +323,18 @@ export default function WebdavAccountsPage() {
 			</Dialog>
 
 			{/* Credentials Dialog - shows after successful creation */}
-			{showPassword && (
+			{recentCredentials && (
 				<Dialog
 					open={credentialsDialogOpen}
 					onOpenChange={(open) => {
+						setCredentialsDialogOpen(open);
 						if (!open) {
-							setCredentialsDialogOpen(false);
 							setShowPassword(null);
+						}
+					}}
+					onOpenChangeComplete={(open) => {
+						handleCredentialsDialogOpenChangeComplete(open);
+						if (!open) {
 							setTestResult(null);
 						}
 					}}
@@ -340,15 +350,19 @@ export default function WebdavAccountsPage() {
 							<div className="space-y-1.5">
 								<Label>{t("core:username")}</Label>
 								<CopyField
-									value={showPassword.username}
-									onCopy={() => void copyToClipboard(showPassword.username)}
+									value={recentCredentials.username}
+									onCopy={() =>
+										void copyToClipboard(recentCredentials.username)
+									}
 								/>
 							</div>
 							<div className="space-y-1.5">
 								<Label>{t("core:password")}</Label>
 								<CopyField
-									value={showPassword.password}
-									onCopy={() => void copyToClipboard(showPassword.password)}
+									value={recentCredentials.password}
+									onCopy={() =>
+										void copyToClipboard(recentCredentials.password)
+									}
 								/>
 							</div>
 							{testResult !== null && (

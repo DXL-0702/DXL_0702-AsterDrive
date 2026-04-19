@@ -158,20 +158,8 @@ export const router = createBrowserRouter([
 						element: <Navigate to="/settings/profile" replace />,
 					},
 					{
-						path: "/settings/profile",
-						element: <SettingsPage section="profile" />,
-					},
-					{
-						path: "/settings/interface",
-						element: <SettingsPage section="interface" />,
-					},
-					{
-						path: "/settings/security",
-						element: <SettingsPage section="security" />,
-					},
-					{
-						path: "/settings/teams",
-						element: <SettingsPage section="teams" />,
+						path: "/settings/:section",
+						element: <SettingsPage />,
 					},
 					{
 						path: "/settings/teams/:teamId",

@@ -144,6 +144,9 @@ describe("authService", () => {
 			1,
 			"/auth/sessions/session-1",
 		);
-		expect(mockState.delete).toHaveBeenNthCalledWith(2, "/auth/sessions/others");
+		expect(mockState.delete).toHaveBeenNthCalledWith(
+			2,
+			"/auth/sessions/others",
+		);
 	});
 });

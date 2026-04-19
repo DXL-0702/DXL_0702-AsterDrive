@@ -25,6 +25,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { handleApiError } from "@/hooks/useApiError";
+import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import { shareService } from "@/services/shareService";
 import type { MyShareInfo } from "@/types/api";
 
@@ -40,10 +41,12 @@ interface EditShareDialogProps {
 export function EditShareDialog({
 	open,
 	onOpenChange,
-	share,
+	share: inputShare,
 	onSaved,
 }: EditShareDialogProps) {
 	const { t } = useTranslation(["core", "share"]);
+	const { retainedValue: share, handleOpenChangeComplete } =
+		useRetainedDialogValue(inputShare, open);
 	const [passwordAction, setPasswordAction] = useState<PasswordAction>("keep");
 	const [password, setPassword] = useState("");
 	const [expiresAt, setExpiresAt] = useState("");
@@ -97,7 +100,11 @@ export function EditShareDialog({
 	};
 
 	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
+		<Dialog
+			open={open}
+			onOpenChange={onOpenChange}
+			onOpenChangeComplete={handleOpenChangeComplete}
+		>
 			<DialogContent className="max-w-md">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2">

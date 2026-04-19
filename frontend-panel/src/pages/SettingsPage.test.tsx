@@ -78,6 +78,7 @@ vi.mock("react-i18next", () => ({
 vi.mock("react-router-dom", () => ({
 	useLocation: () => mockState.location,
 	useNavigate: () => mockState.navigate,
+	useParams: () => ({}),
 }));
 
 vi.mock("@/components/common/ColorPresetPicker", () => ({
@@ -456,8 +457,21 @@ describe("SettingsPage", () => {
 		);
 
 		expect(mockState.navigate).toHaveBeenCalledWith("/settings/interface", {
-			viewTransition: true,
+			viewTransition: false,
 		});
+	});
+
+	it("only animates the settings panel after section changes, not on initial entry", () => {
+		const { rerender } = render(<SettingsPage section="profile" />);
+
+		expect(screen.getByTestId("settings-panel")).not.toHaveClass("animate-in");
+
+		rerender(<SettingsPage section="interface" />);
+
+		expect(screen.getByTestId("settings-panel")).toHaveClass("animate-in");
+		expect(screen.getByTestId("settings-panel")).toHaveClass(
+			"slide-in-from-right-4",
+		);
 	});
 
 	it("loads and revokes other auth sessions from security settings", async () => {

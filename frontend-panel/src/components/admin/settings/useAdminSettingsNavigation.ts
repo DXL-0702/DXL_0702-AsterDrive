@@ -280,7 +280,7 @@ export function useAdminSettingsNavigation({
 					: "backward",
 			);
 			setActiveTab(value);
-			navigate(`/admin/settings/${value}`, { viewTransition: true });
+			navigate(`/admin/settings/${value}`, { viewTransition: false });
 		},
 		[activeTab, categoryIndex, navigate, tabCategories],
 	);

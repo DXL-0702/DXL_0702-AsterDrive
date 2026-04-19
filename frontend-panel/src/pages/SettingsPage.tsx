@@ -1,5 +1,6 @@
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { SettingsPageIntro } from "@/components/common/SettingsScaffold";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { InterfaceSettingsView } from "@/components/settings/InterfaceSettingsView";
@@ -12,6 +13,22 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 import { SETTINGS_PAGE_CONTENT_PADDING_CLASS } from "@/lib/constants";
 
 type SettingsTabKey = "profile" | "interface" | "security" | "teams";
+
+const SETTINGS_TAB_INDEX: Record<SettingsTabKey, number> = {
+	profile: 0,
+	interface: 1,
+	security: 2,
+	teams: 3,
+};
+
+function isSettingsTabKey(value?: string): value is SettingsTabKey {
+	return (
+		value === "profile" ||
+		value === "interface" ||
+		value === "security" ||
+		value === "teams"
+	);
+}
 
 function getSettingsSectionTitle(
 	section: SettingsTabKey,
@@ -29,14 +46,61 @@ function getSettingsSectionTitle(
 	}
 }
 
+function renderSettingsSection(section: SettingsTabKey) {
+	switch (section) {
+		case "interface":
+			return <InterfaceSettingsView />;
+		case "security":
+			return <SecuritySettingsView />;
+		case "teams":
+			return <TeamsSettingsView />;
+		default:
+			return <ProfileSettingsView />;
+	}
+}
+
 export default function SettingsPage({
-	section = "profile",
+	section: sectionProp,
 }: {
 	section?: SettingsTabKey;
 }) {
 	const { t } = useTranslation(["core", "settings"]);
 	const navigate = useNavigate();
-	usePageTitle(getSettingsSectionTitle(section, t));
+	const { section: routeSection } = useParams<{ section?: string }>();
+	const section = sectionProp ?? routeSection;
+	const resolvedSection = isSettingsTabKey(section) ? section : "profile";
+	const previousSectionRef = useRef<SettingsTabKey>(resolvedSection);
+	const [hasAnimatedSectionChange, setHasAnimatedSectionChange] =
+		useState(false);
+	const [sectionDirection, setSectionDirection] = useState<
+		"forward" | "backward"
+	>("forward");
+	const panelAnimationClass = hasAnimatedSectionChange
+		? sectionDirection === "forward"
+			? "animate-in fade-in duration-300 slide-in-from-right-4 motion-reduce:animate-none"
+			: "animate-in fade-in duration-300 slide-in-from-left-4 motion-reduce:animate-none"
+		: "";
+
+	usePageTitle(getSettingsSectionTitle(resolvedSection, t));
+
+	useEffect(() => {
+		const previousSection = previousSectionRef.current;
+		if (previousSection === resolvedSection) {
+			return;
+		}
+
+		setHasAnimatedSectionChange(true);
+		setSectionDirection(
+			SETTINGS_TAB_INDEX[resolvedSection] > SETTINGS_TAB_INDEX[previousSection]
+				? "forward"
+				: "backward",
+		);
+		previousSectionRef.current = resolvedSection;
+	}, [resolvedSection]);
+
+	if (!isSettingsTabKey(section)) {
+		return <Navigate to="/settings/profile" replace />;
+	}
 
 	const handleSectionChange = (value: string) => {
 		if (
@@ -44,9 +108,9 @@ export default function SettingsPage({
 				value === "interface" ||
 				value === "security" ||
 				value === "teams") &&
-			value !== section
+			value !== resolvedSection
 		) {
-			navigate(`/settings/${value}`, { viewTransition: true });
+			navigate(`/settings/${value}`, { viewTransition: false });
 		}
 	};
 
@@ -62,7 +126,7 @@ export default function SettingsPage({
 					/>
 
 					<Tabs
-						value={section}
+						value={resolvedSection}
 						onValueChange={handleSectionChange}
 						className="flex flex-col gap-4"
 					>
@@ -106,20 +170,14 @@ export default function SettingsPage({
 							</TabsTrigger>
 						</TabsList>
 
-						<TabsContent value="profile" className="outline-none">
-							<ProfileSettingsView />
-						</TabsContent>
-
-						<TabsContent value="interface" className="outline-none">
-							<InterfaceSettingsView />
-						</TabsContent>
-
-						<TabsContent value="security" className="outline-none">
-							<SecuritySettingsView />
-						</TabsContent>
-
-						<TabsContent value="teams" className="outline-none">
-							<TeamsSettingsView />
+						<TabsContent value={resolvedSection} className="outline-none">
+							<div
+								data-testid="settings-panel"
+								key={`${resolvedSection}-${sectionDirection}`}
+								className={panelAnimationClass}
+							>
+								{renderSettingsSection(resolvedSection)}
+							</div>
 						</TabsContent>
 					</Tabs>
 				</div>
