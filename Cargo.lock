@@ -646,7 +646,6 @@ dependencies = [
  "sysinfo",
  "testcontainers",
  "tokio",
- "tokio-stream",
  "tokio-util",
  "toml",
  "tracing",

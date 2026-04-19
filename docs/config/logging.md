@@ -1,4 +1,9 @@
-# 日志配置
+# 日志
+
+::: tip 这一篇覆盖 `[logging]`
+先决定日志写到哪里（stdout / journald / 文件），其他选项都是围绕这个来配的。
+排障时优先看 `error_code`，比看英文报错快——错误码对照见 [错误码处理](/guide/errors)。
+:::
 
 ```toml
 [logging]
@@ -11,48 +16,38 @@ max_backups = 5
 
 ## 先决定日志写到哪里
 
-- Docker：通常直接输出到 stdout
-- systemd：通常交给 journald
-- 裸机单进程：可以写入单独的日志文件
+| 部署方式 | 推荐做法 |
+| --- | --- |
+| Docker | 不写文件，直接输出到 stdout，让容器日志系统接 |
+| systemd | 不写文件，交给 journald |
+| 裸机单进程 | 写入单独文件 + 开启轮转 |
 
-## 这些选项怎么理解
+## 选项一览
 
 | 选项 | 默认值 | 作用 |
 | --- | --- | --- |
-| `level` | `"info"` | 日志级别：`trace`、`debug`、`info`、`warn`、`error` |
-| `format` | `"text"` | 输出格式：`text` 或 `json` |
-| `file` | `""` | 日志文件路径；留空时输出到 stdout |
-| `enable_rotation` | `true` | 是否按天轮转日志文件，仅 `file` 非空时生效 |
-| `max_backups` | `5` | 保留的历史日志文件数量 |
+| `level` | `"info"` | `trace` / `debug` / `info` / `warn` / `error` |
+| `format` | `"text"` | `text` 或 `json` |
+| `file` | `""` | 日志文件路径；留空 = 输出到 stdout |
+| `enable_rotation` | `true` | 是否按天轮转，仅 `file` 非空时生效 |
+| `max_backups` | `5` | 保留的历史日志文件数 |
 
-## 一般怎么选
+## 格式怎么选
 
-- 本机排障：`text`
-- 对接集中式日志系统：`json`
-- Docker：通常留空，直接输出到 stdout
-- systemd：通常留空交给 journald
-
-## 日志轮转怎么理解
-
-只有在你设置了 `logging.file` 的情况下，`enable_rotation` 和 `max_backups` 才会生效。
-
-常见做法：
-
-- Docker：不写文件，让容器日志系统处理
-- systemd：不写文件，让 journald 处理
-- 裸机单进程：写入文件并开启轮转
+- **本机排障** —— `text`，肉眼好读
+- **对接集中式日志系统**（Loki / ELK / 自建采集） —— `json`，字段直接结构化
 
 ## `RUST_LOG` 和配置文件谁优先
 
-日志初始化时会优先读取 `RUST_LOG`，如果没有，再回退到 `logging.level`。
+日志初始化时**优先读 `RUST_LOG`**，没有再回退到 `logging.level`。
 
-例如：
+临时调日志级别用 `RUST_LOG` 最方便：
 
 ```bash
 RUST_LOG=debug
 ```
 
-也可以继续通过环境变量覆盖：
+也能用 `ASTER__` 环境变量覆盖：
 
 ```bash
 ASTER__LOGGING__LEVEL=debug
@@ -69,7 +64,9 @@ enable_rotation = true
 max_backups = 7
 ```
 
-运行日志和审计日志不是一回事：
+::: tip 运行日志 ≠ 审计日志
 
-- 运行日志：用于排障
-- 审计日志：用于记录用户和管理员操作
+- **运行日志**（这一页讲的）—— 用于排障，记录请求、错误、内部事件
+- **审计日志** —— 用于追责，记录"谁在什么时候做了什么"，在 `管理 -> 系统设置 -> 审计日志` 里开关，详见 [系统设置](/config/runtime#审计日志)
+
+:::

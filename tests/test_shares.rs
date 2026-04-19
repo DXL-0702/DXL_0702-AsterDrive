@@ -1451,7 +1451,7 @@ async fn test_share_folder_subfolder_navigation() {
     let body: Value = test::read_body_json(resp).await;
     let share_token = body["data"]["token"].as_str().unwrap().to_string();
 
-    // 根目录内容应包��� Subfolder
+    // 根目录内容应包含 Subfolder
     let req = test::TestRequest::get()
         .uri(&format!("/api/v1/s/{share_token}/content"))
         .to_request();
