@@ -1,5 +1,14 @@
 # 部署概览
 
+::: tip 从哪里开始
+按部署方式直接跳走：
+- **Docker / NAS / 小团队** → [Docker 部署](/deployment/docker)
+- **Linux 服务器长期运行** → [systemd 部署](/deployment/systemd)
+- **想命令行做检查、离线改配置、跨数据库迁移** → [运维 CLI](/deployment/ops-cli)
+
+本页把"部署前要想清楚的四件事"梳一遍，是给第一次部署的人看的。
+:::
+
 AsterDrive 是单服务交付：
 
 - 浏览器页面

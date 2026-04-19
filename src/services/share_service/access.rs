@@ -114,9 +114,9 @@ pub async fn verify_password(state: &AppState, token: &str, password: &str) -> R
 /// 换用 `hmac` crate 的 HMAC-SHA256 后语义干净：
 /// - 抗 length-extension（HMAC 内置 ipad/opad 双轮）
 /// - 验证用 `Mac::verify_slice` 的恒等时间比较，避免侧信道
-fn share_cookie_mac(token: &str, secret: &str) -> hmac::Hmac<sha2_10::Sha256> {
-    use hmac::{Hmac, Mac};
-    let mut mac = <Hmac<sha2_10::Sha256> as Mac>::new_from_slice(secret.as_bytes())
+fn share_cookie_mac(token: &str, secret: &str) -> hmac::Hmac<sha2::Sha256> {
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(secret.as_bytes())
         .expect("HMAC accepts any key length");
     mac.update(b"share_verified:");
     mac.update(token.as_bytes());
