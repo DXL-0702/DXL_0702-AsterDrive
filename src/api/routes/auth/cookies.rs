@@ -7,7 +7,7 @@ use actix_web::cookie::{Cookie, SameSite};
 
 pub(super) const REFRESH_COOKIE: &str = "aster_refresh";
 const ACCESS_COOKIE_PATH: &str = "/";
-const REFRESH_COOKIE_PATH: &str = "/api/v1/auth/refresh";
+const REFRESH_COOKIE_PATH: &str = "/api/v1/auth";
 
 fn build_cookie(
     name: &str,

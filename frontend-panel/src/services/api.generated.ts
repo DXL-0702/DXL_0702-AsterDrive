@@ -793,6 +793,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["list_auth_sessions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/sessions/others": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["revoke_other_auth_sessions"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["revoke_auth_session"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/setup": {
         parameters: {
             query?: never;
@@ -2853,7 +2901,7 @@ export interface components {
          * @description 审计日志动作
          * @enum {string}
          */
-        AuditAction: "admin_create_user" | "admin_create_team" | "admin_create_policy_group" | "admin_archive_team" | "admin_restore_team" | "admin_revoke_user_sessions" | "admin_reset_user_password" | "admin_update_team" | "admin_update_user" | "admin_delete_policy_group" | "admin_migrate_policy_group_users" | "admin_update_policy_group" | "batch_copy" | "batch_delete" | "batch_move" | "config_action_execute" | "config_update" | "file_copy" | "file_delete" | "file_download" | "file_edit" | "file_move" | "file_rename" | "file_upload" | "folder_copy" | "folder_create" | "folder_delete" | "folder_move" | "folder_policy_change" | "folder_rename" | "share_batch_delete" | "share_create" | "share_delete" | "share_update" | "system_setup" | "team_archive" | "team_cleanup_expired" | "team_create" | "team_member_add" | "team_member_remove" | "team_member_update" | "team_restore" | "team_update" | "user_change_password" | "user_confirm_password_reset" | "user_confirm_email_change" | "user_confirm_registration" | "user_login" | "user_logout" | "user_request_email_change" | "user_request_password_reset" | "user_register" | "user_resend_email_change" | "user_resend_registration";
+        AuditAction: "admin_create_user" | "admin_force_delete_user" | "admin_create_team" | "admin_create_policy_group" | "admin_archive_team" | "admin_restore_team" | "admin_revoke_user_sessions" | "admin_reset_user_password" | "admin_update_team" | "admin_update_user" | "admin_delete_policy_group" | "admin_migrate_policy_group_users" | "admin_update_policy_group" | "batch_copy" | "batch_delete" | "batch_move" | "config_action_execute" | "config_update" | "file_copy" | "file_delete" | "file_download" | "file_edit" | "file_move" | "file_rename" | "file_upload" | "folder_copy" | "folder_create" | "folder_delete" | "folder_move" | "folder_policy_change" | "folder_rename" | "share_batch_delete" | "share_create" | "share_delete" | "share_update" | "system_setup" | "team_archive" | "team_cleanup_expired" | "team_create" | "team_member_add" | "team_member_remove" | "team_member_update" | "team_restore" | "team_update" | "user_change_password" | "user_confirm_password_reset" | "user_confirm_email_change" | "user_confirm_registration" | "user_login" | "user_logout" | "user_refresh_token_reuse_detected" | "user_request_email_change" | "user_request_password_reset" | "user_register" | "user_resend_email_change" | "user_resend_registration";
         AuditLogEntry: {
             action: components["schemas"]["AuditAction"];
             created_at: string;
@@ -2868,6 +2916,15 @@ export interface components {
             user_agent?: string | null;
             /** Format: int64 */
             user_id: number;
+        };
+        AuthSessionInfo: {
+            created_at: string;
+            expires_at: string;
+            id: string;
+            ip_address?: string | null;
+            is_current: boolean;
+            last_seen_at: string;
+            user_agent?: string | null;
         };
         /** @description Response body for token issuance (login / refresh / password change). */
         AuthTokenResp: {
@@ -4062,7 +4119,13 @@ export interface components {
         };
         StoragePolicyOptions: {
             content_dedup?: boolean | null;
+            /** Format: int64 */
+            s3_connect_timeout_secs?: number | null;
             s3_download_strategy?: null | components["schemas"]["S3DownloadStrategy"];
+            /** Format: int64 */
+            s3_operation_timeout_secs?: number | null;
+            /** Format: int64 */
+            s3_read_timeout_secs?: number | null;
             s3_upload_strategy?: null | components["schemas"]["S3UploadStrategy"];
         };
         StoragePolicySummaryInfo: {
@@ -4864,6 +4927,13 @@ export interface operations {
                         msg: string;
                     };
                 };
+            };
+            /** @description Invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Unauthorized */
             401: {
@@ -7886,7 +7956,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Token refreshed, new access token set in HttpOnly cookie */
+            /** @description Tokens refreshed, new access/refresh tokens set in HttpOnly cookies */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -7994,6 +8064,114 @@ export interface operations {
                         msg: string;
                     };
                 };
+            };
+        };
+    };
+    list_auth_sessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active login devices */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            created_at: string;
+                            expires_at: string;
+                            id: string;
+                            ip_address?: string | null;
+                            is_current: boolean;
+                            last_seen_at: string;
+                            user_agent?: string | null;
+                        }[];
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revoke_other_auth_sessions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Other login devices revoked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        code: components["schemas"]["ErrorCode"];
+                        data?: {
+                            /** Format: int64 */
+                            removed: number;
+                        };
+                        msg: string;
+                    };
+                };
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    revoke_auth_session: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Session ID */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Login device revoked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Not authenticated */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Session not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

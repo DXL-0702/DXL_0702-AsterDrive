@@ -9,6 +9,9 @@ use sea_orm::{ActiveModelTrait, Set};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+use aster_drive::api::middleware::security_headers::{
+    REFERRER_POLICY_VALUE, X_CONTENT_TYPE_OPTIONS_VALUE, X_FRAME_OPTIONS_VALUE,
+};
 use aster_drive::config::{RuntimeConfig, site_url::PUBLIC_SITE_URL_KEY};
 use aster_drive::db::repository::{user_repo, wopi_session_repo};
 use aster_drive::entities::wopi_session;
@@ -236,6 +239,24 @@ async fn test_open_wopi_session_persists_token_and_check_file_info_succeeds() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers()
+            .get("X-Frame-Options")
+            .and_then(|value| value.to_str().ok()),
+        Some(X_FRAME_OPTIONS_VALUE)
+    );
+    assert_eq!(
+        resp.headers()
+            .get("Referrer-Policy")
+            .and_then(|value| value.to_str().ok()),
+        Some(REFERRER_POLICY_VALUE)
+    );
+    assert_eq!(
+        resp.headers()
+            .get("X-Content-Type-Options")
+            .and_then(|value| value.to_str().ok()),
+        Some(X_CONTENT_TYPE_OPTIONS_VALUE)
+    );
 
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["BaseFileName"], "report 1.docx");

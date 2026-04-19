@@ -593,6 +593,8 @@ pub enum AuditAction {
     UserLogin,
     #[sea_orm(string_value = "user_logout")]
     UserLogout,
+    #[sea_orm(string_value = "user_refresh_token_reuse_detected")]
+    UserRefreshTokenReuseDetected,
     #[sea_orm(string_value = "user_request_email_change")]
     UserRequestEmailChange,
     #[sea_orm(string_value = "user_request_password_reset")]
@@ -658,6 +660,7 @@ impl AuditAction {
             Self::UserConfirmRegistration => "user_confirm_registration",
             Self::UserLogin => "user_login",
             Self::UserLogout => "user_logout",
+            Self::UserRefreshTokenReuseDetected => "user_refresh_token_reuse_detected",
             Self::UserRequestEmailChange => "user_request_email_change",
             Self::UserRequestPasswordReset => "user_request_password_reset",
             Self::UserRegister => "user_register",
@@ -718,6 +721,7 @@ impl AuditAction {
             "user_confirm_registration" => Some(Self::UserConfirmRegistration),
             "user_login" => Some(Self::UserLogin),
             "user_logout" => Some(Self::UserLogout),
+            "user_refresh_token_reuse_detected" => Some(Self::UserRefreshTokenReuseDetected),
             "user_request_email_change" => Some(Self::UserRequestEmailChange),
             "user_request_password_reset" => Some(Self::UserRequestPasswordReset),
             "user_register" => Some(Self::UserRegister),

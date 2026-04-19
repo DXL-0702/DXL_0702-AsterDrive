@@ -25,10 +25,13 @@ pub use password::{change_password, login, set_password};
 pub use registration::{
     check_auth_state, create_user_by_admin, register, resend_register_activation, setup,
 };
-pub use session::{get_auth_snapshot, invalidate_auth_snapshot_cache, revoke_user_sessions};
+pub use session::{
+    cleanup_expired_auth_sessions, get_auth_snapshot, invalidate_auth_snapshot_cache,
+    list_auth_sessions, revoke_auth_session, revoke_other_auth_sessions, revoke_user_sessions,
+};
 pub use tokens::{
     authenticate_access_token, authenticate_refresh_token, issue_tokens_for_session,
-    issue_tokens_for_user, refresh_token, verify_token,
+    issue_tokens_for_user, refresh_tokens, revoke_refresh_token, verify_token,
 };
 pub(crate) use validation::{validate_email, validate_password, validate_username};
 
@@ -42,6 +45,8 @@ pub struct Claims {
     pub user_id: i64,
     #[serde(default = "default_session_version")]
     pub session_version: i64,
+    #[serde(default)]
+    pub jti: Option<String>,
     pub token_type: TokenType,
     pub exp: usize,
 }
@@ -64,6 +69,21 @@ pub struct ContactVerificationConfirmResult {
 pub struct UserAuditInfo {
     pub id: i64,
     pub username: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(utoipa::ToSchema))]
+pub struct AuthSessionInfo {
+    pub id: String,
+    pub is_current: bool,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub last_seen_at: chrono::DateTime<chrono::Utc>,
+    #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
+    pub expires_at: chrono::DateTime<chrono::Utc>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -308,7 +328,14 @@ pub async fn login_with_audit(
     password: &str,
     request_info: &AuditRequestInfo,
 ) -> Result<LoginResult> {
-    let result = login(state, identifier, password).await?;
+    let result = login(
+        state,
+        identifier,
+        password,
+        request_info.ip_address.as_deref(),
+        request_info.user_agent.as_deref(),
+    )
+    .await?;
     let audit_ctx = request_info.to_context(result.user_id);
     audit_service::log(
         state,

@@ -74,8 +74,8 @@ pub(super) fn ensure_headers_allowed(
         .map(|value| value.to_ascii_lowercase())
     {
         match fetch_site.as_str() {
-            "same-origin" | "none" => {}
-            "same-site" | "cross-site" => {
+            "same-origin" => {}
+            "same-site" | "cross-site" | "none" => {
                 return Err(AsterError::auth_forbidden(
                     "untrusted request source for cookie-authenticated action",
                 ));

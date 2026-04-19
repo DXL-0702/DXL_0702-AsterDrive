@@ -5,12 +5,18 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
 use crate::utils::hash;
 
-use super::session::invalidate_auth_snapshot_cache;
+use super::session::{invalidate_auth_snapshot_cache, purge_all_auth_sessions_in_connection};
 use super::shared::{find_user_by_identifier, update_password_in_connection};
 use super::tokens::issue_tokens_for_user;
 use super::{AuthUserInfo, LoginResult, is_email_verified};
 
-pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result<LoginResult> {
+pub async fn login(
+    state: &AppState,
+    identifier: &str,
+    password: &str,
+    ip_address: Option<&str>,
+    user_agent: Option<&str>,
+) -> Result<LoginResult> {
     let identifier_kind = if identifier.trim().contains('@') {
         "email"
     } else {
@@ -42,7 +48,7 @@ pub async fn login(state: &AppState, identifier: &str, password: &str) -> Result
         return Err(AsterError::auth_invalid_credentials("wrong password"));
     }
 
-    let (access, refresh) = issue_tokens_for_user(state, &user)?;
+    let (access, refresh) = issue_tokens_for_user(state, &user, ip_address, user_agent).await?;
 
     tracing::debug!(
         user_id = user.id,
@@ -83,8 +89,24 @@ pub async fn set_password(
     new_password: &str,
 ) -> Result<AuthUserInfo> {
     tracing::debug!(user_id, "setting password");
-    let user = user_repo::find_by_id(&state.db, user_id).await?;
-    let updated = update_password_in_connection(&state.db, user, new_password).await?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
+    let result = async {
+        let user = user_repo::find_by_id(&txn, user_id).await?;
+        let updated = update_password_in_connection(&txn, user, new_password).await?;
+        purge_all_auth_sessions_in_connection(&txn, updated.id).await?;
+        Ok::<_, AsterError>(updated)
+    }
+    .await;
+    let updated = match result {
+        Ok(updated) => {
+            crate::db::transaction::commit(txn).await?;
+            updated
+        }
+        Err(error) => {
+            crate::db::transaction::rollback(txn).await?;
+            return Err(error);
+        }
+    };
     invalidate_auth_snapshot_cache(state, updated.id).await;
     tracing::debug!(
         user_id = updated.id,

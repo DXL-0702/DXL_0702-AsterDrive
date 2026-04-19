@@ -12,6 +12,7 @@ export type MemoryStatsResponse = components["schemas"]["MemoryStatsResponse"];
 export type AvatarInfo = components["schemas"]["AvatarInfo"];
 export type AvatarSource = components["schemas"]["AvatarSource"];
 export type ActionMessageResp = components["schemas"]["ActionMessageResp"];
+export type AuthSessionInfo = components["schemas"]["AuthSessionInfo"];
 export type AuthTokenResp = components["schemas"]["AuthTokenResp"];
 export type CheckResp = components["schemas"]["CheckResp"];
 export type ChangePasswordRequest = components["schemas"]["ChangePasswordReq"];

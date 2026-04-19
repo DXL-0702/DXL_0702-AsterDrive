@@ -1,8 +1,9 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useEffectEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { SettingsSection } from "@/components/common/SettingsScaffold";
+import { SessionPlatformIcon } from "@/components/settings/SessionPlatformIcon";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
@@ -13,13 +14,16 @@ import {
 	clearContactVerificationRedirectSearch,
 	getContactVerificationRedirectState,
 } from "@/lib/contactVerificationRedirect";
+import { formatDateAbsolute } from "@/lib/format";
+import { formatUserAgentLabel } from "@/lib/userAgent";
 import {
 	emailSchema,
 	existingPasswordSchema,
 	passwordSchema,
 } from "@/lib/validation";
 import { authService } from "@/services/authService";
-import { useAuthStore } from "@/stores/authStore";
+import { forceLogout, useAuthStore } from "@/stores/authStore";
+import type { AuthSessionInfo } from "@/types/api";
 
 type FormErrors = Partial<
 	Record<
@@ -43,6 +47,10 @@ export function SecuritySettingsView() {
 	const [newPassword, setNewPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
 	const [errors, setErrors] = useState<FormErrors>({});
+	const [sessions, setSessions] = useState<AuthSessionInfo[]>([]);
+	const [sessionsLoading, setSessionsLoading] = useState(false);
+	const [revokeBusyId, setRevokeBusyId] = useState<string | null>(null);
+	const [revokeOthersBusy, setRevokeOthersBusy] = useState(false);
 
 	useEffect(() => {
 		const verification = getContactVerificationRedirectState(location.search);
@@ -99,6 +107,21 @@ export function SecuritySettingsView() {
 		);
 	}, [location.hash, location.pathname, location.search, navigate, t]);
 
+	const loadSessions = useEffectEvent(async () => {
+		try {
+			setSessionsLoading(true);
+			setSessions(await authService.listSessions());
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setSessionsLoading(false);
+		}
+	});
+
+	useEffect(() => {
+		void loadSessions();
+	}, []);
+
 	const canSubmitPassword =
 		!passwordBusy &&
 		currentPassword.length > 0 &&
@@ -106,6 +129,13 @@ export function SecuritySettingsView() {
 		confirmPassword.length > 0;
 	const canSubmitEmailChange =
 		!emailBusy && !!user?.email_verified && newEmail.trim().length > 0;
+	const hasOtherSessions = sessions.some((session) => !session.is_current);
+	const sessionDeviceLabels = {
+		desktop: t("settings:settings_sessions_device_desktop"),
+		mobile: t("settings:settings_sessions_device_mobile"),
+		tablet: t("settings:settings_sessions_device_tablet"),
+		unknown: t("settings:settings_sessions_unknown_device"),
+	};
 
 	const validateEmailChange = () => {
 		const email = newEmail.trim();
@@ -207,6 +237,42 @@ export function SecuritySettingsView() {
 			handleApiError(error);
 		} finally {
 			setPasswordBusy(false);
+		}
+	};
+
+	const handleRevokeSession = async (session: AuthSessionInfo) => {
+		try {
+			setRevokeBusyId(session.id);
+			await authService.revokeSession(session.id);
+			if (session.is_current) {
+				toast.success(t("settings:settings_sessions_revoked_current"));
+				forceLogout();
+				navigate("/login", { replace: true });
+				return;
+			}
+			setSessions((prev) => prev.filter((item) => item.id !== session.id));
+			toast.success(t("settings:settings_sessions_revoked"));
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setRevokeBusyId(null);
+		}
+	};
+
+	const handleRevokeOtherSessions = async () => {
+		try {
+			setRevokeOthersBusy(true);
+			const removed = await authService.revokeOtherSessions();
+			setSessions((prev) => prev.filter((session) => session.is_current));
+			toast.success(
+				t("settings:settings_sessions_revoke_others_success", {
+					count: removed,
+				}),
+			);
+		} catch (error) {
+			handleApiError(error);
+		} finally {
+			setRevokeOthersBusy(false);
 		}
 	};
 
@@ -449,6 +515,152 @@ export function SecuritySettingsView() {
 							</Button>
 						</div>
 					</form>
+
+					<div className="space-y-4 rounded-xl border bg-background p-4">
+						<div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+							<div className="space-y-1">
+								<h3 className="text-sm font-semibold">
+									{t("settings:settings_sessions_section")}
+								</h3>
+								<p className="text-sm text-muted-foreground">
+									{t("settings:settings_sessions_section_desc")}
+								</p>
+							</div>
+							<div className="flex flex-wrap gap-2">
+								<Button
+									type="button"
+									variant="outline"
+									disabled={sessionsLoading}
+									onClick={() => void loadSessions()}
+								>
+									{sessionsLoading ? (
+										<Icon
+											name="Spinner"
+											className="mr-2 h-4 w-4 animate-spin"
+										/>
+									) : (
+										<Icon name="ArrowClockwise" className="mr-2 h-4 w-4" />
+									)}
+									{t("core:refresh")}
+								</Button>
+								<Button
+									type="button"
+									variant="outline"
+									disabled={revokeOthersBusy || !hasOtherSessions}
+									onClick={() => void handleRevokeOtherSessions()}
+								>
+									{revokeOthersBusy ? (
+										<Icon
+											name="Spinner"
+											className="mr-2 h-4 w-4 animate-spin"
+										/>
+									) : (
+										<Icon name="SignOut" className="mr-2 h-4 w-4" />
+									)}
+									{t("settings:settings_sessions_revoke_others")}
+								</Button>
+							</div>
+						</div>
+
+						{sessionsLoading ? (
+							<div className="rounded-xl border border-dashed bg-muted/20 px-4 py-8 text-center text-sm text-muted-foreground">
+								{t("core:loading")}
+							</div>
+						) : sessions.length === 0 ? (
+							<div className="rounded-xl border border-dashed bg-muted/20 px-4 py-8 text-center">
+								<p className="text-sm font-medium">
+									{t("settings:settings_sessions_empty")}
+								</p>
+								<p className="mt-1 text-sm text-muted-foreground">
+									{t("settings:settings_sessions_empty_desc")}
+								</p>
+							</div>
+						) : (
+							<div className="space-y-3">
+								{sessions.map((session) => {
+									const busy = revokeBusyId === session.id;
+									const sessionDeviceLabel = formatUserAgentLabel(
+										session.user_agent,
+										sessionDeviceLabels,
+									);
+									const sessionUserAgentTitle =
+										session.user_agent?.trim() ||
+										t("settings:settings_sessions_unknown_device");
+									return (
+										<div
+											key={session.id}
+											className="rounded-xl border bg-muted/20 p-4"
+										>
+											<div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+												<div className="space-y-3">
+													<div className="flex flex-wrap items-center gap-2">
+														<div className="flex items-center gap-2">
+															<div className="rounded-lg border bg-background p-2">
+																<SessionPlatformIcon
+																	userAgent={session.user_agent}
+																/>
+															</div>
+															<p
+																className="text-sm font-semibold"
+																title={sessionUserAgentTitle}
+															>
+																{sessionDeviceLabel}
+															</p>
+														</div>
+														{session.is_current ? (
+															<Badge variant="secondary">
+																{t("settings:settings_sessions_current")}
+															</Badge>
+														) : null}
+													</div>
+													<div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
+														<p>
+															{t("settings:settings_sessions_last_seen")}:{" "}
+															{formatDateAbsolute(session.last_seen_at)}
+														</p>
+														<p>
+															{t("settings:settings_sessions_signed_in")}:{" "}
+															{formatDateAbsolute(session.created_at)}
+														</p>
+														<p>
+															{t("settings:settings_sessions_expires")}:{" "}
+															{formatDateAbsolute(session.expires_at)}
+														</p>
+														<p>
+															{t("settings:settings_sessions_ip")}:{" "}
+															{session.ip_address ||
+																t("settings:settings_sessions_unknown_ip")}
+														</p>
+													</div>
+												</div>
+												<Button
+													type="button"
+													size="sm"
+													variant={
+														session.is_current ? "destructive" : "outline"
+													}
+													disabled={busy}
+													onClick={() => void handleRevokeSession(session)}
+												>
+													{busy ? (
+														<Icon
+															name="Spinner"
+															className="mr-2 h-4 w-4 animate-spin"
+														/>
+													) : (
+														<Icon name="SignOut" className="mr-2 h-4 w-4" />
+													)}
+													{session.is_current
+														? t("settings:settings_sessions_revoke_current")
+														: t("settings:settings_sessions_revoke")}
+												</Button>
+											</div>
+										</div>
+									);
+								})}
+							</div>
+						)}
+					</div>
 				</div>
 
 				<div className="rounded-xl border bg-background p-4">

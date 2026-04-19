@@ -29,6 +29,9 @@ use utoipa::{Modify, OpenApi};
         crate::api::routes::auth::session::refresh,
         crate::api::routes::auth::session::logout,
         crate::api::routes::auth::session::me,
+        crate::api::routes::auth::session::list_sessions,
+        crate::api::routes::auth::session::delete_other_sessions,
+        crate::api::routes::auth::session::delete_session,
         crate::api::routes::auth::session::put_password,
 
         // auth::profile：已登录用户的资料、头像和偏好设置维护接口。
@@ -384,6 +387,7 @@ use utoipa::{Modify, OpenApi};
             crate::api::routes::auth::RequestEmailChangeReq,
             crate::api::routes::auth::UpdateProfileReq,
             crate::api::routes::auth::UpdateAvatarSourceReq,
+            crate::services::auth_service::AuthSessionInfo,
 
             // api::routes::admin / services::{config_service,policy_service,preview_app_service} / entities::storage_policy_group：后台配置与存储策略模型。
             crate::entities::storage_policy_group::Model,

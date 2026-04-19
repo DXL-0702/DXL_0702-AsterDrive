@@ -23,7 +23,10 @@ pub use self::public::{
     check, confirm_contact_verification, confirm_password_reset, register, request_password_reset,
     resend_register_activation, setup,
 };
-pub use self::session::{get_storage_events, login, logout, me, put_password, refresh};
+pub use self::session::{
+    delete_other_sessions, delete_session, get_storage_events, list_sessions, login, logout, me,
+    put_password, refresh,
+};
 pub use crate::services::profile_service::{AvatarInfo, UserProfileInfo};
 pub use crate::services::user_service::{MeResponse, UpdatePreferencesReq, UserInfo};
 pub use crate::types::{
@@ -98,6 +101,24 @@ pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory +
                 .wrap(JwtAuth)
                 .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
                 .route(web::get().to(me)),
+        )
+        .service(
+            web::resource("/sessions")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::get().to(list_sessions)),
+        )
+        .service(
+            web::resource("/sessions/others")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::delete().to(delete_other_sessions)),
+        )
+        .service(
+            web::resource("/sessions/{id}")
+                .wrap(JwtAuth)
+                .wrap(Condition::new(rl.enabled, Governor::new(&api_limiter)))
+                .route(web::delete().to(delete_session)),
         )
         .service(
             web::resource("/password")

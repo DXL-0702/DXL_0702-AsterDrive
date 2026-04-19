@@ -8,8 +8,8 @@ use utoipa::ToSchema;
 
 use crate::api::pagination::{OffsetPage, SortBy, SortOrder, load_offset_page};
 use crate::db::repository::{
-    file_repo, folder_repo, lock_repo, share_repo, upload_session_repo, user_repo,
-    webdav_account_repo,
+    auth_session_repo, file_repo, folder_repo, lock_repo, share_repo, upload_session_repo,
+    user_repo, webdav_account_repo,
 };
 use crate::entities::user;
 use crate::errors::{AsterError, MapAsterErr, Result};
@@ -378,10 +378,28 @@ pub async fn update(state: &AppState, input: UpdateUserInput) -> Result<UserInfo
         active.session_version = Set(current_session_version.saturating_add(1));
     }
     active.updated_at = Set(Utc::now());
-    let updated = active
-        .update(&state.db)
-        .await
-        .map_aster_err(AsterError::database_operation)?;
+    let txn = crate::db::transaction::begin(&state.db).await?;
+    let result = async {
+        let updated = active
+            .update(&txn)
+            .await
+            .map_aster_err(AsterError::database_operation)?;
+        if status_changed || email_verified_changed {
+            auth_session_repo::delete_all_for_user(&txn, updated.id).await?;
+        }
+        Ok::<_, AsterError>(updated)
+    }
+    .await;
+    let updated = match result {
+        Ok(updated) => {
+            crate::db::transaction::commit(txn).await?;
+            updated
+        }
+        Err(error) => {
+            crate::db::transaction::rollback(txn).await?;
+            return Err(error);
+        }
+    };
     if policy_group_changed {
         if let Some(policy_group_id) = updated.policy_group_id {
             state

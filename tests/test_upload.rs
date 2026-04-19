@@ -2160,7 +2160,7 @@ async fn test_create_empty_file_s3_no_dedup() {
         5_242_880,
     )
     .await;
-    let login = auth_service::login(&state, "s3empty", "pass1234")
+    let login = auth_service::login(&state, "s3empty", "pass1234", None, None)
         .await
         .unwrap();
     common::seed_csrf_token(&login.access_token);
@@ -2253,7 +2253,7 @@ async fn test_relay_stream_direct_upload_s3_e2e() {
         5_242_880,
     )
     .await;
-    let login = auth_service::login(&state, "relaydirect", "pass1234")
+    let login = auth_service::login(&state, "relaydirect", "pass1234", None, None)
         .await
         .unwrap();
     common::seed_csrf_token(&login.access_token);
@@ -2379,7 +2379,7 @@ async fn test_relay_stream_direct_upload_s3_exact_part_size_e2e() {
         5_242_880,
     )
     .await;
-    let login = auth_service::login(&state, "relayexact", "pass1234")
+    let login = auth_service::login(&state, "relayexact", "pass1234", None, None)
         .await
         .unwrap();
     common::seed_csrf_token(&login.access_token);

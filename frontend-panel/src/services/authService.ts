@@ -1,5 +1,6 @@
 import type {
 	ActionMessageResp,
+	AuthSessionInfo,
 	AuthTokenResp,
 	AvatarSource,
 	ChangePasswordRequest,
@@ -16,7 +17,7 @@ import type {
 import { type ApiResponse, ErrorCode } from "@/types/api-helpers";
 import { ApiError, api } from "./http";
 
-export interface AuthSessionInfo {
+export interface AuthSessionState {
 	expiresIn: number;
 }
 
@@ -26,7 +27,7 @@ export const authService = {
 	login: async (
 		identifier: string,
 		password: string,
-	): Promise<AuthSessionInfo> => {
+	): Promise<AuthSessionState> => {
 		const data = await api.post<AuthTokenResp>("/auth/login", {
 			identifier,
 			password,
@@ -53,7 +54,7 @@ export const authService = {
 
 	logout: () => api.post<void>("/auth/logout"),
 
-	refreshToken: async (): Promise<AuthSessionInfo> => {
+	refreshToken: async (): Promise<AuthSessionState> => {
 		const data = await api.post<AuthTokenResp>("/auth/refresh");
 		return {
 			expiresIn: Number(data.expires_in) || 900,
@@ -67,11 +68,20 @@ export const authService = {
 
 	changePassword: async (
 		payload: ChangePasswordRequest,
-	): Promise<AuthSessionInfo> => {
+	): Promise<AuthSessionState> => {
 		const data = await api.put<AuthTokenResp>("/auth/password", payload);
 		return {
 			expiresIn: Number(data.expires_in) || 900,
 		};
+	},
+
+	listSessions: () => api.get<AuthSessionInfo[]>("/auth/sessions"),
+
+	revokeSession: (id: string) => api.delete<void>(`/auth/sessions/${id}`),
+
+	revokeOtherSessions: async (): Promise<number> => {
+		const data = await api.delete<{ removed: number }>("/auth/sessions/others");
+		return Number(data.removed) || 0;
 	},
 
 	updateProfile: (profile: UpdateProfileRequest) =>

@@ -54,6 +54,7 @@ mod m20260416_000001_add_shares_exact_target_check;
 mod m20260416_000002_add_shares_token_length_check;
 mod m20260417_000001_add_background_task_heartbeat;
 mod m20260417_000002_add_file_blob_thumbnail_metadata;
+mod m20260420_000001_create_auth_sessions;
 mod search_acceleration;
 mod time;
 
@@ -113,6 +114,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260416_000002_add_shares_token_length_check::Migration),
             Box::new(m20260417_000001_add_background_task_heartbeat::Migration),
             Box::new(m20260417_000002_add_file_blob_thumbnail_metadata::Migration),
+            Box::new(m20260420_000001_create_auth_sessions::Migration),
         ]
     }
 }

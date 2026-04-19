@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use super::{AuthTokenResp, ChangePasswordReq, storage_event_frame};
 use crate::api::middleware::csrf::{self, RequestSourceMode};
 use crate::api::request_auth::{access_cookie_token, bearer_token};
-use crate::api::response::ApiResponse;
+use crate::api::response::{ApiResponse, RemovedCountResponse};
 use crate::config::auth_runtime::RuntimeAuthPolicy;
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
@@ -13,6 +13,7 @@ use crate::services::audit_service::{AuditContext, AuditRequestInfo};
 use crate::services::auth_service::Claims;
 use crate::services::storage_change_service::StorageChangeWorkspace;
 use crate::services::{auth_service, team_service, user_service};
+use crate::types::TokenType;
 use crate::utils::numbers::{u64_to_i64, usize_to_i64};
 use actix_web::{HttpRequest, HttpResponse, web};
 use bytes::Bytes;
@@ -21,6 +22,15 @@ use super::cookies::{
     REFRESH_COOKIE, build_access_cookie, build_csrf_cookie, build_refresh_cookie,
     clear_access_cookie, clear_csrf_cookie, clear_refresh_cookie,
 };
+
+fn refresh_cookie_jti(state: &AppState, req: &HttpRequest) -> Option<String> {
+    let refresh_token = req.cookie(REFRESH_COOKIE)?.value().to_string();
+    let claims = auth_service::verify_token(&refresh_token, &state.config.auth.jwt_secret).ok()?;
+    if claims.token_type != TokenType::Refresh {
+        return None;
+    }
+    claims.jti
+}
 
 async fn revalidate_storage_event_stream(
     state: &AppState,
@@ -203,7 +213,7 @@ pub async fn login(
     tag = "auth",
     operation_id = "refresh",
     responses(
-        (status = 200, description = "Token refreshed, new access token set in HttpOnly cookie", body = inline(ApiResponse<AuthTokenResp>)),
+        (status = 200, description = "Tokens refreshed, new access/refresh tokens set in HttpOnly cookies", body = inline(ApiResponse<AuthTokenResp>)),
         (status = 401, description = "Invalid refresh token"),
     ),
 )]
@@ -214,13 +224,20 @@ pub async fn refresh(state: web::Data<AppState>, req: HttpRequest) -> Result<Htt
         RequestSourceMode::OptionalWhenPresent,
     )?;
     csrf::ensure_double_submit_token(&req)?;
+    let audit_info = AuditRequestInfo::from_request(&req);
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     let refresh_tok = req
         .cookie(REFRESH_COOKIE)
         .map(|c| c.value().to_string())
         .ok_or_else(|| AsterError::auth_token_invalid("missing refresh cookie"))?;
 
-    let access = auth_service::refresh_token(&state, &refresh_tok).await?;
+    let (access, refresh_token) = auth_service::refresh_tokens(
+        &state,
+        &refresh_tok,
+        audit_info.ip_address.as_deref(),
+        audit_info.user_agent.as_deref(),
+    )
+    .await?;
 
     let secure = auth_policy.cookie_secure;
     let csrf_token = csrf::build_csrf_token();
@@ -228,6 +245,7 @@ pub async fn refresh(state: web::Data<AppState>, req: HttpRequest) -> Result<Htt
     let refresh_ttl = u64_to_i64(auth_policy.refresh_token_ttl_secs, "refresh token ttl")?;
     Ok(HttpResponse::Ok()
         .cookie(build_access_cookie(&access, access_ttl, secure))
+        .cookie(build_refresh_cookie(&refresh_token, refresh_ttl, secure))
         .cookie(build_csrf_cookie(&csrf_token, refresh_ttl, secure))
         .json(ApiResponse::ok(AuthTokenResp {
             expires_in: auth_policy.access_token_ttl_secs,
@@ -258,6 +276,13 @@ pub async fn logout(state: web::Data<AppState>, req: HttpRequest) -> HttpRespons
     }
 
     let audit_info = AuditRequestInfo::from_request(&req);
+    if let Some(refresh_token) = req
+        .cookie(REFRESH_COOKIE)
+        .map(|cookie| cookie.value().to_string())
+        && let Err(error) = auth_service::revoke_refresh_token(&state, &refresh_token).await
+    {
+        tracing::warn!("failed to revoke refresh token on logout: {error}");
+    }
     for token in [
         req.cookie(REFRESH_COOKIE)
             .map(|cookie| cookie.value().to_string()),
@@ -298,6 +323,94 @@ pub async fn me(state: web::Data<AppState>, claims: web::ReqData<Claims>) -> Res
 }
 
 #[api_docs_macros::path(
+    get,
+    path = "/api/v1/auth/sessions",
+    tag = "auth",
+    operation_id = "list_auth_sessions",
+    responses(
+        (status = 200, description = "Active login devices", body = inline(ApiResponse<Vec<crate::services::auth_service::AuthSessionInfo>>)),
+        (status = 401, description = "Not authenticated"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn list_sessions(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    claims: web::ReqData<Claims>,
+) -> Result<HttpResponse> {
+    let sessions = auth_service::list_auth_sessions(
+        &state,
+        claims.user_id,
+        refresh_cookie_jti(&state, &req).as_deref(),
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(sessions)))
+}
+
+#[api_docs_macros::path(
+    delete,
+    path = "/api/v1/auth/sessions/others",
+    tag = "auth",
+    operation_id = "revoke_other_auth_sessions",
+    responses(
+        (status = 200, description = "Other login devices revoked", body = inline(ApiResponse<crate::api::response::RemovedCountResponse>)),
+        (status = 401, description = "Not authenticated"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_other_sessions(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    claims: web::ReqData<Claims>,
+) -> Result<HttpResponse> {
+    let current_refresh_jti = refresh_cookie_jti(&state, &req)
+        .ok_or_else(|| AsterError::auth_token_invalid("missing current refresh session"))?;
+    let removed =
+        auth_service::revoke_other_auth_sessions(&state, claims.user_id, &current_refresh_jti)
+            .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::ok(RemovedCountResponse { removed })))
+}
+
+#[api_docs_macros::path(
+    delete,
+    path = "/api/v1/auth/sessions/{id}",
+    tag = "auth",
+    operation_id = "revoke_auth_session",
+    params(("id" = String, Path, description = "Session ID")),
+    responses(
+        (status = 200, description = "Login device revoked"),
+        (status = 401, description = "Not authenticated"),
+        (status = 404, description = "Session not found"),
+    ),
+    security(("bearer" = [])),
+)]
+pub async fn delete_session(
+    state: web::Data<AppState>,
+    req: HttpRequest,
+    claims: web::ReqData<Claims>,
+    path: web::Path<String>,
+) -> Result<HttpResponse> {
+    let current_refresh_jti = refresh_cookie_jti(&state, &req);
+    let revoked_current = auth_service::revoke_auth_session(
+        &state,
+        claims.user_id,
+        path.as_str(),
+        current_refresh_jti.as_deref(),
+    )
+    .await?;
+
+    let secure = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config).cookie_secure;
+    let mut response = HttpResponse::Ok();
+    if revoked_current {
+        response
+            .cookie(clear_access_cookie(secure))
+            .cookie(clear_refresh_cookie(secure))
+            .cookie(clear_csrf_cookie(secure));
+    }
+    Ok(response.json(ApiResponse::<()>::ok_empty()))
+}
+
+#[api_docs_macros::path(
     put,
     path = "/api/v1/auth/password",
     tag = "auth",
@@ -326,8 +439,14 @@ pub async fn put_password(
     )
     .await?;
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
-    let (access_token, refresh_token) =
-        auth_service::issue_tokens_for_session(&state, user.id, user.session_version)?;
+    let (access_token, refresh_token) = auth_service::issue_tokens_for_session(
+        &state,
+        user.id,
+        user.session_version,
+        ctx.ip_address.as_deref(),
+        ctx.user_agent.as_deref(),
+    )
+    .await?;
 
     let secure = auth_policy.cookie_secure;
     let csrf_token = csrf::build_csrf_token();

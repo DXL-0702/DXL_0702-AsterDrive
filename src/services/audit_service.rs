@@ -569,6 +569,10 @@ mod tests {
             (AuditAction::UserLogin, "user_login"),
             (AuditAction::UserLogout, "user_logout"),
             (
+                AuditAction::UserRefreshTokenReuseDetected,
+                "user_refresh_token_reuse_detected",
+            ),
+            (
                 AuditAction::UserRequestEmailChange,
                 "user_request_email_change",
             ),

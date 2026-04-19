@@ -129,15 +129,17 @@ async fn test_auth_service_register_login() {
     assert!(user.role.is_admin());
 
     // 登录 → LoginResult { access_token, refresh_token, user_id }
-    let result = aster_drive::services::auth_service::login(&state, "alice", "password123")
-        .await
-        .unwrap();
+    let result =
+        aster_drive::services::auth_service::login(&state, "alice", "password123", None, None)
+            .await
+            .unwrap();
     assert!(!result.access_token.is_empty());
     assert!(!result.refresh_token.is_empty());
     assert_eq!(result.user_id, user.id);
 
     // 错误密码
-    let err = aster_drive::services::auth_service::login(&state, "alice", "wrongpass").await;
+    let err =
+        aster_drive::services::auth_service::login(&state, "alice", "wrongpass", None, None).await;
     assert!(err.is_err());
 
     // 重复注册
@@ -190,12 +192,14 @@ async fn test_auth_service_change_password() {
     .unwrap();
 
     let old_login =
-        aster_drive::services::auth_service::login(&state, "alice", "password123").await;
+        aster_drive::services::auth_service::login(&state, "alice", "password123", None, None)
+            .await;
     assert!(old_login.is_err());
 
-    let new_login = aster_drive::services::auth_service::login(&state, "alice", "newpass456")
-        .await
-        .unwrap();
+    let new_login =
+        aster_drive::services::auth_service::login(&state, "alice", "newpass456", None, None)
+            .await
+            .unwrap();
     assert_eq!(new_login.user_id, user.id);
 }
 
@@ -217,12 +221,14 @@ async fn test_auth_service_set_password() {
         .unwrap();
 
     let old_login =
-        aster_drive::services::auth_service::login(&state, "alice", "password123").await;
+        aster_drive::services::auth_service::login(&state, "alice", "password123", None, None)
+            .await;
     assert!(old_login.is_err());
 
-    let new_login = aster_drive::services::auth_service::login(&state, "alice", "resetpass789")
-        .await
-        .unwrap();
+    let new_login =
+        aster_drive::services::auth_service::login(&state, "alice", "resetpass789", None, None)
+            .await
+            .unwrap();
     assert_eq!(new_login.user_id, user.id);
 }
 
@@ -234,9 +240,10 @@ async fn test_auth_service_verify_token() {
         .await
         .unwrap();
 
-    let login_result = aster_drive::services::auth_service::login(&state, "bobb", "pass1234")
-        .await
-        .unwrap();
+    let login_result =
+        aster_drive::services::auth_service::login(&state, "bobb", "pass1234", None, None)
+            .await
+            .unwrap();
 
     // 验证 access token
     let claims = aster_drive::services::auth_service::verify_token(

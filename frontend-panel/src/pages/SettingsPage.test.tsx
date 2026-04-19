@@ -6,6 +6,9 @@ import SettingsPage from "@/pages/SettingsPage";
 const mockState = vi.hoisted(() => ({
 	authService: {
 		changePassword: vi.fn(),
+		listSessions: vi.fn(),
+		revokeOtherSessions: vi.fn(),
+		revokeSession: vi.fn(),
 		requestEmailChange: vi.fn(),
 		resendEmailChange: vi.fn(),
 		updateProfile: vi.fn(),
@@ -13,6 +16,7 @@ const mockState = vi.hoisted(() => ({
 		uploadAvatar: vi.fn(),
 	},
 	authStore: {
+		forceLogout: vi.fn(),
 		refreshUser: vi.fn(),
 		setStorageEventStreamEnabled: vi.fn(),
 		syncSession: vi.fn(),
@@ -270,6 +274,12 @@ vi.mock("@/services/authService", () => ({
 	authService: {
 		changePassword: (...args: unknown[]) =>
 			mockState.authService.changePassword(...args),
+		listSessions: (...args: unknown[]) =>
+			mockState.authService.listSessions(...args),
+		revokeOtherSessions: (...args: unknown[]) =>
+			mockState.authService.revokeOtherSessions(...args),
+		revokeSession: (...args: unknown[]) =>
+			mockState.authService.revokeSession(...args),
 		requestEmailChange: (...args: unknown[]) =>
 			mockState.authService.requestEmailChange(...args),
 		resendEmailChange: (...args: unknown[]) =>
@@ -286,6 +296,7 @@ vi.mock("@/services/authService", () => ({
 vi.mock("@/stores/authStore", () => ({
 	useAuthStore: (selector: (state: typeof mockState.authStore) => unknown) =>
 		selector(mockState.authStore),
+	forceLogout: () => mockState.authStore.forceLogout(),
 }));
 
 vi.mock("@/stores/fileStore", () => ({
@@ -298,14 +309,45 @@ vi.mock("@/stores/themeStore", () => ({
 }));
 
 describe("SettingsPage", () => {
+	const currentSessionUserAgent =
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0";
+	const otherSessionUserAgent =
+		"Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Mobile/15E148 Safari/604.1";
+
 	beforeEach(() => {
 		mockState.authService.changePassword.mockReset();
 		mockState.authService.changePassword.mockResolvedValue({ expiresIn: 900 });
+		mockState.authService.listSessions.mockReset();
+		mockState.authService.listSessions.mockResolvedValue([
+			{
+				created_at: "2026-04-20T08:00:00Z",
+				expires_at: "2026-04-27T08:00:00Z",
+				id: "session-current",
+				ip_address: "127.0.0.1",
+				is_current: true,
+				last_seen_at: "2026-04-20T09:00:00Z",
+				user_agent: currentSessionUserAgent,
+			},
+			{
+				created_at: "2026-04-19T08:00:00Z",
+				expires_at: "2026-04-26T08:00:00Z",
+				id: "session-other",
+				ip_address: "192.168.1.10",
+				is_current: false,
+				last_seen_at: "2026-04-20T07:00:00Z",
+				user_agent: otherSessionUserAgent,
+			},
+		]);
+		mockState.authService.revokeOtherSessions.mockReset();
+		mockState.authService.revokeOtherSessions.mockResolvedValue(1);
+		mockState.authService.revokeSession.mockReset();
+		mockState.authService.revokeSession.mockResolvedValue(undefined);
 		mockState.authService.requestEmailChange.mockReset();
 		mockState.authService.resendEmailChange.mockReset();
 		mockState.authService.setAvatarSource.mockReset();
 		mockState.authService.uploadAvatar.mockReset();
 		mockState.authService.updateProfile.mockReset();
+		mockState.authStore.forceLogout.mockReset();
 		mockState.authStore.refreshUser.mockReset();
 		mockState.authStore.setStorageEventStreamEnabled.mockReset();
 		mockState.authStore.syncSession.mockReset();
@@ -416,6 +458,40 @@ describe("SettingsPage", () => {
 		expect(mockState.navigate).toHaveBeenCalledWith("/settings/interface", {
 			viewTransition: true,
 		});
+	});
+
+	it("loads and revokes other auth sessions from security settings", async () => {
+		render(<SettingsPage section="security" />);
+
+		await waitFor(() =>
+			expect(mockState.authService.listSessions).toHaveBeenCalled(),
+		);
+		expect(
+			screen.getByText("settings:settings_sessions_section"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				"Edge 147 · macOS 10.15.7 · settings:settings_sessions_device_desktop",
+			),
+		).toHaveAttribute("title", currentSessionUserAgent);
+		expect(
+			screen.getByText(
+				"Safari 18.3 · iOS 18.3 · settings:settings_sessions_device_mobile",
+			),
+		).toHaveAttribute("title", otherSessionUserAgent);
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: "settings:settings_sessions_revoke_others",
+			}),
+		);
+
+		await waitFor(() =>
+			expect(mockState.authService.revokeOtherSessions).toHaveBeenCalledTimes(
+				1,
+			),
+		);
+		expect(mockState.toastSuccess).toHaveBeenCalled();
 	});
 
 	it("saves the password through the security endpoint", async () => {

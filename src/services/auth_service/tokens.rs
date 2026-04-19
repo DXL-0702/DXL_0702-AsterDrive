@@ -1,17 +1,49 @@
 //! 认证服务子模块：`tokens`。
 
-use chrono::Utc;
+use chrono::{Duration as ChronoDuration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use sea_orm::{ActiveValue::Set, ConnectionTrait};
+use serde::Serialize;
 
 use crate::config::auth_runtime::RuntimeAuthPolicy;
-use crate::entities::user;
+use crate::db::repository::{auth_session_repo, user_repo};
+use crate::entities::{auth_session, user};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
+use crate::services::audit_service::{self, AuditContext};
 use crate::types::TokenType;
-use crate::utils::numbers::{i64_to_u64, u64_to_usize};
+use crate::utils::numbers::{i64_to_u64, u64_to_i64, u64_to_usize};
 
-use super::session::get_auth_snapshot;
+use super::session::{
+    get_auth_snapshot, invalidate_auth_snapshot_cache, purge_all_auth_sessions_in_connection,
+};
 use super::{AuthSnapshot, Claims};
+
+#[derive(Debug)]
+struct IssuedTokens {
+    access_token: String,
+    refresh_token: String,
+    session_id: String,
+    refresh_jti: String,
+    refresh_expires_at: chrono::DateTime<Utc>,
+}
+
+#[derive(Debug)]
+enum RefreshRotationError {
+    Aster(AsterError),
+    ReuseDetected { user_id: i64, reused_jti: String },
+}
+
+#[derive(Serialize)]
+struct RefreshTokenReuseAuditDetails<'a> {
+    reused_jti: &'a str,
+}
+
+impl From<AsterError> for RefreshRotationError {
+    fn from(value: AsterError) -> Self {
+        Self::Aster(value)
+    }
+}
 
 fn ensure_token_type(claims: &Claims, expected: TokenType) -> Result<()> {
     if claims.token_type != expected {
@@ -79,59 +111,282 @@ fn issue_tokens(
     session_version: i64,
     jwt_secret: &str,
     auth_policy: RuntimeAuthPolicy,
-) -> Result<(String, String)> {
+    session_id: Option<&str>,
+) -> Result<IssuedTokens> {
     let access = create_token(
         user_id,
         session_version,
         TokenType::Access,
         auth_policy.access_token_ttl_secs,
         jwt_secret,
+        None,
     )?;
+    let session_id = session_id
+        .map(str::to_string)
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+    let refresh_jti = uuid::Uuid::new_v4().to_string();
     let refresh = create_token(
         user_id,
         session_version,
         TokenType::Refresh,
         auth_policy.refresh_token_ttl_secs,
         jwt_secret,
+        Some(refresh_jti.clone()),
     )?;
-    Ok((access, refresh))
+    Ok(IssuedTokens {
+        access_token: access.token,
+        refresh_token: refresh.token,
+        session_id,
+        refresh_jti,
+        refresh_expires_at: refresh.expires_at,
+    })
 }
 
-pub fn issue_tokens_for_session(
+async fn persist_auth_session<C: ConnectionTrait>(
+    db: &C,
+    user_id: i64,
+    tokens: &IssuedTokens,
+    ip_address: Option<&str>,
+    user_agent: Option<&str>,
+) -> Result<()> {
+    let now = Utc::now();
+    auth_session_repo::create(
+        db,
+        auth_session::ActiveModel {
+            id: Set(tokens.session_id.clone()),
+            user_id: Set(user_id),
+            current_refresh_jti: Set(tokens.refresh_jti.clone()),
+            previous_refresh_jti: Set(None),
+            refresh_expires_at: Set(tokens.refresh_expires_at),
+            ip_address: Set(ip_address.map(str::to_string)),
+            user_agent: Set(user_agent.map(str::to_string)),
+            created_at: Set(now),
+            last_seen_at: Set(now),
+            revoked_at: Set(None),
+        },
+    )
+    .await?;
+    Ok(())
+}
+
+fn issue_tokens_for_session_id(
     state: &AppState,
     user_id: i64,
     session_version: i64,
-) -> Result<(String, String)> {
+    session_id: Option<&str>,
+) -> Result<IssuedTokens> {
     let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
     issue_tokens(
         user_id,
         session_version,
         &state.config.auth.jwt_secret,
         auth_policy,
+        session_id,
     )
 }
 
-pub fn issue_tokens_for_user(state: &AppState, user: &user::Model) -> Result<(String, String)> {
-    issue_tokens_for_session(state, user.id, user.session_version)
+pub async fn issue_tokens_for_session(
+    state: &AppState,
+    user_id: i64,
+    session_version: i64,
+    ip_address: Option<&str>,
+    user_agent: Option<&str>,
+) -> Result<(String, String)> {
+    let tokens = issue_tokens_for_session_id(state, user_id, session_version, None)?;
+    persist_auth_session(&state.db, user_id, &tokens, ip_address, user_agent).await?;
+    Ok((tokens.access_token, tokens.refresh_token))
 }
 
-pub async fn refresh_token(state: &AppState, refresh: &str) -> Result<String> {
-    tracing::debug!("refreshing access token");
-    let auth_policy = RuntimeAuthPolicy::from_runtime_config(&state.runtime_config);
-    let (claims, snapshot) = authenticate_refresh_token(state, refresh).await?;
-    let token = create_token(
-        claims.user_id,
-        snapshot.session_version,
-        TokenType::Access,
-        auth_policy.access_token_ttl_secs,
-        &state.config.auth.jwt_secret,
-    )?;
-    tracing::debug!(
-        user_id = claims.user_id,
-        session_version = snapshot.session_version,
-        "refreshed access token"
-    );
-    Ok(token)
+pub async fn issue_tokens_for_user(
+    state: &AppState,
+    user: &user::Model,
+    ip_address: Option<&str>,
+    user_agent: Option<&str>,
+) -> Result<(String, String)> {
+    issue_tokens_for_session(state, user.id, user.session_version, ip_address, user_agent).await
+}
+
+pub async fn refresh_tokens(
+    state: &AppState,
+    refresh: &str,
+    ip_address: Option<&str>,
+    user_agent: Option<&str>,
+) -> Result<(String, String)> {
+    tracing::debug!("refreshing auth tokens");
+    let claims = verify_token(refresh, &state.config.auth.jwt_secret)?;
+    ensure_token_type(&claims, TokenType::Refresh)?;
+    let refresh_jti = claims
+        .jti
+        .clone()
+        .ok_or_else(|| AsterError::auth_token_invalid("refresh token missing jti"))?;
+
+    let txn = crate::db::transaction::begin(&state.db).await?;
+    let rotation = async {
+        let existing_auth_session = auth_session_repo::find_by_refresh_jti(&txn, &refresh_jti)
+            .await
+            .map_err(RefreshRotationError::from)?;
+        let reused_auth_session = if existing_auth_session.is_none() {
+            auth_session_repo::find_by_previous_refresh_jti(&txn, &refresh_jti)
+                .await
+                .map_err(RefreshRotationError::from)?
+        } else {
+            None
+        };
+        let user = user_repo::find_by_id(&txn, claims.user_id)
+            .await
+            .map_err(RefreshRotationError::from)?;
+        if !user.status.is_active() {
+            return Err(RefreshRotationError::from(AsterError::auth_forbidden(
+                "account is disabled",
+            )));
+        }
+        if claims.session_version != user.session_version {
+            return Err(RefreshRotationError::from(AsterError::auth_token_invalid(
+                "session revoked",
+            )));
+        }
+
+        let Some(existing_auth_session) = existing_auth_session else {
+            if reused_auth_session.as_ref().is_some_and(|session| {
+                session.user_id == claims.user_id && session.revoked_at.is_none()
+            }) {
+                user_repo::bump_session_version(&txn, claims.user_id)
+                    .await
+                    .map_err(RefreshRotationError::from)?;
+                purge_all_auth_sessions_in_connection(&txn, claims.user_id)
+                    .await
+                    .map_err(RefreshRotationError::from)?;
+                return Err(RefreshRotationError::ReuseDetected {
+                    user_id: claims.user_id,
+                    reused_jti: refresh_jti,
+                });
+            }
+            return Err(RefreshRotationError::from(AsterError::auth_token_invalid(
+                "session revoked",
+            )));
+        };
+
+        if existing_auth_session.user_id != claims.user_id {
+            return Err(RefreshRotationError::from(AsterError::auth_token_invalid(
+                "invalid token",
+            )));
+        }
+        if existing_auth_session.revoked_at.is_some() {
+            return Err(RefreshRotationError::from(AsterError::auth_token_invalid(
+                "session revoked",
+            )));
+        }
+
+        let next_ip_address = ip_address.or(existing_auth_session.ip_address.as_deref());
+        let next_user_agent = user_agent.or(existing_auth_session.user_agent.as_deref());
+        let tokens = issue_tokens_for_session_id(
+            state,
+            user.id,
+            user.session_version,
+            Some(existing_auth_session.id.as_str()),
+        )
+        .map_err(RefreshRotationError::from)?;
+
+        if !auth_session_repo::rotate_refresh(
+            &txn,
+            &refresh_jti,
+            &tokens.refresh_jti,
+            tokens.refresh_expires_at,
+            next_ip_address,
+            next_user_agent,
+            Utc::now(),
+        )
+        .await
+        .map_err(RefreshRotationError::from)?
+        {
+            user_repo::bump_session_version(&txn, claims.user_id)
+                .await
+                .map_err(RefreshRotationError::from)?;
+            purge_all_auth_sessions_in_connection(&txn, claims.user_id)
+                .await
+                .map_err(RefreshRotationError::from)?;
+            return Err(RefreshRotationError::ReuseDetected {
+                user_id: claims.user_id,
+                reused_jti: refresh_jti,
+            });
+        }
+
+        Ok::<_, RefreshRotationError>((
+            (tokens.access_token, tokens.refresh_token),
+            user.session_version,
+        ))
+    }
+    .await;
+
+    match rotation {
+        Ok((tokens, session_version)) => {
+            crate::db::transaction::commit(txn).await?;
+            tracing::debug!(
+                user_id = claims.user_id,
+                session_version,
+                "refreshed auth tokens"
+            );
+            Ok(tokens)
+        }
+        Err(RefreshRotationError::ReuseDetected {
+            user_id,
+            reused_jti,
+        }) => {
+            crate::db::transaction::commit(txn).await?;
+            invalidate_auth_snapshot_cache(state, user_id).await;
+            tracing::warn!(
+                user_id,
+                reused_jti,
+                "refresh token reuse detected; revoked all sessions"
+            );
+            audit_service::log(
+                state,
+                &AuditContext {
+                    user_id,
+                    ip_address: None,
+                    user_agent: None,
+                },
+                audit_service::AuditAction::UserRefreshTokenReuseDetected,
+                Some("user"),
+                Some(user_id),
+                None,
+                audit_service::details(RefreshTokenReuseAuditDetails {
+                    reused_jti: &reused_jti,
+                }),
+            )
+            .await;
+            Err(AsterError::auth_token_invalid(
+                "refresh token reuse detected",
+            ))
+        }
+        Err(RefreshRotationError::Aster(error)) => {
+            crate::db::transaction::rollback(txn).await?;
+            Err(error)
+        }
+    }
+}
+
+pub async fn revoke_refresh_token(state: &AppState, token: &str) -> Result<bool> {
+    let claims = match verify_token(token, &state.config.auth.jwt_secret) {
+        Ok(claims) => claims,
+        Err(AsterError::AuthTokenExpired(_) | AsterError::AuthTokenInvalid(_)) => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if let Err(error) = ensure_token_type(&claims, TokenType::Refresh) {
+        if matches!(error, AsterError::AuthTokenInvalid(_)) {
+            return Ok(false);
+        }
+        return Err(error);
+    }
+    let Some(jti) = claims.jti else {
+        return Ok(false);
+    };
+    auth_session_repo::revoke_by_refresh_jti(&state.db, &jti, Utc::now()).await
+}
+
+struct CreatedToken {
+    token: String,
+    expires_at: chrono::DateTime<Utc>,
 }
 
 fn create_token(
@@ -140,25 +395,35 @@ fn create_token(
     token_type: TokenType,
     ttl_secs: u64,
     secret: &str,
-) -> Result<String> {
-    let now_secs = i64_to_u64(Utc::now().timestamp(), "jwt issued_at unix timestamp")?;
+    jti: Option<String>,
+) -> Result<CreatedToken> {
+    let now = Utc::now();
+    let now_secs = i64_to_u64(now.timestamp(), "jwt issued_at unix timestamp")?;
     let exp_secs = now_secs.checked_add(ttl_secs).ok_or_else(|| {
         AsterError::internal_error(format!("jwt exp overflow: {now_secs} + {ttl_secs}"))
     })?;
     let exp = u64_to_usize(exp_secs, "jwt exp")?;
+    let expires_at = now
+        .checked_add_signed(ChronoDuration::seconds(u64_to_i64(
+            ttl_secs,
+            "jwt ttl secs",
+        )?))
+        .ok_or_else(|| AsterError::internal_error("jwt expires_at overflow"))?;
     let claims = Claims {
         sub: user_id.to_string(),
         user_id,
         session_version,
+        jti,
         token_type,
         exp,
     };
-    encode(
+    let token = encode(
         &Header::default(),
         &claims,
         &EncodingKey::from_secret(secret.as_bytes()),
     )
-    .map_aster_err(AsterError::internal_error)
+    .map_aster_err(AsterError::internal_error)?;
+    Ok(CreatedToken { token, expires_at })
 }
 
 pub fn verify_token(token: &str, secret: &str) -> Result<Claims> {
@@ -187,29 +452,43 @@ mod tests {
 
     const SECRET: &str = "test_secret_32bytes_xxxxxxxxxxxxxxxxx";
 
-    fn make_token(token_type: TokenType, ttl_secs: u64, secret: &str) -> String {
-        create_token(1, 1, token_type, ttl_secs, secret).unwrap()
+    fn make_token(
+        token_type: TokenType,
+        ttl_secs: u64,
+        secret: &str,
+        jti: Option<String>,
+    ) -> String {
+        create_token(1, 1, token_type, ttl_secs, secret, jti)
+            .unwrap()
+            .token
     }
 
     #[test]
     fn verify_access_token_roundtrip() {
-        let token = make_token(TokenType::Access, 3600, SECRET);
+        let token = make_token(TokenType::Access, 3600, SECRET, None);
         let claims = verify_token(&token, SECRET).unwrap();
         assert_eq!(claims.user_id, 1);
         assert_eq!(claims.session_version, 1);
         assert_eq!(claims.token_type, TokenType::Access);
+        assert!(claims.jti.is_none());
     }
 
     #[test]
     fn verify_refresh_token_roundtrip() {
-        let token = make_token(TokenType::Refresh, 86400, SECRET);
+        let token = make_token(
+            TokenType::Refresh,
+            86400,
+            SECRET,
+            Some("refresh-jti".to_string()),
+        );
         let claims = verify_token(&token, SECRET).unwrap();
         assert_eq!(claims.token_type, TokenType::Refresh);
+        assert_eq!(claims.jti.as_deref(), Some("refresh-jti"));
     }
 
     #[test]
     fn verify_token_rejects_wrong_secret() {
-        let token = make_token(TokenType::Access, 3600, SECRET);
+        let token = make_token(TokenType::Access, 3600, SECRET, None);
         let err = verify_token(&token, "wrong_secret").unwrap_err();
         // jsonwebtoken 的 InvalidSignature 归类到 "invalid token"
         assert_eq!(err.code(), "E012"); // AuthTokenInvalid
@@ -217,7 +496,12 @@ mod tests {
 
     #[test]
     fn ensure_token_type_access_rejects_refresh() {
-        let token = make_token(TokenType::Refresh, 3600, SECRET);
+        let token = make_token(
+            TokenType::Refresh,
+            3600,
+            SECRET,
+            Some("refresh-jti".to_string()),
+        );
         let claims = verify_token(&token, SECRET).unwrap();
         let err = ensure_token_type(&claims, TokenType::Access).unwrap_err();
         assert_eq!(err.code(), "E012");
@@ -229,6 +513,7 @@ mod tests {
             sub: "1".to_string(),
             user_id: 1,
             session_version: 1,
+            jti: None,
             token_type: TokenType::Access,
             exp: usize::MAX, // 永不过期，只测 version
         };
@@ -247,6 +532,7 @@ mod tests {
             sub: "1".to_string(),
             user_id: 1,
             session_version: 1,
+            jti: None,
             token_type: TokenType::Access,
             exp: usize::MAX,
         };

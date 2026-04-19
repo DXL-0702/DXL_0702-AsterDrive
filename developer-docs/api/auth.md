@@ -14,7 +14,7 @@
 | `POST` | `/auth/password/reset/request` | 请求密码重置邮件 |
 | `POST` | `/auth/password/reset/confirm` | 使用 token 完成密码重置 |
 | `POST` | `/auth/login` | 登录并写入认证 Cookie |
-| `POST` | `/auth/refresh` | 使用 refresh Cookie 换新的 access token |
+| `POST` | `/auth/refresh` | 使用 refresh Cookie 轮换 access/refresh token |
 | `POST` | `/auth/logout` | 清除认证 Cookie |
 | `GET` | `/auth/me` | 读取当前登录用户信息 |
 | `PUT` | `/auth/password` | 修改当前用户密码 |
@@ -74,10 +74,12 @@
 - `aster_access`
 - `aster_refresh`
 
+其中 `aster_refresh` 的 Cookie Path 是 `/api/v1/auth`，会随 `/api/v1/auth/*` 下的请求一起发送。
+
 相关接口：
 
-- `POST /auth/refresh`：只读取 refresh Cookie，签发新的 access token，不轮换 refresh token
-- `POST /auth/logout`：清除两个认证 Cookie
+- `POST /auth/refresh`：读取 refresh Cookie，原子消费旧 refresh token，签发新的 access/refresh token；旧 refresh token 再次使用会被视为复用攻击并撤销该用户全部会话
+- `POST /auth/logout`：清除两个认证 Cookie，并吊销当前 refresh token
 - `GET /auth/me`：既支持 Cookie，也支持 `Authorization: Bearer <jwt>`
 
 如果用户状态是 `disabled`，登录会直接失败。

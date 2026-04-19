@@ -6,8 +6,11 @@ mod common;
 use actix_web::body::MessageBody;
 use actix_web::cookie::SameSite;
 use actix_web::test;
+use aster_drive::db::repository::{auth_session_repo, user_repo};
+use aster_drive::services::auth_service;
 use serde_json::Value;
 use std::io::Cursor;
+use std::sync::Arc;
 use std::time::Duration;
 
 const TEST_BROWSER_ORIGIN: &str = "http://localhost:8080";
@@ -25,6 +28,26 @@ macro_rules! login_user_with_credentials {
         let resp = test::call_service(&$app, req).await;
         assert_eq!(resp.status(), 200);
         common::extract_cookie(&resp, "aster_access").unwrap()
+    }};
+}
+
+macro_rules! login_user_with_auth_cookies {
+    ($app:expr, $identifier:expr, $password:expr) => {{
+        let req = test::TestRequest::post()
+            .uri("/api/v1/auth/login")
+            .peer_addr("127.0.0.1:12345".parse().unwrap())
+            .set_json(serde_json::json!({
+                "identifier": $identifier,
+                "password": $password
+            }))
+            .to_request();
+        let resp = test::call_service(&$app, req).await;
+        assert_eq!(resp.status(), 200);
+        let access =
+            common::extract_cookie(&resp, "aster_access").expect("access cookie missing");
+        let refresh =
+            common::extract_cookie(&resp, "aster_refresh").expect("refresh cookie missing");
+        (access, refresh)
     }};
 }
 
@@ -196,7 +219,7 @@ where
 #[actix_web::test]
 async fn test_register_and_login() {
     let state = common::setup().await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
 
     // 注册
     let req = test::TestRequest::post()
@@ -233,6 +256,7 @@ async fn test_register_and_login() {
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/login")
         .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .insert_header(("User-Agent", "AsterDrive Test Browser/1.0"))
         .set_json(serde_json::json!({
             "identifier": "alice",
             "password": "secret123"
@@ -297,11 +321,26 @@ async fn test_register_and_login() {
     assert!(csrf.is_some());
     assert_eq!(access_cookie_path.as_deref(), Some("/"));
     assert_eq!(access_cookie_same_site, Some(SameSite::Lax));
-    assert_eq!(refresh_cookie_path.as_deref(), Some("/api/v1/auth/refresh"));
+    assert_eq!(refresh_cookie_path.as_deref(), Some("/api/v1/auth"));
     assert_eq!(refresh_cookie_same_site, Some(SameSite::Lax));
     assert_eq!(csrf_cookie_path.as_deref(), Some("/"));
     assert_eq!(csrf_cookie_same_site, Some(SameSite::Lax));
     assert_ne!(csrf_cookie_http_only, Some(true));
+    let refresh_claims = auth_service::verify_token(
+        refresh.as_deref().expect("refresh cookie should exist"),
+        &state.config.auth.jwt_secret,
+    )
+    .expect("refresh token should verify");
+    let refresh_jti = refresh_claims.jti.expect("refresh token should carry jti");
+    let auth_session = auth_session_repo::find_by_refresh_jti(&state.db, &refresh_jti)
+        .await
+        .unwrap()
+        .expect("auth session row should exist");
+    assert_eq!(
+        auth_session.user_agent.as_deref(),
+        Some("AsterDrive Test Browser/1.0")
+    );
+    assert!(auth_session.last_seen_at >= auth_session.created_at);
 
     // 错误密码
     let req = test::TestRequest::post()
@@ -360,6 +399,25 @@ async fn test_cookie_authenticated_write_rejects_same_site_request_source() {
         .insert_header(("Sec-Fetch-Site", "same-site"))
         .set_json(serde_json::json!({
             "display_name": "Evil Mirror"
+        }))
+        .to_request();
+    assert_service_status!(app, req, 403);
+}
+
+#[actix_web::test]
+async fn test_cookie_authenticated_write_rejects_fetch_metadata_none_request_source() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (access, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/profile")
+        .insert_header(("Cookie", common::access_cookie_header(&access)))
+        .insert_header(common::csrf_header_for(&access))
+        .insert_header(("Sec-Fetch-Site", "none"))
+        .set_json(serde_json::json!({
+            "display_name": "Manual Navigation?"
         }))
         .to_request();
     assert_service_status!(app, req, 403);
@@ -451,7 +509,7 @@ async fn test_refresh_rejects_untrusted_origin() {
 #[actix_web::test]
 async fn test_refresh_accepts_matching_csrf_token_and_rotates_cookie() {
     let state = common::setup().await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/register")
@@ -468,6 +526,7 @@ async fn test_refresh_accepts_matching_csrf_token_and_rotates_cookie() {
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/login")
         .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .insert_header(("User-Agent", "AsterDrive Login Agent/1.0"))
         .set_json(serde_json::json!({
             "identifier": "alice",
             "password": "secret123"
@@ -480,6 +539,7 @@ async fn test_refresh_accepts_matching_csrf_token_and_rotates_cookie() {
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/refresh")
+        .insert_header(("User-Agent", "AsterDrive Refresh Agent/1.0"))
         .insert_header(("Origin", TEST_BROWSER_ORIGIN))
         .insert_header(("X-CSRF-Token", csrf.clone()))
         .insert_header((
@@ -489,9 +549,253 @@ async fn test_refresh_accepts_matching_csrf_token_and_rotates_cookie() {
         .to_request();
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
+    let rotated_refresh =
+        common::extract_cookie(&resp, "aster_refresh").expect("rotated refresh cookie missing");
     let rotated_csrf =
         common::extract_cookie(&resp, "aster_csrf").expect("rotated csrf cookie missing");
+    assert_ne!(rotated_refresh, refresh);
     assert_ne!(rotated_csrf, csrf);
+    let rotated_claims =
+        auth_service::verify_token(&rotated_refresh, &state.config.auth.jwt_secret)
+            .expect("rotated refresh token should verify");
+    let rotated_jti = rotated_claims
+        .jti
+        .clone()
+        .expect("rotated refresh token should carry jti");
+    let rotated_session = auth_session_repo::find_by_refresh_jti(&state.db, &rotated_jti)
+        .await
+        .unwrap()
+        .expect("rotated auth session should exist");
+    assert_eq!(
+        rotated_session.user_agent.as_deref(),
+        Some("AsterDrive Refresh Agent/1.0")
+    );
+    assert!(rotated_session.last_seen_at >= rotated_session.created_at);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("User-Agent", "AsterDrive Refresh Agent/2.0"))
+        .insert_header(("Origin", TEST_BROWSER_ORIGIN))
+        .insert_header(("X-CSRF-Token", rotated_csrf.clone()))
+        .insert_header((
+            "Cookie",
+            format!("aster_refresh={rotated_refresh}; aster_csrf={rotated_csrf}"),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let next_refresh =
+        common::extract_cookie(&resp, "aster_refresh").expect("next refresh cookie missing");
+    assert_ne!(next_refresh, rotated_refresh);
+    let next_claims = auth_service::verify_token(&next_refresh, &state.config.auth.jwt_secret)
+        .expect("next refresh token should verify");
+    let next_jti = next_claims
+        .jti
+        .clone()
+        .expect("next refresh token should carry jti");
+    let next_session = auth_session_repo::find_by_refresh_jti(&state.db, &next_jti)
+        .await
+        .unwrap()
+        .expect("next auth session should exist");
+    assert_eq!(
+        next_session.user_agent.as_deref(),
+        Some("AsterDrive Refresh Agent/2.0")
+    );
+    assert!(next_session.last_seen_at >= next_session.created_at);
+}
+
+#[actix_web::test]
+async fn test_refresh_rotation_isolated_across_devices() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+
+    let (_, refresh_a) = register_and_login!(app);
+    let (_, refresh_b) = login_user_with_auth_cookies!(app, "testuser", "password123");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh_a)))
+        .insert_header(common::csrf_header_for(&refresh_a))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let rotated_a = common::extract_cookie(&resp, "aster_refresh").unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh_b)))
+        .insert_header(common::csrf_header_for(&refresh_b))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let rotated_b = common::extract_cookie(&resp, "aster_refresh").unwrap();
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&rotated_a)))
+        .insert_header(common::csrf_header_for(&rotated_a))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let next_rotated_a = common::extract_cookie(&resp, "aster_refresh").unwrap();
+
+    assert_ne!(rotated_a, rotated_b);
+    assert_ne!(next_rotated_a, rotated_a);
+}
+
+#[actix_web::test]
+async fn test_refresh_reuse_detected_revokes_all_sessions() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+
+    let (_, refresh_a) = register_and_login!(app);
+    let (access_b, refresh_b) = login_user_with_auth_cookies!(app, "testuser", "password123");
+
+    let original_claims = auth_service::verify_token(&refresh_a, &state.config.auth.jwt_secret)
+        .expect("refresh token should verify");
+    let original_jti = original_claims
+        .jti
+        .clone()
+        .expect("refresh token should carry jti");
+    assert!(
+        auth_session_repo::find_by_refresh_jti(&state.db, &original_jti)
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh_a)))
+        .insert_header(common::csrf_header_for(&refresh_a))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let rotated_a = common::extract_cookie(&resp, "aster_refresh").unwrap();
+    let rotated_claims = auth_service::verify_token(&rotated_a, &state.config.auth.jwt_secret)
+        .expect("rotated refresh should verify");
+    let rotated_jti = rotated_claims
+        .jti
+        .clone()
+        .expect("rotated refresh token should carry jti");
+    assert!(
+        auth_session_repo::find_by_refresh_jti(&state.db, &original_jti)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        auth_session_repo::find_by_refresh_jti(&state.db, &rotated_jti)
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh_a)))
+        .insert_header(common::csrf_header_for(&refresh_a))
+        .to_request();
+    assert_service_status!(app, req, 401, "refresh token reuse should be rejected");
+
+    let user = user_repo::find_by_username(&state.db, "testuser")
+        .await
+        .unwrap()
+        .expect("user should exist");
+    assert_eq!(user.session_version, 2);
+    assert!(
+        auth_session_repo::list_active_for_user(&state.db, user.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", common::access_cookie_header(&access_b)))
+        .insert_header(common::csrf_header_for(&access_b))
+        .to_request();
+    assert_service_status!(
+        app,
+        req,
+        401,
+        "reuse should revoke access tokens on all devices"
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh_b)))
+        .insert_header(common::csrf_header_for(&refresh_b))
+        .to_request();
+    assert_service_status!(
+        app,
+        req,
+        401,
+        "reuse should revoke sibling device refresh tokens"
+    );
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&rotated_a)))
+        .insert_header(common::csrf_header_for(&rotated_a))
+        .to_request();
+    assert_service_status!(
+        app,
+        req,
+        401,
+        "reuse should revoke newly rotated refresh tokens"
+    );
+}
+
+#[actix_web::test]
+async fn test_concurrent_refresh_same_token_has_single_winner() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+
+    let (_, refresh) = register_and_login!(app);
+    let barrier = Arc::new(tokio::sync::Barrier::new(2));
+
+    let first_state = state.clone();
+    let first_refresh = refresh.clone();
+    let first_barrier = barrier.clone();
+    let second_state = state.clone();
+    let second_refresh = refresh.clone();
+    let second_barrier = barrier.clone();
+
+    let (first, second) = tokio::join!(
+        async move {
+            first_barrier.wait().await;
+            auth_service::refresh_tokens(&first_state, &first_refresh, None, None).await
+        },
+        async move {
+            second_barrier.wait().await;
+            auth_service::refresh_tokens(&second_state, &second_refresh, None, None).await
+        }
+    );
+
+    assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
+    assert_eq!(
+        usize::from(first.is_err()) + usize::from(second.is_err()),
+        1
+    );
+
+    let winner = first.as_ref().ok().or(second.as_ref().ok()).unwrap();
+    assert!(!winner.0.is_empty());
+    assert!(!winner.1.is_empty());
+    let loser = first.as_ref().err().or(second.as_ref().err()).unwrap();
+    assert_eq!(loser.code(), "E012");
+
+    let user = user_repo::find_by_username(&state.db, "testuser")
+        .await
+        .unwrap()
+        .expect("user should exist");
+    assert_eq!(user.session_version, 2);
+    assert!(
+        auth_session_repo::list_active_for_user(&state.db, user.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[actix_web::test]
@@ -1276,10 +1580,12 @@ async fn test_token_refresh() {
     let resp = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 200);
     let access = common::extract_cookie(&resp, "aster_access");
+    let refresh = common::extract_cookie(&resp, "aster_refresh");
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["code"], 0);
     assert_eq!(body["data"]["expires_in"], 900);
     assert!(access.is_some());
+    assert!(refresh.is_some());
 }
 
 #[actix_web::test]
@@ -1646,11 +1952,20 @@ async fn test_storage_events_stream_refreshes_team_visibility_after_member_remov
 }
 
 #[actix_web::test]
-async fn test_logout_clears_cookies_without_revoking_existing_tokens() {
+async fn test_logout_clears_cookies_and_revokes_refresh_token() {
     let state = common::setup().await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
 
     let (access, refresh) = register_and_login!(app);
+    let refresh_claims = auth_service::verify_token(&refresh, &state.config.auth.jwt_secret)
+        .expect("refresh token should verify");
+    let refresh_jti = refresh_claims.jti.expect("refresh token should carry jti");
+    assert!(
+        auth_session_repo::find_by_refresh_jti(&state.db, &refresh_jti)
+            .await
+            .unwrap()
+            .is_some()
+    );
 
     let req = test::TestRequest::post()
         .uri("/api/v1/auth/logout")
@@ -1685,10 +2000,12 @@ async fn test_logout_clears_cookies_without_revoking_existing_tokens() {
         Some("")
     );
     assert_eq!(cleared_access_path.as_deref(), Some("/"));
-    assert_eq!(
-        cleared_refresh_path.as_deref(),
-        Some("/api/v1/auth/refresh")
-    );
+    assert_eq!(cleared_refresh_path.as_deref(), Some("/api/v1/auth"));
+    let revoked_session = auth_session_repo::find_by_refresh_jti(&state.db, &refresh_jti)
+        .await
+        .unwrap()
+        .expect("revoked auth session should remain as tombstone");
+    assert!(revoked_session.revoked_at.is_some());
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")
@@ -1703,8 +2020,7 @@ async fn test_logout_clears_cookies_without_revoking_existing_tokens() {
         .insert_header(("Cookie", common::refresh_cookie_header(&refresh)))
         .insert_header(common::csrf_header_for(&refresh))
         .to_request();
-    let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), 200);
+    assert_service_status!(app, req, 401, "logout should revoke refresh token reuse");
 }
 
 #[actix_web::test]
@@ -1727,6 +2043,245 @@ async fn test_auth_me() {
     assert!(body["data"]["password_hash"].is_null());
     assert!(body["data"]["profile"]["display_name"].is_null());
     assert_eq!(body["data"]["profile"]["avatar"]["source"], "none");
+}
+
+#[actix_web::test]
+async fn test_auth_sessions_list_and_revoke_specific_device() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/register")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .set_json(serde_json::json!({
+            "username": "alice",
+            "email": "alice@example.com",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .insert_header(("User-Agent", "AsterDrive Device Alpha/1.0"))
+        .set_json(serde_json::json!({
+            "identifier": "alice",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let access_a = common::extract_cookie(&resp, "aster_access").unwrap();
+    let refresh_a = common::extract_cookie(&resp, "aster_refresh").unwrap();
+    let refresh_a_claims = auth_service::verify_token(&refresh_a, &state.config.auth.jwt_secret)
+        .expect("current refresh token should verify");
+    assert_eq!(refresh_a_claims.session_version, 1);
+    let refresh_a_jti = refresh_a_claims
+        .jti
+        .clone()
+        .expect("current refresh token should carry jti");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/login")
+        .peer_addr("127.0.0.1:12345".parse().unwrap())
+        .insert_header(("User-Agent", "AsterDrive Device Beta/2.0"))
+        .set_json(serde_json::json!({
+            "identifier": "alice",
+            "password": "secret123"
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert!(
+        auth_session_repo::find_by_refresh_jti(&state.db, &refresh_a_jti)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let user = user_repo::find_by_username(&state.db, "alice")
+        .await
+        .unwrap()
+        .expect("user should exist");
+    assert_eq!(user.session_version, 1);
+    let refresh_b = common::extract_cookie(&resp, "aster_refresh").unwrap();
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/sessions")
+        .insert_header((
+            "Cookie",
+            common::access_and_refresh_cookie_header(&access_a, &refresh_a),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let sessions = body["data"]
+        .as_array()
+        .expect("sessions should be an array");
+    assert_eq!(sessions.len(), 2);
+    let current = sessions
+        .iter()
+        .find(|session| session["is_current"] == true)
+        .expect("current session should be present");
+    assert_eq!(
+        current["user_agent"].as_str(),
+        Some("AsterDrive Device Alpha/1.0")
+    );
+    let other = sessions
+        .iter()
+        .find(|session| session["is_current"] == false)
+        .expect("other session should be present");
+    assert_eq!(
+        other["user_agent"].as_str(),
+        Some("AsterDrive Device Beta/2.0")
+    );
+    let other_session_id = other["id"]
+        .as_str()
+        .expect("other session id should exist")
+        .to_string();
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/auth/sessions/{other_session_id}"))
+        .insert_header((
+            "Cookie",
+            common::access_and_refresh_cookie_header(&access_a, &refresh_a),
+        ))
+        .insert_header(common::csrf_header_for(&access_a))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh_b)))
+        .insert_header(common::csrf_header_for(&refresh_b))
+        .to_request();
+    assert_service_status!(app, req, 401, "revoked device refresh should fail");
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/sessions")
+        .insert_header((
+            "Cookie",
+            common::access_and_refresh_cookie_header(&access_a, &refresh_a),
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let sessions = body["data"]
+        .as_array()
+        .expect("sessions should be an array");
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0]["is_current"], true);
+}
+
+#[actix_web::test]
+async fn test_auth_sessions_can_revoke_other_devices() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+
+    let (access_a, refresh_a) = register_and_login!(app);
+    let refresh_a_claims = auth_service::verify_token(&refresh_a, &state.config.auth.jwt_secret)
+        .expect("current refresh token should verify");
+    assert_eq!(refresh_a_claims.session_version, 1);
+    let refresh_a_jti = refresh_a_claims
+        .jti
+        .clone()
+        .expect("current refresh token should carry jti");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let (_, refresh_b) = login_user_with_auth_cookies!(app, "testuser", "password123");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let (_, refresh_c) = login_user_with_auth_cookies!(app, "testuser", "password123");
+
+    let req = test::TestRequest::delete()
+        .uri("/api/v1/auth/sessions/others")
+        .insert_header((
+            "Cookie",
+            common::access_and_refresh_cookie_header(&access_a, &refresh_a),
+        ))
+        .insert_header(common::csrf_header_for(&access_a))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["data"]["removed"], 2);
+    assert!(
+        auth_session_repo::find_by_refresh_jti(&state.db, &refresh_a_jti)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let user = user_repo::find_by_username(&state.db, "testuser")
+        .await
+        .unwrap()
+        .expect("user should exist");
+    assert_eq!(user.session_version, 1);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh_b)))
+        .insert_header(common::csrf_header_for(&refresh_b))
+        .to_request();
+    assert_service_status!(app, req, 401, "other device refresh should be revoked");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh_c)))
+        .insert_header(common::csrf_header_for(&refresh_c))
+        .to_request();
+    assert_service_status!(app, req, 401, "other device refresh should be revoked");
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/auth/refresh")
+        .insert_header(("Cookie", common::refresh_cookie_header(&refresh_a)))
+        .insert_header(common::csrf_header_for(&refresh_a))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    let status = resp.status();
+    let body = test::read_body(resp).await;
+    assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
+}
+
+#[actix_web::test]
+async fn test_auth_sessions_can_revoke_current_device_and_clear_cookies() {
+    let state = common::setup().await;
+    let app = create_test_app!(state.clone());
+
+    let (access, refresh) = register_and_login!(app);
+    let refresh_claims = auth_service::verify_token(&refresh, &state.config.auth.jwt_secret)
+        .expect("refresh token should verify");
+    let refresh_jti = refresh_claims.jti.expect("refresh token should carry jti");
+    let current_session = auth_session_repo::find_by_refresh_jti(&state.db, &refresh_jti)
+        .await
+        .unwrap()
+        .expect("current auth session should exist");
+
+    let req = test::TestRequest::delete()
+        .uri(&format!("/api/v1/auth/sessions/{}", current_session.id))
+        .insert_header((
+            "Cookie",
+            common::access_and_refresh_cookie_header(&access, &refresh),
+        ))
+        .insert_header(common::csrf_header_for(&access))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        common::extract_cookie(&resp, "aster_access").as_deref(),
+        Some("")
+    );
+    assert_eq!(
+        common::extract_cookie(&resp, "aster_refresh").as_deref(),
+        Some("")
+    );
+    let revoked_session = auth_session_repo::find_by_id(&state.db, &current_session.id)
+        .await
+        .unwrap()
+        .expect("revoked auth session should remain as tombstone");
+    assert!(revoked_session.revoked_at.is_some());
 }
 
 /// 注册时自动分配新用户默认策略组
@@ -2185,13 +2740,14 @@ async fn test_patch_profile_display_name_round_trip_and_clear() {
 #[actix_web::test]
 async fn test_change_password_rotates_session_and_updates_login_secret() {
     let state = common::setup().await;
-    let app = create_test_app!(state);
+    let app = create_test_app!(state.clone());
     let (token, refresh) = register_and_login!(app);
 
     let req = test::TestRequest::put()
         .uri("/api/v1/auth/password")
         .insert_header(("Cookie", common::access_cookie_header(&token)))
         .insert_header(common::csrf_header_for(&token))
+        .insert_header(("User-Agent", "AsterDrive Password Agent/1.0"))
         .set_json(serde_json::json!({
             "current_password": "password123",
             "new_password": "newsecret456"
@@ -2204,6 +2760,22 @@ async fn test_change_password_rotates_session_and_updates_login_secret() {
     let body: Value = test::read_body_json(resp).await;
     assert_eq!(body["code"], 0);
     assert_eq!(body["data"]["expires_in"], 900);
+    let rotated_claims =
+        auth_service::verify_token(&rotated_refresh, &state.config.auth.jwt_secret)
+            .expect("rotated refresh token should verify");
+    let rotated_jti = rotated_claims
+        .jti
+        .clone()
+        .expect("rotated refresh token should carry jti");
+    let rotated_session = auth_session_repo::find_by_refresh_jti(&state.db, &rotated_jti)
+        .await
+        .unwrap()
+        .expect("rotated auth session should exist");
+    assert_eq!(
+        rotated_session.user_agent.as_deref(),
+        Some("AsterDrive Password Agent/1.0")
+    );
+    assert!(rotated_session.last_seen_at >= rotated_session.created_at);
 
     let req = test::TestRequest::get()
         .uri("/api/v1/auth/me")

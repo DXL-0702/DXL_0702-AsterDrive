@@ -35,28 +35,19 @@ fn accepts_same_origin_and_public_site_origin() {
 }
 
 #[test]
-fn rejects_same_site_and_cross_site_fetch_metadata() {
-    let err = ensure_headers_allowed(
-        None,
-        None,
-        Some("same-site"),
-        "https://drive.example.com",
-        None,
-        RequestSourceMode::OptionalWhenPresent,
-    )
-    .unwrap_err();
-    assert!(err.message().contains("untrusted request source"));
-
-    let err = ensure_headers_allowed(
-        None,
-        None,
-        Some("cross-site"),
-        "https://drive.example.com",
-        None,
-        RequestSourceMode::OptionalWhenPresent,
-    )
-    .unwrap_err();
-    assert!(err.message().contains("untrusted request source"));
+fn rejects_untrusted_fetch_metadata_values() {
+    for fetch_site in ["same-site", "cross-site", "none"] {
+        let err = ensure_headers_allowed(
+            None,
+            None,
+            Some(fetch_site),
+            "https://drive.example.com",
+            None,
+            RequestSourceMode::OptionalWhenPresent,
+        )
+        .unwrap_err();
+        assert!(err.message().contains("untrusted request source"));
+    }
 }
 
 #[test]

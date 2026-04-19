@@ -3,6 +3,7 @@ import { authService } from "@/services/authService";
 
 const mockState = vi.hoisted(() => ({
 	clientPost: vi.fn(),
+	delete: vi.fn(),
 	get: vi.fn(),
 	patch: vi.fn(),
 	post: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock("@/services/http", () => ({
 		client: {
 			post: mockState.clientPost,
 		},
+		delete: mockState.delete,
 		get: mockState.get,
 		patch: mockState.patch,
 		post: mockState.post,
@@ -46,6 +48,18 @@ describe("authService", () => {
 			}
 			return undefined;
 		});
+		mockState.get.mockImplementation((url: string) => {
+			if (url === "/auth/sessions") {
+				return [];
+			}
+			return undefined;
+		});
+		mockState.delete.mockImplementation((url: string) => {
+			if (url === "/auth/sessions/others") {
+				return { removed: 2 };
+			}
+			return undefined;
+		});
 
 		authService.check();
 		await expect(
@@ -74,6 +88,9 @@ describe("authService", () => {
 		authService.requestEmailChange("alice+next@example.com");
 		authService.resendEmailChange();
 		authService.setAvatarSource("gravatar");
+		expect(authService.listSessions()).toEqual([]);
+		authService.revokeSession("session-1");
+		await expect(authService.revokeOtherSessions()).resolves.toBe(2);
 
 		expect(mockState.post).toHaveBeenNthCalledWith(1, "/auth/check");
 		expect(mockState.post).toHaveBeenNthCalledWith(2, "/auth/login", {
@@ -122,5 +139,11 @@ describe("authService", () => {
 				source: "gravatar",
 			},
 		);
+		expect(mockState.get).toHaveBeenNthCalledWith(2, "/auth/sessions");
+		expect(mockState.delete).toHaveBeenNthCalledWith(
+			1,
+			"/auth/sessions/session-1",
+		);
+		expect(mockState.delete).toHaveBeenNthCalledWith(2, "/auth/sessions/others");
 	});
 });
