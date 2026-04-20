@@ -1,12 +1,14 @@
 //! 运行时子模块：`startup`。
 
-use super::AppState;
+use super::{AppState, FollowerAppState};
 use crate::config;
 use crate::config::auth_runtime::AUTH_COOKIE_SECURE_KEY;
+use crate::config::node_mode::NodeRuntimeMode;
 use crate::db;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::DriverRegistry;
 use migration::{Migrator, MigratorTrait};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use std::sync::Arc;
 
 pub struct PreparedRuntime {
@@ -14,56 +16,27 @@ pub struct PreparedRuntime {
     pub share_download_rollback_worker: crate::services::share_service::ShareDownloadRollbackWorker,
 }
 
-/// 准备应用上下文（配置和日志应在此之前初始化）
-pub async fn prepare() -> Result<PreparedRuntime> {
-    let cfg = config::get_config();
+pub struct PreparedFollowerRuntime {
+    pub state: FollowerAppState,
+}
 
-    // 1. 连接数据库
-    let database = db::connect(&cfg.database).await?;
+struct CommonRuntimeParts {
+    cfg: Arc<crate::config::Config>,
+    database: sea_orm::DatabaseConnection,
+    driver_registry: Arc<DriverRegistry>,
+    policy_snapshot: Arc<crate::storage::PolicySnapshot>,
+    cache: Arc<dyn crate::cache::CacheBackend>,
+}
 
-    // 2. 运行迁移
-    Migrator::up(&database, None)
-        .await
-        .map_aster_err(AsterError::database_operation)?;
+const OBSOLETE_NODE_RUNTIME_MODE_KEY: &str = "node_runtime_mode";
 
-    if let Some(sqlite_search) = db::sqlite_search::ensure_sqlite_search_ready(&database).await? {
-        tracing::info!(
-            sqlite_version = %sqlite_search.sqlite_version,
-            "SQLite search acceleration ready"
-        );
-    }
+/// 准备主节点运行时（配置和日志应在此之前初始化）
+pub async fn prepare_primary() -> Result<PreparedRuntime> {
+    let common = prepare_common(NodeRuntimeMode::Primary).await?;
 
-    // 3. 确保默认存储策略存在
-    ensure_default_policy(&database).await?;
-    crate::services::policy_service::ensure_policy_groups_seeded(&database).await?;
-
-    // 4. 首次初始化认证 cookie 策略，避免纯 HTTP 引导时把自己锁在后台外
-    let bootstrap_cookie_secure = (!cfg.auth.bootstrap_insecure_cookies).to_string();
-    crate::db::repository::config_repo::ensure_system_value_if_missing(
-        &database,
-        AUTH_COOKIE_SECURE_KEY,
-        &bootstrap_cookie_secure,
-    )
-    .await?;
-
-    // 5. 确保默认运行时配置存在
-    crate::db::repository::config_repo::ensure_defaults(&database).await?;
-
-    // 6. 初始化运行时快照
     let runtime_config = Arc::new(crate::config::RuntimeConfig::new());
-    runtime_config.reload(&database).await?;
-
-    let policy_snapshot = Arc::new(crate::storage::PolicySnapshot::new());
-    policy_snapshot.reload(&database).await?;
-
-    // 7. 驱动注册中心
-    let driver_registry = Arc::new(DriverRegistry::new());
-
-    // 8. 初始化缓存
-    let cache = crate::cache::create_cache(&cfg.cache).await;
+    runtime_config.reload(&common.database).await?;
     let mail_sender = crate::services::mail_service::runtime_sender(runtime_config.clone());
-
-    // 9. 文件变更广播（SSE 消费）
     let (storage_change_tx, _) = tokio::sync::broadcast::channel(
         crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
     );
@@ -71,32 +44,137 @@ pub async fn prepare() -> Result<PreparedRuntime> {
         crate::config::operations::share_download_rollback_queue_capacity(&runtime_config);
     let (share_download_rollback, share_download_rollback_worker) =
         crate::services::share_service::build_share_download_rollback_queue(
-            database.clone(),
+            common.database.clone(),
             rollback_queue_capacity,
         );
 
     tracing::info!(
+        mode = NodeRuntimeMode::Primary.as_str(),
         "startup complete — listening on {}:{}",
-        cfg.server.host,
-        cfg.server.port
+        common.cfg.server.host,
+        common.cfg.server.port
     );
 
-    let state = AppState {
-        db: database,
-        driver_registry,
-        runtime_config,
-        policy_snapshot,
-        config: cfg,
-        cache,
-        mail_sender,
-        storage_change_tx,
-        share_download_rollback,
-    };
-
     Ok(PreparedRuntime {
-        state,
+        state: AppState {
+            db: common.database,
+            driver_registry: common.driver_registry,
+            runtime_config,
+            policy_snapshot: common.policy_snapshot,
+            config: common.cfg,
+            cache: common.cache,
+            mail_sender,
+            storage_change_tx,
+            share_download_rollback,
+        },
         share_download_rollback_worker,
     })
+}
+
+/// 准备从节点运行时（配置和日志应在此之前初始化）
+pub async fn prepare_follower() -> Result<PreparedFollowerRuntime> {
+    let common = prepare_common(NodeRuntimeMode::Follower).await?;
+
+    tracing::info!(
+        mode = NodeRuntimeMode::Follower.as_str(),
+        "startup complete — listening on {}:{}",
+        common.cfg.server.host,
+        common.cfg.server.port
+    );
+
+    Ok(PreparedFollowerRuntime {
+        state: FollowerAppState {
+            db: common.database,
+            driver_registry: common.driver_registry,
+            policy_snapshot: common.policy_snapshot,
+            config: common.cfg,
+            cache: common.cache,
+        },
+    })
+}
+
+async fn prepare_common(mode: NodeRuntimeMode) -> Result<CommonRuntimeParts> {
+    let cfg = config::get_config();
+
+    // 1. 连接数据库
+    let database = db::connect(&cfg.database).await?;
+
+    // 2. 初始化数据库基础状态
+    initialize_database_state(&database, cfg.as_ref(), mode).await?;
+
+    // 3. 初始化策略快照
+    let policy_snapshot = Arc::new(crate::storage::PolicySnapshot::new());
+    policy_snapshot.reload(&database).await?;
+
+    // 4. 驱动注册中心
+    let driver_registry = Arc::new(DriverRegistry::new());
+    match mode {
+        NodeRuntimeMode::Primary => driver_registry.reload_primary_state(&database).await?,
+        NodeRuntimeMode::Follower => driver_registry.reload_follower_state(&database).await?,
+    }
+
+    // 5. 初始化缓存
+    let cache = crate::cache::create_cache(&cfg.cache).await;
+
+    Ok(CommonRuntimeParts {
+        cfg,
+        database,
+        driver_registry,
+        policy_snapshot,
+        cache,
+    })
+}
+
+pub async fn initialize_database_state(
+    database: &sea_orm::DatabaseConnection,
+    cfg: &crate::config::Config,
+    mode: NodeRuntimeMode,
+) -> Result<()> {
+    Migrator::up(database, None)
+        .await
+        .map_aster_err(AsterError::database_operation)?;
+
+    if let Some(sqlite_search) = db::sqlite_search::ensure_sqlite_search_ready(database).await? {
+        tracing::info!(
+            sqlite_version = %sqlite_search.sqlite_version,
+            "SQLite search acceleration ready"
+        );
+    }
+
+    ensure_default_policy(database).await?;
+    if matches!(mode, NodeRuntimeMode::Primary) {
+        crate::services::policy_service::ensure_policy_groups_seeded(database).await?;
+    }
+
+    let bootstrap_cookie_secure = (!cfg.auth.bootstrap_insecure_cookies).to_string();
+    crate::db::repository::config_repo::ensure_system_value_if_missing(
+        database,
+        AUTH_COOKIE_SECURE_KEY,
+        &bootstrap_cookie_secure,
+    )
+    .await?;
+    crate::db::repository::config_repo::ensure_defaults(database).await?;
+    purge_obsolete_node_runtime_mode(database).await?;
+    Ok(())
+}
+
+async fn purge_obsolete_node_runtime_mode(database: &sea_orm::DatabaseConnection) -> Result<()> {
+    let deleted = crate::entities::system_config::Entity::delete_many()
+        .filter(crate::entities::system_config::Column::Key.eq(OBSOLETE_NODE_RUNTIME_MODE_KEY))
+        .exec(database)
+        .await
+        .map_aster_err(AsterError::database_operation)?
+        .rows_affected;
+
+    if deleted > 0 {
+        tracing::info!(
+            key = OBSOLETE_NODE_RUNTIME_MODE_KEY,
+            deleted,
+            "removed obsolete runtime config key"
+        );
+    }
+
+    Ok(())
 }
 
 /// 如果没有默认存储策略，自动创建一个本地存储策略

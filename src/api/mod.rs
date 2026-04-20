@@ -39,7 +39,7 @@ pub fn configure(cfg: &mut web::ServiceConfig, db: &sea_orm::DatabaseConnection)
             .service(routes::wopi::routes())
             .default_service(web::to(api_not_found)),
     )
-    .service(routes::health::routes())
+    .service(routes::health::primary_routes())
     .service(routes::share_public::direct_routes(&rl));
 
     // OpenAPI + Swagger UI — 仅 debug 构建
@@ -67,6 +67,15 @@ pub fn configure(cfg: &mut web::ServiceConfig, db: &sea_orm::DatabaseConnection)
 
     // frontend 最后注册，兜底所有未匹配路由
     cfg.service(routes::frontend::routes());
+}
+
+pub fn configure_follower(cfg: &mut web::ServiceConfig) {
+    cfg.service(
+        web::scope("/api/v1")
+            .service(routes::internal_storage::routes())
+            .default_service(web::to(api_not_found)),
+    )
+    .service(routes::health::follower_routes());
 }
 
 async fn api_not_found() -> HttpResponse {

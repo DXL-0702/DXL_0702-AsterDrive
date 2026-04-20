@@ -22,12 +22,22 @@ export interface PolicyFormData {
 	access_key: string;
 	secret_key: string;
 	base_path: string;
+	remote_node_id: string;
 	max_file_size: string;
 	chunk_size: string;
 	is_default: boolean;
 	content_dedup: boolean;
 	s3_upload_strategy: S3UploadStrategy;
 	s3_download_strategy: S3DownloadStrategy;
+}
+
+function parseRemoteNodeId(value: string): number | undefined {
+	if (!value) {
+		return undefined;
+	}
+
+	const parsed = Number(value);
+	return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
 export function getEffectiveS3UploadStrategy(
@@ -47,6 +57,10 @@ export function buildPolicyOptions(form: PolicyFormData): StoragePolicyOptions {
 		return form.content_dedup ? { content_dedup: true } : {};
 	}
 
+	if (form.driver_type === "remote") {
+		return {};
+	}
+
 	return {
 		s3_upload_strategy: form.s3_upload_strategy,
 		s3_download_strategy: form.s3_download_strategy,
@@ -64,6 +78,8 @@ export function getPolicyForm(policy: StoragePolicy): PolicyFormData {
 		access_key: "",
 		secret_key: "",
 		base_path: policy.base_path,
+		remote_node_id:
+			policy.remote_node_id != null ? String(policy.remote_node_id) : "",
 		max_file_size:
 			policy.max_file_size != null ? String(policy.max_file_size) : "",
 		chunk_size:
@@ -108,6 +124,7 @@ export function buildPolicyTestPayload(form: PolicyFormData) {
 		access_key: normalizedForm.access_key || undefined,
 		secret_key: normalizedForm.secret_key || undefined,
 		base_path: normalizedForm.base_path || undefined,
+		remote_node_id: parseRemoteNodeId(normalizedForm.remote_node_id),
 	};
 }
 
@@ -124,6 +141,7 @@ export function buildCreatePolicyPayload(
 		access_key: normalizedForm.access_key,
 		secret_key: normalizedForm.secret_key,
 		base_path: normalizedForm.base_path,
+		remote_node_id: parseRemoteNodeId(normalizedForm.remote_node_id),
 		max_file_size: normalizedForm.max_file_size
 			? Number(normalizedForm.max_file_size)
 			: undefined,
@@ -144,6 +162,7 @@ export function buildUpdatePolicyPayload(
 		endpoint: normalizedForm.endpoint,
 		bucket: normalizedForm.bucket,
 		base_path: normalizedForm.base_path,
+		remote_node_id: parseRemoteNodeId(normalizedForm.remote_node_id),
 		max_file_size: normalizedForm.max_file_size
 			? Number(normalizedForm.max_file_size)
 			: undefined,
@@ -184,10 +203,18 @@ export function hasConnectionFieldChanges(
 		);
 	}
 
+	if (normalizedForm.driver_type === "remote") {
+		return (
+			parseRemoteNodeId(normalizedForm.remote_node_id) !==
+				editingPolicy.remote_node_id ||
+			normalizedForm.base_path !== editingPolicy.base_path
+		);
+	}
+
 	return normalizedForm.base_path !== editingPolicy.base_path;
 }
 
-export function getS3ConnectionTestKey(form: PolicyFormData) {
+export function getPolicyConnectionTestKey(form: PolicyFormData) {
 	const normalizedForm = normalizePolicyForm(form);
 
 	return JSON.stringify({
@@ -197,6 +224,7 @@ export function getS3ConnectionTestKey(form: PolicyFormData) {
 		access_key: normalizedForm.access_key,
 		secret_key: normalizedForm.secret_key,
 		base_path: normalizedForm.base_path,
+		remote_node_id: parseRemoteNodeId(normalizedForm.remote_node_id),
 	});
 }
 
@@ -217,6 +245,7 @@ export const emptyForm: PolicyFormData = {
 	access_key: "",
 	secret_key: "",
 	base_path: "",
+	remote_node_id: "",
 	max_file_size: "",
 	chunk_size: "5",
 	is_default: false,

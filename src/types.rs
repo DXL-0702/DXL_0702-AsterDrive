@@ -836,6 +836,8 @@ pub enum DriverType {
     Local,
     #[sea_orm(string_value = "s3")]
     S3,
+    #[sea_orm(string_value = "remote")]
+    Remote,
 }
 
 /// 上传 session 状态

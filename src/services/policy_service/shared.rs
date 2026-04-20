@@ -3,7 +3,7 @@
 use chrono::Utc;
 use sea_orm::Set;
 
-use crate::db::repository::{policy_group_repo, policy_repo};
+use crate::db::repository::{managed_follower_repo, policy_group_repo, policy_repo};
 use crate::entities::{storage_policy_group, storage_policy_group_item};
 use crate::errors::{AsterError, Result};
 use crate::runtime::AppState;
@@ -70,9 +70,39 @@ pub(super) fn normalize_connection_fields(
 ) -> Result<(String, String)> {
     match driver_type {
         DriverType::Local => Ok((endpoint.trim().to_string(), bucket.trim().to_string())),
+        DriverType::Remote => Ok((String::new(), String::new())),
         DriverType::S3 => {
             let normalized = normalize_s3_endpoint_and_bucket(endpoint, bucket)?;
             Ok((normalized.endpoint, normalized.bucket))
+        }
+    }
+}
+
+pub(super) async fn validate_remote_binding<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    driver_type: DriverType,
+    remote_node_id: Option<i64>,
+) -> Result<Option<i64>> {
+    match driver_type {
+        DriverType::Remote => {
+            let remote_node_id = remote_node_id.ok_or_else(|| {
+                AsterError::validation_error("remote storage policy requires remote_node_id")
+            })?;
+            let remote_node = managed_follower_repo::find_by_id(db, remote_node_id).await?;
+            if remote_node.base_url.trim().is_empty() {
+                return Err(AsterError::validation_error(
+                    "remote node base_url is required for remote storage policies",
+                ));
+            }
+            Ok(Some(remote_node_id))
+        }
+        DriverType::Local | DriverType::S3 => {
+            if remote_node_id.is_some() {
+                return Err(AsterError::validation_error(
+                    "remote_node_id is only valid for remote storage policies",
+                ));
+            }
+            Ok(None)
         }
     }
 }

@@ -14,10 +14,10 @@ use crate::services::storage_change_service;
 use super::{
     HASH_BUF_SIZE, NewFileMode, PreparedNonDedupBlobUpload, WorkspaceStorageScope, check_quota,
     cleanup_preuploaded_blob_upload, create_exact_file_from_blob, create_new_file_from_blob,
-    create_nondedup_blob, create_s3_nondedup_blob, local_content_dedup_enabled,
-    persist_preuploaded_blob, prepare_non_dedup_blob_upload, resolve_policy_for_size,
-    update_storage_used, upload_temp_file_to_prepared_blob, verify_file_access,
-    verify_folder_access,
+    create_nondedup_blob, create_remote_nondedup_blob, create_s3_nondedup_blob,
+    local_content_dedup_enabled, persist_preuploaded_blob, prepare_non_dedup_blob_upload,
+    resolve_policy_for_size, update_storage_used, upload_temp_file_to_prepared_blob,
+    verify_file_access, verify_folder_access,
 };
 
 #[derive(Clone, Copy)]
@@ -148,13 +148,20 @@ pub(crate) async fn create_empty(
             driver.put(&storage_path, &[]).await?;
         }
         blob.model
-    } else if policy.driver_type == crate::types::DriverType::S3 {
-        let upload_id = crate::utils::id::new_uuid();
-        let blob = create_s3_nondedup_blob(&txn, EMPTY_SIZE, policy.id, &upload_id).await?;
-        driver.put(&blob.storage_path, &[]).await?;
-        blob
     } else {
-        let blob = create_nondedup_blob(&txn, EMPTY_SIZE, policy.id).await?;
+        let blob = match policy.driver_type {
+            crate::types::DriverType::Local => {
+                create_nondedup_blob(&txn, EMPTY_SIZE, policy.id).await?
+            }
+            crate::types::DriverType::S3 => {
+                let upload_id = crate::utils::id::new_uuid();
+                create_s3_nondedup_blob(&txn, EMPTY_SIZE, policy.id, &upload_id).await?
+            }
+            crate::types::DriverType::Remote => {
+                let upload_id = crate::utils::id::new_uuid();
+                create_remote_nondedup_blob(&txn, EMPTY_SIZE, policy.id, &upload_id).await?
+            }
+        };
         driver.put(&blob.storage_path, &[]).await?;
         blob
     };

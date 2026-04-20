@@ -30,3 +30,82 @@ pub struct AppState {
     /// 公开分享下载中途断连时的 download_count 回滚队列
     pub share_download_rollback: ShareDownloadRollbackQueue,
 }
+
+#[derive(Clone)]
+pub struct FollowerAppState {
+    pub db: DatabaseConnection,
+    pub driver_registry: Arc<DriverRegistry>,
+    pub policy_snapshot: Arc<PolicySnapshot>,
+    pub config: Arc<Config>,
+    pub cache: Arc<dyn CacheBackend>,
+}
+
+pub trait FollowerRuntimeState {
+    fn db(&self) -> &DatabaseConnection;
+    fn driver_registry(&self) -> &Arc<DriverRegistry>;
+    fn policy_snapshot(&self) -> &Arc<PolicySnapshot>;
+    fn config(&self) -> &Arc<Config>;
+    fn cache(&self) -> &Arc<dyn CacheBackend>;
+}
+
+impl AppState {
+    pub fn follower_view(&self) -> FollowerAppState {
+        FollowerAppState::from(self)
+    }
+}
+
+impl From<&AppState> for FollowerAppState {
+    fn from(state: &AppState) -> Self {
+        Self {
+            db: state.db.clone(),
+            driver_registry: state.driver_registry.clone(),
+            policy_snapshot: state.policy_snapshot.clone(),
+            config: state.config.clone(),
+            cache: state.cache.clone(),
+        }
+    }
+}
+
+impl FollowerRuntimeState for AppState {
+    fn db(&self) -> &DatabaseConnection {
+        &self.db
+    }
+
+    fn driver_registry(&self) -> &Arc<DriverRegistry> {
+        &self.driver_registry
+    }
+
+    fn policy_snapshot(&self) -> &Arc<PolicySnapshot> {
+        &self.policy_snapshot
+    }
+
+    fn config(&self) -> &Arc<Config> {
+        &self.config
+    }
+
+    fn cache(&self) -> &Arc<dyn CacheBackend> {
+        &self.cache
+    }
+}
+
+impl FollowerRuntimeState for FollowerAppState {
+    fn db(&self) -> &DatabaseConnection {
+        &self.db
+    }
+
+    fn driver_registry(&self) -> &Arc<DriverRegistry> {
+        &self.driver_registry
+    }
+
+    fn policy_snapshot(&self) -> &Arc<PolicySnapshot> {
+        &self.policy_snapshot
+    }
+
+    fn config(&self) -> &Arc<Config> {
+        &self.config
+    }
+
+    fn cache(&self) -> &Arc<dyn CacheBackend> {
+        &self.cache
+    }
+}

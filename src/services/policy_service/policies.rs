@@ -4,7 +4,9 @@ use chrono::Utc;
 use sea_orm::{ActiveModelTrait, Set};
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
-use crate::db::repository::{policy_group_repo, policy_repo};
+use crate::db::repository::{
+    managed_follower_repo, master_binding_repo, policy_group_repo, policy_repo,
+};
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::AppState;
@@ -16,6 +18,7 @@ use super::models::{
 use super::shared::{
     SYSTEM_STORAGE_POLICY_ID, ensure_singleton_group_for_policy, lock_default_group_assignment,
     normalize_connection_fields, serialize_allowed_types, serialize_options,
+    validate_remote_binding,
 };
 
 pub async fn list_paginated(
@@ -51,8 +54,10 @@ pub async fn create(state: &AppState, input: CreateStoragePolicyInput) -> Result
         access_key,
         secret_key,
         base_path,
+        remote_node_id,
     } = connection;
     let (endpoint, bucket) = normalize_connection_fields(driver_type, &endpoint, &bucket)?;
+    let remote_node_id = validate_remote_binding(&state.db, driver_type, remote_node_id).await?;
     let allowed_types = allowed_types.unwrap_or_default();
     let options = options.unwrap_or_default();
 
@@ -66,6 +71,7 @@ pub async fn create(state: &AppState, input: CreateStoragePolicyInput) -> Result
         access_key: Set(access_key),
         secret_key: Set(secret_key),
         base_path: Set(base_path),
+        remote_node_id: Set(remote_node_id),
         max_file_size: Set(max_file_size),
         allowed_types: Set(serialize_allowed_types(&allowed_types)?),
         options: Set(serialize_options(&options)?),
@@ -122,6 +128,14 @@ pub async fn delete(state: &AppState, id: i64) -> Result<()> {
         )));
     }
 
+    let master_binding_refs =
+        master_binding_repo::count_by_ingress_policy_id(&state.db, id).await?;
+    if master_binding_refs > 0 {
+        return Err(AsterError::validation_error(format!(
+            "cannot delete policy: {master_binding_refs} master binding(s) still reference it"
+        )));
+    }
+
     let cleared =
         crate::db::repository::folder_repo::clear_policy_references(&state.db, id).await?;
     if cleared > 0 {
@@ -149,6 +163,7 @@ pub async fn update(
         access_key,
         secret_key,
         base_path,
+        remote_node_id,
         max_file_size,
         chunk_size,
         is_default,
@@ -159,10 +174,17 @@ pub async fn update(
     let existing = policy_repo::find_by_id(&txn, id).await?;
     let existing_endpoint = existing.endpoint.clone();
     let existing_bucket = existing.bucket.clone();
+    let existing_remote_node_id = existing.remote_node_id;
     let final_endpoint = endpoint.unwrap_or_else(|| existing_endpoint.clone());
     let final_bucket = bucket.unwrap_or_else(|| existing_bucket.clone());
     let (normalized_endpoint, normalized_bucket) =
         normalize_connection_fields(existing.driver_type, &final_endpoint, &final_bucket)?;
+    let normalized_remote_node_id = validate_remote_binding(
+        &txn,
+        existing.driver_type,
+        remote_node_id.or(existing.remote_node_id),
+    )
+    .await?;
 
     if let Some(false) = is_default
         && existing.is_default
@@ -196,6 +218,9 @@ pub async fn update(
     }
     if let Some(v) = base_path {
         active.base_path = Set(v);
+    }
+    if normalized_remote_node_id != existing_remote_node_id {
+        active.remote_node_id = Set(normalized_remote_node_id);
     }
     if let Some(v) = max_file_size {
         active.max_file_size = Set(v);
@@ -252,11 +277,17 @@ pub async fn test_default_connection(state: &AppState) -> Result<()> {
 pub async fn test_connection(state: &AppState, id: i64) -> Result<()> {
     let policy = policy_repo::find_by_id(&state.db, id).await?;
     let driver = state.driver_registry.get_driver(&policy)?;
-    probe_storage_driver(driver.as_ref(), "write test failed").await
+    probe_storage_driver(driver.as_ref(), "write test failed")
+        .await
+        .map_err(map_connection_test_error)
 }
 
-pub async fn test_connection_params(input: StoragePolicyConnectionInput) -> Result<()> {
+pub async fn test_connection_params(
+    state: &AppState,
+    input: StoragePolicyConnectionInput,
+) -> Result<()> {
     use crate::storage::drivers::local::LocalDriver;
+    use crate::storage::drivers::remote::RemoteDriver;
     use crate::storage::drivers::s3::S3Driver;
 
     let StoragePolicyConnectionInput {
@@ -266,8 +297,10 @@ pub async fn test_connection_params(input: StoragePolicyConnectionInput) -> Resu
         access_key,
         secret_key,
         base_path,
+        remote_node_id,
     } = input;
     let (endpoint, bucket) = normalize_connection_fields(driver_type, &endpoint, &bucket)?;
+    let remote_node_id = validate_remote_binding(&state.db, driver_type, remote_node_id).await?;
 
     let fake_policy = storage_policy::Model {
         id: 0,
@@ -278,6 +311,7 @@ pub async fn test_connection_params(input: StoragePolicyConnectionInput) -> Resu
         access_key,
         secret_key,
         base_path,
+        remote_node_id,
         max_file_size: 0,
         allowed_types: StoredStoragePolicyAllowedTypes::empty(),
         options: StoredStoragePolicyOptions::empty(),
@@ -289,10 +323,19 @@ pub async fn test_connection_params(input: StoragePolicyConnectionInput) -> Resu
 
     let driver: Box<dyn crate::storage::driver::StorageDriver> = match driver_type {
         DriverType::Local => Box::new(LocalDriver::new(&fake_policy)?),
+        DriverType::Remote => {
+            let remote_node_id = fake_policy.remote_node_id.ok_or_else(|| {
+                AsterError::validation_error("remote storage policy requires remote_node_id")
+            })?;
+            let remote_node = managed_follower_repo::find_by_id(&state.db, remote_node_id).await?;
+            Box::new(RemoteDriver::new(&fake_policy, &remote_node)?)
+        }
         DriverType::S3 => Box::new(S3Driver::new(&fake_policy)?),
     };
 
-    probe_storage_driver(driver.as_ref(), "connection test failed").await
+    probe_storage_driver(driver.as_ref(), "connection test failed")
+        .await
+        .map_err(map_connection_test_error)
 }
 
 async fn probe_storage_driver(
@@ -308,4 +351,11 @@ async fn probe_storage_driver(
         tracing::warn!(path = %test_path, "failed to clean up connection test file: {e}");
     }
     Ok(())
+}
+
+fn map_connection_test_error(error: AsterError) -> AsterError {
+    match error {
+        AsterError::StorageDriverError(message) => AsterError::validation_error(message),
+        other => other,
+    }
 }
