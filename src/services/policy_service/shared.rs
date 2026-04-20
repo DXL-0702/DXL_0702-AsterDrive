@@ -89,6 +89,11 @@ pub(super) async fn validate_remote_binding<C: sea_orm::ConnectionTrait>(
                 AsterError::validation_error("remote storage policy requires remote_node_id")
             })?;
             let remote_node = managed_follower_repo::find_by_id(db, remote_node_id).await?;
+            if !remote_node.is_enabled {
+                return Err(AsterError::validation_error(format!(
+                    "remote node #{remote_node_id} is disabled"
+                )));
+            }
             if remote_node.base_url.trim().is_empty() {
                 return Err(AsterError::validation_error(
                     "remote node base_url is required for remote storage policies",

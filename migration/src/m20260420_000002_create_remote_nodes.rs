@@ -62,6 +62,19 @@ enum StoragePolicies {
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        let backend = manager.get_connection().get_database_backend();
+        let mut last_capabilities = ColumnDef::new(ManagedFollowers::LastCapabilities);
+        last_capabilities.text().not_null();
+        if backend != DatabaseBackend::MySql {
+            last_capabilities.default("{}");
+        }
+
+        let mut last_error = ColumnDef::new(ManagedFollowers::LastError);
+        last_error.text().not_null();
+        if backend != DatabaseBackend::MySql {
+            last_error.default("");
+        }
+
         manager
             .create_table(
                 Table::create()
@@ -106,18 +119,8 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default(true),
                     )
-                    .col(
-                        ColumnDef::new(ManagedFollowers::LastCapabilities)
-                            .text()
-                            .not_null()
-                            .default("{}"),
-                    )
-                    .col(
-                        ColumnDef::new(ManagedFollowers::LastError)
-                            .text()
-                            .not_null()
-                            .default(""),
-                    )
+                    .col(last_capabilities)
+                    .col(last_error)
                     .col(
                         crate::time::utc_date_time_column(manager, ManagedFollowers::LastCheckedAt)
                             .null(),

@@ -50,9 +50,28 @@ export function hasRemoteConnectionFieldChanges(
 		return true;
 	}
 
-	return (
-		form.base_url !== editingNode.base_url
-	);
+	return form.base_url !== editingNode.base_url;
+}
+
+export function getRemoteNodeBaseUrlValidationMessage(
+	baseUrl: string,
+	t: (key: string) => string,
+) {
+	const trimmedBaseUrl = baseUrl.trim();
+	if (!trimmedBaseUrl) {
+		return null;
+	}
+
+	let parsedUrl: URL;
+	try {
+		parsedUrl = new URL(trimmedBaseUrl);
+	} catch {
+		return t("remote_node_base_url_invalid");
+	}
+
+	return parsedUrl.protocol === "http:" || parsedUrl.protocol === "https:"
+		? null
+		: t("remote_node_base_url_invalid");
 }
 
 export const emptyRemoteNodeForm: RemoteNodeFormData = {

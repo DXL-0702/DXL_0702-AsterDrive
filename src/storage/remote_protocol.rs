@@ -62,6 +62,13 @@ pub struct RemoteStorageListResponse {
     pub items: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RemoteBindingSyncRequest {
+    pub name: String,
+    pub namespace: String,
+    pub is_enabled: bool,
+}
+
 #[derive(Debug, Deserialize)]
 struct ApiEnvelope<T> {
     code: i32,
@@ -341,6 +348,24 @@ impl RemoteStorageClient {
         Ok(envelope.data.unwrap_or_default().items)
     }
 
+    pub async fn sync_binding(&self, binding: &RemoteBindingSyncRequest) -> Result<()> {
+        let url = self.url_for_path(&format!("{INTERNAL_STORAGE_BASE_PATH}/binding"))?;
+        let body = serde_json::to_vec(binding).map_err(|e| {
+            AsterError::storage_driver_error(format!("encode remote binding sync request: {e}"))
+        })?;
+        let content_length = u64::try_from(body.len()).map_err(|_| {
+            AsterError::storage_driver_error("remote binding sync body length overflow")
+        })?;
+        let response = self
+            .signed_request(Method::PUT, url, Some(content_length))
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body)
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
+        ensure_success_without_body(response, "sync remote binding state").await
+    }
+
     fn signed_request(
         &self,
         method: Method,
@@ -452,6 +477,7 @@ async fn build_remote_status_error(
         reqwest::StatusCode::FORBIDDEN => {
             AsterError::storage_driver_error(format!("remote node access forbidden: {message}"))
         }
+        reqwest::StatusCode::PRECONDITION_FAILED => AsterError::precondition_failed(message),
         _ => AsterError::storage_driver_error(message),
     }
 }

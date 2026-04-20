@@ -409,6 +409,7 @@ pub async fn shared_avatar(
         (status = 304, description = "Thumbnail not modified"),
         (status = 400, description = "Thumbnail not supported for this file type"),
         (status = 403, description = "Password required"),
+        (status = 412, description = "Storage backend is disabled or not ready"),
         (status = 404, description = "Share or file not found"),
         (status = 500, description = "Thumbnail generation failed"),
     ),
@@ -448,6 +449,7 @@ pub async fn shared_thumbnail(
         (status = 304, description = "Thumbnail not modified"),
         (status = 400, description = "Thumbnail not supported for this file type"),
         (status = 403, description = "Password required or file outside shared scope"),
+        (status = 412, description = "Storage backend is disabled or not ready"),
         (status = 404, description = "Share or file not found"),
         (status = 500, description = "Thumbnail generation failed"),
     )

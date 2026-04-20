@@ -5,7 +5,9 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::FollowerAppState;
 use crate::services::master_binding_service;
 use crate::storage::driver::{BlobMetadata, StorageDriver};
-use crate::storage::remote_protocol::{RemoteStorageCapabilities, RemoteStorageListResponse};
+use crate::storage::remote_protocol::{
+    RemoteBindingSyncRequest, RemoteStorageCapabilities, RemoteStorageListResponse,
+};
 use actix_web::{HttpRequest, HttpResponse, web};
 use futures::StreamExt;
 use serde::Deserialize;
@@ -15,6 +17,7 @@ use tokio_util::io::ReaderStream;
 pub fn routes() -> actix_web::Scope {
     web::scope("/internal/storage")
         .route("/capabilities", web::get().to(get_capabilities))
+        .route("/binding", web::put().to(sync_binding))
         .route("/objects", web::get().to(list_objects))
         .route("/objects/{tail:.*}", web::put().to(put_object))
         .route("/objects/{tail:.*}", web::get().to(get_object))
@@ -53,6 +56,26 @@ async fn get_capabilities(
 ) -> Result<HttpResponse> {
     master_binding_service::authorize_internal_request(state.get_ref(), &req).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(RemoteStorageCapabilities::default())))
+}
+
+async fn sync_binding(
+    state: web::Data<FollowerAppState>,
+    req: HttpRequest,
+    body: web::Json<RemoteBindingSyncRequest>,
+) -> Result<HttpResponse> {
+    let binding =
+        master_binding_service::authorize_binding_sync_request(state.get_ref(), &req).await?;
+    master_binding_service::sync_from_primary(
+        state.get_ref(),
+        &binding.access_key,
+        master_binding_service::SyncMasterBindingInput {
+            name: body.name.clone(),
+            namespace: body.namespace.clone(),
+            is_enabled: body.is_enabled,
+        },
+    )
+    .await?;
+    Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
 async fn list_objects(

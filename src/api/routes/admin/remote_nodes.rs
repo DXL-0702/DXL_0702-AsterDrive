@@ -165,10 +165,11 @@ pub async fn delete_remote_node(
     params(("id" = i64, Path, description = "Remote node ID")),
     responses(
         (status = 200, description = "Remote node connection tested", body = inline(ApiResponse<managed_follower_service::RemoteNodeInfo>)),
+        (status = 400, description = "Connection failed"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
+        (status = 412, description = "Remote node is disabled or not ready"),
         (status = 404, description = "Remote node not found"),
-        (status = 500, description = "Connection failed"),
     ),
     security(("bearer" = [])),
 )]

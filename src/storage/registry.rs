@@ -176,6 +176,11 @@ impl DriverRegistry {
                         "remote node #{remote_node_id} not loaded in registry"
                     ))
                 })?;
+                if !remote_node.is_enabled {
+                    return Err(AsterError::precondition_failed(format!(
+                        "remote node #{remote_node_id} is disabled"
+                    )));
+                }
                 Ok(DriverEntry::Remote(Arc::new(RemoteDriver::new(
                     policy,
                     &remote_node,

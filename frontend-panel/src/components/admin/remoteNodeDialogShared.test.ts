@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildCreateRemoteNodePayload,
 	buildUpdateRemoteNodePayload,
+	getRemoteNodeBaseUrlValidationMessage,
 	getRemoteNodeForm,
 } from "@/components/admin/remoteNodeDialogShared";
 import type { RemoteNodeInfo } from "@/types/api";
@@ -64,5 +65,38 @@ describe("remoteNodeDialogShared", () => {
 			namespace: "tenant-b",
 			is_enabled: false,
 		});
+	});
+
+	it("allows an empty remote node base URL", () => {
+		expect(
+			getRemoteNodeBaseUrlValidationMessage("   ", (key) => key),
+		).toBeNull();
+	});
+
+	it("rejects remote node base URLs that are not absolute http or https URLs", () => {
+		expect(
+			getRemoteNodeBaseUrlValidationMessage("remote.example.com", (key) => key),
+		).toBe("remote_node_base_url_invalid");
+		expect(
+			getRemoteNodeBaseUrlValidationMessage(
+				"ftp://remote.example.com",
+				(key) => key,
+			),
+		).toBe("remote_node_base_url_invalid");
+	});
+
+	it("accepts absolute http and https remote node base URLs", () => {
+		expect(
+			getRemoteNodeBaseUrlValidationMessage(
+				"https://remote.example.com/api",
+				(key) => key,
+			),
+		).toBeNull();
+		expect(
+			getRemoteNodeBaseUrlValidationMessage(
+				"http://remote.example.com",
+				(key) => key,
+			),
+		).toBeNull();
 	});
 });

@@ -31,6 +31,13 @@ pub struct UpsertMasterBindingInput {
     pub is_enabled: bool,
 }
 
+#[derive(Debug, Clone)]
+pub struct SyncMasterBindingInput {
+    pub name: String,
+    pub namespace: String,
+    pub is_enabled: bool,
+}
+
 pub async fn upsert_from_enrollment<C: ConnectionTrait>(
     db: &C,
     input: UpsertMasterBindingInput,
@@ -77,6 +84,58 @@ pub async fn authorize_internal_request<S: FollowerRuntimeState>(
     state: &S,
     req: &actix_web::HttpRequest,
 ) -> Result<AuthorizedMasterBinding> {
+    let binding = authorize_binding_request(state, req, false).await?;
+    let ingress_policy = state
+        .policy_snapshot()
+        .get_policy_or_err(binding.ingress_policy_id)?;
+    if ingress_policy.driver_type == crate::types::DriverType::Remote {
+        return Err(AsterError::precondition_failed(
+            "master binding ingress policy cannot use remote driver",
+        ));
+    }
+
+    Ok(AuthorizedMasterBinding {
+        binding,
+        ingress_policy,
+    })
+}
+
+pub async fn authorize_binding_sync_request<S: FollowerRuntimeState>(
+    state: &S,
+    req: &actix_web::HttpRequest,
+) -> Result<master_binding::Model> {
+    authorize_binding_request(state, req, true).await
+}
+
+pub async fn sync_from_primary<S: FollowerRuntimeState>(
+    state: &S,
+    access_key: &str,
+    input: SyncMasterBindingInput,
+) -> Result<master_binding::Model> {
+    let existing = master_binding_repo::find_by_access_key(state.db(), access_key)
+        .await?
+        .ok_or_else(|| AsterError::auth_invalid_credentials("unknown internal access_key"))?;
+    let normalized = normalize_sync_input(input)?;
+
+    let mut active: master_binding::ActiveModel = existing.into();
+    active.name = Set(normalized.name);
+    active.namespace = Set(normalized.namespace);
+    active.is_enabled = Set(normalized.is_enabled);
+    active.updated_at = Set(Utc::now());
+
+    let updated = master_binding_repo::update(state.db(), active).await?;
+    state
+        .driver_registry()
+        .reload_master_bindings(state.db())
+        .await?;
+    Ok(updated)
+}
+
+async fn authorize_binding_request<S: FollowerRuntimeState>(
+    state: &S,
+    req: &actix_web::HttpRequest,
+    allow_disabled: bool,
+) -> Result<master_binding::Model> {
     let access_key = header_value(req, INTERNAL_AUTH_ACCESS_KEY_HEADER)?;
     let timestamp = header_value(req, INTERNAL_AUTH_TIMESTAMP_HEADER)?
         .parse::<i64>()
@@ -102,8 +161,10 @@ pub async fn authorize_internal_request<S: FollowerRuntimeState>(
         .driver_registry()
         .find_master_binding_by_access_key(&access_key)
         .ok_or_else(|| AsterError::auth_invalid_credentials("unknown internal access_key"))?;
-    if !binding.is_enabled {
-        return Err(AsterError::auth_forbidden("master binding is disabled"));
+    if !allow_disabled && !binding.is_enabled {
+        return Err(AsterError::precondition_failed(
+            "master binding is disabled",
+        ));
     }
 
     let path_and_query = req
@@ -139,20 +200,7 @@ pub async fn authorize_internal_request<S: FollowerRuntimeState>(
             Some(INTERNAL_AUTH_NONCE_TTL_SECS),
         )
         .await;
-
-    let ingress_policy = state
-        .policy_snapshot()
-        .get_policy_or_err(binding.ingress_policy_id)?;
-    if ingress_policy.driver_type == crate::types::DriverType::Remote {
-        return Err(AsterError::auth_forbidden(
-            "master binding ingress policy cannot use remote driver",
-        ));
-    }
-
-    Ok(AuthorizedMasterBinding {
-        binding,
-        ingress_policy,
-    })
+    Ok(binding)
 }
 
 pub fn provider_storage_path(binding: &master_binding::Model, object_key: &str) -> String {
@@ -204,6 +252,14 @@ async fn normalize_upsert_input<C: ConnectionTrait>(
         secret_key: normalize_non_blank("secret_key", &input.secret_key)?,
         namespace: normalize_namespace(&input.namespace)?,
         ingress_policy_id: input.ingress_policy_id,
+        is_enabled: input.is_enabled,
+    })
+}
+
+fn normalize_sync_input(input: SyncMasterBindingInput) -> Result<SyncMasterBindingInput> {
+    Ok(SyncMasterBindingInput {
+        name: normalize_non_blank("name", &input.name)?,
+        namespace: normalize_namespace(&input.namespace)?,
         is_enabled: input.is_enabled,
     })
 }

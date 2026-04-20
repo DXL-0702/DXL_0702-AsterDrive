@@ -3,17 +3,23 @@
 #[macro_use]
 mod common;
 
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use actix_web::{App, HttpServer, web};
-use aster_drive::db::repository::{file_repo, policy_repo};
+use actix_web::{App, HttpServer, test, web};
+use aster_drive::db::repository::{
+    file_repo, managed_follower_repo, master_binding_repo, policy_repo, user_repo,
+};
 use aster_drive::entities::storage_policy;
 use aster_drive::services::{
     auth_service, file_service, folder_service, managed_follower_service, master_binding_service,
+    policy_service, thumbnail_service,
 };
+use aster_drive::storage::remote_protocol::RemoteStorageClient;
 use aster_drive::types::{
-    DriverType, NullablePatch, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
+    DriverType, NullablePatch, StoragePolicyOptions, StoredStoragePolicyAllowedTypes,
+    StoredStoragePolicyOptions,
 };
 use chrono::Utc;
 use futures::TryStreamExt;
@@ -134,6 +140,15 @@ async fn write_temp_upload_file(
     path
 }
 
+fn build_test_png() -> Vec<u8> {
+    let image = image::RgbaImage::from_pixel(4, 4, image::Rgba([255, 0, 0, 255]));
+    let mut cursor = Cursor::new(Vec::new());
+    image::DynamicImage::ImageRgba8(image)
+        .write_to(&mut cursor, image::ImageFormat::Png)
+        .expect("test png should encode");
+    cursor.into_inner()
+}
+
 async fn collect_download_body(
     outcome: aster_drive::services::file_service::DownloadOutcome,
 ) -> Vec<u8> {
@@ -165,6 +180,32 @@ fn provider_object_path(
 }
 
 #[actix_web::test]
+async fn test_remote_node_connection_failure_returns_error_and_persists_last_error() {
+    let state = common::setup().await;
+    let node = managed_follower_service::create(
+        &state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "broken-remote".to_string(),
+            base_url: "http://127.0.0.1:9".to_string(),
+            namespace: "broken-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("broken remote node should be created");
+
+    let error = managed_follower_service::test_connection(&state, node.id)
+        .await
+        .expect_err("connection test should surface probe failures");
+    assert_eq!(error.code(), "E005");
+
+    let stored = managed_follower_repo::find_by_id(&state.db, node.id)
+        .await
+        .expect("remote node should still exist after failed probe");
+    assert!(!stored.last_error.is_empty());
+}
+
+#[actix_web::test]
 async fn test_remote_storage_end_to_end_via_internal_api() {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
@@ -174,26 +215,6 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
         .policy_snapshot
         .system_default_policy()
         .expect("provider default ingress policy should exist");
-
-    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
-        &provider_state.db,
-        master_binding_service::UpsertMasterBindingInput {
-            name: "consumer-access".to_string(),
-            master_url: "http://master.example.com".to_string(),
-            access_key: "remote-test-access".to_string(),
-            secret_key: "remote-test-secret".to_string(),
-            namespace: "provider-space".to_string(),
-            ingress_policy_id: provider_ingress_policy.id,
-            is_enabled: true,
-        },
-    )
-    .await
-    .expect("provider master binding should be created");
-    provider_state
-        .driver_registry
-        .reload_master_bindings(&provider_state.db)
-        .await
-        .expect("provider binding registry should reload");
 
     let consumer_node = managed_follower_service::create(
         &consumer_state,
@@ -206,6 +227,30 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
     )
     .await
     .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    let (provider_binding, _) = master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: "provider-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
 
     let probed = wait_for_remote_probe(&consumer_state, consumer_node.id).await;
     assert_eq!(probed.capabilities.protocol_version, "v1");
@@ -378,6 +423,351 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
         tokio::fs::metadata(&provider_empty_path).await.is_err(),
         "provider-side empty object should be deleted after purge"
     );
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_disabling_remote_node_syncs_follower_binding_and_blocks_remote_use() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "provider-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            namespace: "provider-disable-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: "provider-disable-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    wait_for_remote_probe(&consumer_state, consumer_node.id).await;
+
+    managed_follower_service::update(
+        &consumer_state,
+        consumer_node.id,
+        managed_follower_service::UpdateRemoteNodeInput {
+            is_enabled: Some(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("disabling remote node should succeed");
+
+    let provider_binding = master_binding_repo::find_by_access_key(
+        &provider_state.db,
+        &consumer_node_model.access_key,
+    )
+    .await
+    .expect("provider binding lookup should succeed")
+    .expect("provider binding should still exist");
+    assert!(!provider_binding.is_enabled);
+
+    let forbidden_client = RemoteStorageClient::new(
+        &provider_server.base_url,
+        &consumer_node_model.access_key,
+        &consumer_node_model.secret_key,
+    )
+    .expect("manual remote client should initialize");
+    let probe_error = forbidden_client
+        .probe_capabilities()
+        .await
+        .expect_err("disabled binding should reject signed internal requests");
+    assert_eq!(probe_error.code(), "E060");
+    assert!(probe_error.message().contains("master binding is disabled"));
+
+    let create_error = policy_service::create(
+        &consumer_state,
+        policy_service::CreateStoragePolicyInput {
+            name: "Disabled Remote Policy".to_string(),
+            connection: policy_service::StoragePolicyConnectionInput {
+                driver_type: DriverType::Remote,
+                endpoint: String::new(),
+                bucket: String::new(),
+                access_key: String::new(),
+                secret_key: String::new(),
+                base_path: String::new(),
+                remote_node_id: Some(consumer_node.id),
+            },
+            max_file_size: 0,
+            chunk_size: None,
+            is_default: false,
+            allowed_types: Some(Vec::new()),
+            options: Some(StoragePolicyOptions::default()),
+        },
+    )
+    .await
+    .expect_err("disabled remote nodes should not be bindable to remote policies");
+    assert_eq!(create_error.code(), "E005");
+    assert!(create_error.message().contains("is disabled"));
+
+    let remote_policy = create_remote_policy(
+        &consumer_state,
+        consumer_node.id,
+        "Disabled Remote Policy",
+        "disabled-base",
+    )
+    .await;
+    let driver_error = match consumer_state.driver_registry.get_driver(&remote_policy) {
+        Ok(_) => panic!("disabled remote nodes should not resolve into remote drivers"),
+        Err(error) => error,
+    };
+    assert_eq!(driver_error.code(), "E060");
+    assert!(driver_error.message().contains("is disabled"));
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_saved_remote_node_connection_endpoint_returns_precondition_failed_for_disabled_binding()
+ {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "provider-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            namespace: "provider-endpoint-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: "provider-endpoint-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    wait_for_remote_probe(&consumer_state, consumer_node.id).await;
+
+    master_binding_service::sync_from_primary(
+        &provider_state.follower_view(),
+        &consumer_node_model.access_key,
+        master_binding_service::SyncMasterBindingInput {
+            name: "consumer-access".to_string(),
+            namespace: "provider-endpoint-space".to_string(),
+            is_enabled: false,
+        },
+    )
+    .await
+    .expect("provider binding should disable cleanly");
+
+    let app = create_test_app!(consumer_state.clone());
+    let (admin_token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/admin/remote-nodes/{}/test",
+            consumer_node.id
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&admin_token)))
+        .insert_header(common::csrf_header_for(&admin_token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 412);
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert!(
+        body["msg"]
+            .as_str()
+            .unwrap()
+            .contains("master binding is disabled")
+    );
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_thumbnail_endpoint_returns_precondition_failed_when_remote_node_disabled() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "provider-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            namespace: "provider-thumb-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: "provider-thumb-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    wait_for_remote_probe(&consumer_state, consumer_node.id).await;
+
+    let remote_policy = create_remote_policy(
+        &consumer_state,
+        consumer_node.id,
+        "Remote Thumb Policy",
+        "thumb-base",
+    )
+    .await;
+
+    let app = create_test_app!(consumer_state.clone());
+    let (token, _) = register_and_login!(app);
+    let user = user_repo::find_by_username(&consumer_state.db, "testuser")
+        .await
+        .expect("test user lookup should succeed")
+        .expect("test user should exist");
+
+    let folder = folder_service::create(&consumer_state, user.id, "remote-thumbs", None)
+        .await
+        .expect("remote folder should be created");
+    folder_service::update(
+        &consumer_state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(remote_policy.id),
+    )
+    .await
+    .expect("remote policy should bind to folder");
+
+    let png_bytes = build_test_png();
+    let upload_path = write_temp_upload_file(
+        &consumer_state,
+        &format!("remote-thumb-{}.png", uuid::Uuid::new_v4()),
+        &png_bytes,
+    )
+    .await;
+    let upload_path_string = upload_path.to_string_lossy().into_owned();
+    let created = file_service::store_from_temp(
+        &consumer_state,
+        user.id,
+        file_service::StoreFromTempRequest::new(
+            Some(folder.id),
+            "thumb-source.png",
+            &upload_path_string,
+            i64::try_from(png_bytes.len()).expect("png size should fit i64"),
+        ),
+    )
+    .await
+    .expect("remote thumbnail source upload should succeed");
+    aster_drive::utils::cleanup_temp_file(&upload_path_string).await;
+
+    let created_file = file_repo::find_by_id(&consumer_state.db, created.id)
+        .await
+        .expect("uploaded file should be queryable");
+    let created_blob = file_repo::find_blob_by_id(&consumer_state.db, created_file.blob_id)
+        .await
+        .expect("uploaded blob should be queryable");
+    thumbnail_service::generate_and_store(&consumer_state, &created_blob)
+        .await
+        .expect("thumbnail should generate while remote node is enabled");
+
+    managed_follower_service::update(
+        &consumer_state,
+        consumer_node.id,
+        managed_follower_service::UpdateRemoteNodeInput {
+            is_enabled: Some(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("disabling remote node should succeed");
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{}/thumbnail", created.id))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 412);
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert!(body["msg"].as_str().unwrap().contains("remote node #"));
+    assert!(body["msg"].as_str().unwrap().contains("is disabled"));
 
     provider_server.stop().await;
 }

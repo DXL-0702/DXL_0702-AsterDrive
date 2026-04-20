@@ -6653,6 +6653,13 @@ export interface operations {
                     };
                 };
             };
+            /** @description Connection failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Unauthorized */
             401: {
                 headers: {
@@ -6674,8 +6681,8 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Connection failed */
-            500: {
+            /** @description Remote node is disabled or not ready */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10268,6 +10275,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Storage backend is disabled or not ready */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Thumbnail generation failed */
             500: {
                 headers: {
@@ -11558,6 +11572,13 @@ export interface operations {
                 };
                 content?: never;
             };
+            /** @description Storage backend is disabled or not ready */
+            412: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
             /** @description Thumbnail generation failed */
             500: {
                 headers: {
@@ -11721,6 +11742,13 @@ export interface operations {
             };
             /** @description Share or file not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Storage backend is disabled or not ready */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14591,6 +14619,13 @@ export interface operations {
             };
             /** @description File not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Storage backend is disabled or not ready */
+            412: {
                 headers: {
                     [name: string]: unknown;
                 };

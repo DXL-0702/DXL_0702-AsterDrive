@@ -6,7 +6,8 @@ use crate::entities::managed_follower;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryRuntimeState;
 use crate::storage::remote_protocol::{
-    RemoteStorageCapabilities, RemoteStorageClient, normalize_remote_base_url,
+    RemoteBindingSyncRequest, RemoteStorageCapabilities, RemoteStorageClient,
+    normalize_remote_base_url,
 };
 use chrono::Utc;
 use sea_orm::{ActiveModelTrait, DbErr, Set, SqlErr};
@@ -77,6 +78,11 @@ pub struct RemoteNodeHealthTestStats {
     pub healthy: usize,
     pub failed: usize,
     pub skipped: usize,
+}
+
+struct ProbedRemoteNode {
+    model: managed_follower::Model,
+    probe_error: Option<AsterError>,
 }
 
 pub async fn list_paginated<S: PrimaryRuntimeState>(
@@ -155,6 +161,12 @@ pub async fn update<S: PrimaryRuntimeState>(
         .await
         .map_err(map_remote_node_db_err)?;
     refresh_registry(state).await?;
+    if let Err(error) = sync_remote_binding_config(&updated).await {
+        tracing::warn!(
+            remote_node_id = updated.id,
+            "failed to sync remote binding config to follower: {error}"
+        );
+    }
     Ok(updated.into())
 }
 
@@ -172,9 +184,11 @@ pub async fn delete<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<()> {
 
 pub async fn test_connection<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<RemoteNodeInfo> {
     let node = managed_follower_repo::find_by_id(state.db(), id).await?;
-    let updated = probe_and_persist_node(state, &node).await?;
-    refresh_registry(state).await?;
-    Ok(updated.into())
+    let probed = probe_and_persist_node(state, &node).await?;
+    if let Some(error) = probed.probe_error {
+        return Err(map_connection_test_error(error));
+    }
+    Ok(probed.model.into())
 }
 
 pub async fn test_connection_params(
@@ -192,22 +206,29 @@ pub async fn run_health_tests<S: PrimaryRuntimeState>(
     let mut stats = RemoteNodeHealthTestStats::default();
 
     for node in nodes {
-        if !node.is_enabled || node.base_url.trim().is_empty() {
+        if node.base_url.trim().is_empty() {
             stats.skipped += 1;
             continue;
         }
 
-        let updated = probe_and_persist_node(state, &node).await?;
+        if let Err(error) = sync_remote_binding_config(&node).await {
+            tracing::warn!(
+                remote_node_id = node.id,
+                "failed to sync remote binding config during health test: {error}"
+            );
+        }
+        if !node.is_enabled {
+            stats.skipped += 1;
+            continue;
+        }
+
+        let probed = probe_and_persist_node(state, &node).await?;
         stats.checked += 1;
-        if updated.last_error.is_empty() {
+        if probed.probe_error.is_none() {
             stats.healthy += 1;
         } else {
             stats.failed += 1;
         }
-    }
-
-    if stats.checked > 0 {
-        refresh_registry(state).await?;
     }
 
     Ok(stats)
@@ -229,7 +250,7 @@ async fn probe_connection(input: &TestRemoteNodeInput) -> Result<RemoteStorageCa
 async fn probe_and_persist_node<S: PrimaryRuntimeState>(
     state: &S,
     node: &managed_follower::Model,
-) -> Result<managed_follower::Model> {
+) -> Result<ProbedRemoteNode> {
     let capabilities = probe_connection(&TestRemoteNodeInput {
         base_url: node.base_url.clone(),
         access_key: node.access_key.clone(),
@@ -237,18 +258,20 @@ async fn probe_and_persist_node<S: PrimaryRuntimeState>(
     })
     .await;
 
-    let (last_capabilities, last_error) = match capabilities {
-        Ok(capabilities) => (serialize_capabilities(&capabilities), String::new()),
-        Err(error) => ("{}".to_string(), error.message().to_string()),
+    let (last_capabilities, last_error, probe_error) = match capabilities {
+        Ok(capabilities) => (serialize_capabilities(&capabilities), String::new(), None),
+        Err(error) => ("{}".to_string(), error.message().to_string(), Some(error)),
     };
-    managed_follower_repo::touch_probe_result(
+    let model = managed_follower_repo::touch_probe_result(
         state.db(),
         node.id,
         last_capabilities,
         last_error,
         Some(Utc::now()),
     )
-    .await
+    .await?;
+
+    Ok(ProbedRemoteNode { model, probe_error })
 }
 
 fn normalize_create_input(input: CreateRemoteNodeInput) -> Result<CreateRemoteNodeInput> {
@@ -319,12 +342,28 @@ fn normalize_namespace(value: &str) -> Result<String> {
 }
 
 async fn refresh_registry<S: PrimaryRuntimeState>(state: &S) -> Result<()> {
+    state.policy_snapshot().reload(state.db()).await?;
     state
         .driver_registry()
         .reload_managed_followers(state.db())
         .await?;
     state.driver_registry().invalidate_all();
     Ok(())
+}
+
+async fn sync_remote_binding_config(node: &managed_follower::Model) -> Result<()> {
+    if node.base_url.trim().is_empty() {
+        return Ok(());
+    }
+
+    let client = RemoteStorageClient::new(&node.base_url, &node.access_key, &node.secret_key)?;
+    client
+        .sync_binding(&RemoteBindingSyncRequest {
+            name: node.name.clone(),
+            namespace: node.namespace.clone(),
+            is_enabled: node.is_enabled,
+        })
+        .await
 }
 
 fn map_remote_node_db_err(error: DbErr) -> AsterError {
