@@ -452,7 +452,10 @@ pub async fn update_with_audit(
 /// 7. 清理上传 session 和临时文件
 /// 8. 清理资源锁
 /// 9. 删除用户记录
-pub async fn force_delete(state: &PrimaryAppState, target_user_id: i64) -> Result<ForceDeleteSummary> {
+pub async fn force_delete(
+    state: &PrimaryAppState,
+    target_user_id: i64,
+) -> Result<ForceDeleteSummary> {
     let db = &state.db;
     let user = user_repo::find_by_id(db, target_user_id).await?;
 
@@ -591,7 +594,10 @@ pub fn parse_preferences(user: &user::Model) -> Option<UserPreferences> {
 }
 
 /// 读取用户的偏好设置（按 ID 查询后解析）。
-pub async fn get_preferences(state: &PrimaryAppState, user_id: i64) -> Result<Option<UserPreferences>> {
+pub async fn get_preferences(
+    state: &PrimaryAppState,
+    user_id: i64,
+) -> Result<Option<UserPreferences>> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     Ok(parse_preferences(&user))
 }
@@ -608,7 +614,11 @@ fn parse_user_config(user: &user::Model) -> Option<UserConfig> {
 }
 
 /// 将用户配置写回 DB。空配置保持现状，不主动清理历史值。
-async fn save_user_config(state: &PrimaryAppState, user: user::Model, config: &UserConfig) -> Result<()> {
+async fn save_user_config(
+    state: &PrimaryAppState,
+    user: user::Model,
+    config: &UserConfig,
+) -> Result<()> {
     if config.is_empty() {
         return Ok(());
     }

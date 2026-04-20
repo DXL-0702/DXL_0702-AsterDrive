@@ -9,7 +9,7 @@ use crate::db::repository::{
 };
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::{PrimaryAppState, PrimaryRuntimeState};
 use crate::types::{DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
 
 use super::models::{
@@ -37,7 +37,10 @@ pub async fn get(state: &PrimaryAppState, id: i64) -> Result<StoragePolicy> {
     policy_repo::find_by_id(&state.db, id).await.map(Into::into)
 }
 
-pub async fn create(state: &PrimaryAppState, input: CreateStoragePolicyInput) -> Result<StoragePolicy> {
+pub async fn create(
+    state: &PrimaryAppState,
+    input: CreateStoragePolicyInput,
+) -> Result<StoragePolicy> {
     let CreateStoragePolicyInput {
         name,
         connection,
@@ -263,27 +266,27 @@ pub async fn update(
         .map(Into::into)
 }
 
-pub async fn test_default_connection(state: &PrimaryAppState) -> Result<()> {
+pub async fn test_default_connection<S: PrimaryRuntimeState>(state: &S) -> Result<()> {
     let policy = state
-        .policy_snapshot
+        .policy_snapshot()
         .system_default_policy()
         .ok_or_else(|| {
             AsterError::storage_policy_not_found("system default storage policy not found")
         })?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+    let driver = state.driver_registry().get_driver(&policy)?;
     probe_storage_driver(driver.as_ref(), "default storage readiness probe failed").await
 }
 
-pub async fn test_connection(state: &PrimaryAppState, id: i64) -> Result<()> {
-    let policy = policy_repo::find_by_id(&state.db, id).await?;
-    let driver = state.driver_registry.get_driver(&policy)?;
+pub async fn test_connection<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<()> {
+    let policy = policy_repo::find_by_id(state.db(), id).await?;
+    let driver = state.driver_registry().get_driver(&policy)?;
     probe_storage_driver(driver.as_ref(), "write test failed")
         .await
         .map_err(map_connection_test_error)
 }
 
-pub async fn test_connection_params(
-    state: &PrimaryAppState,
+pub async fn test_connection_params<S: PrimaryRuntimeState>(
+    state: &S,
     input: StoragePolicyConnectionInput,
 ) -> Result<()> {
     use crate::storage::drivers::local::LocalDriver;
@@ -300,7 +303,7 @@ pub async fn test_connection_params(
         remote_node_id,
     } = input;
     let (endpoint, bucket) = normalize_connection_fields(driver_type, &endpoint, &bucket)?;
-    let remote_node_id = validate_remote_binding(&state.db, driver_type, remote_node_id).await?;
+    let remote_node_id = validate_remote_binding(state.db(), driver_type, remote_node_id).await?;
 
     let fake_policy = storage_policy::Model {
         id: 0,
@@ -327,7 +330,7 @@ pub async fn test_connection_params(
             let remote_node_id = fake_policy.remote_node_id.ok_or_else(|| {
                 AsterError::validation_error("remote storage policy requires remote_node_id")
             })?;
-            let remote_node = managed_follower_repo::find_by_id(&state.db, remote_node_id).await?;
+            let remote_node = managed_follower_repo::find_by_id(state.db(), remote_node_id).await?;
             Box::new(RemoteDriver::new(&fake_policy, &remote_node)?)
         }
         DriverType::S3 => Box::new(S3Driver::new(&fake_policy)?),

@@ -18,7 +18,11 @@ use super::shared::{
 };
 use super::{CreateTeamInput, TeamInfo, UpdateTeamInput};
 
-pub async fn list_teams(state: &PrimaryAppState, user_id: i64, archived: bool) -> Result<Vec<TeamInfo>> {
+pub async fn list_teams(
+    state: &PrimaryAppState,
+    user_id: i64,
+    archived: bool,
+) -> Result<Vec<TeamInfo>> {
     let memberships = list_user_team_memberships(state, user_id, archived).await?;
     if memberships.is_empty() {
         return Ok(vec![]);
@@ -117,7 +121,11 @@ pub async fn archive_team(state: &PrimaryAppState, team_id: i64, actor_user_id: 
     archive_team_record(state, team).await
 }
 
-pub async fn restore_team(state: &PrimaryAppState, team_id: i64, actor_user_id: i64) -> Result<TeamInfo> {
+pub async fn restore_team(
+    state: &PrimaryAppState,
+    team_id: i64,
+    actor_user_id: i64,
+) -> Result<TeamInfo> {
     let team = team_repo::find_archived_by_id(&state.db, team_id).await?;
     let membership = team_member_repo::find_by_team_and_user(&state.db, team_id, actor_user_id)
         .await?

@@ -13,6 +13,7 @@ use crate::services::{
     storage_change_service::StorageChangeEvent,
 };
 use crate::storage::{DriverRegistry, PolicySnapshot};
+use actix_web::web;
 use sea_orm::DatabaseConnection;
 use std::sync::Arc;
 
@@ -40,13 +41,22 @@ pub struct FollowerAppState {
     pub cache: Arc<dyn CacheBackend>,
 }
 
-pub trait FollowerRuntimeState {
+pub trait SharedRuntimeState {
     fn db(&self) -> &DatabaseConnection;
     fn driver_registry(&self) -> &Arc<DriverRegistry>;
     fn policy_snapshot(&self) -> &Arc<PolicySnapshot>;
     fn config(&self) -> &Arc<Config>;
     fn cache(&self) -> &Arc<dyn CacheBackend>;
 }
+
+pub trait PrimaryRuntimeState: SharedRuntimeState {
+    fn runtime_config(&self) -> &Arc<RuntimeConfig>;
+    fn mail_sender(&self) -> &Arc<dyn MailSender>;
+    fn storage_change_tx(&self) -> &tokio::sync::broadcast::Sender<StorageChangeEvent>;
+    fn share_download_rollback(&self) -> &ShareDownloadRollbackQueue;
+}
+
+pub trait FollowerRuntimeState: SharedRuntimeState {}
 
 impl PrimaryAppState {
     pub fn follower_view(&self) -> FollowerAppState {
@@ -66,7 +76,7 @@ impl From<&PrimaryAppState> for FollowerAppState {
     }
 }
 
-impl FollowerRuntimeState for PrimaryAppState {
+impl SharedRuntimeState for PrimaryAppState {
     fn db(&self) -> &DatabaseConnection {
         &self.db
     }
@@ -88,7 +98,25 @@ impl FollowerRuntimeState for PrimaryAppState {
     }
 }
 
-impl FollowerRuntimeState for FollowerAppState {
+impl PrimaryRuntimeState for PrimaryAppState {
+    fn runtime_config(&self) -> &Arc<RuntimeConfig> {
+        &self.runtime_config
+    }
+
+    fn mail_sender(&self) -> &Arc<dyn MailSender> {
+        &self.mail_sender
+    }
+
+    fn storage_change_tx(&self) -> &tokio::sync::broadcast::Sender<StorageChangeEvent> {
+        &self.storage_change_tx
+    }
+
+    fn share_download_rollback(&self) -> &ShareDownloadRollbackQueue {
+        &self.share_download_rollback
+    }
+}
+
+impl SharedRuntimeState for FollowerAppState {
     fn db(&self) -> &DatabaseConnection {
         &self.db
     }
@@ -109,3 +137,47 @@ impl FollowerRuntimeState for FollowerAppState {
         &self.cache
     }
 }
+
+impl FollowerRuntimeState for FollowerAppState {}
+
+impl<T: SharedRuntimeState> SharedRuntimeState for web::Data<T> {
+    fn db(&self) -> &DatabaseConnection {
+        self.get_ref().db()
+    }
+
+    fn driver_registry(&self) -> &Arc<DriverRegistry> {
+        self.get_ref().driver_registry()
+    }
+
+    fn policy_snapshot(&self) -> &Arc<PolicySnapshot> {
+        self.get_ref().policy_snapshot()
+    }
+
+    fn config(&self) -> &Arc<Config> {
+        self.get_ref().config()
+    }
+
+    fn cache(&self) -> &Arc<dyn CacheBackend> {
+        self.get_ref().cache()
+    }
+}
+
+impl<T: PrimaryRuntimeState> PrimaryRuntimeState for web::Data<T> {
+    fn runtime_config(&self) -> &Arc<RuntimeConfig> {
+        self.get_ref().runtime_config()
+    }
+
+    fn mail_sender(&self) -> &Arc<dyn MailSender> {
+        self.get_ref().mail_sender()
+    }
+
+    fn storage_change_tx(&self) -> &tokio::sync::broadcast::Sender<StorageChangeEvent> {
+        self.get_ref().storage_change_tx()
+    }
+
+    fn share_download_rollback(&self) -> &ShareDownloadRollbackQueue {
+        self.get_ref().share_download_rollback()
+    }
+}
+
+impl<T: FollowerRuntimeState> FollowerRuntimeState for web::Data<T> {}

@@ -540,7 +540,9 @@ pub fn get_public_branding(state: &PrimaryAppState) -> PublicBranding {
     }
 }
 
-pub fn get_public_preview_apps(state: &PrimaryAppState) -> preview_app_service::PublicPreviewAppsConfig {
+pub fn get_public_preview_apps(
+    state: &PrimaryAppState,
+) -> preview_app_service::PublicPreviewAppsConfig {
     preview_app_service::get_public_preview_apps(state)
 }
 

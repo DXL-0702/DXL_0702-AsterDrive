@@ -346,7 +346,10 @@ pub(super) async fn load_team_metadata(
     ))
 }
 
-pub(super) async fn ensure_assignable_policy_group(state: &PrimaryAppState, group_id: i64) -> Result<()> {
+pub(super) async fn ensure_assignable_policy_group(
+    state: &PrimaryAppState,
+    group_id: i64,
+) -> Result<()> {
     let group = policy_group_repo::find_group_by_id(&state.db, group_id).await?;
     if !group.is_enabled {
         return Err(AsterError::validation_error(

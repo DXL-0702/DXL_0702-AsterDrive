@@ -397,7 +397,7 @@ pub fn spawn_primary_background_tasks(
         shutdown_token.clone(),
         state.clone(),
         |s| async move {
-            match crate::services::remote_node_service::run_health_tests(&s).await {
+            match crate::services::managed_follower_service::run_health_tests(&s).await {
                 Ok(stats) if stats.checked > 0 => {
                     tracing::info!(
                         checked = stats.checked,

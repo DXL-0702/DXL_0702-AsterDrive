@@ -1,10 +1,10 @@
-//! 服务模块：`remote_node_service`。
+//! 服务模块：`managed_follower_service`。
 
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{managed_follower_repo, policy_repo};
 use crate::entities::managed_follower;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::PrimaryRuntimeState;
 use crate::storage::remote_protocol::{
     RemoteStorageCapabilities, RemoteStorageClient, normalize_remote_base_url,
 };
@@ -79,26 +79,29 @@ pub struct RemoteNodeHealthTestStats {
     pub skipped: usize,
 }
 
-pub async fn list_paginated(
-    state: &PrimaryAppState,
+pub async fn list_paginated<S: PrimaryRuntimeState>(
+    state: &S,
     limit: u64,
     offset: u64,
 ) -> Result<OffsetPage<RemoteNodeInfo>> {
     load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (items, total) =
-            managed_follower_repo::find_paginated(&state.db, limit, offset).await?;
+            managed_follower_repo::find_paginated(state.db(), limit, offset).await?;
         Ok((items.into_iter().map(Into::into).collect(), total))
     })
     .await
 }
 
-pub async fn get(state: &PrimaryAppState, id: i64) -> Result<RemoteNodeInfo> {
-    managed_follower_repo::find_by_id(&state.db, id)
+pub async fn get<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<RemoteNodeInfo> {
+    managed_follower_repo::find_by_id(state.db(), id)
         .await
         .map(Into::into)
 }
 
-pub async fn create(state: &PrimaryAppState, input: CreateRemoteNodeInput) -> Result<RemoteNodeInfo> {
+pub async fn create<S: PrimaryRuntimeState>(
+    state: &S,
+    input: CreateRemoteNodeInput,
+) -> Result<RemoteNodeInfo> {
     let normalized = normalize_create_input(input)?;
     let (access_key, secret_key) = generate_managed_credentials();
     let now = Utc::now();
@@ -116,7 +119,7 @@ pub async fn create(state: &PrimaryAppState, input: CreateRemoteNodeInput) -> Re
         updated_at: Set(now),
         ..Default::default()
     }
-    .insert(&state.db)
+    .insert(state.db())
     .await
     .map_err(map_remote_node_db_err)?;
 
@@ -124,12 +127,12 @@ pub async fn create(state: &PrimaryAppState, input: CreateRemoteNodeInput) -> Re
     Ok(created.into())
 }
 
-pub async fn update(
-    state: &PrimaryAppState,
+pub async fn update<S: PrimaryRuntimeState>(
+    state: &S,
     id: i64,
     input: UpdateRemoteNodeInput,
 ) -> Result<RemoteNodeInfo> {
-    let existing = managed_follower_repo::find_by_id(&state.db, id).await?;
+    let existing = managed_follower_repo::find_by_id(state.db(), id).await?;
     let normalized = normalize_update_input(input)?;
 
     let mut active: managed_follower::ActiveModel = existing.into();
@@ -148,27 +151,27 @@ pub async fn update(
     active.updated_at = Set(Utc::now());
 
     let updated = active
-        .update(&state.db)
+        .update(state.db())
         .await
         .map_err(map_remote_node_db_err)?;
     refresh_registry(state).await?;
     Ok(updated.into())
 }
 
-pub async fn delete(state: &PrimaryAppState, id: i64) -> Result<()> {
-    let policy_refs = policy_repo::count_by_remote_node_id(&state.db, id).await?;
+pub async fn delete<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<()> {
+    let policy_refs = policy_repo::count_by_remote_node_id(state.db(), id).await?;
     if policy_refs > 0 {
         return Err(AsterError::validation_error(format!(
             "cannot delete remote node: {policy_refs} storage policy(s) still reference it"
         )));
     }
-    managed_follower_repo::delete(&state.db, id).await?;
+    managed_follower_repo::delete(state.db(), id).await?;
     refresh_registry(state).await?;
     Ok(())
 }
 
-pub async fn test_connection(state: &PrimaryAppState, id: i64) -> Result<RemoteNodeInfo> {
-    let node = managed_follower_repo::find_by_id(&state.db, id).await?;
+pub async fn test_connection<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<RemoteNodeInfo> {
+    let node = managed_follower_repo::find_by_id(state.db(), id).await?;
     let updated = probe_and_persist_node(state, &node).await?;
     refresh_registry(state).await?;
     Ok(updated.into())
@@ -182,8 +185,10 @@ pub async fn test_connection_params(
         .map_err(map_connection_test_error)
 }
 
-pub async fn run_health_tests(state: &PrimaryAppState) -> Result<RemoteNodeHealthTestStats> {
-    let nodes = managed_follower_repo::find_all(&state.db).await?;
+pub async fn run_health_tests<S: PrimaryRuntimeState>(
+    state: &S,
+) -> Result<RemoteNodeHealthTestStats> {
+    let nodes = managed_follower_repo::find_all(state.db()).await?;
     let mut stats = RemoteNodeHealthTestStats::default();
 
     for node in nodes {
@@ -221,8 +226,8 @@ async fn probe_connection(input: &TestRemoteNodeInput) -> Result<RemoteStorageCa
     client.probe_capabilities().await
 }
 
-async fn probe_and_persist_node(
-    state: &PrimaryAppState,
+async fn probe_and_persist_node<S: PrimaryRuntimeState>(
+    state: &S,
     node: &managed_follower::Model,
 ) -> Result<managed_follower::Model> {
     let capabilities = probe_connection(&TestRemoteNodeInput {
@@ -237,7 +242,7 @@ async fn probe_and_persist_node(
         Err(error) => ("{}".to_string(), error.message().to_string()),
     };
     managed_follower_repo::touch_probe_result(
-        &state.db,
+        state.db(),
         node.id,
         last_capabilities,
         last_error,
@@ -313,12 +318,12 @@ fn normalize_namespace(value: &str) -> Result<String> {
     Ok(trimmed.to_string())
 }
 
-async fn refresh_registry(state: &PrimaryAppState) -> Result<()> {
+async fn refresh_registry<S: PrimaryRuntimeState>(state: &S) -> Result<()> {
     state
-        .driver_registry
-        .reload_managed_followers(&state.db)
+        .driver_registry()
+        .reload_managed_followers(state.db())
         .await?;
-    state.driver_registry.invalidate_all();
+    state.driver_registry().invalidate_all();
     Ok(())
 }
 
@@ -377,7 +382,6 @@ mod tests {
             base_url: Some(" https://remote.example.com/ ".to_string()),
             namespace: Some("tenant-a".to_string()),
             is_enabled: Some(true),
-            ..Default::default()
         })
         .unwrap();
 

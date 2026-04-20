@@ -316,7 +316,10 @@ pub async fn logout(state: web::Data<PrimaryAppState>, req: HttpRequest) -> Http
     ),
     security(("bearer" = [])),
 )]
-pub async fn me(state: web::Data<PrimaryAppState>, claims: web::ReqData<Claims>) -> Result<HttpResponse> {
+pub async fn me(
+    state: web::Data<PrimaryAppState>,
+    claims: web::ReqData<Claims>,
+) -> Result<HttpResponse> {
     let resp =
         user_service::get_me(&state, claims.user_id, usize_to_i64(claims.exp, "jwt exp")?).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(resp)))

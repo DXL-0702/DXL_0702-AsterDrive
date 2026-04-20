@@ -91,7 +91,10 @@ pub(super) async fn load_valid_share(state: &PrimaryAppState, token: &str) -> Re
     Ok(share)
 }
 
-pub(super) async fn load_share_record(state: &PrimaryAppState, token: &str) -> Result<share::Model> {
+pub(super) async fn load_share_record(
+    state: &PrimaryAppState,
+    token: &str,
+) -> Result<share::Model> {
     let share = share_repo::find_by_token(&state.db, token)
         .await?
         .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;

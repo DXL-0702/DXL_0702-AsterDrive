@@ -51,7 +51,10 @@ pub async fn delete(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()
     delete_in_scope(state, WorkspaceStorageScope::Personal { user_id }, id).await
 }
 
-pub(crate) async fn ensure_blob_cleanup_if_unreferenced(state: &PrimaryAppState, blob_id: i64) -> bool {
+pub(crate) async fn ensure_blob_cleanup_if_unreferenced(
+    state: &PrimaryAppState,
+    blob_id: i64,
+) -> bool {
     let current_blob = match file_repo::find_blob_by_id(&state.db, blob_id).await {
         Ok(current_blob) => current_blob,
         Err(e) if e.code() == "E006" => return true,
@@ -81,7 +84,10 @@ pub(crate) async fn ensure_blob_cleanup_if_unreferenced(state: &PrimaryAppState,
     }
 }
 
-pub(crate) async fn cleanup_unreferenced_blob(state: &PrimaryAppState, blob: &file_blob::Model) -> bool {
+pub(crate) async fn cleanup_unreferenced_blob(
+    state: &PrimaryAppState,
+    blob: &file_blob::Model,
+) -> bool {
     let current_blob = match file_repo::find_blob_by_id(&state.db, blob.id).await {
         Ok(current_blob) => current_blob,
         Err(e) if e.code() == "E006" => return true,
@@ -359,7 +365,11 @@ pub(crate) async fn batch_purge_in_scope(
     Ok(count)
 }
 
-pub async fn batch_purge(state: &PrimaryAppState, files: Vec<file::Model>, user_id: i64) -> Result<u32> {
+pub async fn batch_purge(
+    state: &PrimaryAppState,
+    files: Vec<file::Model>,
+    user_id: i64,
+) -> Result<u32> {
     batch_purge_in_scope(state, WorkspaceStorageScope::Personal { user_id }, files).await
 }
 

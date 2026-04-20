@@ -81,7 +81,10 @@ impl FrontendService {
             .body(processed)
     }
 
-    pub async fn handle_index(state: web::Data<PrimaryAppState>, _req: HttpRequest) -> HttpResponse {
+    pub async fn handle_index(
+        state: web::Data<PrimaryAppState>,
+        _req: HttpRequest,
+    ) -> HttpResponse {
         Self::serve_index(state.get_ref()).await
     }
 

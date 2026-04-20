@@ -20,7 +20,10 @@ async fn reload_policy_snapshot(state: &aster_drive::runtime::PrimaryAppState) {
     state.policy_snapshot.reload(&state.db).await.unwrap();
 }
 
-async fn set_default_local_content_dedup(state: &aster_drive::runtime::PrimaryAppState, enabled: bool) {
+async fn set_default_local_content_dedup(
+    state: &aster_drive::runtime::PrimaryAppState,
+    enabled: bool,
+) {
     use aster_drive::db::repository::policy_repo;
     use sea_orm::{ActiveModelTrait, Set};
 

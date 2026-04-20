@@ -4,7 +4,7 @@ use crate::api::dto::validate_request;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::{config_service, remote_enrollment_service};
+use crate::services::{config_service, managed_follower_enrollment_service};
 use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -74,7 +74,7 @@ pub async fn get_preview_apps(state: web::Data<PrimaryAppState>) -> Result<HttpR
     operation_id = "redeem_remote_enrollment",
     request_body = RedeemRemoteEnrollmentReq,
     responses(
-        (status = 200, description = "Redeem a remote enrollment token", body = ApiResponse<remote_enrollment_service::RemoteEnrollmentBootstrap>),
+        (status = 200, description = "Redeem a remote enrollment token", body = ApiResponse<managed_follower_enrollment_service::RemoteEnrollmentBootstrap>),
     ),
 )]
 pub async fn redeem_remote_enrollment(
@@ -82,7 +82,8 @@ pub async fn redeem_remote_enrollment(
     body: web::Json<RedeemRemoteEnrollmentReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    let bootstrap = remote_enrollment_service::redeem_enrollment_token(&state, &body.token).await?;
+    let bootstrap =
+        managed_follower_enrollment_service::redeem_enrollment_token(&state, &body.token).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(bootstrap)))
 }
 
@@ -101,6 +102,6 @@ pub async fn ack_remote_enrollment(
     body: web::Json<AckRemoteEnrollmentReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    remote_enrollment_service::ack_enrollment_token(&state, &body.ack_token).await?;
+    managed_follower_enrollment_service::ack_enrollment_token(&state, &body.ack_token).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }

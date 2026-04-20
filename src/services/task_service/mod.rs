@@ -241,7 +241,10 @@ pub(crate) async fn retry_task_in_scope(
     get_task_in_scope(state, scope, task_id).await
 }
 
-async fn build_task_info(_state: &PrimaryAppState, task: background_task::Model) -> Result<TaskInfo> {
+async fn build_task_info(
+    _state: &PrimaryAppState,
+    task: background_task::Model,
+) -> Result<TaskInfo> {
     // 数据库存的是通用 JSON 负载和步骤快照；这里统一把它们解包成 API 可读结构，
     // 让列表页和详情页不必了解任务种类内部的存储格式。
     let progress_percent = if task.progress_total <= 0 {
@@ -433,7 +436,10 @@ pub(super) async fn mark_task_succeeded(
     }
 }
 
-pub(super) async fn prepare_task_temp_dir(state: &PrimaryAppState, lease: TaskLease) -> Result<String> {
+pub(super) async fn prepare_task_temp_dir(
+    state: &PrimaryAppState,
+    lease: TaskLease,
+) -> Result<String> {
     // 临时目录按 task_id/token 隔离：
     // temp/tasks/{task_id}/{processing_token}
     //
@@ -466,7 +472,10 @@ pub(super) async fn cleanup_task_temp_dir_for_lease(
     Ok(())
 }
 
-pub(super) async fn cleanup_task_temp_dir_for_task(state: &PrimaryAppState, task_id: i64) -> Result<()> {
+pub(super) async fn cleanup_task_temp_dir_for_task(
+    state: &PrimaryAppState,
+    task_id: i64,
+) -> Result<()> {
     // 成功路径会删整个任务根目录，因为到这里说明已经没有活跃 lease 需要保留产物了。
     // 如果任务在失败/崩溃/重启中断时没走到这里，后续由 task-cleanup 周期任务兜底清理。
     crate::utils::cleanup_temp_dir(&crate::utils::paths::task_temp_dir(

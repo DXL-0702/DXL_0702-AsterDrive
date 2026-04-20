@@ -89,7 +89,10 @@ pub async fn request_email_change(
     Ok(AuthUserInfo::from(updated))
 }
 
-pub async fn resend_email_change(state: &PrimaryAppState, user_id: i64) -> Result<Option<UserAuditInfo>> {
+pub async fn resend_email_change(
+    state: &PrimaryAppState,
+    user_id: i64,
+) -> Result<Option<UserAuditInfo>> {
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let pending_email = user
         .pending_email

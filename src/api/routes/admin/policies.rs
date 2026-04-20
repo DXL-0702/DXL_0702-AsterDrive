@@ -194,7 +194,10 @@ pub async fn create_policy(
     ),
     security(("bearer" = [])),
 )]
-pub async fn get_policy(state: web::Data<PrimaryAppState>, path: web::Path<i64>) -> Result<HttpResponse> {
+pub async fn get_policy(
+    state: web::Data<PrimaryAppState>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
     let policy = policy_service::get(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(policy)))
 }

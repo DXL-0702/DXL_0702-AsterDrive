@@ -5,15 +5,11 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum NodeRuntimeMode {
+    #[default]
     Primary,
     Follower,
-}
-
-impl Default for NodeRuntimeMode {
-    fn default() -> Self {
-        Self::Primary
-    }
 }
 
 impl NodeRuntimeMode {

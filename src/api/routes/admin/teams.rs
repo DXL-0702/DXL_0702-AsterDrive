@@ -95,7 +95,10 @@ pub async fn create_team(
     ),
     security(("bearer" = [])),
 )]
-pub async fn get_team(state: web::Data<PrimaryAppState>, path: web::Path<i64>) -> Result<HttpResponse> {
+pub async fn get_team(
+    state: web::Data<PrimaryAppState>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
     let team = team_service::get_admin_team(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(team)))
 }

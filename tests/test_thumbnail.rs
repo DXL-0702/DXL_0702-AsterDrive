@@ -77,7 +77,10 @@ async fn thumbnail_task_display_name(state: &PrimaryAppState, file_id: i64) -> S
     format!("Generate thumbnail for blob #{}", file.blob_id)
 }
 
-async fn blob_for_file(state: &PrimaryAppState, file_id: i64) -> aster_drive::entities::file_blob::Model {
+async fn blob_for_file(
+    state: &PrimaryAppState,
+    file_id: i64,
+) -> aster_drive::entities::file_blob::Model {
     let file = file_repo::find_by_id(&state.db, file_id).await.unwrap();
     file_repo::find_blob_by_id(&state.db, file.blob_id)
         .await

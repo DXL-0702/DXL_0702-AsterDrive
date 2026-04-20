@@ -20,7 +20,7 @@ macro_rules! create_test_app_with_cors {
                 .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
                 .app_data(web::JsonConfig::default().limit(1024 * 1024))
                 .app_data(web::Data::new(state))
-                .configure(move |cfg| aster_drive::api::configure(cfg, &db)),
+                .configure(move |cfg| aster_drive::api::configure_primary(cfg, &db)),
         )
         .await
     }};

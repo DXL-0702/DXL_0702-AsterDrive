@@ -220,7 +220,7 @@ async fn run_primary_http_server(
             .app_data(actix_web::web::PayloadConfig::new(10 * 1024 * 1024))
             .app_data(actix_web::web::JsonConfig::default().limit(1024 * 1024))
             .app_data(state.clone())
-            .configure(move |cfg| aster_drive::api::configure(cfg, &db))
+            .configure(move |cfg| aster_drive::api::configure_primary(cfg, &db))
     })
     .keep_alive(std::time::Duration::from_secs(30))
     .client_request_timeout(std::time::Duration::from_millis(5000))

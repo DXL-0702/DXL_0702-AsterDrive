@@ -89,7 +89,10 @@ pub async fn list_users(
     ),
     security(("bearer" = [])),
 )]
-pub async fn get_user(state: web::Data<PrimaryAppState>, path: web::Path<i64>) -> Result<HttpResponse> {
+pub async fn get_user(
+    state: web::Data<PrimaryAppState>,
+    path: web::Path<i64>,
+) -> Result<HttpResponse> {
     let user = user_service::get(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(user)))
 }

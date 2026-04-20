@@ -2,7 +2,7 @@
 
 use crate::api::error_code::ErrorCode;
 use crate::api::response::{ApiResponse, HealthResponse, MemoryStatsResponse};
-use crate::runtime::{PrimaryAppState, FollowerAppState};
+use crate::runtime::{FollowerAppState, PrimaryAppState};
 use crate::services::readiness_service;
 use actix_web::{HttpResponse, web};
 

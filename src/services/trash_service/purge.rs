@@ -23,7 +23,12 @@ pub async fn purge_file(state: &PrimaryAppState, id: i64, user_id: i64) -> Resul
     Ok(())
 }
 
-pub async fn purge_team_file(state: &PrimaryAppState, team_id: i64, id: i64, user_id: i64) -> Result<()> {
+pub async fn purge_team_file(
+    state: &PrimaryAppState,
+    team_id: i64,
+    id: i64,
+    user_id: i64,
+) -> Result<()> {
     let scope = WorkspaceStorageScope::Team {
         team_id,
         actor_user_id: user_id,

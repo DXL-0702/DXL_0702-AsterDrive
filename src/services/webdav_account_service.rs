@@ -197,7 +197,11 @@ pub async fn delete(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()
 }
 
 /// 切换启用/禁用
-pub async fn toggle_active(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<WebdavAccount> {
+pub async fn toggle_active(
+    state: &PrimaryAppState,
+    id: i64,
+    user_id: i64,
+) -> Result<WebdavAccount> {
     let account = webdav_account_repo::find_by_id(&state.db, id).await?;
     crate::utils::verify_owner(account.user_id, user_id, "account")?;
     let new_is_active = !account.is_active;
@@ -210,7 +214,11 @@ pub async fn toggle_active(state: &PrimaryAppState, id: i64, user_id: i64) -> Re
 }
 
 /// 测试 WebDAV 凭据是否正确
-pub async fn test_credentials(state: &PrimaryAppState, username: &str, password: &str) -> Result<()> {
+pub async fn test_credentials(
+    state: &PrimaryAppState,
+    username: &str,
+    password: &str,
+) -> Result<()> {
     let account = webdav_account_repo::find_by_username(&state.db, username)
         .await?
         .ok_or_else(|| AsterError::auth_invalid_credentials("WebDAV account not found"))?;

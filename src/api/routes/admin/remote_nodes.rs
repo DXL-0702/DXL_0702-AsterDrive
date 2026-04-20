@@ -8,10 +8,10 @@ use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::{remote_enrollment_service, remote_node_service};
+use crate::services::{managed_follower_enrollment_service, managed_follower_service};
 use actix_web::{HttpResponse, web};
 
-impl From<CreateRemoteNodeReq> for remote_node_service::CreateRemoteNodeInput {
+impl From<CreateRemoteNodeReq> for managed_follower_service::CreateRemoteNodeInput {
     fn from(value: CreateRemoteNodeReq) -> Self {
         Self {
             name: value.name,
@@ -22,7 +22,7 @@ impl From<CreateRemoteNodeReq> for remote_node_service::CreateRemoteNodeInput {
     }
 }
 
-impl From<PatchRemoteNodeReq> for remote_node_service::UpdateRemoteNodeInput {
+impl From<PatchRemoteNodeReq> for managed_follower_service::UpdateRemoteNodeInput {
     fn from(value: PatchRemoteNodeReq) -> Self {
         Self {
             name: value.name,
@@ -33,7 +33,7 @@ impl From<PatchRemoteNodeReq> for remote_node_service::UpdateRemoteNodeInput {
     }
 }
 
-impl From<TestRemoteNodeParamsReq> for remote_node_service::TestRemoteNodeInput {
+impl From<TestRemoteNodeParamsReq> for managed_follower_service::TestRemoteNodeInput {
     fn from(value: TestRemoteNodeParamsReq) -> Self {
         Self {
             base_url: value.base_url,
@@ -50,7 +50,7 @@ impl From<TestRemoteNodeParamsReq> for remote_node_service::TestRemoteNodeInput 
     operation_id = "list_remote_nodes",
     params(LimitOffsetQuery),
     responses(
-        (status = 200, description = "List remote nodes", body = inline(ApiResponse<OffsetPage<remote_node_service::RemoteNodeInfo>>)),
+        (status = 200, description = "List remote nodes", body = inline(ApiResponse<OffsetPage<managed_follower_service::RemoteNodeInfo>>)),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
@@ -61,7 +61,7 @@ pub async fn list_remote_nodes(
     query: web::Query<LimitOffsetQuery>,
 ) -> Result<HttpResponse> {
     let nodes =
-        remote_node_service::list_paginated(&state, query.limit_or(50, 100), query.offset())
+        managed_follower_service::list_paginated(&state, query.limit_or(50, 100), query.offset())
             .await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(nodes)))
 }
@@ -73,7 +73,7 @@ pub async fn list_remote_nodes(
     operation_id = "create_remote_node",
     request_body = CreateRemoteNodeReq,
     responses(
-        (status = 201, description = "Remote node created", body = inline(ApiResponse<remote_node_service::RemoteNodeInfo>)),
+        (status = 201, description = "Remote node created", body = inline(ApiResponse<managed_follower_service::RemoteNodeInfo>)),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
     ),
@@ -84,7 +84,7 @@ pub async fn create_remote_node(
     body: web::Json<CreateRemoteNodeReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    let node = remote_node_service::create(&state, body.into_inner().into()).await?;
+    let node = managed_follower_service::create(&state, body.into_inner().into()).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(node)))
 }
 
@@ -95,7 +95,7 @@ pub async fn create_remote_node(
     operation_id = "get_remote_node",
     params(("id" = i64, Path, description = "Remote node ID")),
     responses(
-        (status = 200, description = "Remote node details", body = inline(ApiResponse<remote_node_service::RemoteNodeInfo>)),
+        (status = 200, description = "Remote node details", body = inline(ApiResponse<managed_follower_service::RemoteNodeInfo>)),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Remote node not found"),
@@ -106,7 +106,7 @@ pub async fn get_remote_node(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let node = remote_node_service::get(&state, *path).await?;
+    let node = managed_follower_service::get(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(node)))
 }
 
@@ -118,7 +118,7 @@ pub async fn get_remote_node(
     params(("id" = i64, Path, description = "Remote node ID")),
     request_body = PatchRemoteNodeReq,
     responses(
-        (status = 200, description = "Remote node updated", body = inline(ApiResponse<remote_node_service::RemoteNodeInfo>)),
+        (status = 200, description = "Remote node updated", body = inline(ApiResponse<managed_follower_service::RemoteNodeInfo>)),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Remote node not found"),
@@ -131,7 +131,7 @@ pub async fn update_remote_node(
     body: web::Json<PatchRemoteNodeReq>,
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
-    let node = remote_node_service::update(&state, *path, body.into_inner().into()).await?;
+    let node = managed_follower_service::update(&state, *path, body.into_inner().into()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(node)))
 }
 
@@ -153,7 +153,7 @@ pub async fn delete_remote_node(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    remote_node_service::delete(&state, *path).await?;
+    managed_follower_service::delete(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::<()>::ok_empty()))
 }
 
@@ -164,7 +164,7 @@ pub async fn delete_remote_node(
     operation_id = "test_remote_node_connection",
     params(("id" = i64, Path, description = "Remote node ID")),
     responses(
-        (status = 200, description = "Remote node connection tested", body = inline(ApiResponse<remote_node_service::RemoteNodeInfo>)),
+        (status = 200, description = "Remote node connection tested", body = inline(ApiResponse<managed_follower_service::RemoteNodeInfo>)),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Remote node not found"),
@@ -176,7 +176,7 @@ pub async fn test_remote_node(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let node = remote_node_service::test_connection(&state, *path).await?;
+    let node = managed_follower_service::test_connection(&state, *path).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(node)))
 }
 
@@ -199,7 +199,7 @@ pub async fn test_remote_node_params(
 ) -> Result<HttpResponse> {
     validate_request(&*body)?;
     let capabilities =
-        remote_node_service::test_connection_params(body.into_inner().into()).await?;
+        managed_follower_service::test_connection_params(body.into_inner().into()).await?;
     Ok(HttpResponse::Ok().json(ApiResponse::ok(capabilities)))
 }
 
@@ -210,7 +210,7 @@ pub async fn test_remote_node_params(
     operation_id = "create_remote_node_enrollment_token",
     params(("id" = i64, Path, description = "Remote node ID")),
     responses(
-        (status = 201, description = "Enrollment command created", body = ApiResponse<remote_enrollment_service::RemoteEnrollmentCommandInfo>),
+        (status = 201, description = "Enrollment command created", body = ApiResponse<managed_follower_enrollment_service::RemoteEnrollmentCommandInfo>),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 404, description = "Remote node not found"),
@@ -221,6 +221,7 @@ pub async fn create_remote_node_enrollment_token(
     state: web::Data<PrimaryAppState>,
     path: web::Path<i64>,
 ) -> Result<HttpResponse> {
-    let command = remote_enrollment_service::create_enrollment_command(&state, *path).await?;
+    let command =
+        managed_follower_enrollment_service::create_enrollment_command(&state, *path).await?;
     Ok(HttpResponse::Created().json(ApiResponse::ok(command)))
 }

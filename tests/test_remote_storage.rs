@@ -10,7 +10,7 @@ use actix_web::{App, HttpServer, web};
 use aster_drive::db::repository::{file_repo, policy_repo};
 use aster_drive::entities::storage_policy;
 use aster_drive::services::{
-    auth_service, file_service, folder_service, master_binding_service, remote_node_service,
+    auth_service, file_service, folder_service, managed_follower_service, master_binding_service,
 };
 use aster_drive::types::{
     DriverType, NullablePatch, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
@@ -104,9 +104,9 @@ async fn create_remote_policy(
 async fn wait_for_remote_probe(
     state: &aster_drive::runtime::PrimaryAppState,
     node_id: i64,
-) -> remote_node_service::RemoteNodeInfo {
+) -> managed_follower_service::RemoteNodeInfo {
     for attempt in 0..20 {
-        match remote_node_service::test_connection(state, node_id).await {
+        match managed_follower_service::test_connection(state, node_id).await {
             Ok(info) => return info,
             Err(error) if attempt < 19 => {
                 tracing::debug!(attempt, node_id, "remote probe not ready yet: {error}");
@@ -195,13 +195,11 @@ async fn test_remote_storage_end_to_end_via_internal_api() {
         .await
         .expect("provider binding registry should reload");
 
-    let consumer_node = remote_node_service::create(
+    let consumer_node = managed_follower_service::create(
         &consumer_state,
-        remote_node_service::CreateRemoteNodeInput {
+        managed_follower_service::CreateRemoteNodeInput {
             name: "provider-target".to_string(),
             base_url: provider_server.base_url.clone(),
-            access_key: "remote-test-access".to_string(),
-            secret_key: "remote-test-secret".to_string(),
             namespace: "provider-space".to_string(),
             is_enabled: true,
         },

@@ -1232,7 +1232,7 @@ macro_rules! create_test_app {
                 .app_data(web::PayloadConfig::new(10 * 1024 * 1024))
                 .app_data(web::JsonConfig::default().limit(1024 * 1024))
                 .app_data(web::Data::new(state))
-                .configure(move |cfg| aster_drive::api::configure(cfg, &db)),
+                .configure(move |cfg| aster_drive::api::configure_primary(cfg, &db)),
         )
         .await
     }};
@@ -1498,7 +1498,7 @@ macro_rules! setup_with_webdav {
                 .app_data(web::Data::new(state))
                 .configure(move |cfg| {
                     aster_drive::webdav::configure(cfg, &webdav_config, &db2);
-                    aster_drive::api::configure(cfg, &db1);
+                    aster_drive::api::configure_primary(cfg, &db1);
                 }),
         )
         .await;
@@ -1525,7 +1525,7 @@ macro_rules! setup_with_webdav_and_mail {
                 .app_data(web::Data::new(state))
                 .configure(move |cfg| {
                     aster_drive::webdav::configure(cfg, &webdav_config, &db2);
-                    aster_drive::api::configure(cfg, &db1);
+                    aster_drive::api::configure_primary(cfg, &db1);
                 }),
         )
         .await;

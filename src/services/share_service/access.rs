@@ -85,7 +85,11 @@ async fn resolve_share_owner_info(
     })
 }
 
-pub async fn get_share_avatar_bytes(state: &PrimaryAppState, token: &str, size: u32) -> Result<Vec<u8>> {
+pub async fn get_share_avatar_bytes(
+    state: &PrimaryAppState,
+    token: &str,
+    size: u32,
+) -> Result<Vec<u8>> {
     let share = load_valid_share(state, token).await?;
     profile_service::get_avatar_bytes(state, share.user_id, size).await
 }

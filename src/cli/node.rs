@@ -322,9 +322,7 @@ fn render_node_human(report: &NodeEnrollReport) -> String {
 
     lines.push(String::new());
     lines.push(palette.label("Next steps:"));
-    lines.push(format!(
-        "  1. Restart the AsterDrive process on this node so the follower endpoint starts listening."
-    ));
+    lines.push("  1. Restart the AsterDrive process on this node so the follower endpoint starts listening.".to_string());
     lines.push(format!(
         "  2. Confirm the master can reach this node on {}:{}.",
         palette.accent(&report.server_host),

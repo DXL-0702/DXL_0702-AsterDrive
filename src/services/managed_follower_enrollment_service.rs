@@ -1,10 +1,10 @@
-//! 服务模块：`remote_enrollment_service`。
+//! 服务模块：`managed_follower_enrollment_service`。
 
 use crate::config::site_url;
 use crate::db::repository::{follower_enrollment_session_repo, managed_follower_repo};
 use crate::entities::follower_enrollment_session;
 use crate::errors::{AsterError, Result};
-use crate::runtime::PrimaryAppState;
+use crate::runtime::PrimaryRuntimeState;
 use chrono::{Duration, Utc};
 use sea_orm::Set;
 use serde::Serialize;
@@ -39,16 +39,16 @@ pub struct RemoteEnrollmentBootstrap {
     pub ack_token: String,
 }
 
-pub async fn create_enrollment_command(
-    state: &PrimaryAppState,
+pub async fn create_enrollment_command<S: PrimaryRuntimeState>(
+    state: &S,
     remote_node_id: i64,
 ) -> Result<RemoteEnrollmentCommandInfo> {
-    let master_url = site_url::public_site_url(&state.runtime_config).ok_or_else(|| {
+    let master_url = site_url::public_site_url(state.runtime_config()).ok_or_else(|| {
         AsterError::validation_error(
             "public_site_url must be configured before generating enrollment commands",
         )
     })?;
-    let remote_node = managed_follower_repo::find_by_id(&state.db, remote_node_id).await?;
+    let remote_node = managed_follower_repo::find_by_id(state.db(), remote_node_id).await?;
     let token = format!("enr_{}", crate::utils::id::new_short_token());
     let ack_token = format!("enr_ack_{}", crate::utils::id::new_short_token());
     let token_hash = crate::utils::hash::sha256_hex(token.as_bytes());
@@ -56,7 +56,7 @@ pub async fn create_enrollment_command(
     let expires_at = Utc::now() + Duration::minutes(DEFAULT_ENROLLMENT_TTL_MINUTES);
     let created_at = Utc::now();
 
-    crate::db::transaction::with_transaction(&state.db, async |txn| {
+    crate::db::transaction::with_transaction(state.db(), async |txn| {
         follower_enrollment_session_repo::invalidate_pending_for_managed_follower(
             txn,
             remote_node_id,
@@ -91,8 +91,8 @@ pub async fn create_enrollment_command(
     })
 }
 
-pub async fn redeem_enrollment_token(
-    state: &PrimaryAppState,
+pub async fn redeem_enrollment_token<S: PrimaryRuntimeState>(
+    state: &S,
     token: &str,
 ) -> Result<RemoteEnrollmentBootstrap> {
     let trimmed = token.trim();
@@ -101,7 +101,7 @@ pub async fn redeem_enrollment_token(
     }
 
     let token_hash = crate::utils::hash::sha256_hex(trimmed.as_bytes());
-    crate::db::transaction::with_transaction(&state.db, async |txn| {
+    crate::db::transaction::with_transaction(state.db(), async |txn| {
         let enrollment = follower_enrollment_session_repo::find_by_token_hash(txn, &token_hash)
             .await?
             .ok_or_else(|| AsterError::validation_error("invalid enrollment token"))?;
@@ -122,7 +122,7 @@ pub async fn redeem_enrollment_token(
 
         follower_enrollment_session_repo::mark_redeemed_if_needed(txn, enrollment.id).await?;
 
-        let master_url = site_url::public_site_url(&state.runtime_config).ok_or_else(|| {
+        let master_url = site_url::public_site_url(state.runtime_config()).ok_or_else(|| {
             AsterError::validation_error("public_site_url is not configured on the master node")
         })?;
         let remote_node =
@@ -142,14 +142,17 @@ pub async fn redeem_enrollment_token(
     .await
 }
 
-pub async fn ack_enrollment_token(state: &PrimaryAppState, ack_token: &str) -> Result<()> {
+pub async fn ack_enrollment_token<S: PrimaryRuntimeState>(
+    state: &S,
+    ack_token: &str,
+) -> Result<()> {
     let trimmed = ack_token.trim();
     if trimmed.is_empty() {
         return Err(AsterError::validation_error("ack_token cannot be blank"));
     }
 
     let ack_token_hash = normalize_ack_token_hash(trimmed);
-    crate::db::transaction::with_transaction(&state.db, async |txn| {
+    crate::db::transaction::with_transaction(state.db(), async |txn| {
         let enrollment =
             follower_enrollment_session_repo::find_by_ack_token_hash(txn, &ack_token_hash)
                 .await?
