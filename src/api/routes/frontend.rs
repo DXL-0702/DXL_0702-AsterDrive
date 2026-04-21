@@ -21,12 +21,14 @@ pub const FRONTEND_CSP: &str = concat!(
     "frame-ancestors 'self'; ",
     "script-src 'self' 'unsafe-inline'; ",
     "style-src 'self' 'unsafe-inline'; ",
-    "img-src 'self' data: blob: https:; ",
+    "img-src 'self' data: blob: http: https:; ",
     "font-src 'self' data:; ",
-    "connect-src 'self' ws: wss:; ",
+    // presigned upload / download 可能直接命中外部对象存储或 remote follower，
+    // 这里必须允许浏览器向任意 http(s) 终点发起 XHR/fetch/WebSocket 连接。
+    "connect-src 'self' http: https: ws: wss:; ",
     "media-src 'self' blob:; ",
     "worker-src 'self' blob:; ",
-    "frame-src 'self' https:; ",
+    "frame-src 'self' http: https:; ",
     "manifest-src 'self'"
 );
 

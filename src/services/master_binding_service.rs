@@ -7,7 +7,8 @@ use crate::runtime::FollowerRuntimeState;
 use crate::storage::remote_protocol::{
     INTERNAL_AUTH_ACCESS_KEY_HEADER, INTERNAL_AUTH_NONCE_HEADER, INTERNAL_AUTH_NONCE_TTL_SECS,
     INTERNAL_AUTH_SIGNATURE_HEADER, INTERNAL_AUTH_SKEW_SECS, INTERNAL_AUTH_TIMESTAMP_HEADER,
-    normalize_remote_base_url,
+    PRESIGNED_AUTH_ACCESS_KEY_QUERY, PRESIGNED_AUTH_EXPIRES_QUERY, PRESIGNED_AUTH_SIGNATURE_QUERY,
+    normalize_remote_base_url, sign_presigned_request,
 };
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
@@ -107,6 +108,32 @@ pub async fn authorize_binding_sync_request<S: FollowerRuntimeState>(
     authorize_binding_request(state, req, true).await
 }
 
+pub async fn authorize_presigned_put_request<S: FollowerRuntimeState>(
+    state: &S,
+    req: &actix_web::HttpRequest,
+) -> Result<AuthorizedMasterBinding> {
+    if req.method() != actix_web::http::Method::PUT {
+        return Err(AsterError::auth_token_invalid(
+            "remote presigned auth only supports PUT",
+        ));
+    }
+
+    let binding = authorize_presigned_binding_request(state, req).await?;
+    let ingress_policy = state
+        .policy_snapshot()
+        .get_policy_or_err(binding.ingress_policy_id)?;
+    if ingress_policy.driver_type == crate::types::DriverType::Remote {
+        return Err(AsterError::precondition_failed(
+            "master binding ingress policy cannot use remote driver",
+        ));
+    }
+
+    Ok(AuthorizedMasterBinding {
+        binding,
+        ingress_policy,
+    })
+}
+
 pub async fn sync_from_primary<S: FollowerRuntimeState>(
     state: &S,
     access_key: &str,
@@ -200,6 +227,48 @@ async fn authorize_binding_request<S: FollowerRuntimeState>(
             Some(INTERNAL_AUTH_NONCE_TTL_SECS),
         )
         .await;
+    Ok(binding)
+}
+
+async fn authorize_presigned_binding_request<S: FollowerRuntimeState>(
+    state: &S,
+    req: &actix_web::HttpRequest,
+) -> Result<master_binding::Model> {
+    let access_key = query_value(req, PRESIGNED_AUTH_ACCESS_KEY_QUERY)?;
+    let expires_at = query_value(req, PRESIGNED_AUTH_EXPIRES_QUERY)?
+        .parse::<i64>()
+        .map_err(|_| AsterError::auth_token_invalid("invalid remote presigned expiry"))?;
+    let signature = query_value(req, PRESIGNED_AUTH_SIGNATURE_QUERY)?;
+
+    if Utc::now().timestamp() > expires_at {
+        return Err(AsterError::auth_token_invalid(
+            "remote presigned URL has expired",
+        ));
+    }
+
+    let binding = state
+        .driver_registry()
+        .find_master_binding_by_access_key(&access_key)
+        .ok_or_else(|| AsterError::auth_invalid_credentials("unknown internal access_key"))?;
+    if !binding.is_enabled {
+        return Err(AsterError::precondition_failed(
+            "master binding is disabled",
+        ));
+    }
+
+    if !verify_presigned_signature(
+        &binding.secret_key,
+        req.method().as_str(),
+        req.uri().path(),
+        &access_key,
+        expires_at,
+        &signature,
+    ) {
+        return Err(AsterError::auth_invalid_credentials(
+            "remote presigned signature mismatch",
+        ));
+    }
+
     Ok(binding)
 }
 
@@ -305,6 +374,26 @@ fn verify_signature(
     mac.verify_slice(&decoded).is_ok()
 }
 
+fn verify_presigned_signature(
+    secret_key: &str,
+    method: &str,
+    path: &str,
+    access_key: &str,
+    expires_at: i64,
+    provided_signature: &str,
+) -> bool {
+    let mut decoded = [0u8; 32];
+    if hex::decode_to_slice(provided_signature, &mut decoded).is_err() {
+        return false;
+    }
+
+    let expected = sign_presigned_request(secret_key, method, path, access_key, expires_at);
+    let Ok(expected) = hex::decode(expected) else {
+        return false;
+    };
+    expected == decoded
+}
+
 fn header_value(req: &actix_web::HttpRequest, name: &str) -> Result<String> {
     req.headers()
         .get(name)
@@ -312,6 +401,17 @@ fn header_value(req: &actix_web::HttpRequest, name: &str) -> Result<String> {
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .ok_or_else(|| AsterError::auth_token_invalid(format!("missing header {name}")))
+}
+
+fn query_value(req: &actix_web::HttpRequest, name: &str) -> Result<String> {
+    actix_web::web::Query::<std::collections::HashMap<String, String>>::from_query(
+        req.query_string(),
+    )
+    .map_err(|_| AsterError::auth_token_invalid("invalid query string"))?
+    .get(name)
+    .cloned()
+    .filter(|value| !value.is_empty())
+    .ok_or_else(|| AsterError::auth_token_invalid(format!("missing query parameter '{name}'")))
 }
 
 fn normalize_non_blank(field: &str, value: &str) -> Result<String> {

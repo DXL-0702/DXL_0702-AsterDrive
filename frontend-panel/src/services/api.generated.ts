@@ -4103,6 +4103,11 @@ export interface components {
             supports_range_read: boolean;
             supports_stream_upload: boolean;
         };
+        /**
+         * @description Remote 上传传输策略（存储策略 options JSON）
+         * @enum {string}
+         */
+        RemoteUploadStrategy: "relay_stream" | "presigned";
         RemovedCountResponse: {
             /** Format: int64 */
             removed: number;
@@ -4361,6 +4366,7 @@ export interface components {
         };
         StoragePolicyOptions: {
             content_dedup?: boolean | null;
+            remote_upload_strategy?: null | components["schemas"]["RemoteUploadStrategy"];
             /** Format: int64 */
             s3_connect_timeout_secs?: number | null;
             s3_download_strategy?: null | components["schemas"]["S3DownloadStrategy"];

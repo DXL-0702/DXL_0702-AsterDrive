@@ -127,7 +127,7 @@ impl AsterDavFile {
                     Some(policy),
                     hasher,
                 )
-            } else if workspace_storage_service::relay_stream_direct_upload_eligible(
+            } else if workspace_storage_service::streaming_direct_upload_eligible(
                 &policy, size_hint,
             ) {
                 if policy.max_file_size > 0 && size_hint > policy.max_file_size {

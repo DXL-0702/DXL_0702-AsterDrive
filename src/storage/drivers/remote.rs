@@ -2,11 +2,13 @@
 
 use crate::entities::{managed_follower, storage_policy};
 use crate::errors::{AsterError, Result};
-use crate::storage::driver::{BlobMetadata, StorageDriver};
-use crate::storage::extensions::{ListStorageDriver, StreamUploadDriver};
+use crate::storage::driver::{BlobMetadata, PresignedDownloadOptions, StorageDriver};
+use crate::storage::extensions::{ListStorageDriver, PresignedStorageDriver, StreamUploadDriver};
+use crate::storage::multipart::MultipartStorageDriver;
 use crate::storage::remote_protocol::RemoteStorageClient;
 use async_trait::async_trait;
 use std::path::Path;
+use std::time::Duration;
 use tokio::io::AsyncRead;
 
 pub struct RemoteDriver {
@@ -15,6 +17,8 @@ pub struct RemoteDriver {
 }
 
 impl RemoteDriver {
+    const MULTIPART_UPLOADS_PREFIX: &str = "uploads";
+
     pub fn new(policy: &storage_policy::Model, follower: &managed_follower::Model) -> Result<Self> {
         if follower.namespace.trim().is_empty() {
             return Err(AsterError::storage_driver_error(
@@ -51,6 +55,23 @@ impl RemoteDriver {
             .strip_prefix(&self.base_path)
             .map(|suffix| suffix.trim_start_matches('/'))
             .or_else(|| (object_key == self.base_path).then_some(""))
+    }
+
+    fn multipart_parts_prefix(upload_id: &str) -> String {
+        format!("{}/{upload_id}/parts", Self::MULTIPART_UPLOADS_PREFIX)
+    }
+
+    fn multipart_part_key(upload_id: &str, part_number: i32) -> Result<String> {
+        if part_number <= 0 {
+            return Err(AsterError::validation_error(format!(
+                "multipart part_number must be positive, got {part_number}"
+            )));
+        }
+        Ok(format!(
+            "{}/{}",
+            Self::multipart_parts_prefix(upload_id),
+            part_number
+        ))
     }
 }
 
@@ -101,6 +122,14 @@ impl StorageDriver for RemoteDriver {
     fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
         Some(self)
     }
+
+    fn as_presigned(&self) -> Option<&dyn PresignedStorageDriver> {
+        Some(self)
+    }
+
+    fn as_multipart(&self) -> Option<&dyn MultipartStorageDriver> {
+        Some(self)
+    }
 }
 
 #[async_trait]
@@ -149,5 +178,120 @@ impl StreamUploadDriver for RemoteDriver {
             })?,
         )
         .await
+    }
+}
+
+#[async_trait]
+impl PresignedStorageDriver for RemoteDriver {
+    async fn presigned_url(
+        &self,
+        _path: &str,
+        _expires: Duration,
+        _options: PresignedDownloadOptions,
+    ) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    async fn presigned_put_url(&self, path: &str, expires: Duration) -> Result<Option<String>> {
+        self.client
+            .presigned_put_url(&self.object_key(path), expires)
+            .map(Some)
+    }
+}
+
+#[async_trait]
+impl MultipartStorageDriver for RemoteDriver {
+    async fn create_multipart_upload(&self, _path: &str) -> Result<String> {
+        Ok(crate::utils::id::new_uuid())
+    }
+
+    async fn presigned_upload_part_url(
+        &self,
+        _path: &str,
+        upload_id: &str,
+        part_number: i32,
+        expires: Duration,
+    ) -> Result<String> {
+        let part_key = Self::multipart_part_key(upload_id, part_number)?;
+        self.client
+            .presigned_put_url(&self.object_key(&part_key), expires)
+    }
+
+    async fn complete_multipart_upload(
+        &self,
+        path: &str,
+        upload_id: &str,
+        mut parts: Vec<(i32, String)>,
+    ) -> Result<()> {
+        if parts.is_empty() {
+            return Err(AsterError::validation_error(
+                "multipart completion requires at least one part",
+            ));
+        }
+
+        parts.sort_by_key(|(part_number, _)| *part_number);
+        let mut expected_size = 0i64;
+        let mut part_keys = Vec::with_capacity(parts.len());
+        for (part_number, _) in parts {
+            let part_key = Self::multipart_part_key(upload_id, part_number)?;
+            let remote_key = self.object_key(&part_key);
+            let metadata = self.client.metadata(&remote_key).await?;
+            let part_size = i64::try_from(metadata.size).map_err(|_| {
+                AsterError::storage_driver_error("remote multipart part size exceeds i64 range")
+            })?;
+            expected_size = expected_size.checked_add(part_size).ok_or_else(|| {
+                AsterError::storage_driver_error("remote multipart expected size overflow")
+            })?;
+            part_keys.push(remote_key);
+        }
+
+        self.client
+            .compose_objects(&self.object_key(path), part_keys, expected_size)
+            .await?;
+        Ok(())
+    }
+
+    async fn upload_multipart_part(
+        &self,
+        _path: &str,
+        upload_id: &str,
+        part_number: i32,
+        data: &[u8],
+    ) -> Result<String> {
+        let part_key = Self::multipart_part_key(upload_id, part_number)?;
+        self.client
+            .put_bytes(&self.object_key(&part_key), data)
+            .await?;
+
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(data);
+        Ok(format!("\"{}\"", hex::encode(hasher.finalize())))
+    }
+
+    async fn abort_multipart_upload(&self, _path: &str, upload_id: &str) -> Result<()> {
+        let prefix = Self::multipart_parts_prefix(upload_id);
+        let parts = self.list_paths(Some(&prefix)).await?;
+        for part_path in parts {
+            self.client.delete(&self.object_key(&part_path)).await?;
+        }
+        Ok(())
+    }
+
+    async fn list_uploaded_parts(&self, _path: &str, upload_id: &str) -> Result<Vec<i32>> {
+        let prefix = Self::multipart_parts_prefix(upload_id);
+        let mut parts = self
+            .list_paths(Some(&prefix))
+            .await?
+            .into_iter()
+            .filter_map(|path| {
+                path.rsplit('/')
+                    .next()
+                    .and_then(|segment| segment.parse::<i32>().ok())
+            })
+            .collect::<Vec<_>>();
+        parts.sort_unstable();
+        parts.dedup();
+        Ok(parts)
     }
 }

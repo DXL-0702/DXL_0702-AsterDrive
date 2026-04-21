@@ -9,17 +9,18 @@ use std::time::Duration;
 
 use actix_web::{App, HttpServer, test, web};
 use aster_drive::db::repository::{
-    file_repo, managed_follower_repo, master_binding_repo, policy_repo, user_repo,
+    file_repo, managed_follower_repo, master_binding_repo, policy_repo, upload_session_repo,
+    user_repo,
 };
 use aster_drive::entities::storage_policy;
 use aster_drive::services::{
     auth_service, file_service, folder_service, managed_follower_service, master_binding_service,
-    policy_service, thumbnail_service,
+    policy_service, thumbnail_service, upload_service,
 };
 use aster_drive::storage::remote_protocol::RemoteStorageClient;
 use aster_drive::types::{
-    DriverType, NullablePatch, StoragePolicyOptions, StoredStoragePolicyAllowedTypes,
-    StoredStoragePolicyOptions,
+    DriverType, NullablePatch, RemoteUploadStrategy, StoragePolicyOptions,
+    StoredStoragePolicyAllowedTypes, serialize_storage_policy_options,
 };
 use chrono::Utc;
 use futures::TryStreamExt;
@@ -73,6 +74,25 @@ async fn create_remote_policy(
     name: &str,
     base_path: &str,
 ) -> storage_policy::Model {
+    create_remote_policy_with_options(
+        state,
+        remote_node_id,
+        name,
+        base_path,
+        StoragePolicyOptions::default(),
+        5_242_880,
+    )
+    .await
+}
+
+async fn create_remote_policy_with_options(
+    state: &aster_drive::runtime::PrimaryAppState,
+    remote_node_id: i64,
+    name: &str,
+    base_path: &str,
+    options: StoragePolicyOptions,
+    chunk_size: i64,
+) -> storage_policy::Model {
     let now = Utc::now();
     let policy = policy_repo::create(
         &state.db,
@@ -87,9 +107,10 @@ async fn create_remote_policy(
             remote_node_id: Set(Some(remote_node_id)),
             max_file_size: Set(0),
             allowed_types: Set(StoredStoragePolicyAllowedTypes::empty()),
-            options: Set(StoredStoragePolicyOptions::empty()),
+            options: Set(serialize_storage_policy_options(&options)
+                .expect("remote policy options should serialize")),
             is_default: Set(false),
-            chunk_size: Set(5_242_880),
+            chunk_size: Set(chunk_size),
             created_at: Set(now),
             updated_at: Set(now),
             ..Default::default()
@@ -165,6 +186,15 @@ async fn collect_download_body(
     }
 }
 
+async fn put_presigned_bytes(url: &str, data: Vec<u8>) -> reqwest::Response {
+    reqwest::Client::new()
+        .put(url)
+        .body(data)
+        .send()
+        .await
+        .expect("presigned upload request should succeed")
+}
+
 fn provider_object_path(
     ingress_base_path: &str,
     namespace: &str,
@@ -177,6 +207,14 @@ fn provider_object_path(
     }
     relative.push(storage_path.trim_start_matches('/'));
     Path::new(ingress_base_path).join(relative)
+}
+
+fn path_and_query_from_url(url: &str) -> String {
+    let parsed = reqwest::Url::parse(url).expect("test URL should parse");
+    match parsed.query() {
+        Some(query) => format!("{}?{query}", parsed.path()),
+        None => parsed.path().to_string(),
+    }
 }
 
 #[actix_web::test]
@@ -768,6 +806,574 @@ async fn test_thumbnail_endpoint_returns_precondition_failed_when_remote_node_di
     let body: serde_json::Value = test::read_body_json(resp).await;
     assert!(body["msg"].as_str().unwrap().contains("remote node #"));
     assert!(body["msg"].as_str().unwrap().contains("is disabled"));
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_upload_writes_directly_to_provider() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "provider-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            namespace: "provider-chunked-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: "provider-chunked-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    wait_for_remote_probe(&consumer_state, consumer_node.id).await;
+
+    let remote_policy = create_remote_policy_with_options(
+        &consumer_state,
+        consumer_node.id,
+        "Remote Presigned Policy",
+        "presigned-base",
+        StoragePolicyOptions {
+            remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
+            ..Default::default()
+        },
+        1024,
+    )
+    .await;
+
+    let app = create_test_app!(consumer_state.clone());
+    let _ = register_and_login!(app);
+    let user = user_repo::find_by_username(&consumer_state.db, "testuser")
+        .await
+        .expect("test user lookup should succeed")
+        .expect("test user should exist");
+    let folder = folder_service::create(&consumer_state, user.id, "remote-presigned", None)
+        .await
+        .expect("remote folder should be created");
+    folder_service::update(
+        &consumer_state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(remote_policy.id),
+    )
+    .await
+    .expect("remote policy should bind to folder");
+
+    let body = b"presigned-remote-upload".to_vec();
+    let init = upload_service::init_upload(
+        &consumer_state,
+        user.id,
+        "presigned.bin",
+        i64::try_from(body.len()).expect("body length should fit i64"),
+        Some(folder.id),
+        None,
+    )
+    .await
+    .expect("remote presigned upload should initialize");
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Presigned);
+
+    let upload_id = init
+        .upload_id
+        .expect("presigned mode should return upload id");
+    let presigned_url = init
+        .presigned_url
+        .clone()
+        .expect("presigned mode should return presigned_url");
+    let response = put_presigned_bytes(&presigned_url, body.clone()).await;
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+    assert!(
+        response.headers().get(reqwest::header::ETAG).is_some(),
+        "remote presigned upload should return ETag header"
+    );
+    let session = upload_session_repo::find_by_id(&consumer_state.db, &upload_id)
+        .await
+        .expect("upload session should exist");
+    let temp_key = session
+        .s3_temp_key
+        .clone()
+        .expect("remote presigned temp key should exist");
+    let uploaded_temp_path = provider_object_path(
+        &provider_ingress_policy.base_path,
+        &consumer_node.namespace,
+        "",
+        &format!("{}/{}", remote_policy.base_path.trim_matches('/'), temp_key),
+    );
+    let uploaded_temp = tokio::fs::read(&uploaded_temp_path)
+        .await
+        .expect("provider temp object should exist after presigned PUT");
+    assert_eq!(uploaded_temp, body);
+    let remote_driver = consumer_state
+        .driver_registry
+        .get_driver(&remote_policy)
+        .expect("remote driver should be available");
+    let remote_metadata = remote_driver
+        .metadata(&temp_key)
+        .await
+        .expect("remote metadata should see uploaded temp object");
+    assert_eq!(
+        remote_metadata.size,
+        u64::try_from(body.len()).expect("body length should fit u64")
+    );
+
+    let temp_dir = aster_drive::utils::paths::upload_temp_dir(
+        &consumer_state.config.server.upload_temp_dir,
+        &upload_id,
+    );
+    assert!(
+        !tokio::fs::try_exists(&temp_dir)
+            .await
+            .expect("temp dir existence should be readable"),
+        "single-file remote presigned upload should not create local chunk temp dir"
+    );
+
+    let created = upload_service::complete_upload(&consumer_state, &upload_id, user.id, None)
+        .await
+        .expect("remote presigned upload should complete");
+    let created_file = file_repo::find_by_id(&consumer_state.db, created.id)
+        .await
+        .expect("uploaded file should be queryable");
+    let created_blob = file_repo::find_blob_by_id(&consumer_state.db, created_file.blob_id)
+        .await
+        .expect("uploaded blob should be queryable");
+
+    let stored_path = provider_object_path(
+        &provider_ingress_policy.base_path,
+        &consumer_node.namespace,
+        &remote_policy.base_path,
+        &created_blob.storage_path,
+    );
+    let stored = tokio::fs::read(&stored_path)
+        .await
+        .expect("provider should receive direct presigned upload");
+    assert_eq!(stored, body);
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "provider-target".to_string(),
+            base_url: "http://provider.example.com".to_string(),
+            namespace: "provider-browser-cors-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://localhost:3000".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: "provider-browser-cors-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    let remote_policy = create_remote_policy_with_options(
+        &consumer_state,
+        consumer_node.id,
+        "Remote Presigned Browser CORS Policy",
+        "browser-cors-base",
+        StoragePolicyOptions {
+            remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
+            ..Default::default()
+        },
+        1024,
+    )
+    .await;
+
+    let app = create_test_app!(consumer_state.clone());
+    let _ = register_and_login!(app);
+    let user = user_repo::find_by_username(&consumer_state.db, "testuser")
+        .await
+        .expect("test user lookup should succeed")
+        .expect("test user should exist");
+    let folder = folder_service::create(&consumer_state, user.id, "remote-browser-cors", None)
+        .await
+        .expect("remote folder should be created");
+    folder_service::update(
+        &consumer_state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(remote_policy.id),
+    )
+    .await
+    .expect("remote policy should bind to folder");
+
+    let body = b"presigned-browser-cors".to_vec();
+    let init = upload_service::init_upload(
+        &consumer_state,
+        user.id,
+        "presigned-browser.bin",
+        i64::try_from(body.len()).expect("body length should fit i64"),
+        Some(folder.id),
+        None,
+    )
+    .await
+    .expect("remote presigned upload should initialize");
+    let presigned_url = init
+        .presigned_url
+        .expect("presigned mode should return presigned_url");
+    let presigned_path = path_and_query_from_url(&presigned_url);
+
+    let follower_app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(provider_state.follower_view()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            ),
+    )
+    .await;
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri(&presigned_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .insert_header(("Access-Control-Request-Method", "PUT"))
+        .insert_header(("Access-Control-Request-Headers", "content-type"))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::NO_CONTENT);
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|value| value.to_str().ok()),
+        Some("http://localhost:3000")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_METHODS)
+            .and_then(|value| value.to_str().ok()),
+        Some("PUT, OPTIONS")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_HEADERS)
+            .and_then(|value| value.to_str().ok()),
+        Some("content-type")
+    );
+
+    let req = test::TestRequest::default()
+        .method(actix_web::http::Method::OPTIONS)
+        .uri(&presigned_path)
+        .insert_header(("Origin", "http://evil.example.com"))
+        .insert_header(("Access-Control-Request-Method", "PUT"))
+        .insert_header(("Access-Control-Request-Headers", "content-type"))
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::FORBIDDEN);
+
+    let req = test::TestRequest::put()
+        .uri(&presigned_path)
+        .insert_header(("Origin", "http://localhost:3000"))
+        .insert_header((
+            actix_web::http::header::CONTENT_TYPE,
+            "application/octet-stream",
+        ))
+        .insert_header((
+            actix_web::http::header::CONTENT_LENGTH,
+            body.len().to_string(),
+        ))
+        .set_payload(body)
+        .to_request();
+    let resp = test::call_service(&follower_app, req).await;
+    assert_eq!(resp.status(), actix_web::http::StatusCode::OK);
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .and_then(|value| value.to_str().ok()),
+        Some("http://localhost:3000")
+    );
+    assert_eq!(
+        resp.headers()
+            .get(actix_web::http::header::ACCESS_CONTROL_EXPOSE_HEADERS)
+            .and_then(|value| value.to_str().ok()),
+        Some("ETag")
+    );
+    assert!(
+        resp.headers().contains_key(actix_web::http::header::ETAG),
+        "browser PUT should expose ETag header"
+    );
+}
+
+#[actix_web::test]
+async fn test_remote_presigned_multipart_upload_composes_on_provider_without_assembled_temp() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "provider-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            namespace: "provider-presigned-multipart-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: "provider-presigned-multipart-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    wait_for_remote_probe(&consumer_state, consumer_node.id).await;
+
+    let remote_policy = create_remote_policy_with_options(
+        &consumer_state,
+        consumer_node.id,
+        "Remote Presigned Multipart Policy",
+        "presigned-multipart-base",
+        StoragePolicyOptions {
+            remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
+            ..Default::default()
+        },
+        4,
+    )
+    .await;
+
+    let app = create_test_app!(consumer_state.clone());
+    let _ = register_and_login!(app);
+    let user = user_repo::find_by_username(&consumer_state.db, "testuser")
+        .await
+        .expect("test user lookup should succeed")
+        .expect("test user should exist");
+    let folder =
+        folder_service::create(&consumer_state, user.id, "remote-presigned-multipart", None)
+            .await
+            .expect("remote folder should be created");
+    folder_service::update(
+        &consumer_state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(remote_policy.id),
+    )
+    .await
+    .expect("remote policy should bind to folder");
+
+    let body = b"multipart-remote-upload".to_vec();
+    let init = upload_service::init_upload(
+        &consumer_state,
+        user.id,
+        "multipart.bin",
+        i64::try_from(body.len()).expect("body length should fit i64"),
+        Some(folder.id),
+        None,
+    )
+    .await
+    .expect("remote presigned multipart upload should initialize");
+    assert_eq!(
+        init.mode,
+        aster_drive::types::UploadMode::PresignedMultipart
+    );
+
+    let upload_id = init
+        .upload_id
+        .clone()
+        .expect("presigned multipart mode should return upload id");
+    let session = upload_session_repo::find_by_id(&consumer_state.db, &upload_id)
+        .await
+        .expect("upload session should exist");
+    let remote_multipart_id = session
+        .s3_multipart_id
+        .clone()
+        .expect("remote multipart upload id should be stored");
+    let chunk_size = usize::try_from(
+        init.chunk_size
+            .expect("presigned multipart mode should return chunk size"),
+    )
+    .expect("chunk size should fit usize");
+    let total_chunks = usize::try_from(
+        init.total_chunks
+            .expect("presigned multipart mode should return total_chunks"),
+    )
+    .expect("total_chunks should fit usize");
+
+    let requested_parts =
+        (1..=i32::try_from(total_chunks).expect("chunk count should fit i32")).collect::<Vec<_>>();
+    let urls = upload_service::presign_parts(&consumer_state, &upload_id, user.id, requested_parts)
+        .await
+        .expect("presign multipart part URLs should succeed");
+
+    let mut completed_parts = Vec::with_capacity(total_chunks);
+    for part_number in 1..=total_chunks {
+        let start = (part_number - 1) * chunk_size;
+        let end = std::cmp::min(start + chunk_size, body.len());
+        let part_body = body[start..end].to_vec();
+        let url = urls
+            .get(&i32::try_from(part_number).expect("part number should fit i32"))
+            .expect("part URL should exist");
+        let response = put_presigned_bytes(url, part_body).await;
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let etag = response
+            .headers()
+            .get(reqwest::header::ETAG)
+            .and_then(|value| value.to_str().ok())
+            .expect("multipart part upload should return ETag")
+            .trim_matches('"')
+            .to_string();
+        completed_parts.push((
+            i32::try_from(part_number).expect("part number should fit i32"),
+            etag,
+        ));
+    }
+
+    let progress = upload_service::get_progress(&consumer_state, &upload_id, user.id)
+        .await
+        .expect("multipart upload progress should be queryable");
+    assert_eq!(
+        progress.chunks_on_disk,
+        (1..=i32::try_from(total_chunks).expect("chunk count should fit i32")).collect::<Vec<_>>()
+    );
+
+    let temp_dir = aster_drive::utils::paths::upload_temp_dir(
+        &consumer_state.config.server.upload_temp_dir,
+        &upload_id,
+    );
+    let assembled_path = aster_drive::utils::paths::upload_assembled_path(
+        &consumer_state.config.server.upload_temp_dir,
+        &upload_id,
+    );
+    assert!(
+        !tokio::fs::try_exists(&temp_dir)
+            .await
+            .expect("temp dir existence should be readable"),
+        "remote presigned multipart upload should not create local chunk temp dir"
+    );
+    assert!(
+        !tokio::fs::try_exists(&assembled_path)
+            .await
+            .expect("assembled path existence should be readable"),
+        "remote presigned multipart upload should not create local assembled temp file"
+    );
+
+    let created = upload_service::complete_upload(
+        &consumer_state,
+        &upload_id,
+        user.id,
+        Some(completed_parts),
+    )
+    .await
+    .expect("remote presigned multipart upload should complete");
+    let created_file = file_repo::find_by_id(&consumer_state.db, created.id)
+        .await
+        .expect("uploaded file should be queryable");
+    let created_blob = file_repo::find_blob_by_id(&consumer_state.db, created_file.blob_id)
+        .await
+        .expect("uploaded blob should be queryable");
+
+    let stored_path = provider_object_path(
+        &provider_ingress_policy.base_path,
+        &consumer_node.namespace,
+        &remote_policy.base_path,
+        &created_blob.storage_path,
+    );
+    let stored = tokio::fs::read(&stored_path)
+        .await
+        .expect("provider should receive composed multipart upload");
+    assert_eq!(stored, body);
+
+    let first_part_path = provider_object_path(
+        &provider_ingress_policy.base_path,
+        &consumer_node.namespace,
+        &remote_policy.base_path,
+        &format!("uploads/{remote_multipart_id}/parts/1"),
+    );
+    assert!(
+        !tokio::fs::try_exists(&first_part_path)
+            .await
+            .expect("part path existence should be readable"),
+        "remote multipart compose should cleanup follower temp parts"
+    );
 
     provider_server.stop().await;
 }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
 	PolicyFormData,
+	RemoteUploadStrategy,
 	S3DownloadStrategy,
 	S3UploadStrategy,
 } from "@/components/admin/storagePolicyDialogShared";
@@ -223,6 +224,10 @@ export function StoragePolicyDialog({
 		form.s3_download_strategy === "relay_stream"
 			? t("s3_download_strategy_relay_stream")
 			: t("s3_download_strategy_presigned");
+	const remoteUploadStrategyLabel =
+		form.remote_upload_strategy === "relay_stream"
+			? t("remote_upload_strategy_relay_stream")
+			: t("remote_upload_strategy_presigned");
 	const contentDedupLabel = form.content_dedup
 		? t("policy_wizard_enabled")
 		: t("policy_wizard_disabled");
@@ -288,9 +293,26 @@ export function StoragePolicyDialog({
 						label: t("namespace"),
 						value: selectedRemoteNode?.namespace ?? "—",
 					},
+					{
+						label: t("remote_upload_strategy"),
+						value: remoteUploadStrategyLabel,
+					},
 				]
 			: []),
 	];
+	const remoteUploadStrategyOptions = [
+		{
+			label: t("remote_upload_strategy_relay_stream"),
+			value: "relay_stream",
+		},
+		{
+			label: t("remote_upload_strategy_presigned"),
+			value: "presigned",
+		},
+	] satisfies ReadonlyArray<{
+		label: string;
+		value: RemoteUploadStrategy;
+	}>;
 	const s3UploadStrategyOptions = [
 		{
 			label: t("s3_upload_strategy_relay_stream"),
@@ -578,6 +600,42 @@ export function StoragePolicyDialog({
 	const renderRemoteRulesHelper = () => (
 		<div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-sm text-muted-foreground">
 			{t("policy_wizard_remote_rules_helper")}
+		</div>
+	);
+
+	const renderRemoteUploadStrategyField = () => (
+		<div className="space-y-2 pt-1">
+			<Label htmlFor="remote_upload_strategy">
+				{t("remote_upload_strategy")}
+			</Label>
+			<Select
+				items={remoteUploadStrategyOptions}
+				value={form.remote_upload_strategy}
+				onValueChange={(value) =>
+					onFieldChange(
+						"remote_upload_strategy",
+						value as RemoteUploadStrategy,
+					)
+				}
+			>
+				<SelectTrigger id="remote_upload_strategy">
+					<SelectValue />
+				</SelectTrigger>
+				<SelectContent>
+					{remoteUploadStrategyOptions.map((option) => (
+						<SelectItem key={option.value} value={option.value}>
+							{option.label}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			<p className="text-xs text-muted-foreground">
+				{t(
+					form.remote_upload_strategy === "relay_stream"
+						? "remote_upload_strategy_relay_stream_desc"
+						: "remote_upload_strategy_presigned_desc",
+				)}
+			</p>
 		</div>
 	);
 
@@ -890,6 +948,7 @@ export function StoragePolicyDialog({
 															) : form.driver_type === "remote" ? (
 																<>
 																	{renderRemoteRulesHelper()}
+																	{renderRemoteUploadStrategyField()}
 																	{renderRemoteNodeField()}
 																</>
 															) : (
@@ -996,7 +1055,9 @@ export function StoragePolicyDialog({
 														{renderS3UploadStrategyField()}
 														{renderS3DownloadStrategyField()}
 													</>
-												) : form.driver_type === "remote" ? null : (
+												) : form.driver_type === "remote" ? (
+													renderRemoteUploadStrategyField()
+												) : (
 													renderLocalContentDedupField()
 												)}
 												{renderLimitsFields()}

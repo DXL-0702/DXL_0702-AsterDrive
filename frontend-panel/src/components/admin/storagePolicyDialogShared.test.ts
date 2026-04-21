@@ -41,6 +41,7 @@ describe("storagePolicyDialogShared", () => {
 			chunk_size: "10",
 			is_default: true,
 			content_dedup: true,
+			remote_upload_strategy: "relay_stream",
 			s3_upload_strategy: "relay_stream",
 			s3_download_strategy: "relay_stream",
 		});
@@ -61,6 +62,7 @@ describe("storagePolicyDialogShared", () => {
 				chunk_size: "6",
 				is_default: false,
 				content_dedup: false,
+				remote_upload_strategy: "relay_stream",
 				s3_upload_strategy: "presigned",
 				s3_download_strategy: "relay_stream",
 			}),
@@ -97,6 +99,7 @@ describe("storagePolicyDialogShared", () => {
 				chunk_size: "5",
 				is_default: true,
 				content_dedup: false,
+				remote_upload_strategy: "relay_stream",
 				s3_upload_strategy: "relay_stream",
 				s3_download_strategy: "presigned",
 			}),
@@ -130,6 +133,7 @@ describe("storagePolicyDialogShared", () => {
 				chunk_size: "4",
 				is_default: false,
 				content_dedup: false,
+				remote_upload_strategy: "presigned",
 				s3_upload_strategy: "relay_stream",
 				s3_download_strategy: "relay_stream",
 			}),
@@ -145,7 +149,9 @@ describe("storagePolicyDialogShared", () => {
 			max_file_size: undefined,
 			chunk_size: 4 * 1024 * 1024,
 			is_default: false,
-			options: {},
+			options: {
+				remote_upload_strategy: "presigned",
+			},
 		});
 
 		expect(
@@ -162,6 +168,7 @@ describe("storagePolicyDialogShared", () => {
 				chunk_size: "4",
 				is_default: false,
 				content_dedup: false,
+				remote_upload_strategy: "presigned",
 				s3_upload_strategy: "relay_stream",
 				s3_download_strategy: "relay_stream",
 			}),

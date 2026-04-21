@@ -38,7 +38,7 @@ impl DriverEntry {
     fn as_multipart_driver(&self) -> Option<Arc<dyn MultipartStorageDriver>> {
         match self {
             DriverEntry::Local(_) => None,
-            DriverEntry::Remote(_) => None,
+            DriverEntry::Remote(d) => Some(d.clone()),
             DriverEntry::S3(d) => Some(d.clone()),
             #[cfg(test)]
             DriverEntry::Mock(_) => None,
@@ -67,7 +67,7 @@ impl DriverRegistry {
         Ok(self.get_entry(policy)?.as_storage_driver())
     }
 
-    /// 获取支持 multipart upload 的 driver（仅 S3 类策略）。
+    /// 获取支持 multipart upload 的 driver。
     ///
     /// 如果策略对应的 driver 不支持 multipart（如 LocalDriver），返回 `Err`。
     pub fn get_multipart_driver(

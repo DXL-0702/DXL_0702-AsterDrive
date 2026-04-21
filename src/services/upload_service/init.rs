@@ -7,6 +7,7 @@
 //! - 在需要 session 的模式下预先写入 upload_sessions
 
 mod context;
+mod remote;
 mod s3;
 
 use chrono::{Duration, Utc};
@@ -47,6 +48,10 @@ async fn init_upload_for_scope(
             .await?;
 
     if let Some(response) = s3::init_s3_upload(state, &ctx).await? {
+        return Ok(response);
+    }
+
+    if let Some(response) = remote::init_remote_upload(state, &ctx).await? {
         return Ok(response);
     }
 

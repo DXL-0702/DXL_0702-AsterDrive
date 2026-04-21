@@ -36,6 +36,9 @@ pub const INTERNAL_AUTH_NONCE_HEADER: &str = "x-aster-nonce";
 pub const INTERNAL_AUTH_SIGNATURE_HEADER: &str = "x-aster-signature";
 pub const INTERNAL_AUTH_SKEW_SECS: i64 = 300;
 pub const INTERNAL_AUTH_NONCE_TTL_SECS: u64 = 300;
+pub const PRESIGNED_AUTH_ACCESS_KEY_QUERY: &str = "aster_access_key";
+pub const PRESIGNED_AUTH_EXPIRES_QUERY: &str = "aster_expires";
+pub const PRESIGNED_AUTH_SIGNATURE_QUERY: &str = "aster_signature";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -63,10 +66,28 @@ pub struct RemoteStorageListResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RemoteStorageObjectMetadata {
+    pub size: u64,
+    pub content_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RemoteBindingSyncRequest {
     pub name: String,
     pub namespace: String,
     pub is_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RemoteStorageComposeRequest {
+    pub target_key: String,
+    pub part_keys: Vec<String>,
+    pub expected_size: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RemoteStorageComposeResponse {
+    pub bytes_written: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -119,6 +140,20 @@ pub fn sign_internal_request(
             .map(|value| value.to_string())
             .unwrap_or_default()
     );
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret_key.as_bytes())
+        .expect("HMAC accepts any key length");
+    mac.update(canonical.as_bytes());
+    hex::encode(mac.finalize().into_bytes())
+}
+
+pub fn sign_presigned_request(
+    secret_key: &str,
+    method: &str,
+    path: &str,
+    access_key: &str,
+    expires_at: i64,
+) -> String {
+    let canonical = format!("{}\n{}\n{}\n{}", method, path, access_key, expires_at);
     let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret_key.as_bytes())
         .expect("HMAC accepts any key length");
     mac.update(canonical.as_bytes());
@@ -292,34 +327,32 @@ impl RemoteStorageClient {
     }
 
     pub async fn metadata(&self, key: &str) -> Result<BlobMetadata> {
-        let url = self.object_url(key)?;
+        let url = self.object_metadata_url(key)?;
         let response = self
-            .signed_request(Method::HEAD, url, None)
+            .signed_request(Method::GET, url, None)
             .send()
             .await
             .map_err(map_reqwest_error)?;
-        if response.status() != reqwest::StatusCode::OK {
-            return Err(
-                build_remote_status_error(response, "head remote storage metadata", true).await,
-            );
-        }
-
-        let size = response
-            .headers()
-            .get(reqwest::header::CONTENT_LENGTH)
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok())
-            .ok_or_else(|| {
-                AsterError::storage_driver_error(
-                    "remote storage metadata response missing content-length",
-                )
+        let body = ensure_success(response, "get remote storage metadata").await?;
+        let envelope: ApiEnvelope<RemoteStorageObjectMetadata> = serde_json::from_slice(&body)
+            .map_err(|e| {
+                AsterError::storage_driver_error(format!(
+                    "decode remote storage metadata response: {e}"
+                ))
             })?;
-        let content_type = response
-            .headers()
-            .get(reqwest::header::CONTENT_TYPE)
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_string);
-        Ok(BlobMetadata { size, content_type })
+        if envelope.code != 0 {
+            return Err(AsterError::storage_driver_error(format!(
+                "remote storage metadata failed: {}",
+                envelope.msg
+            )));
+        }
+        let metadata = envelope.data.ok_or_else(|| {
+            AsterError::storage_driver_error("remote storage metadata response missing data")
+        })?;
+        Ok(BlobMetadata {
+            size: metadata.size,
+            content_type: metadata.content_type,
+        })
     }
 
     pub async fn list_paths(&self, prefix: Option<&str>) -> Result<Vec<String>> {
@@ -364,6 +397,80 @@ impl RemoteStorageClient {
             .await
             .map_err(map_reqwest_error)?;
         ensure_success_without_body(response, "sync remote binding state").await
+    }
+
+    pub fn presigned_put_url(&self, key: &str, expires: Duration) -> Result<String> {
+        let mut url = self.object_url(key)?;
+        let expires_secs = i64::try_from(expires.as_secs()).map_err(|_| {
+            AsterError::storage_driver_error("remote presigned URL expiry exceeds i64 range")
+        })?;
+        if expires_secs <= 0 {
+            return Err(AsterError::storage_driver_error(
+                "remote presigned URL expiry must be positive",
+            ));
+        }
+
+        let expires_at = chrono::Utc::now()
+            .timestamp()
+            .checked_add(expires_secs)
+            .ok_or_else(|| {
+                AsterError::storage_driver_error("remote presigned URL expiry overflow")
+            })?;
+        let signature = sign_presigned_request(
+            &self.secret_key,
+            Method::PUT.as_str(),
+            url.path(),
+            &self.access_key,
+            expires_at,
+        );
+        url.query_pairs_mut()
+            .append_pair(PRESIGNED_AUTH_ACCESS_KEY_QUERY, &self.access_key)
+            .append_pair(PRESIGNED_AUTH_EXPIRES_QUERY, &expires_at.to_string())
+            .append_pair(PRESIGNED_AUTH_SIGNATURE_QUERY, &signature);
+
+        Ok(url.to_string())
+    }
+
+    pub async fn compose_objects(
+        &self,
+        target_key: &str,
+        part_keys: Vec<String>,
+        expected_size: i64,
+    ) -> Result<RemoteStorageComposeResponse> {
+        let url = self.url_for_path(&format!("{INTERNAL_STORAGE_BASE_PATH}/compose"))?;
+        let body = serde_json::to_vec(&RemoteStorageComposeRequest {
+            target_key: target_key.to_string(),
+            part_keys,
+            expected_size,
+        })
+        .map_err(|e| {
+            AsterError::storage_driver_error(format!("encode remote compose request: {e}"))
+        })?;
+        let content_length = u64::try_from(body.len())
+            .map_err(|_| AsterError::storage_driver_error("remote compose body length overflow"))?;
+        let response = self
+            .signed_request(Method::POST, url, Some(content_length))
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body)
+            .send()
+            .await
+            .map_err(map_reqwest_error)?;
+        let body = ensure_success(response, "compose remote storage objects").await?;
+        let envelope: ApiEnvelope<RemoteStorageComposeResponse> = serde_json::from_slice(&body)
+            .map_err(|e| {
+                AsterError::storage_driver_error(format!(
+                    "decode remote storage compose response: {e}"
+                ))
+            })?;
+        if envelope.code != 0 {
+            return Err(AsterError::storage_driver_error(format!(
+                "remote storage compose failed: {}",
+                envelope.msg
+            )));
+        }
+        envelope.data.ok_or_else(|| {
+            AsterError::storage_driver_error("remote storage compose response missing data")
+        })
     }
 
     fn signed_request(
@@ -412,6 +519,14 @@ impl RemoteStorageClient {
         let encoded_key = percent_encode(key.as_bytes(), STORAGE_KEY_ENCODE_SET).to_string();
         self.url_for_path(&format!(
             "{INTERNAL_STORAGE_BASE_PATH}/objects/{encoded_key}"
+        ))
+    }
+
+    fn object_metadata_url(&self, key: &str) -> Result<reqwest::Url> {
+        let key = key.trim_start_matches('/');
+        let encoded_key = percent_encode(key.as_bytes(), STORAGE_KEY_ENCODE_SET).to_string();
+        self.url_for_path(&format!(
+            "{INTERNAL_STORAGE_BASE_PATH}/objects/{encoded_key}/metadata"
         ))
     }
 }

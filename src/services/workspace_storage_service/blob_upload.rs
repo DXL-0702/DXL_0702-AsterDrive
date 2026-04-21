@@ -2,6 +2,7 @@
 
 use sea_orm::ConnectionTrait;
 use std::path::{Component, Path, PathBuf};
+use tokio::io::AsyncRead;
 
 use crate::entities::file_blob;
 use crate::errors::Result;
@@ -207,6 +208,27 @@ pub(crate) async fn upload_temp_file_to_prepared_blob(
         .await
     {
         cleanup_preuploaded_blob_upload(driver, prepared, "upload error").await;
+        return Err(error);
+    }
+
+    Ok(())
+}
+
+pub(crate) async fn upload_reader_to_prepared_blob(
+    driver: &dyn crate::storage::driver::StorageDriver,
+    prepared: &PreparedNonDedupBlobUpload,
+    reader: Box<dyn AsyncRead + Unpin + Send + Sync>,
+    size: i64,
+) -> Result<()> {
+    let stream_driver = driver.as_stream_upload().ok_or_else(|| {
+        crate::errors::AsterError::storage_driver_error("stream upload not supported")
+    })?;
+
+    if let Err(error) = stream_driver
+        .put_reader(prepared.storage_path(), reader, size)
+        .await
+    {
+        cleanup_preuploaded_blob_upload(driver, prepared, "stream upload error").await;
         return Err(error);
     }
 

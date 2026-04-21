@@ -5,6 +5,7 @@ import {
 import type {
 	CreatePolicyRequest,
 	DriverType,
+	RemoteUploadStrategy,
 	S3DownloadStrategy,
 	S3UploadStrategy,
 	StoragePolicy,
@@ -12,7 +13,11 @@ import type {
 	UpdatePolicyRequest,
 } from "@/types/api";
 
-export type { S3DownloadStrategy, S3UploadStrategy } from "@/types/api";
+export type {
+	RemoteUploadStrategy,
+	S3DownloadStrategy,
+	S3UploadStrategy,
+} from "@/types/api";
 
 export interface PolicyFormData {
 	name: string;
@@ -27,6 +32,7 @@ export interface PolicyFormData {
 	chunk_size: string;
 	is_default: boolean;
 	content_dedup: boolean;
+	remote_upload_strategy: RemoteUploadStrategy;
 	s3_upload_strategy: S3UploadStrategy;
 	s3_download_strategy: S3DownloadStrategy;
 }
@@ -52,13 +58,21 @@ export function getEffectiveS3DownloadStrategy(
 	return options.s3_download_strategy ?? "relay_stream";
 }
 
+export function getEffectiveRemoteUploadStrategy(
+	options: StoragePolicyOptions,
+): RemoteUploadStrategy {
+	return options.remote_upload_strategy ?? "relay_stream";
+}
+
 export function buildPolicyOptions(form: PolicyFormData): StoragePolicyOptions {
 	if (form.driver_type === "local") {
 		return form.content_dedup ? { content_dedup: true } : {};
 	}
 
 	if (form.driver_type === "remote") {
-		return {};
+		return {
+			remote_upload_strategy: form.remote_upload_strategy,
+		};
 	}
 
 	return {
@@ -89,6 +103,7 @@ export function getPolicyForm(policy: StoragePolicy): PolicyFormData {
 		is_default: policy.is_default,
 		content_dedup:
 			policy.driver_type === "local" && options.content_dedup === true,
+		remote_upload_strategy: getEffectiveRemoteUploadStrategy(options),
 		s3_upload_strategy: getEffectiveS3UploadStrategy(options),
 		s3_download_strategy: getEffectiveS3DownloadStrategy(options),
 	};
@@ -250,6 +265,7 @@ export const emptyForm: PolicyFormData = {
 	chunk_size: "5",
 	is_default: false,
 	content_dedup: false,
+	remote_upload_strategy: "relay_stream",
 	s3_upload_strategy: "relay_stream",
 	s3_download_strategy: "relay_stream",
 };

@@ -27,39 +27,35 @@ async fn get_progress_impl(
         "loading upload progress"
     );
 
-    let chunks_on_disk = if let Some(multipart_id) = session.s3_multipart_id.as_deref() {
-        let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
-        let strategy = if policy.driver_type == DriverType::S3 {
-            Some(
-                parse_storage_policy_options(policy.options.as_ref())
-                    .effective_s3_upload_strategy(),
-            )
-        } else {
-            None
-        };
-
-        match strategy {
-            Some(S3UploadStrategy::RelayStream) => {
-                upload_session_part_repo::list_part_numbers(&state.db, &session.id)
+    let chunks_on_disk = if session.status == UploadSessionStatus::Presigned {
+        match (
+            session.s3_temp_key.as_deref(),
+            session.s3_multipart_id.as_deref(),
+        ) {
+            (Some(temp_key), Some(multipart_id)) => {
+                let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
+                state
+                    .driver_registry
+                    .get_multipart_driver(&policy)?
+                    .list_uploaded_parts(temp_key, multipart_id)
                     .await?
-                    .into_iter()
-                    .map(|part_number| part_number - 1)
-                    .collect()
-            }
-            Some(S3UploadStrategy::Presigned)
-                if session.status == UploadSessionStatus::Presigned =>
-            {
-                if let Some(temp_key) = session.s3_temp_key.as_deref() {
-                    state
-                        .driver_registry
-                        .get_multipart_driver(&policy)?
-                        .list_uploaded_parts(temp_key, multipart_id)
-                        .await?
-                } else {
-                    scan_received_chunks(state, &session.id).await
-                }
             }
             _ => scan_received_chunks(state, &session.id).await,
+        }
+    } else if session.s3_multipart_id.is_some() {
+        let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
+        let is_s3_relay_multipart = policy.driver_type == DriverType::S3
+            && parse_storage_policy_options(policy.options.as_ref()).effective_s3_upload_strategy()
+                == S3UploadStrategy::RelayStream;
+
+        if is_s3_relay_multipart {
+            upload_session_part_repo::list_part_numbers(&state.db, &session.id)
+                .await?
+                .into_iter()
+                .map(|part_number| part_number - 1)
+                .collect()
+        } else {
+            scan_received_chunks(state, &session.id).await
         }
     } else {
         scan_received_chunks(state, &session.id).await
@@ -104,7 +100,7 @@ pub async fn get_progress_for_team(
     get_progress_impl(state, session).await
 }
 
-/// 为 S3 multipart presigned 上传批量生成 per-part presigned PUT URL
+/// 为 multipart presigned 上传批量生成 per-part presigned PUT URL
 async fn presign_parts_impl(
     state: &PrimaryAppState,
     session: upload_session::Model,
