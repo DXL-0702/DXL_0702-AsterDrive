@@ -27,17 +27,72 @@ pub(super) async fn init_remote_upload(
         .effective_remote_upload_strategy();
     match strategy {
         RemoteUploadStrategy::RelayStream => {
-            tracing::debug!(
-                scope = ?ctx.scope,
-                policy_id = ctx.policy.id,
-                mode = ?UploadMode::Direct,
-                folder_id = ctx.target.folder_id,
-                "selected remote relay stream upload mode"
-            );
-            Ok(Some(direct_upload_response()))
+            init_relay_stream_remote_upload(state, ctx).await.map(Some)
         }
         RemoteUploadStrategy::Presigned => init_presigned_remote_upload(state, ctx).await.map(Some),
     }
+}
+
+async fn init_relay_stream_remote_upload(
+    state: &PrimaryAppState,
+    ctx: &InitUploadContext,
+) -> Result<InitUploadResponse> {
+    let chunk_size = ctx.policy.chunk_size;
+
+    if upload_fits_single_request(ctx.total_size, chunk_size) {
+        tracing::debug!(
+            scope = ?ctx.scope,
+            policy_id = ctx.policy.id,
+            mode = ?UploadMode::Direct,
+            folder_id = ctx.target.folder_id,
+            "selected remote relay stream direct upload mode"
+        );
+        return Ok(direct_upload_response());
+    }
+
+    let multipart = state.driver_registry.get_multipart_driver(&ctx.policy)?;
+    let upload_id = generate_upload_id(&state.db).await?;
+    let temp_key = format!("files/{upload_id}");
+    let remote_upload_id = multipart.create_multipart_upload(&temp_key).await?;
+    let total_chunks =
+        numbers::calc_total_chunks(ctx.total_size, chunk_size, "remote relay multipart upload")?;
+
+    persist_upload_session(
+        &state.db,
+        UploadSessionRecordParams {
+            upload_id: upload_id.clone(),
+            scope: ctx.scope,
+            filename: ctx.target.filename.clone(),
+            total_size: ctx.total_size,
+            chunk_size,
+            total_chunks,
+            folder_id: ctx.target.folder_id,
+            policy_id: ctx.policy.id,
+            status: UploadSessionStatus::Uploading,
+            s3_temp_key: Some(temp_key),
+            s3_multipart_id: Some(remote_upload_id),
+            expires_at: Utc::now() + Duration::hours(24),
+        },
+    )
+    .await?;
+
+    tracing::debug!(
+        scope = ?ctx.scope,
+        upload_id = %upload_id,
+        policy_id = ctx.policy.id,
+        mode = ?UploadMode::Chunked,
+        chunk_size,
+        total_chunks,
+        folder_id = ctx.target.folder_id,
+        "initialized remote relay multipart upload session"
+    );
+
+    Ok(chunked_upload_response(
+        UploadMode::Chunked,
+        upload_id,
+        chunk_size,
+        total_chunks,
+    ))
 }
 
 async fn init_presigned_remote_upload(

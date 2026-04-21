@@ -10,8 +10,8 @@ use std::time::Duration;
 use actix_web::{App, HttpServer, test, web};
 use aster_drive::api::error_code::ErrorCode;
 use aster_drive::db::repository::{
-    file_repo, managed_follower_repo, master_binding_repo, policy_repo, upload_session_repo,
-    user_repo,
+    file_repo, managed_follower_repo, master_binding_repo, policy_repo, upload_session_part_repo,
+    upload_session_repo, user_repo,
 };
 use aster_drive::entities::storage_policy;
 use aster_drive::services::{
@@ -28,11 +28,21 @@ use aster_drive::types::{
 use chrono::Utc;
 use futures::TryStreamExt;
 use sea_orm::{ActiveModelTrait, Set};
+use sha2::{Digest, Sha256};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 
 struct TestHttpServer {
     base_url: String,
     handle: actix_web::dev::ServerHandle,
     task: tokio::task::JoinHandle<std::io::Result<()>>,
+}
+
+struct RawHttpResponse {
+    status: u16,
+    headers: std::collections::HashMap<String, String>,
+    body: Vec<u8>,
+    trailing: Vec<u8>,
 }
 
 impl TestHttpServer {
@@ -216,6 +226,129 @@ async fn put_presigned_bytes(url: &str, data: Vec<u8>) -> reqwest::Response {
         .send()
         .await
         .expect("presigned upload request should succeed")
+}
+
+async fn send_raw_http_request(base_url: &str, request: &[u8]) -> RawHttpResponse {
+    let parsed = reqwest::Url::parse(base_url).expect("base URL should parse");
+    let host = parsed.host_str().expect("base URL should contain host");
+    let port = parsed
+        .port_or_known_default()
+        .expect("base URL should contain port");
+    let mut stream = TcpStream::connect((host, port))
+        .await
+        .expect("raw HTTP test stream should connect");
+    stream
+        .write_all(request)
+        .await
+        .expect("raw HTTP request should be written");
+    stream
+        .shutdown()
+        .await
+        .expect("raw HTTP request stream should shutdown write half");
+
+    let mut raw_response = Vec::new();
+    stream
+        .read_to_end(&mut raw_response)
+        .await
+        .expect("raw HTTP response should be readable");
+    parse_raw_http_response(&raw_response)
+}
+
+fn parse_raw_http_response(raw: &[u8]) -> RawHttpResponse {
+    let header_end = raw
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .expect("raw HTTP response should contain header terminator");
+    let header_text =
+        std::str::from_utf8(&raw[..header_end]).expect("raw HTTP response headers should be utf-8");
+    let mut lines = header_text.split("\r\n");
+    let status_line = lines
+        .next()
+        .expect("raw HTTP response should contain status line");
+    let status = status_line
+        .split_whitespace()
+        .nth(1)
+        .expect("raw HTTP status line should contain status code")
+        .parse::<u16>()
+        .expect("raw HTTP status code should parse");
+
+    let mut headers = std::collections::HashMap::new();
+    for line in lines {
+        if let Some((name, value)) = line.split_once(':') {
+            headers.insert(name.trim().to_ascii_lowercase(), value.trim().to_string());
+        }
+    }
+
+    let body_start = header_end + 4;
+    let body_len = headers
+        .get("content-length")
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or_else(|| raw.len().saturating_sub(body_start));
+    let body_end = body_start.saturating_add(body_len).min(raw.len());
+
+    RawHttpResponse {
+        status,
+        headers,
+        body: raw[body_start..body_end].to_vec(),
+        trailing: raw[body_end..].to_vec(),
+    }
+}
+
+fn build_multipart_payload(filename: &str, data: &[u8]) -> (String, Vec<u8>) {
+    let boundary = format!("----AsterRemoteBoundary{}", uuid::Uuid::new_v4().simple());
+    let mut payload = Vec::new();
+    payload.extend_from_slice(format!("--{boundary}\r\n").as_bytes());
+    payload.extend_from_slice(
+        format!("Content-Disposition: form-data; name=\"file\"; filename=\"{filename}\"\r\n")
+            .as_bytes(),
+    );
+    payload.extend_from_slice(b"Content-Type: application/octet-stream\r\n\r\n");
+    payload.extend_from_slice(data);
+    payload.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+    (boundary, payload)
+}
+
+fn snapshot_dir_tree(path: &Path) -> std::io::Result<std::collections::BTreeSet<String>> {
+    fn walk(
+        root: &Path,
+        current: &Path,
+        entries: &mut std::collections::BTreeSet<String>,
+    ) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(current)? {
+            let entry = entry?;
+            let path = entry.path();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                entries.insert(format!("{relative}/"));
+                walk(root, &path, entries)?;
+            } else {
+                entries.insert(relative);
+            }
+        }
+        Ok(())
+    }
+
+    let mut entries = std::collections::BTreeSet::new();
+    if !path.exists() {
+        return Ok(entries);
+    }
+    walk(path, path, &mut entries)?;
+    Ok(entries)
+}
+
+fn snapshot_temp_roots(
+    roots: &[String],
+) -> std::io::Result<std::collections::BTreeMap<String, std::collections::BTreeSet<String>>> {
+    let mut snapshots = std::collections::BTreeMap::new();
+    for root in roots {
+        snapshots.insert(root.clone(), snapshot_dir_tree(Path::new(root))?);
+    }
+    Ok(snapshots)
 }
 
 fn provider_object_path(
@@ -435,6 +568,93 @@ async fn test_internal_storage_presigned_put_rejects_payload_exceeding_ingress_l
         serde_json::json!(ErrorCode::FileTooLarge as i32)
     );
     assert_eq!(body["msg"], "object size 16 exceeds limit 8");
+}
+
+#[actix_web::test]
+async fn test_internal_storage_presigned_put_ignores_bytes_beyond_declared_content_length() {
+    let provider_state = common::setup().await;
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let access_key = "declared-length-access-key";
+    let secret_key = "declared-length-secret-key";
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "declared-length-binding".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: access_key.to_string(),
+            secret_key: secret_key.to_string(),
+            namespace: "provider-declared-length-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+    let binding = master_binding_repo::find_by_access_key(&provider_state.db, access_key)
+        .await
+        .expect("provider binding lookup should succeed")
+        .expect("provider binding should exist");
+
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+    let parsed_server_url =
+        reqwest::Url::parse(&provider_server.base_url).expect("provider base_url should parse");
+    let host = parsed_server_url
+        .host_str()
+        .expect("provider base_url should contain host");
+    let port = parsed_server_url
+        .port_or_known_default()
+        .expect("provider base_url should contain port");
+    let object_key = "declared-length-only.bin";
+    let path = format!("/api/v1/internal/storage/objects/{object_key}");
+    let expires_at = Utc::now().timestamp() + 300;
+    let signature = sign_presigned_request(secret_key, "PUT", &path, access_key, expires_at);
+    let request_target = format!(
+        "{path}?aster_access_key={access_key}&aster_expires={expires_at}&aster_signature={signature}"
+    );
+    let mut request = format!(
+        "PUT {request_target} HTTP/1.1\r\nHost: {host}:{port}\r\nContent-Type: application/octet-stream\r\nContent-Length: 4\r\nConnection: close\r\n\r\n"
+    )
+    .into_bytes();
+    request.extend_from_slice(b"testignored-trailing-bytes");
+
+    let response = send_raw_http_request(&provider_server.base_url, &request).await;
+    let expected_etag = format!("\"{}\"", hex::encode(Sha256::digest(b"test")));
+    assert_eq!(response.status, actix_web::http::StatusCode::OK.as_u16());
+    assert_eq!(response.headers.get("etag"), Some(&expected_etag));
+    let response_body: serde_json::Value = serde_json::from_slice(&response.body)
+        .expect("raw HTTP success response body should be valid json");
+    assert_eq!(response_body["code"], 0);
+    assert!(
+        response.trailing.is_empty(),
+        "connection-close request should not emit a second HTTP response"
+    );
+
+    let driver = provider_state
+        .driver_registry
+        .get_driver(&provider_ingress_policy)
+        .expect("provider ingress driver should resolve");
+    let storage_path = master_binding_service::provider_storage_path(&binding, object_key);
+    let stored = driver
+        .get(&storage_path)
+        .await
+        .expect("provider should store presigned upload object");
+    assert_eq!(stored, b"test");
+    let metadata = driver
+        .metadata(&storage_path)
+        .await
+        .expect("provider object metadata should be readable");
+    assert_eq!(metadata.size, 4);
+
+    provider_server.stop().await;
 }
 
 #[actix_web::test]
@@ -1285,6 +1505,166 @@ async fn test_remote_presigned_upload_writes_directly_to_provider() {
 }
 
 #[actix_web::test]
+async fn test_remote_relay_stream_direct_upload_e2e() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "provider-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            namespace: "provider-relay-direct-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: "provider-relay-direct-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    wait_for_remote_probe(&consumer_state, consumer_node.id).await;
+
+    let remote_policy = create_remote_policy_with_options(
+        &consumer_state,
+        consumer_node.id,
+        "Remote Relay Direct Policy",
+        "relay-direct-base",
+        StoragePolicyOptions {
+            remote_upload_strategy: Some(RemoteUploadStrategy::RelayStream),
+            ..Default::default()
+        },
+        1024,
+    )
+    .await;
+
+    let user = auth_service::register(
+        &consumer_state,
+        "remrelaydir",
+        "remote-relay-direct@example.com",
+        "pass1234",
+    )
+    .await
+    .expect("consumer test user should be created");
+    let folder = folder_service::create(&consumer_state, user.id, "remote-relay-direct", None)
+        .await
+        .expect("remote folder should be created");
+    folder_service::update(
+        &consumer_state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(remote_policy.id),
+    )
+    .await
+    .expect("remote policy should bind to folder");
+
+    let login = auth_service::login(&consumer_state, "remrelaydir", "pass1234", None, None)
+        .await
+        .expect("consumer login should succeed");
+    common::seed_csrf_token(&login.access_token);
+
+    let body = b"remote relay stream direct".to_vec();
+    let init = upload_service::init_upload(
+        &consumer_state,
+        user.id,
+        "relay-direct.bin",
+        i64::try_from(body.len()).expect("body length should fit i64"),
+        Some(folder.id),
+        None,
+    )
+    .await
+    .expect("remote relay direct upload should initialize");
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Direct);
+
+    let temp_roots = vec![
+        consumer_state.config.server.temp_dir.clone(),
+        consumer_state.config.server.upload_temp_dir.clone(),
+    ];
+    let temp_snapshot_before = snapshot_temp_roots(&temp_roots).unwrap();
+    let app = create_test_app!(consumer_state.clone());
+
+    let (boundary, payload) = build_multipart_payload("relay-direct.bin", &body);
+    let req = test::TestRequest::post()
+        .uri(&format!(
+            "/api/v1/files/upload?folder_id={}&declared_size={}",
+            folder.id,
+            body.len()
+        ))
+        .insert_header(("Cookie", common::access_cookie_header(&login.access_token)))
+        .insert_header(common::csrf_header_for(&login.access_token))
+        .insert_header((
+            "Content-Type",
+            format!("multipart/form-data; boundary={boundary}"),
+        ))
+        .set_payload(payload)
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 201);
+    let response_body: serde_json::Value = test::read_body_json(resp).await;
+    let file_id = response_body["data"]["id"]
+        .as_i64()
+        .expect("upload response should contain file id");
+
+    let temp_snapshot_after = snapshot_temp_roots(&temp_roots).unwrap();
+    assert_eq!(
+        temp_snapshot_after, temp_snapshot_before,
+        "remote relay direct upload should not create local temp files or upload temp dirs"
+    );
+
+    let created_file = file_repo::find_by_id(&consumer_state.db, file_id)
+        .await
+        .expect("uploaded file should be queryable");
+    let created_blob = file_repo::find_blob_by_id(&consumer_state.db, created_file.blob_id)
+        .await
+        .expect("uploaded blob should be queryable");
+    assert!(created_blob.hash.starts_with("remote-"));
+    assert!(created_blob.storage_path.starts_with("files/"));
+
+    let provider_path = provider_object_path(
+        &provider_ingress_policy.base_path,
+        &consumer_node.namespace,
+        &remote_policy.base_path,
+        &created_blob.storage_path,
+    );
+    let stored = tokio::fs::read(&provider_path)
+        .await
+        .expect("provider should receive direct relay upload");
+    assert_eq!(stored, body);
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
 async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin() {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
@@ -1506,6 +1886,245 @@ async fn test_remote_presigned_upload_browser_cors_follows_bound_master_origin()
         resp.headers().contains_key(actix_web::http::header::ETAG),
         "browser PUT should expose ETag header"
     );
+}
+
+#[actix_web::test]
+async fn test_remote_relay_stream_chunked_upload_e2e() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let provider_server = spawn_internal_storage_server(provider_state.follower_view()).await;
+
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let consumer_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "provider-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            namespace: "provider-relay-chunked-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("consumer remote node should be created");
+    let consumer_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, consumer_node.id)
+            .await
+            .expect("consumer remote node should be queryable");
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "consumer-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: consumer_node_model.access_key.clone(),
+            secret_key: consumer_node_model.secret_key.clone(),
+            namespace: "provider-relay-chunked-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider master binding should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    wait_for_remote_probe(&consumer_state, consumer_node.id).await;
+
+    let remote_policy = create_remote_policy_with_options(
+        &consumer_state,
+        consumer_node.id,
+        "Remote Relay Chunked Policy",
+        "relay-chunked-base",
+        StoragePolicyOptions {
+            remote_upload_strategy: Some(RemoteUploadStrategy::RelayStream),
+            ..Default::default()
+        },
+        4,
+    )
+    .await;
+
+    let user = auth_service::register(
+        &consumer_state,
+        "remrelaych",
+        "remote-relay-chunked@example.com",
+        "pass1234",
+    )
+    .await
+    .expect("consumer test user should be created");
+    let folder = folder_service::create(&consumer_state, user.id, "remote-relay-chunked", None)
+        .await
+        .expect("remote folder should be created");
+    folder_service::update(
+        &consumer_state,
+        folder.id,
+        user.id,
+        None,
+        NullablePatch::Absent,
+        NullablePatch::Value(remote_policy.id),
+    )
+    .await
+    .expect("remote policy should bind to folder");
+
+    let body = b"remote-relay-chunked-upload".to_vec();
+    let init = upload_service::init_upload(
+        &consumer_state,
+        user.id,
+        "relay-chunked.bin",
+        i64::try_from(body.len()).expect("body length should fit i64"),
+        Some(folder.id),
+        None,
+    )
+    .await
+    .expect("remote relay chunked upload should initialize");
+    assert_eq!(init.mode, aster_drive::types::UploadMode::Chunked);
+    assert_eq!(init.chunk_size, Some(4));
+
+    let upload_id = init
+        .upload_id
+        .clone()
+        .expect("chunked mode should return upload id");
+    let session = upload_session_repo::find_by_id(&consumer_state.db, &upload_id)
+        .await
+        .expect("upload session should exist");
+    let remote_multipart_id = session
+        .s3_multipart_id
+        .clone()
+        .expect("remote relay multipart upload id should be stored");
+    let chunk_size = usize::try_from(
+        init.chunk_size
+            .expect("chunked mode should return chunk size"),
+    )
+    .expect("chunk size should fit usize");
+    let total_chunks = usize::try_from(
+        init.total_chunks
+            .expect("chunked mode should return total_chunks"),
+    )
+    .expect("total chunks should fit usize");
+
+    let temp_dir = aster_drive::utils::paths::upload_temp_dir(
+        &consumer_state.config.server.upload_temp_dir,
+        &upload_id,
+    );
+    let assembled_path = aster_drive::utils::paths::upload_assembled_path(
+        &consumer_state.config.server.upload_temp_dir,
+        &upload_id,
+    );
+    assert!(
+        !tokio::fs::try_exists(&temp_dir)
+            .await
+            .expect("temp dir existence should be readable"),
+        "remote relay multipart should not create local upload temp dir"
+    );
+    assert!(
+        upload_session_part_repo::list_by_upload(&consumer_state.db, &upload_id)
+            .await
+            .expect("multipart parts should be queryable")
+            .is_empty()
+    );
+
+    let first_chunk_end = std::cmp::min(chunk_size, body.len());
+    let first_chunk = body[..first_chunk_end].to_vec();
+    let first = upload_service::upload_chunk(&consumer_state, &upload_id, 0, user.id, &first_chunk)
+        .await
+        .expect("first remote relay chunk should upload");
+    assert_eq!(first.received_count, 1);
+
+    let duplicate =
+        upload_service::upload_chunk(&consumer_state, &upload_id, 0, user.id, &first_chunk)
+            .await
+            .expect("duplicate remote relay chunk should be idempotent");
+    assert_eq!(duplicate.received_count, 1);
+
+    let progress = upload_service::get_progress(&consumer_state, &upload_id, user.id)
+        .await
+        .expect("remote relay upload progress should be queryable");
+    assert_eq!(progress.chunks_on_disk, vec![0]);
+
+    let parts = upload_session_part_repo::list_by_upload(&consumer_state.db, &upload_id)
+        .await
+        .expect("remote relay multipart parts should be queryable");
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].part_number, 1);
+    assert_eq!(parts[0].size, i64::try_from(first_chunk.len()).unwrap());
+
+    for chunk_number in 1..total_chunks {
+        let start = chunk_number * chunk_size;
+        let end = std::cmp::min(start + chunk_size, body.len());
+        upload_service::upload_chunk(
+            &consumer_state,
+            &upload_id,
+            i32::try_from(chunk_number).expect("chunk number should fit i32"),
+            user.id,
+            &body[start..end],
+        )
+        .await
+        .expect("remote relay chunk should upload");
+    }
+
+    let progress = upload_service::get_progress(&consumer_state, &upload_id, user.id)
+        .await
+        .expect("completed remote relay upload progress should be queryable");
+    assert_eq!(
+        progress.chunks_on_disk,
+        (0..i32::try_from(total_chunks).expect("chunk count should fit i32")).collect::<Vec<_>>()
+    );
+
+    let created = upload_service::complete_upload(&consumer_state, &upload_id, user.id, None)
+        .await
+        .expect("remote relay multipart upload should complete");
+    let created_file = file_repo::find_by_id(&consumer_state.db, created.id)
+        .await
+        .expect("uploaded file should be queryable");
+    let created_blob = file_repo::find_blob_by_id(&consumer_state.db, created_file.blob_id)
+        .await
+        .expect("uploaded blob should be queryable");
+    assert_eq!(created_blob.storage_path, format!("files/{upload_id}"));
+
+    let stored_path = provider_object_path(
+        &provider_ingress_policy.base_path,
+        &consumer_node.namespace,
+        &remote_policy.base_path,
+        &created_blob.storage_path,
+    );
+    let stored = tokio::fs::read(&stored_path)
+        .await
+        .expect("provider should receive remote relay multipart upload");
+    assert_eq!(stored, body);
+
+    assert!(
+        !tokio::fs::try_exists(&temp_dir)
+            .await
+            .expect("temp dir existence should be readable"),
+        "remote relay multipart should never create local chunk temp dir"
+    );
+    assert!(
+        !tokio::fs::try_exists(&assembled_path)
+            .await
+            .expect("assembled path existence should be readable"),
+        "remote relay multipart should never create local assembled temp file"
+    );
+
+    let first_part_path = provider_object_path(
+        &provider_ingress_policy.base_path,
+        &consumer_node.namespace,
+        &remote_policy.base_path,
+        &format!("uploads/{remote_multipart_id}/parts/1"),
+    );
+    assert!(
+        !tokio::fs::try_exists(&first_part_path)
+            .await
+            .expect("part path existence should be readable"),
+        "remote relay multipart compose should cleanup follower temp parts"
+    );
+
+    provider_server.stop().await;
 }
 
 #[actix_web::test]

@@ -10,7 +10,8 @@ use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::UploadProgressResponse;
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
 use crate::types::{
-    DriverType, S3UploadStrategy, UploadSessionStatus, parse_storage_policy_options,
+    DriverType, RemoteUploadStrategy, S3UploadStrategy, UploadSessionStatus,
+    parse_storage_policy_options,
 };
 use crate::utils::paths;
 
@@ -44,11 +45,7 @@ async fn get_progress_impl(
         }
     } else if session.s3_multipart_id.is_some() {
         let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
-        let is_s3_relay_multipart = policy.driver_type == DriverType::S3
-            && parse_storage_policy_options(policy.options.as_ref()).effective_s3_upload_strategy()
-                == S3UploadStrategy::RelayStream;
-
-        if is_s3_relay_multipart {
+        if is_relay_multipart_policy(&policy) {
             upload_session_part_repo::list_part_numbers(&state.db, &session.id)
                 .await?
                 .into_iter()
@@ -79,6 +76,17 @@ async fn get_progress_impl(
         "loaded upload progress"
     );
     Ok(progress)
+}
+
+fn is_relay_multipart_policy(policy: &crate::entities::storage_policy::Model) -> bool {
+    let options = parse_storage_policy_options(policy.options.as_ref());
+    match policy.driver_type {
+        DriverType::S3 => options.effective_s3_upload_strategy() == S3UploadStrategy::RelayStream,
+        DriverType::Remote => {
+            options.effective_remote_upload_strategy() == RemoteUploadStrategy::RelayStream
+        }
+        DriverType::Local => false,
+    }
 }
 
 pub async fn get_progress(
