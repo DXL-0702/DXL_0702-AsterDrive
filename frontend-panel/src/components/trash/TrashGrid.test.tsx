@@ -101,6 +101,8 @@ vi.mock("@/lib/format", () => ({
 	formatBytes: (value: number) => `bytes:${value}`,
 	formatDate: (value: string) => `date:${value}`,
 	formatDateAbsolute: (value: string) => `absolute:${value}`,
+	formatDateAbsoluteWithOffset: (value: string) =>
+		`absolute-with-offset:${value}`,
 }));
 
 function createFileItem(overrides: Partial<TrashItem> = {}) {
