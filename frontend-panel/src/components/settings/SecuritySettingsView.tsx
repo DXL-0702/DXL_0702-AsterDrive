@@ -14,7 +14,7 @@ import {
 	clearContactVerificationRedirectSearch,
 	getContactVerificationRedirectState,
 } from "@/lib/contactVerificationRedirect";
-import { formatDateAbsolute } from "@/lib/format";
+import { formatDateAbsolute, formatDateAbsoluteWithOffset } from "@/lib/format";
 import { formatUserAgentLabel } from "@/lib/userAgent";
 import {
 	emailSchema,
@@ -616,15 +616,33 @@ export function SecuritySettingsView() {
 													<div className="grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
 														<p>
 															{t("settings:settings_sessions_last_seen")}:{" "}
-															{formatDateAbsolute(session.last_seen_at)}
+															<span
+																title={formatDateAbsoluteWithOffset(
+																	session.last_seen_at,
+																)}
+															>
+																{formatDateAbsolute(session.last_seen_at)}
+															</span>
 														</p>
 														<p>
 															{t("settings:settings_sessions_signed_in")}:{" "}
-															{formatDateAbsolute(session.created_at)}
+															<span
+																title={formatDateAbsoluteWithOffset(
+																	session.created_at,
+																)}
+															>
+																{formatDateAbsolute(session.created_at)}
+															</span>
 														</p>
 														<p>
 															{t("settings:settings_sessions_expires")}:{" "}
-															{formatDateAbsolute(session.expires_at)}
+															<span
+																title={formatDateAbsoluteWithOffset(
+																	session.expires_at,
+																)}
+															>
+																{formatDateAbsolute(session.expires_at)}
+															</span>
 														</p>
 														<p>
 															{t("settings:settings_sessions_ip")}:{" "}

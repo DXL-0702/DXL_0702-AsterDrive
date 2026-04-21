@@ -212,6 +212,7 @@ vi.mock("@/hooks/useApiError", () => ({
 
 vi.mock("@/lib/format", () => ({
 	formatDateAbsolute: (value: string) => `date:${value}`,
+	formatDateAbsoluteWithOffset: (value: string) => `date-with-offset:${value}`,
 	formatNumber: (value: number) => String(value),
 }));
 
@@ -355,7 +356,7 @@ describe("AdminTasksPage", () => {
 		expect(screen.getByText("Trash cleanup")).toBeInTheDocument();
 		expect(screen.getByText("source:user:7")).toBeInTheDocument();
 		expect(screen.getByText("source:system")).toBeInTheDocument();
-		expect(screen.getByText("date:2026-04-17T00:03:00Z")).toBeInTheDocument();
+		expect(screen.getByText("date:2026-04-17T00:01:00Z")).toBeInTheDocument();
 		expect(screen.getByText("entries:1/2/25")).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: "CaretRight" }));

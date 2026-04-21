@@ -4,8 +4,10 @@ import {
 	formatBytes,
 	formatDate,
 	formatDateAbsolute,
+	formatDateAbsoluteWithOffset,
 	formatDateShort,
 	formatDateTime,
+	formatDateTimeWithOffset,
 	formatNumber,
 } from "@/lib/format";
 import {
@@ -37,6 +39,26 @@ function createI18nStub(
 			}
 		},
 	};
+}
+
+function getExpectedUtcOffset(dateStr: string, timeZone: string): string {
+	const date = new Date(dateStr);
+	const parts = new Intl.DateTimeFormat("en-US", {
+		timeZone,
+		timeZoneName: "longOffset",
+	}).formatToParts(date);
+	const label = parts.find((part) => part.type === "timeZoneName")?.value;
+	if (!label || label === "GMT") {
+		return "UTC+00:00";
+	}
+
+	const matched = label.match(/^GMT([+-])(\d{2}):(\d{2})$/);
+	if (!matched) {
+		return label.replace(/^GMT/, "UTC");
+	}
+
+	const [, sign, hours, minutes] = matched;
+	return `UTC${sign}${hours}:${minutes}`;
 }
 
 describe("format helpers", () => {
@@ -112,6 +134,8 @@ describe("format helpers", () => {
 
 		expect(formatDateAbsolute(value)).toBe(
 			new Date(value).toLocaleString(undefined, {
+				hour12: false,
+				hourCycle: "h23",
 				timeZone: activeTimeZone,
 			}),
 		);
@@ -122,8 +146,24 @@ describe("format helpers", () => {
 		);
 		expect(formatDateTime(value)).toBe(
 			new Date(value).toLocaleString(undefined, {
+				hour12: false,
+				hourCycle: "h23",
 				timeZone: activeTimeZone,
 			}),
+		);
+		expect(formatDateAbsoluteWithOffset(value)).toBe(
+			`${new Date(value).toLocaleString(undefined, {
+				hour12: false,
+				hourCycle: "h23",
+				timeZone: activeTimeZone,
+			})} ${getExpectedUtcOffset(value, activeTimeZone)}`,
+		);
+		expect(formatDateTimeWithOffset(value)).toBe(
+			`${new Date(value).toLocaleString(undefined, {
+				hour12: false,
+				hourCycle: "h23",
+				timeZone: activeTimeZone,
+			})} ${getExpectedUtcOffset(value, activeTimeZone)}`,
 		);
 	});
 
@@ -140,6 +180,8 @@ describe("format helpers", () => {
 		);
 		expect(formatDateAbsolute(value)).toBe(
 			new Date(value).toLocaleString(undefined, {
+				hour12: false,
+				hourCycle: "h23",
 				timeZone: "America/Los_Angeles",
 			}),
 		);
@@ -150,8 +192,24 @@ describe("format helpers", () => {
 		);
 		expect(formatDateTime(value)).toBe(
 			new Date(value).toLocaleString(undefined, {
+				hour12: false,
+				hourCycle: "h23",
 				timeZone: "America/Los_Angeles",
 			}),
+		);
+		expect(formatDateAbsoluteWithOffset(value)).toBe(
+			`${new Date(value).toLocaleString(undefined, {
+				hour12: false,
+				hourCycle: "h23",
+				timeZone: "America/Los_Angeles",
+			})} UTC-08:00`,
+		);
+		expect(formatDateTimeWithOffset(value)).toBe(
+			`${new Date(value).toLocaleString(undefined, {
+				hour12: false,
+				hourCycle: "h23",
+				timeZone: "America/Los_Angeles",
+			})} UTC-08:00`,
 		);
 	});
 });

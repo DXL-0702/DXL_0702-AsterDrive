@@ -75,7 +75,7 @@
 	"task_name": "任务",
 	"task_source": "来源",
 	"task_progress": "进度",
-	"task_last_activity": "最近时间",
+	"task_execution_time": "执行时间",
 	"task_detail": "详情",
 	"no_tasks": "暂时没有后台任务",
 	"no_tasks_desc": "后台任务开始执行并写入记录后，这里会显示完整历史。",

@@ -35,7 +35,11 @@ import {
 import { useApiList } from "@/hooks/useApiList";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
-import { formatDateAbsolute, formatNumber } from "@/lib/format";
+import {
+	formatDateAbsolute,
+	formatDateAbsoluteWithOffset,
+	formatNumber,
+} from "@/lib/format";
 import {
 	buildOffsetPaginationSearchParams,
 	parseOffsetSearchParam,
@@ -116,8 +120,8 @@ function getTaskStatusBadgeClass(status: BackgroundTaskStatus) {
 	}
 }
 
-function taskLastActivityAt(task: TaskInfo) {
-	return task.finished_at ?? task.updated_at;
+function taskExecutionAt(task: TaskInfo) {
+	return task.started_at ?? task.created_at;
 }
 
 function taskDetail(task: TaskInfo) {
@@ -312,7 +316,7 @@ export default function AdminTasksPage() {
 											{t("admin:task_progress")}
 										</TableHead>
 										<TableHead className="w-[180px]">
-											{t("admin:task_last_activity")}
+											{t("admin:task_execution_time")}
 										</TableHead>
 										<TableHead className="min-w-[240px]">
 											{t("admin:task_detail")}
@@ -377,8 +381,13 @@ export default function AdminTasksPage() {
 											</TableCell>
 											<TableCell>
 												<div className={TASK_TEXT_CELL_CONTENT_CLASS}>
-													<span className="text-xs text-muted-foreground whitespace-nowrap">
-														{formatDateAbsolute(taskLastActivityAt(task))}
+													<span
+														className="text-xs text-muted-foreground whitespace-nowrap"
+														title={formatDateAbsoluteWithOffset(
+															taskExecutionAt(task),
+														)}
+													>
+														{formatDateAbsolute(taskExecutionAt(task))}
 													</span>
 												</div>
 											</TableCell>

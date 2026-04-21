@@ -242,6 +242,7 @@ vi.mock("@/hooks/useApiError", () => ({
 vi.mock("@/lib/format", () => ({
 	formatBytes: (value: number) => `bytes:${value}`,
 	formatDateAbsolute: (value: string) => `date:${value}`,
+	formatDateAbsoluteWithOffset: (value: string) => `date-with-offset:${value}`,
 }));
 
 vi.mock("@/services/adminService", () => ({

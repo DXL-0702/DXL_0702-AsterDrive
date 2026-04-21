@@ -4,7 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { ItemCheckbox } from "@/components/ui/item-checkbox";
-import { formatBytes, formatDate, formatDateAbsolute } from "@/lib/format";
+import {
+	formatBytes,
+	formatDate,
+	formatDateAbsoluteWithOffset,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { TrashItem } from "@/types/api-helpers";
 
@@ -97,7 +101,7 @@ export function TrashGrid({
 									<p>{t("admin:deleted_at")}</p>
 									<p
 										className="font-medium text-foreground"
-										title={formatDateAbsolute(item.deleted_at)}
+										title={formatDateAbsoluteWithOffset(item.deleted_at)}
 									>
 										{formatDate(item.deleted_at, i18n)}
 									</p>

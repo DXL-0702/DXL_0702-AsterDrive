@@ -75,7 +75,7 @@
 	"task_name": "Task",
 	"task_source": "Source",
 	"task_progress": "Progress",
-	"task_last_activity": "Last activity",
+	"task_execution_time": "Execution time",
 	"task_detail": "Detail",
 	"no_tasks": "No background tasks yet",
 	"no_tasks_desc": "Recorded background task history will appear here after jobs start running.",

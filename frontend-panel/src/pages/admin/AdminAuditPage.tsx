@@ -35,7 +35,7 @@ import {
 import { useApiList } from "@/hooks/useApiList";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
-import { formatDateAbsolute } from "@/lib/format";
+import { formatDateAbsolute, formatDateAbsoluteWithOffset } from "@/lib/format";
 import {
 	buildOffsetPaginationSearchParams,
 	parseOffsetSearchParam,
@@ -376,7 +376,12 @@ export default function AdminAuditPage() {
 										<TableRow key={item.id}>
 											<TableCell>
 												<div className={AUDIT_TEXT_CELL_CONTENT_CLASS}>
-													<span className="text-xs text-muted-foreground whitespace-nowrap">
+													<span
+														className="text-xs text-muted-foreground whitespace-nowrap"
+														title={formatDateAbsoluteWithOffset(
+															item.created_at,
+														)}
+													>
 														{formatDateAbsolute(item.created_at)}
 													</span>
 												</div>

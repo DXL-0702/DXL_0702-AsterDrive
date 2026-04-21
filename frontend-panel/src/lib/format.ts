@@ -18,6 +18,51 @@ function getTimeZoneFormatOptions(
 	};
 }
 
+function getDateTimeFormatOptions(
+	options?: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormatOptions {
+	return getTimeZoneFormatOptions({
+		...options,
+		hour12: false,
+		hourCycle: "h23",
+	});
+}
+
+function normalizeUtcOffsetLabel(label: string): string {
+	if (label === "GMT" || label === "UTC") {
+		return "UTC+00:00";
+	}
+
+	const matched = label.match(/^(?:GMT|UTC)([+-])(\d{1,2})(?::?(\d{2}))?$/);
+	if (!matched) {
+		return label.replace(/^GMT/, "UTC");
+	}
+
+	const [, sign, hours, minutes] = matched;
+	return `UTC${sign}${hours.padStart(2, "0")}:${(minutes ?? "00").padStart(2, "0")}`;
+}
+
+function formatUtcOffset(date: Date): string {
+	const timeZone = getActiveDisplayTimeZone();
+
+	for (const timeZoneName of ["longOffset", "shortOffset"] as const) {
+		try {
+			const parts = new Intl.DateTimeFormat("en-US", {
+				timeZone,
+				timeZoneName,
+			}).formatToParts(date);
+			const label = parts.find((part) => part.type === "timeZoneName")?.value;
+			if (label) {
+				return normalizeUtcOffsetLabel(label);
+			}
+		} catch {
+			// ignore unsupported timeZoneName variants and keep the fallback below
+		}
+	}
+
+	return "UTC+00:00";
+}
+
 function translateRelativeDate(
 	i18n: DateFormatI18n | undefined,
 	key: string,
@@ -97,8 +142,12 @@ export function formatDate(dateStr: string, i18n?: DateFormatI18n): string {
 export function formatDateAbsolute(dateStr: string): string {
 	return new Date(dateStr).toLocaleString(
 		undefined,
-		getTimeZoneFormatOptions(),
+		getDateTimeFormatOptions(),
 	);
+}
+
+export function formatDateAbsoluteWithOffset(dateStr: string): string {
+	return `${formatDateAbsolute(dateStr)} ${formatUtcOffset(new Date(dateStr))}`;
 }
 
 export function formatDateShort(dateStr: string): string {
@@ -111,6 +160,10 @@ export function formatDateShort(dateStr: string): string {
 export function formatDateTime(dateStr: string): string {
 	return new Date(dateStr).toLocaleString(
 		undefined,
-		getTimeZoneFormatOptions(),
+		getDateTimeFormatOptions(),
 	);
+}
+
+export function formatDateTimeWithOffset(dateStr: string): string {
+	return `${formatDateTime(dateStr)} ${formatUtcOffset(new Date(dateStr))}`;
 }

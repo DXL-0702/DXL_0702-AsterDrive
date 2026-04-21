@@ -35,7 +35,11 @@ import {
 	ADMIN_CONTROL_HEIGHT_CLASS,
 	PAGE_SECTION_PADDING_CLASS,
 } from "@/lib/constants";
-import { formatBytes, formatDateAbsolute } from "@/lib/format";
+import {
+	formatBytes,
+	formatDateAbsolute,
+	formatDateAbsoluteWithOffset,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { adminOverviewService } from "@/services/adminService";
 import {
@@ -647,7 +651,10 @@ export default function AdminOverviewPage() {
 										</Badge>
 									))}
 								</div>
-								<span className="ml-auto whitespace-nowrap text-right">
+								<span
+									className="ml-auto whitespace-nowrap text-right"
+									title={formatDateAbsoluteWithOffset(overview.generated_at)}
+								>
 									{t("overview_generated_at", {
 										date: formatDateAbsolute(overview.generated_at),
 									})}
@@ -751,7 +758,10 @@ export default function AdminOverviewPage() {
 								<TableBody>
 									{overview.recent_events.map((event) => (
 										<TableRow key={event.id}>
-											<TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+											<TableCell
+												className="text-xs text-muted-foreground whitespace-nowrap"
+												title={formatDateAbsoluteWithOffset(event.created_at)}
+											>
 												{formatDateAbsolute(event.created_at)}
 											</TableCell>
 											<TableCell>
@@ -821,7 +831,12 @@ export default function AdminOverviewPage() {
 
 									return (
 										<TableRow key={task.id}>
-											<TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+											<TableCell
+												className="text-xs text-muted-foreground whitespace-nowrap"
+												title={formatDateAbsoluteWithOffset(
+													backgroundTaskEventTime(task),
+												)}
+											>
 												{formatDateAbsolute(backgroundTaskEventTime(task))}
 											</TableCell>
 											<TableCell>

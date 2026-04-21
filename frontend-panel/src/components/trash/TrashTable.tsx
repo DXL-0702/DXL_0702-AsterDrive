@@ -11,7 +11,11 @@ import {
 	TableHeader,
 	TableRow,
 } from "@/components/ui/table";
-import { formatBytes, formatDate, formatDateAbsolute } from "@/lib/format";
+import {
+	formatBytes,
+	formatDate,
+	formatDateAbsoluteWithOffset,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { TrashItem } from "@/types/api-helpers";
 
@@ -112,7 +116,7 @@ export function TrashTable({
 							>
 								{originalPath}
 							</TableCell>
-							<TableCell title={formatDateAbsolute(item.deleted_at)}>
+							<TableCell title={formatDateAbsoluteWithOffset(item.deleted_at)}>
 								{formatDate(item.deleted_at, i18n)}
 							</TableCell>
 							<TableCell>

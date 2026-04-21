@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Icon } from "@/components/ui/icon";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatDateTimeWithOffset } from "@/lib/format";
 import type { RemoteEnrollmentCommandInfo } from "@/types/api";
 import { TestConnectionButton } from "./shared";
 
@@ -89,7 +89,10 @@ export function RemoteNodeEnrollmentDialog({
 							<p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
 								{t("remote_node_enrollment_expires_at")}
 							</p>
-							<p className="mt-2 text-sm font-medium text-foreground">
+							<p
+								className="mt-2 text-sm font-medium text-foreground"
+								title={formatDateTimeWithOffset(command.expires_at)}
+							>
 								{formatDateTime(command.expires_at)}
 							</p>
 						</div>
