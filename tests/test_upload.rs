@@ -934,6 +934,68 @@ async fn test_s3_presigned_download_redirects_and_share_counts() {
     );
     assert_eq!(response.bytes().await.unwrap().as_ref(), file_data);
 
+    let req = test::TestRequest::get()
+        .uri(&format!("/api/v1/files/{file_id}/direct-link"))
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = test::read_body_json(resp).await;
+    let direct_token = body["data"]["token"]
+        .as_str()
+        .expect("direct link token should exist")
+        .to_string();
+
+    let req = test::TestRequest::get()
+        .uri(&format!("/d/{direct_token}/presigned%20report.txt"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(
+        resp.headers().get("Content-Disposition").unwrap(),
+        r#"inline; filename="presigned report.txt""#
+    );
+    let body = test::read_body(resp).await;
+    assert_eq!(body.as_ref(), file_data);
+
+    let req = test::TestRequest::get()
+        .uri(&format!(
+            "/d/{direct_token}/presigned%20report.txt?download=1"
+        ))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 302);
+    assert_eq!(
+        resp.headers().get("Cache-Control").unwrap(),
+        "no-store",
+        "direct-link presigned redirect should not be cached"
+    );
+    let direct_location = resp
+        .headers()
+        .get("Location")
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        direct_location.contains("response-content-disposition="),
+        "direct-link presigned URL should preserve attachment filename"
+    );
+
+    let direct_response = reqwest::get(&direct_location).await.unwrap();
+    assert!(direct_response.status().is_success());
+    assert_eq!(
+        direct_response
+            .headers()
+            .get(reqwest::header::CONTENT_DISPOSITION)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        r#"attachment; filename="presigned report.txt""#
+    );
+    assert_eq!(direct_response.bytes().await.unwrap().as_ref(), file_data);
+
     let req = test::TestRequest::post()
         .uri("/api/v1/shares")
         .insert_header(("Cookie", common::access_cookie_header(&token)))

@@ -85,10 +85,10 @@
 ## 文件操作
 
 - `GET /files/{id}`：读取文件元信息；已进回收站的文件会按“找不到”处理
-- `GET /files/{id}/direct-link`：返回一个短 token；真正下载走根路径 `/d/{token}/{filename}`
+- `GET /files/{id}/direct-link`：返回一个短 token；真正下载走根路径 `/d/{token}/{filename}`。默认按 inline 流式返回；追加 `?download=1` 后复用附件下载分流，命中 S3 / Remote 的 `presigned` 策略时会返回 `302`
 - `POST /files/{id}/preview-link`：返回一个短期预览链接；真正读取内容走根路径 `/pv/{token}/{filename}`
 - `POST /files/{id}/wopi/open`：为配置成 `provider = "wopi"` 的预览器创建一次 WOPI 启动会话
-- `GET /files/{id}/download`：下载文件；默认是流式响应，若命中的 S3 策略把 `options.s3_download_strategy` 设为 `presigned`，则会在鉴权后返回 `302` 重定向到短时效的对象存储 GET URL；支持 `If-None-Match`，命中时返回 `304`
+- `GET /files/{id}/download`：下载文件；默认是流式响应，若命中的 S3 / Remote 策略把下载策略设为 `presigned`，则会在鉴权后返回 `302` 重定向到短时效的对象存储 GET URL；支持 `If-None-Match`，命中时返回 `304`
 - `GET /files/{id}/thumbnail`：读取缩略图（仅支持的图片类型）；若后台仍在生成，会先返回 `202` 和 `Retry-After`
 - `PUT /files/{id}/content`：覆盖已有文件内容，是当前编辑现有文件的核心接口
 - `PATCH /files/{id}`：改名或移动
@@ -150,7 +150,8 @@
 
 - `filename` 必须和当前文件名匹配；URL 编码后的同名也可以
 - 这个下载入口不走 `/api/v1`，返回原始文件流，不是 JSON
-- 追加 `?download=1` 可以强制走附件下载；不传时按 inline 处理
+- 不带 `?download=1` 时按 inline 处理，仍由 AsterDrive 服务端流式返回
+- 追加 `?download=1` 可以强制走附件下载；这条路径会复用普通下载的附件分流逻辑，命中 S3 / Remote 的 `presigned` 策略时返回 `302`
 
 ### `POST /files/{id}/preview-link`
 

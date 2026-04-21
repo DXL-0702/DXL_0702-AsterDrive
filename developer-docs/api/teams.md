@@ -123,6 +123,6 @@
 - 团队文件的 WOPI 启动入口虽然是 `/teams/{team_id}/files/{id}/wopi/open`，但真正回调时仍然走统一的 `/api/v1/wopi/files/{id}`；团队作用域信息保存在 access token 里
 - 团队批量打包下载 ticket 只能在对应团队路由下消费，不能拿去个人 `/batch/archive-download/{token}` 复用
 
-团队文件的 `GET /teams/{team_id}/files/{id}/direct-link` 语义和个人空间一致：接口只返回 token，真正下载仍然走根路径 `/d/{token}/{filename}`。
+团队文件的 `GET /teams/{team_id}/files/{id}/direct-link` 语义和个人空间一致：接口只返回 token，真正下载仍然走根路径 `/d/{token}/{filename}`。默认 inline 直链由 AsterDrive 流式返回；追加 `?download=1` 后会复用附件下载分流，命中 `presigned` 策略时返回 `302`。
 
 团队文件的 `POST /teams/{team_id}/files/{id}/preview-link` 也和个人空间一致：接口返回 `PreviewLinkInfo`，真正预览内容走根路径 `/pv/{token}/{filename}`。

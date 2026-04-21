@@ -66,7 +66,7 @@ pub(crate) async fn download_file(
         file_service::DownloadDisposition::Inline
     };
 
-    file_service::build_stream_outcome_with_disposition(
+    file_service::build_download_outcome_with_disposition(
         state,
         &file,
         &blob,
