@@ -5,6 +5,84 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.23] - 2026-04-22
+
+### Release Highlights
+
+- **远程节点存储架构落地** — 新增主控-从节点模式、远程节点管理与 enrollment 接入流程，支持将存储能力扩展到独立节点
+- **远程存储上传下载链路补齐** — remote 存储支持 `relay_stream` 与 `presigned` 两种下载策略，并补全 presigned 直传与浏览器 CORS 支持
+- **远程中继流式分块上传** — 新增远程节点中继流式上传链路，降低大文件上传时对主控节点临时落盘的依赖
+- **认证会话系统升级** — 引入 `auth_sessions` 表，支持 refresh token 轮换、设备级会话管理与撤销
+- **时区偏好与时间显示统一** — 前端新增时区偏好设置，统一绝对时间显示格式，并在关键场景补充 UTC offset 信息
+- **远程节点 CLI 与运维能力增强** — 新增 `aster_drive node enroll` 等命令，简化从节点接入与运维排障
+- **文档体系继续补全** — 新增远程节点、自定义前端、直链下载分流、登录/会话与架构说明文档
+
+### Added
+
+- **远程节点与远程存储**
+  - 新增远程节点管理 API、enrollment token / ack 流程，以及主控-从节点绑定能力
+  - 新增 `remote` 存储驱动与内部存储协议，支持远程健康检查、文件传输与策略联动
+  - 新增远程存储 `presigned` 直传、presigned 下载重定向与中继流式上传模式
+  - 新增远程节点管理后台页面、节点对话框与接入流程界面
+- **认证与会话管理**
+  - 新增 `auth_sessions` 表及相关迁移，支持 refresh token 轮换与持久化会话管理
+  - 安全设置页新增登录设备列表、注销当前会话/其他会话能力
+- **用户偏好与前端体验**
+  - 新增用户自定义偏好键值对
+  - 新增 `display_time_zone` 偏好字段，用于控制绝对时间显示时区
+  - 新增会话平台图标识别与展示
+- **CLI 与文档**
+  - 新增 `aster_drive node enroll` CLI 命令
+  - 新增远程节点、归档任务、自定义前端、安装与部署相关文档
+
+### Changed
+
+- **上传与下载策略**
+  - 统一上传策略解析逻辑，S3 与 remote 存储在初始化阶段按策略自动选择 direct / chunked / presigned 模式
+  - 直链下载文档与存储策略说明更新，明确 `?download=1` 在命中 presigned 下载策略时的行为
+- **认证体系**
+  - refresh token 流程重构，认证状态改为围绕会话记录与轮换机制运作
+- **前端时间展示**
+  - 绝对时间显示统一走格式化工具与用户时区偏好
+  - 垃圾桶、分享、设置等页面补充更明确的时区信息
+- **命名与架构语义**
+  - `remote_node` 重命名为 `managed_follower`
+  - `AppState` 重命名为 `PrimaryAppState`
+  - 相关运行时、服务层与路由命名同步调整，以突出主控-从节点语义
+- **文档与依赖**
+  - 补充架构与 API 文档，完善存储、认证、远程节点与部署说明
+  - 前端与后端部分依赖升级，优化对话框动画与路由体验
+
+### Fixed
+
+- **远程存储上传兼容性**
+  - 完善 remote presigned 直传模式下的浏览器 CORS 支持
+- **远程节点可靠性**
+  - 增加入站文件大小限制校验
+  - 优化远程节点健康检查相关并发逻辑
+- **认证安全性**
+  - refresh token 复用检测后可撤销整组相关会话，降低 token 被重放后的持续有效窗口
+- **时间显示一致性**
+  - 统一前端绝对时间展示，减少跨时区场景下的误读
+
+### Breaking Changes
+
+- **数据库迁移（必须执行）**
+  - `m20260420_000001_create_auth_sessions`：新增 `auth_sessions` 表，用于 refresh token 轮换与会话管理
+  - `m20260420_000002_create_remote_nodes`：新增远程节点、绑定与 enrollment 相关表
+
+### Notes
+
+- `remote_node` → `managed_follower`、`AppState` → `PrimaryAppState` 主要属于内部命名重构，不影响对外 HTTP 路径
+- 认证会话机制升级后，旧登录状态在升级后可能需要重新登录
+- 时间展示现受用户时区偏好影响，界面显示可能与旧版本存在差异
+
+---
+
+**统计数据**：
+- 427 files changed, 22,410 insertions(+), 3,511 deletions(-)
+- 33 commits
+
 ## [v0.0.1-alpha.22] - 2026-04-19
 
 ### Release Highlights
@@ -1969,7 +2047,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.22...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.23...HEAD
+[v0.0.1-alpha.23]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.22...v0.0.1-alpha.23
 [v0.0.1-alpha.22]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.21...v0.0.1-alpha.22
 [v0.0.1-alpha.21]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.20...v0.0.1-alpha.21
 [v0.0.1-alpha.20]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.19...v0.0.1-alpha.20
