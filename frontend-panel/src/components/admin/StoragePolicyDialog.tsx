@@ -141,7 +141,7 @@ export function StoragePolicyDialog({
 			type: "remote",
 			title: t("driver_type_remote"),
 			description: t("policy_wizard_remote_storage_desc"),
-			iconSrc: "/static/asterdrive/asterdrive-dark.svg",
+			iconSrc: "/static/storage/asterdrive-node.svg",
 		},
 	];
 	const createSteps = [
