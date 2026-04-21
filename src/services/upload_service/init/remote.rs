@@ -5,41 +5,43 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::InitUploadResponse;
 use crate::services::upload_service::shared::generate_upload_id;
-use crate::types::{
-    DriverType, RemoteUploadStrategy, UploadMode, UploadSessionStatus, parse_storage_policy_options,
+use crate::services::workspace_storage_service::{
+    PolicyUploadTransport, resolve_policy_upload_transport,
 };
+use crate::types::{RemoteUploadStrategy, UploadMode, UploadSessionStatus};
 use crate::utils::numbers;
 
 use super::context::{
     InitUploadContext, UploadSessionRecordParams, chunked_upload_response, direct_upload_response,
-    persist_upload_session, upload_fits_single_request,
+    persist_upload_session,
 };
 
 pub(super) async fn init_remote_upload(
     state: &PrimaryAppState,
     ctx: &InitUploadContext,
 ) -> Result<Option<InitUploadResponse>> {
-    if ctx.policy.driver_type != DriverType::Remote {
+    let transport = resolve_policy_upload_transport(&ctx.policy);
+    let PolicyUploadTransport::Remote(strategy) = transport else {
         return Ok(None);
-    }
-
-    let strategy = parse_storage_policy_options(ctx.policy.options.as_ref())
-        .effective_remote_upload_strategy();
+    };
     match strategy {
-        RemoteUploadStrategy::RelayStream => {
-            init_relay_stream_remote_upload(state, ctx).await.map(Some)
-        }
-        RemoteUploadStrategy::Presigned => init_presigned_remote_upload(state, ctx).await.map(Some),
+        RemoteUploadStrategy::RelayStream => init_relay_stream_remote_upload(state, ctx, transport)
+            .await
+            .map(Some),
+        RemoteUploadStrategy::Presigned => init_presigned_remote_upload(state, ctx, transport)
+            .await
+            .map(Some),
     }
 }
 
 async fn init_relay_stream_remote_upload(
     state: &PrimaryAppState,
     ctx: &InitUploadContext,
+    transport: PolicyUploadTransport,
 ) -> Result<InitUploadResponse> {
-    let chunk_size = ctx.policy.chunk_size;
+    let chunk_size = transport.effective_chunk_size(&ctx.policy);
 
-    if upload_fits_single_request(ctx.total_size, chunk_size) {
+    if transport.resolve_init_mode(&ctx.policy, ctx.total_size) == UploadMode::Direct {
         tracing::debug!(
             scope = ?ctx.scope,
             policy_id = ctx.policy.id,
@@ -98,13 +100,14 @@ async fn init_relay_stream_remote_upload(
 async fn init_presigned_remote_upload(
     state: &PrimaryAppState,
     ctx: &InitUploadContext,
+    transport: PolicyUploadTransport,
 ) -> Result<InitUploadResponse> {
     let driver = state.driver_registry.get_driver(&ctx.policy)?;
     let upload_id = generate_upload_id(&state.db).await?;
     let temp_key = format!("files/{upload_id}");
-    let chunk_size = ctx.policy.chunk_size;
+    let chunk_size = transport.effective_chunk_size(&ctx.policy);
 
-    if upload_fits_single_request(ctx.total_size, chunk_size) {
+    if transport.resolve_init_mode(&ctx.policy, ctx.total_size) == UploadMode::Presigned {
         let presigned_driver = driver.as_presigned().ok_or_else(|| {
             AsterError::storage_driver_error("presigned PUT not supported by remote driver")
         })?;

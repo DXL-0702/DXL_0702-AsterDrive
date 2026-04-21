@@ -176,10 +176,6 @@ pub(super) async fn persist_upload_session(
     Ok(())
 }
 
-pub(super) fn upload_fits_single_request(total_size: i64, chunk_size: i64) -> bool {
-    chunk_size == 0 || total_size <= chunk_size
-}
-
 pub(super) fn direct_upload_response() -> InitUploadResponse {
     InitUploadResponse {
         mode: UploadMode::Direct,

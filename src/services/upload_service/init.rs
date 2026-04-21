@@ -17,13 +17,15 @@ use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::InitUploadResponse;
 use crate::services::upload_service::scope::{personal_scope, team_scope};
 use crate::services::upload_service::shared::generate_upload_id;
-use crate::services::workspace_storage_service::WorkspaceStorageScope;
+use crate::services::workspace_storage_service::{
+    WorkspaceStorageScope, resolve_policy_upload_transport,
+};
 use crate::types::{UploadMode, UploadSessionStatus};
 use crate::utils::{numbers, paths};
 
 use self::context::{
     InitUploadContext, UploadSessionRecordParams, direct_upload_response, persist_upload_session,
-    resolve_init_upload_context, upload_fits_single_request,
+    resolve_init_upload_context,
 };
 
 async fn init_upload_for_scope(
@@ -46,6 +48,7 @@ async fn init_upload_for_scope(
     let ctx =
         resolve_init_upload_context(state, scope, filename, total_size, folder_id, relative_path)
             .await?;
+    let transport = resolve_policy_upload_transport(&ctx.policy);
 
     if let Some(response) = s3::init_s3_upload(state, &ctx).await? {
         return Ok(response);
@@ -55,8 +58,7 @@ async fn init_upload_for_scope(
         return Ok(response);
     }
 
-    // 非 S3 或未启用 multipart 时，小文件直接走 direct upload，不需要 upload session。
-    if upload_fits_single_request(ctx.total_size, ctx.policy.chunk_size) {
+    if transport.resolve_init_mode(&ctx.policy, ctx.total_size) == UploadMode::Direct {
         tracing::debug!(
             scope = ?ctx.scope,
             policy_id = ctx.policy.id,

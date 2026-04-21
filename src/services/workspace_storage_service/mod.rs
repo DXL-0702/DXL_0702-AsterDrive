@@ -9,6 +9,7 @@ mod multipart;
 mod store;
 #[cfg(test)]
 mod tests;
+mod upload_policy;
 
 // 调用方只需要依赖 `workspace_storage_service`，不必同时了解 scope helper
 // 和底层核心实现分别散落在哪个文件里。
@@ -32,11 +33,14 @@ pub(crate) use blob_upload::{
     prepare_non_dedup_blob_upload, upload_reader_to_prepared_blob,
     upload_temp_file_to_prepared_blob,
 };
-pub(crate) use multipart::{streaming_direct_upload_eligible, upload};
+pub(crate) use multipart::upload;
 pub(crate) use store::{
     StoreFromTempHints, StoreFromTempParams, StorePreuploadedNondedupParams, create_empty,
     store_from_temp, store_from_temp_exact_name_with_hints, store_from_temp_with_hints,
     store_preuploaded_nondedup,
+};
+pub(crate) use upload_policy::{
+    PolicyUploadTransport, resolve_policy_upload_transport, streaming_direct_upload_eligible,
 };
 
 // Local content-dedup 会在不把整文件读入内存的前提下流式计算 SHA-256。

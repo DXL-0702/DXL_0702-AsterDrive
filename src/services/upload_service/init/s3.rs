@@ -5,45 +5,48 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::InitUploadResponse;
 use crate::services::upload_service::shared::generate_upload_id;
-use crate::types::{
-    DriverType, S3UploadStrategy, UploadMode, UploadSessionStatus,
-    effective_s3_multipart_chunk_size, parse_storage_policy_options,
+use crate::services::workspace_storage_service::{
+    PolicyUploadTransport, resolve_policy_upload_transport,
 };
+use crate::types::{S3UploadStrategy, UploadMode, UploadSessionStatus};
 use crate::utils::numbers;
 
 use super::context::{
     InitUploadContext, UploadSessionRecordParams, chunked_upload_response, direct_upload_response,
-    persist_upload_session, upload_fits_single_request,
+    persist_upload_session,
 };
 
 pub(super) async fn init_s3_upload(
     state: &PrimaryAppState,
     ctx: &InitUploadContext,
 ) -> Result<Option<InitUploadResponse>> {
-    if ctx.policy.driver_type != DriverType::S3 {
+    let transport = resolve_policy_upload_transport(&ctx.policy);
+    let PolicyUploadTransport::S3(strategy) = transport else {
         return Ok(None);
-    }
-
-    let strategy =
-        parse_storage_policy_options(ctx.policy.options.as_ref()).effective_s3_upload_strategy();
+    };
     match strategy {
-        S3UploadStrategy::Presigned => init_presigned_s3_upload(state, ctx).await.map(Some),
-        S3UploadStrategy::RelayStream => init_relay_stream_s3_upload(state, ctx).await.map(Some),
+        S3UploadStrategy::Presigned => init_presigned_s3_upload(state, ctx, transport)
+            .await
+            .map(Some),
+        S3UploadStrategy::RelayStream => init_relay_stream_s3_upload(state, ctx, transport)
+            .await
+            .map(Some),
     }
 }
 
 async fn init_presigned_s3_upload(
     state: &PrimaryAppState,
     ctx: &InitUploadContext,
+    transport: PolicyUploadTransport,
 ) -> Result<InitUploadResponse> {
     let driver = state.driver_registry.get_driver(&ctx.policy)?;
     let upload_id = generate_upload_id(&state.db).await?;
     let temp_key = format!("files/{upload_id}");
-    let chunk_size = effective_s3_multipart_chunk_size(ctx.policy.chunk_size);
+    let chunk_size = transport.effective_chunk_size(&ctx.policy);
 
     // 小文件 presigned：客户端直接 PUT 到最终 temp object，不经过服务端 relay，
     // 也不需要 chunk bookkeeping。
-    if upload_fits_single_request(ctx.total_size, chunk_size) {
+    if transport.resolve_init_mode(&ctx.policy, ctx.total_size) == UploadMode::Presigned {
         let presigned_url = presigned_put_url(driver.as_ref(), &temp_key).await?;
         persist_upload_session(
             &state.db,
@@ -130,11 +133,12 @@ async fn init_presigned_s3_upload(
 async fn init_relay_stream_s3_upload(
     state: &PrimaryAppState,
     ctx: &InitUploadContext,
+    transport: PolicyUploadTransport,
 ) -> Result<InitUploadResponse> {
-    let chunk_size = effective_s3_multipart_chunk_size(ctx.policy.chunk_size);
+    let chunk_size = transport.effective_chunk_size(&ctx.policy);
 
     // relay_stream + 小文件：直接走普通上传接口，让服务端把字节流转发到驱动。
-    if upload_fits_single_request(ctx.total_size, chunk_size) {
+    if transport.resolve_init_mode(&ctx.policy, ctx.total_size) == UploadMode::Direct {
         tracing::debug!(
             scope = ?ctx.scope,
             policy_id = ctx.policy.id,

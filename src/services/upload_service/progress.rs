@@ -9,10 +9,8 @@ use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::responses::UploadProgressResponse;
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
-use crate::types::{
-    DriverType, RemoteUploadStrategy, S3UploadStrategy, UploadSessionStatus,
-    parse_storage_policy_options,
-};
+use crate::services::workspace_storage_service::resolve_policy_upload_transport;
+use crate::types::UploadSessionStatus;
 use crate::utils::paths;
 
 /// 查询上传进度
@@ -79,14 +77,7 @@ async fn get_progress_impl(
 }
 
 fn is_relay_multipart_policy(policy: &crate::entities::storage_policy::Model) -> bool {
-    let options = parse_storage_policy_options(policy.options.as_ref());
-    match policy.driver_type {
-        DriverType::S3 => options.effective_s3_upload_strategy() == S3UploadStrategy::RelayStream,
-        DriverType::Remote => {
-            options.effective_remote_upload_strategy() == RemoteUploadStrategy::RelayStream
-        }
-        DriverType::Local => false,
-    }
+    resolve_policy_upload_transport(policy).uses_relay_multipart_tracking()
 }
 
 pub async fn get_progress(

@@ -8,41 +8,16 @@ use tokio::io::AsyncWriteExt;
 use crate::entities::file;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
-use crate::types::{
-    DriverType, S3UploadStrategy, effective_s3_multipart_chunk_size, parse_storage_policy_options,
-};
+use crate::types::DriverType;
 
 use super::{
     StoreFromTempHints, StoreFromTempParams, StorePreuploadedNondedupParams, WorkspaceStorageScope,
     check_quota, cleanup_preuploaded_blob_upload, ensure_upload_parent_path,
     local_content_dedup_enabled, parse_relative_upload_path, prepare_non_dedup_blob_upload,
     resolve_policy_for_size, store_from_temp, store_from_temp_with_hints,
-    store_preuploaded_nondedup, verify_folder_access,
+    store_preuploaded_nondedup, streaming_direct_upload_eligible, verify_folder_access,
 };
 use crate::utils::numbers::usize_to_i64;
-
-pub(crate) fn streaming_direct_upload_eligible(
-    policy: &crate::entities::storage_policy::Model,
-    declared_size: i64,
-) -> bool {
-    if declared_size <= 0 {
-        return false;
-    }
-
-    match policy.driver_type {
-        DriverType::S3 => {
-            let options = parse_storage_policy_options(policy.options.as_ref());
-            if options.effective_s3_upload_strategy() != S3UploadStrategy::RelayStream {
-                return false;
-            }
-
-            policy.chunk_size == 0
-                || declared_size <= effective_s3_multipart_chunk_size(policy.chunk_size)
-        }
-        DriverType::Remote => true,
-        DriverType::Local => false,
-    }
-}
 
 #[derive(Clone, Copy)]
 struct DirectUploadParams<'a> {
