@@ -1,6 +1,7 @@
 //! 服务模块：`user_service`。
 
 use chrono::Utc;
+use chrono_tz::Tz;
 use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 use serde::{Deserialize, Serialize};
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -23,6 +24,8 @@ use crate::types::{
     UserPreferences, UserRole, UserStatus,
 };
 
+const DISPLAY_TIME_ZONE_BROWSER: &str = "browser";
+
 /// PATCH request — only non-null fields are merged into existing preferences.
 #[derive(Debug, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -34,6 +37,7 @@ pub struct UpdatePreferencesReq {
     pub sort_by: Option<SortBy>,
     pub sort_order: Option<SortOrder>,
     pub language: Option<Language>,
+    pub display_time_zone: Option<String>,
     pub storage_event_stream_enabled: Option<bool>,
 }
 
@@ -613,6 +617,27 @@ fn parse_user_config(user: &user::Model) -> Option<UserConfig> {
     }
 }
 
+fn normalize_display_time_zone(display_time_zone: Option<String>) -> Result<Option<String>> {
+    let Some(display_time_zone) = display_time_zone else {
+        return Ok(None);
+    };
+    let trimmed = display_time_zone.trim();
+    if trimmed.is_empty() {
+        return Err(AsterError::validation_error(
+            "display_time_zone cannot be empty",
+        ));
+    }
+    if trimmed == DISPLAY_TIME_ZONE_BROWSER {
+        return Ok(Some(DISPLAY_TIME_ZONE_BROWSER.to_string()));
+    }
+
+    trimmed.parse::<Tz>().map_aster_err_with(|| {
+        AsterError::validation_error(format!("invalid display_time_zone '{trimmed}'"))
+    })?;
+
+    Ok(Some(trimmed.to_string()))
+}
+
 /// 将用户配置写回 DB。空配置保持现状，不主动清理历史值。
 async fn save_user_config(
     state: &PrimaryAppState,
@@ -638,21 +663,33 @@ pub async fn update_preferences(
     user_id: i64,
     patch: UpdatePreferencesReq,
 ) -> Result<UserPreferences> {
+    let UpdatePreferencesReq {
+        theme_mode,
+        color_preset,
+        view_mode,
+        browser_open_mode,
+        sort_by,
+        sort_order,
+        language,
+        display_time_zone,
+        storage_event_stream_enabled,
+    } = patch;
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let mut config = parse_user_config(&user).unwrap_or_default();
     let prefs = &mut config.preferences;
+    let display_time_zone = normalize_display_time_zone(display_time_zone)?;
 
     // 合并更新（只覆盖非 None 的字段）
-    prefs.theme_mode = patch.theme_mode.or(prefs.theme_mode);
-    prefs.color_preset = patch.color_preset.or(prefs.color_preset);
-    prefs.view_mode = patch.view_mode.or(prefs.view_mode);
-    prefs.browser_open_mode = patch.browser_open_mode.or(prefs.browser_open_mode);
-    prefs.sort_by = patch.sort_by.or(prefs.sort_by);
-    prefs.sort_order = patch.sort_order.or(prefs.sort_order);
-    prefs.language = patch.language.or(prefs.language);
-    prefs.storage_event_stream_enabled = patch
-        .storage_event_stream_enabled
-        .or(prefs.storage_event_stream_enabled);
+    prefs.theme_mode = theme_mode.or(prefs.theme_mode);
+    prefs.color_preset = color_preset.or(prefs.color_preset);
+    prefs.view_mode = view_mode.or(prefs.view_mode);
+    prefs.browser_open_mode = browser_open_mode.or(prefs.browser_open_mode);
+    prefs.sort_by = sort_by.or(prefs.sort_by);
+    prefs.sort_order = sort_order.or(prefs.sort_order);
+    prefs.language = language.or(prefs.language);
+    prefs.display_time_zone = display_time_zone.or(prefs.display_time_zone.clone());
+    prefs.storage_event_stream_enabled =
+        storage_event_stream_enabled.or(prefs.storage_event_stream_enabled);
 
     save_user_config(state, user, &config).await?;
     Ok(config.preferences)

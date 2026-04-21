@@ -1,4 +1,5 @@
 import type { i18n as I18n } from "i18next";
+import { getActiveDisplayTimeZone } from "@/stores/displayTimeZoneStore";
 
 const INTEGER_FORMATTER = new Intl.NumberFormat();
 
@@ -6,6 +7,15 @@ type DateFormatI18n = Pick<I18n, "language" | "resolvedLanguage" | "t">;
 
 function getDateLocale(i18n?: DateFormatI18n): string | undefined {
 	return i18n?.resolvedLanguage ?? (i18n?.language || undefined);
+}
+
+function getTimeZoneFormatOptions(
+	options?: Intl.DateTimeFormatOptions,
+): Intl.DateTimeFormatOptions {
+	return {
+		...options,
+		timeZone: getActiveDisplayTimeZone(),
+	};
 }
 
 function translateRelativeDate(
@@ -78,17 +88,29 @@ export function formatDate(dateStr: string, i18n?: DateFormatI18n): string {
 			days,
 		);
 	}
-	return date.toLocaleDateString(getDateLocale(i18n));
+	return date.toLocaleDateString(
+		getDateLocale(i18n),
+		getTimeZoneFormatOptions(),
+	);
 }
 
 export function formatDateAbsolute(dateStr: string): string {
-	return new Date(dateStr).toLocaleString();
+	return new Date(dateStr).toLocaleString(
+		undefined,
+		getTimeZoneFormatOptions(),
+	);
 }
 
 export function formatDateShort(dateStr: string): string {
-	return new Date(dateStr).toLocaleDateString();
+	return new Date(dateStr).toLocaleDateString(
+		undefined,
+		getTimeZoneFormatOptions(),
+	);
 }
 
 export function formatDateTime(dateStr: string): string {
-	return new Date(dateStr).toLocaleString();
+	return new Date(dateStr).toLocaleString(
+		undefined,
+		getTimeZoneFormatOptions(),
+	);
 }

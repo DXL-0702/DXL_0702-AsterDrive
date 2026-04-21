@@ -8,6 +8,11 @@ import {
 	formatDateTime,
 	formatNumber,
 } from "@/lib/format";
+import {
+	DISPLAY_TIME_ZONE_BROWSER,
+	getActiveDisplayTimeZone,
+	useDisplayTimeZoneStore,
+} from "@/stores/displayTimeZoneStore";
 
 function createI18nStub(
 	language: "en" | "zh",
@@ -37,6 +42,10 @@ function createI18nStub(
 describe("format helpers", () => {
 	afterEach(() => {
 		vi.useRealTimers();
+		useDisplayTimeZoneStore
+			.getState()
+			._applyFromServer(DISPLAY_TIME_ZONE_BROWSER);
+		localStorage.removeItem("aster-display-time-zone");
 	});
 
 	it("formats byte sizes", () => {
@@ -90,14 +99,59 @@ describe("format helpers", () => {
 		expect(formatDate("2026-03-28T11:55:00Z")).toBe("5m ago");
 		expect(formatDate("2026-03-28T10:00:00Z")).toBe("2h ago");
 		expect(formatDate("2026-03-25T12:00:00Z")).toBe("3d ago");
-		expect(formatDate(value)).toBe(new Date(value).toLocaleDateString());
+		expect(formatDate(value)).toBe(
+			new Date(value).toLocaleDateString(undefined, {
+				timeZone: getActiveDisplayTimeZone(),
+			}),
+		);
 	});
 
 	it("delegates absolute date formatting to the built-in locale helpers", () => {
 		const value = "2026-03-28T12:34:56Z";
+		const activeTimeZone = getActiveDisplayTimeZone();
 
-		expect(formatDateAbsolute(value)).toBe(new Date(value).toLocaleString());
-		expect(formatDateShort(value)).toBe(new Date(value).toLocaleDateString());
-		expect(formatDateTime(value)).toBe(new Date(value).toLocaleString());
+		expect(formatDateAbsolute(value)).toBe(
+			new Date(value).toLocaleString(undefined, {
+				timeZone: activeTimeZone,
+			}),
+		);
+		expect(formatDateShort(value)).toBe(
+			new Date(value).toLocaleDateString(undefined, {
+				timeZone: activeTimeZone,
+			}),
+		);
+		expect(formatDateTime(value)).toBe(
+			new Date(value).toLocaleString(undefined, {
+				timeZone: activeTimeZone,
+			}),
+		);
+	});
+
+	it("formats calendar and absolute dates using the selected display time zone", () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date("2026-04-05T12:00:00Z"));
+		useDisplayTimeZoneStore.getState()._applyFromServer("America/Los_Angeles");
+		const value = "2026-03-01T01:30:00Z";
+
+		expect(formatDate(value, createI18nStub("en"))).toBe(
+			new Date(value).toLocaleDateString("en", {
+				timeZone: "America/Los_Angeles",
+			}),
+		);
+		expect(formatDateAbsolute(value)).toBe(
+			new Date(value).toLocaleString(undefined, {
+				timeZone: "America/Los_Angeles",
+			}),
+		);
+		expect(formatDateShort(value)).toBe(
+			new Date(value).toLocaleDateString(undefined, {
+				timeZone: "America/Los_Angeles",
+			}),
+		);
+		expect(formatDateTime(value)).toBe(
+			new Date(value).toLocaleString(undefined, {
+				timeZone: "America/Los_Angeles",
+			}),
+		);
 	});
 });

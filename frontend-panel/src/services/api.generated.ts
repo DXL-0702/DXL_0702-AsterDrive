@@ -4063,6 +4063,11 @@ export interface components {
             password: string;
             username: string;
         };
+        /**
+         * @description Remote 下载传输策略（存储策略 options JSON）
+         * @enum {string}
+         */
+        RemoteDownloadStrategy: "relay_stream" | "presigned";
         RemoteEnrollmentBootstrap: {
             access_key: string;
             ack_token: string;
@@ -4103,11 +4108,6 @@ export interface components {
             supports_range_read: boolean;
             supports_stream_upload: boolean;
         };
-        /**
-         * @description Remote 下载传输策略（存储策略 options JSON）
-         * @enum {string}
-         */
-        RemoteDownloadStrategy: "relay_stream" | "presigned";
         /**
          * @description Remote 上传传输策略（存储策略 options JSON）
          * @enum {string}
@@ -4663,6 +4663,7 @@ export interface components {
         UpdatePreferencesReq: {
             browser_open_mode?: null | components["schemas"]["BrowserOpenMode"];
             color_preset?: null | components["schemas"]["ColorPreset"];
+            display_time_zone?: string | null;
             language?: null | components["schemas"]["Language"];
             sort_by?: null | components["schemas"]["SortBy"];
             sort_order?: null | components["schemas"]["SortOrder"];
@@ -4784,6 +4785,7 @@ export interface components {
         UserPreferences: {
             browser_open_mode?: null | components["schemas"]["BrowserOpenMode"];
             color_preset?: null | components["schemas"]["ColorPreset"];
+            display_time_zone?: string | null;
             language?: null | components["schemas"]["Language"];
             sort_by?: null | components["schemas"]["SortBy"];
             sort_order?: null | components["schemas"]["SortOrder"];
@@ -8484,6 +8486,7 @@ export interface operations {
                         data?: {
                             browser_open_mode?: null | components["schemas"]["BrowserOpenMode"];
                             color_preset?: null | components["schemas"]["ColorPreset"];
+                            display_time_zone?: string | null;
                             language?: null | components["schemas"]["Language"];
                             sort_by?: null | components["schemas"]["SortBy"];
                             sort_order?: null | components["schemas"]["SortOrder"];

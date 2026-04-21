@@ -38,6 +38,10 @@ import {
 import { formatBytes, formatDateAbsolute } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { adminOverviewService } from "@/services/adminService";
+import {
+	resolveActiveDisplayTimeZone,
+	useDisplayTimeZoneStore,
+} from "@/stores/displayTimeZoneStore";
 import type {
 	AdminOverview,
 	AuditAction,
@@ -70,11 +74,6 @@ interface TrendSeries {
 	label: string;
 	stroke: string;
 	strokeWidth: number;
-}
-
-function resolveBrowserTimeZone() {
-	if (typeof Intl === "undefined") return "UTC";
-	return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 }
 
 interface StatCardProps {
@@ -387,7 +386,9 @@ function OverviewTrendChart({
 export default function AdminOverviewPage() {
 	const { t } = useTranslation(["admin", "tasks"]);
 	usePageTitle(t("overview"));
-	const timezone = resolveBrowserTimeZone();
+	const timezone = useDisplayTimeZoneStore((s) =>
+		resolveActiveDisplayTimeZone(s.preference),
+	);
 	const trendSeries: TrendSeries[] = [
 		{
 			badgeClass:

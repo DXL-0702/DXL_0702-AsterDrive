@@ -22,6 +22,7 @@ export const STORAGE_KEYS = {
 	themeMode: "aster-theme-mode",
 	colorPreset: "aster-color-preset",
 	language: "aster-language",
+	displayTimeZone: "aster-display-time-zone",
 	viewMode: "aster-view-mode",
 	browserOpenMode: "aster-browser-open-mode",
 	trashViewMode: "aster-trash-view-mode",

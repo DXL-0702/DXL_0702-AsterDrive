@@ -4,6 +4,7 @@ import i18n from "@/i18n";
 import { logger } from "@/lib/logger";
 import { cancelPreferenceSync } from "@/lib/preferenceSync";
 import { authService } from "@/services/authService";
+import { useDisplayTimeZoneStore } from "@/stores/displayTimeZoneStore";
 import type {
 	BrowserOpenMode,
 	SortBy,
@@ -90,6 +91,7 @@ function clearRefreshTimer() {
 function applyServerPreferences(prefs: UserPreferences): void {
 	const themeStore = useThemeStore.getState();
 	const fileStore = useFileStore.getState();
+	const displayTimeZoneStore = useDisplayTimeZoneStore.getState();
 
 	themeStore._applyFromServer({
 		mode: (prefs.theme_mode as ThemeMode) ?? themeStore.mode,
@@ -102,6 +104,7 @@ function applyServerPreferences(prefs: UserPreferences): void {
 		sortBy: (prefs.sort_by as SortBy) ?? fileStore.sortBy,
 		sortOrder: (prefs.sort_order as SortOrder) ?? fileStore.sortOrder,
 	});
+	displayTimeZoneStore._applyFromServer(prefs.display_time_zone);
 	if (prefs.language) void i18n.changeLanguage(prefs.language);
 }
 
@@ -173,12 +176,13 @@ function mergeUserPreferences(
 // authStore 只管自身状态，跨 store 写入统一通过此 subscription 完成，
 // 而不是在每个 login / checkAuth / refreshUser 中重复调用。
 function handleAuthStateChange(state: AuthState, prevState: AuthState) {
-	if (
-		state.user !== prevState.user &&
-		state.isAuthenticated &&
-		state.user?.preferences
-	) {
-		applyServerPreferences(state.user.preferences);
+	if (state.user !== prevState.user && state.isAuthenticated) {
+		if (state.user?.preferences) {
+			applyServerPreferences(state.user.preferences);
+			return;
+		}
+
+		useDisplayTimeZoneStore.getState()._applyFromServer(undefined);
 	}
 }
 

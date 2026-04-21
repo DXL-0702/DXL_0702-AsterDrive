@@ -65,12 +65,14 @@ async fn test_preferences_patch_and_get() {
         .set_json(serde_json::json!({
             "theme_mode": "dark",
             "browser_open_mode": "double_click",
+            "display_time_zone": "UTC",
             "storage_event_stream_enabled": false
         }))
         .to_request();
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
     assert_eq!(body["data"]["theme_mode"], "dark");
     assert_eq!(body["data"]["browser_open_mode"], "double_click");
+    assert_eq!(body["data"]["display_time_zone"], "UTC");
     assert_eq!(body["data"]["storage_event_stream_enabled"], false);
 
     // 再 PATCH 设置 language（合并，不覆盖之前的）
@@ -87,6 +89,7 @@ async fn test_preferences_patch_and_get() {
     );
     assert_eq!(body["data"]["browser_open_mode"], "double_click");
     assert_eq!(body["data"]["language"], "zh");
+    assert_eq!(body["data"]["display_time_zone"], "UTC");
     assert_eq!(body["data"]["storage_event_stream_enabled"], false);
 
     // /me 也返回完整偏好
@@ -102,6 +105,7 @@ async fn test_preferences_patch_and_get() {
         "double_click"
     );
     assert_eq!(body["data"]["preferences"]["language"], "zh");
+    assert_eq!(body["data"]["preferences"]["display_time_zone"], "UTC");
     assert_eq!(
         body["data"]["preferences"]["storage_event_stream_enabled"],
         false
@@ -125,6 +129,7 @@ async fn test_preferences_empty_patch_noop() {
         .to_request();
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
     assert_eq!(body["data"]["color_preset"], "green");
+    assert!(body["data"]["display_time_zone"].is_null());
     assert!(body["data"]["storage_event_stream_enabled"].is_null());
 
     // 空 PATCH（全 None）
@@ -139,6 +144,7 @@ async fn test_preferences_empty_patch_noop() {
         body["data"]["color_preset"], "green",
         "empty patch preserves existing"
     );
+    assert!(body["data"]["display_time_zone"].is_null());
     assert!(body["data"]["storage_event_stream_enabled"].is_null());
 }
 
@@ -197,6 +203,26 @@ async fn test_preferences_invalid_value_rejected() {
         .to_request();
     let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
     assert_eq!(resp.status(), 400, "invalid enum value should be rejected");
+}
+
+#[actix_web::test]
+async fn test_preferences_invalid_display_time_zone_rejected() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/preferences")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({ "display_time_zone": "Mars/Olympus_Mons" }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        400,
+        "invalid display_time_zone should be rejected"
+    );
 }
 
 // ── 未认证访问偏好设置被拒 ────────────────────────────────

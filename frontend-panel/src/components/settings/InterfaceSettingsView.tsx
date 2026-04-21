@@ -6,9 +6,26 @@ import {
 	SettingsSection,
 } from "@/components/common/SettingsScaffold";
 import type { IconName } from "@/components/ui/icon";
+import {
+	Select,
+	SelectContent,
+	SelectGroup,
+	SelectItem,
+	SelectLabel,
+	SelectSeparator,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { queuePreferenceSync } from "@/lib/preferenceSync";
 import { useAuthStore } from "@/stores/authStore";
+import {
+	ALL_DISPLAY_TIME_ZONES,
+	COMMON_DISPLAY_TIME_ZONES,
+	DISPLAY_TIME_ZONE_BROWSER,
+	resolveBrowserTimeZone,
+	useDisplayTimeZoneStore,
+} from "@/stores/displayTimeZoneStore";
 import { type BrowserOpenMode, useFileStore } from "@/stores/fileStore";
 import { useThemeStore } from "@/stores/themeStore";
 
@@ -22,6 +39,8 @@ export function InterfaceSettingsView() {
 	const browserOpenMode = useFileStore((s) => s.browserOpenMode);
 	const setViewMode = useFileStore((s) => s.setViewMode);
 	const setBrowserOpenMode = useFileStore((s) => s.setBrowserOpenMode);
+	const displayTimeZone = useDisplayTimeZoneStore((s) => s.preference);
+	const setDisplayTimeZone = useDisplayTimeZoneStore((s) => s.setPreference);
 	const storageEventStreamEnabled = useAuthStore(
 		(s) => s.user?.preferences?.storage_event_stream_enabled !== false,
 	);
@@ -69,6 +88,30 @@ export function InterfaceSettingsView() {
 	];
 
 	const currentLanguage = i18n.language?.startsWith("zh") ? "zh" : "en";
+	const browserTimeZone = resolveBrowserTimeZone();
+	const browserTimeZoneLabel = t(
+		"settings:settings_display_time_zone_browser_option",
+		{
+			timezone: browserTimeZone,
+		},
+	);
+	const commonDisplayTimeZoneSet = new Set<string>(COMMON_DISPLAY_TIME_ZONES);
+	const allDisplayTimeZoneItems = [
+		{
+			value: DISPLAY_TIME_ZONE_BROWSER,
+			label: browserTimeZoneLabel,
+		},
+		...COMMON_DISPLAY_TIME_ZONES.map((timeZone) => ({
+			value: timeZone,
+			label: timeZone,
+		})),
+		...ALL_DISPLAY_TIME_ZONES.filter(
+			(timeZone) => !commonDisplayTimeZoneSet.has(timeZone),
+		).map((timeZone) => ({
+			value: timeZone,
+			label: timeZone,
+		})),
+	];
 	const themeDescriptions: Record<ThemeMode, string> = {
 		light: t("settings:settings_theme_light_desc"),
 		dark: t("settings:settings_theme_dark_desc"),
@@ -86,6 +129,14 @@ export function InterfaceSettingsView() {
 		single_click: t("settings:settings_browser_open_single_click_desc"),
 		double_click: t("settings:settings_browser_open_double_click_desc"),
 	};
+	const displayTimeZoneDescription =
+		displayTimeZone === DISPLAY_TIME_ZONE_BROWSER
+			? t("settings:settings_display_time_zone_browser_desc", {
+					timezone: browserTimeZone,
+				})
+			: t("settings:settings_display_time_zone_explicit_desc", {
+					timezone: displayTimeZone,
+				});
 	const storageEventStreamDescription = storageEventStreamEnabled
 		? t("settings:settings_storage_event_stream_enabled_desc")
 		: t("settings:settings_storage_event_stream_disabled_desc");
@@ -125,6 +176,52 @@ export function InterfaceSettingsView() {
 						queuePreferenceSync({ language: value });
 					}}
 				/>
+			</SettingsRow>
+
+			<SettingsRow
+				label={t("settings:settings_display_time_zone")}
+				description={displayTimeZoneDescription}
+				controlClassName="md:max-w-[420px]"
+			>
+				<Select
+					items={allDisplayTimeZoneItems}
+					value={displayTimeZone}
+					onValueChange={(value) =>
+						setDisplayTimeZone(value ?? DISPLAY_TIME_ZONE_BROWSER)
+					}
+				>
+					<SelectTrigger>
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectGroup>
+							<SelectLabel>
+								{t("settings:settings_display_time_zone_common")}
+							</SelectLabel>
+							<SelectItem value={DISPLAY_TIME_ZONE_BROWSER}>
+								{browserTimeZoneLabel}
+							</SelectItem>
+							{COMMON_DISPLAY_TIME_ZONES.map((timeZone) => (
+								<SelectItem key={timeZone} value={timeZone}>
+									{timeZone}
+								</SelectItem>
+							))}
+						</SelectGroup>
+						<SelectSeparator />
+						<SelectGroup>
+							<SelectLabel>
+								{t("settings:settings_display_time_zone_all")}
+							</SelectLabel>
+							{ALL_DISPLAY_TIME_ZONES.filter(
+								(timeZone) => !commonDisplayTimeZoneSet.has(timeZone),
+							).map((timeZone) => (
+								<SelectItem key={timeZone} value={timeZone}>
+									{timeZone}
+								</SelectItem>
+							))}
+						</SelectGroup>
+					</SelectContent>
+				</Select>
 			</SettingsRow>
 
 			<SettingsRow

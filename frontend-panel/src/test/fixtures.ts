@@ -35,6 +35,7 @@ export function createMeResponse(
 			sort_by: "updated_at",
 			sort_order: "desc",
 			language: "zh",
+			display_time_zone: "Asia/Shanghai",
 			storage_event_stream_enabled: true,
 		},
 		...overrides,

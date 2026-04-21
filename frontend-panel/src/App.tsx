@@ -7,6 +7,10 @@ import { useStorageChangeEvents } from "@/hooks/useStorageChangeEvents";
 import { router } from "@/router";
 import { useAuthStore } from "@/stores/authStore";
 import { useBrandingStore } from "@/stores/brandingStore";
+import {
+	resolveActiveDisplayTimeZone,
+	useDisplayTimeZoneStore,
+} from "@/stores/displayTimeZoneStore";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
 import { useThemeStore } from "@/stores/themeStore";
 
@@ -20,6 +24,9 @@ function App() {
 	const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 	const bootOffline = useAuthStore((s) => s.bootOffline);
 	const userRole = useAuthStore((s) => s.user?.role);
+	const displayTimeZone = useDisplayTimeZoneStore((s) =>
+		resolveActiveDisplayTimeZone(s.preference),
+	);
 	usePwaUpdate();
 	useStorageChangeEvents();
 
@@ -48,6 +55,16 @@ function App() {
 			cancelled = true;
 		};
 	}, [isAuthenticated, isChecking, userRole]);
+
+	useEffect(() => {
+		document.documentElement.setAttribute(
+			"data-display-time-zone",
+			displayTimeZone,
+		);
+		return () => {
+			document.documentElement.removeAttribute("data-display-time-zone");
+		};
+	}, [displayTimeZone]);
 
 	return (
 		<>

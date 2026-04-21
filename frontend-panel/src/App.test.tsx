@@ -11,6 +11,9 @@ const mockState = vi.hoisted(() => ({
 		user: null as { role?: string } | null,
 	},
 	brandingLoad: vi.fn(),
+	displayTimeZoneStore: {
+		preference: "browser",
+	},
 	previewAppsLoad: vi.fn(),
 	setAuthState: vi.fn(),
 	themeInit: vi.fn(),
@@ -56,6 +59,14 @@ vi.mock("@/stores/previewAppStore", () => ({
 	},
 }));
 
+vi.mock("@/stores/displayTimeZoneStore", () => ({
+	resolveActiveDisplayTimeZone: (preference: string) =>
+		preference === "browser" ? "UTC" : preference,
+	useDisplayTimeZoneStore: (
+		selector: (state: typeof mockState.displayTimeZoneStore) => unknown,
+	) => selector(mockState.displayTimeZoneStore),
+}));
+
 vi.mock("@/stores/themeStore", () => ({
 	useThemeStore: {
 		getState: () => ({
@@ -85,6 +96,7 @@ describe("App", () => {
 		mockState.authStore.isAuthenticated = false;
 		mockState.authStore.isChecking = false;
 		mockState.authStore.user = null;
+		mockState.displayTimeZoneStore.preference = "browser";
 		mockState.brandingLoad.mockReset();
 		mockState.previewAppsLoad.mockReset();
 		mockState.setAuthState.mockReset();

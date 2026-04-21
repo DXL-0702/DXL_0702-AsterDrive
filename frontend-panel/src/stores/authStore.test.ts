@@ -15,14 +15,19 @@ vi.mock("@/i18n", () => ({
 
 async function loadStores() {
 	vi.resetModules();
-	const [{ useAuthStore }, { useFileStore }, { useThemeStore }] =
-		await Promise.all([
-			import("@/stores/authStore"),
-			import("@/stores/fileStore"),
-			import("@/stores/themeStore"),
-		]);
+	const [
+		{ useAuthStore },
+		{ useDisplayTimeZoneStore },
+		{ useFileStore },
+		{ useThemeStore },
+	] = await Promise.all([
+		import("@/stores/authStore"),
+		import("@/stores/displayTimeZoneStore"),
+		import("@/stores/fileStore"),
+		import("@/stores/themeStore"),
+	]);
 
-	return { useAuthStore, useFileStore, useThemeStore };
+	return { useAuthStore, useDisplayTimeZoneStore, useFileStore, useThemeStore };
 }
 
 describe("useAuthStore", () => {
@@ -50,7 +55,12 @@ describe("useAuthStore", () => {
 			http.get("*/api/v1/auth/me", () => HttpResponse.json(apiResponse(user))),
 		);
 
-		const { useAuthStore, useFileStore, useThemeStore } = await loadStores();
+		const {
+			useAuthStore,
+			useDisplayTimeZoneStore,
+			useFileStore,
+			useThemeStore,
+		} = await loadStores();
 
 		await useAuthStore.getState().login("alice@example.com", "secret");
 
@@ -78,6 +88,10 @@ describe("useAuthStore", () => {
 			sortBy: "updated_at",
 			sortOrder: "desc",
 		});
+		expect(useDisplayTimeZoneStore.getState().preference).toBe("Asia/Shanghai");
+		expect(localStorage.getItem("aster-display-time-zone")).toBe(
+			"Asia/Shanghai",
+		);
 		expect(changeLanguage).toHaveBeenCalledWith("zh");
 	});
 
@@ -197,5 +211,19 @@ describe("useAuthStore", () => {
 			JSON.parse(localStorage.getItem("aster-cached-user") ?? "{}").preferences
 				?.storage_event_stream_enabled,
 		).toBe(false);
+	});
+
+	it("resets the display time zone to browser default when the server has no preferences", async () => {
+		const user = createMeResponse({ preferences: null });
+		server.use(
+			http.get("*/api/v1/auth/me", () => HttpResponse.json(apiResponse(user))),
+		);
+		const { useAuthStore, useDisplayTimeZoneStore } = await loadStores();
+
+		useDisplayTimeZoneStore.getState()._applyFromServer("Asia/Shanghai");
+		await useAuthStore.getState().checkAuth();
+
+		expect(useDisplayTimeZoneStore.getState().preference).toBe("browser");
+		expect(localStorage.getItem("aster-display-time-zone")).toBe("browser");
 	});
 });

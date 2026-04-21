@@ -9,6 +9,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import AdminOverviewPage from "@/pages/admin/AdminOverviewPage";
 
 const mockState = vi.hoisted(() => ({
+	displayTimeZoneStore: {
+		preference: "America/Los_Angeles",
+	},
 	get: vi.fn(),
 	handleApiError: vi.fn(),
 }));
@@ -247,6 +250,14 @@ vi.mock("@/services/adminService", () => ({
 	},
 }));
 
+vi.mock("@/stores/displayTimeZoneStore", () => ({
+	resolveActiveDisplayTimeZone: (preference: string) =>
+		preference === "browser" ? "UTC" : preference,
+	useDisplayTimeZoneStore: (
+		selector: (state: typeof mockState.displayTimeZoneStore) => unknown,
+	) => selector(mockState.displayTimeZoneStore),
+}));
+
 function createOverview() {
 	return {
 		days: 7,
@@ -330,6 +341,7 @@ function createOverview() {
 
 describe("AdminOverviewPage", () => {
 	beforeEach(() => {
+		mockState.displayTimeZoneStore.preference = "America/Los_Angeles";
 		mockState.get.mockReset();
 		mockState.handleApiError.mockReset();
 		mockState.get.mockResolvedValue(createOverview());
@@ -351,6 +363,11 @@ describe("AdminOverviewPage", () => {
 
 		await waitFor(() => {
 			expect(mockState.get).toHaveBeenCalledTimes(1);
+		});
+		expect(mockState.get).toHaveBeenCalledWith({
+			days: 7,
+			timezone: "America/Los_Angeles",
+			event_limit: 10,
 		});
 
 		expect(screen.getByText("overview")).toBeInTheDocument();

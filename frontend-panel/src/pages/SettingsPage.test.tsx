@@ -43,6 +43,10 @@ const mockState = vi.hoisted(() => ({
 		},
 	},
 	changeLanguage: vi.fn(),
+	displayTimeZoneStore: {
+		preference: "browser",
+		setPreference: vi.fn(),
+	},
 	fileStore: {
 		browserOpenMode: "double_click" as "single_click" | "double_click",
 		setBrowserOpenMode: vi.fn(),
@@ -191,6 +195,62 @@ vi.mock("@/components/common/SettingsScaffold", () => ({
 	),
 }));
 
+const SelectContext = createContext<{
+	onValueChange?: (value: string) => void;
+	value: string;
+}>({
+	value: "",
+});
+
+vi.mock("@/components/ui/select", () => ({
+	Select: ({
+		children,
+		onValueChange,
+		value,
+	}: {
+		children: React.ReactNode;
+		onValueChange?: (value: string) => void;
+		value: string;
+	}) => (
+		<SelectContext.Provider value={{ onValueChange, value }}>
+			<div data-testid="select" data-value={value}>
+				{children}
+			</div>
+		</SelectContext.Provider>
+	),
+	SelectContent: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	SelectGroup: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	SelectItem: ({
+		children,
+		value,
+	}: {
+		children: React.ReactNode;
+		value: string;
+	}) => {
+		const context = useContext(SelectContext);
+		return (
+			<button type="button" onClick={() => context.onValueChange?.(value)}>
+				{children}
+			</button>
+		);
+	},
+	SelectLabel: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	SelectSeparator: () => <hr />,
+	SelectTrigger: ({ children }: { children: React.ReactNode }) => (
+		<div>{children}</div>
+	),
+	SelectValue: () => {
+		const context = useContext(SelectContext);
+		return <span>{context.value}</span>;
+	},
+}));
+
 vi.mock("@/components/layout/AppLayout", () => ({
 	AppLayout: ({ children }: { children: React.ReactNode }) => (
 		<div data-testid="app-layout">{children}</div>
@@ -300,6 +360,20 @@ vi.mock("@/stores/authStore", () => ({
 	forceLogout: () => mockState.authStore.forceLogout(),
 }));
 
+vi.mock("@/stores/displayTimeZoneStore", () => ({
+	ALL_DISPLAY_TIME_ZONES: ["America/Los_Angeles"],
+	COMMON_DISPLAY_TIME_ZONES: ["UTC", "Asia/Shanghai"],
+	DISPLAY_TIME_ZONE_BROWSER: "browser",
+	getActiveDisplayTimeZone: () =>
+		mockState.displayTimeZoneStore.preference === "browser"
+			? "UTC"
+			: mockState.displayTimeZoneStore.preference,
+	resolveBrowserTimeZone: () => "UTC",
+	useDisplayTimeZoneStore: (
+		selector: (state: typeof mockState.displayTimeZoneStore) => unknown,
+	) => selector(mockState.displayTimeZoneStore),
+}));
+
 vi.mock("@/stores/fileStore", () => ({
 	useFileStore: (selector: (state: typeof mockState.fileStore) => unknown) =>
 		selector(mockState.fileStore),
@@ -354,6 +428,8 @@ describe("SettingsPage", () => {
 		mockState.authStore.syncSession.mockReset();
 		mockState.authStore.user.preferences.storage_event_stream_enabled = true;
 		mockState.changeLanguage.mockReset();
+		mockState.displayTimeZoneStore.preference = "browser";
+		mockState.displayTimeZoneStore.setPreference.mockReset();
 		mockState.fileStore.browserOpenMode = "double_click";
 		mockState.fileStore.setBrowserOpenMode.mockReset();
 		mockState.fileStore.setViewMode.mockReset();
@@ -383,6 +459,11 @@ describe("SettingsPage", () => {
 		).toBeInTheDocument();
 		expect(
 			screen.getByText("settings:settings_language_zh_desc"),
+		).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'settings:settings_display_time_zone_browser_desc:{"timezone":"UTC"}',
+			),
 		).toBeInTheDocument();
 		expect(
 			screen.getByText("settings:settings_browser_list_desc"),
@@ -417,11 +498,14 @@ describe("SettingsPage", () => {
 		).toBeInTheDocument();
 	});
 
-	it("dispatches theme, language, browser, open mode, and realtime sync preference changes", () => {
+	it("dispatches theme, language, time zone, browser, open mode, and realtime sync preference changes", () => {
 		render(<SettingsPage section="interface" />);
 
 		fireEvent.click(screen.getByRole("button", { name: "theme_light" }));
 		fireEvent.click(screen.getByRole("button", { name: "language_en" }));
+		fireEvent.click(
+			screen.getByRole("button", { name: "America/Los_Angeles" }),
+		);
 		fireEvent.click(screen.getByRole("button", { name: "files:grid_view" }));
 		fireEvent.click(
 			screen.getByRole("button", {
@@ -437,6 +521,9 @@ describe("SettingsPage", () => {
 		expect(mockState.themeStore.setMode).toHaveBeenCalledWith("light");
 		expect(mockState.changeLanguage).toHaveBeenCalledWith("en");
 		expect(mockState.preferenceSync).toHaveBeenCalledWith({ language: "en" });
+		expect(mockState.displayTimeZoneStore.setPreference).toHaveBeenCalledWith(
+			"America/Los_Angeles",
+		);
 		expect(mockState.fileStore.setViewMode).toHaveBeenCalledWith("grid");
 		expect(mockState.fileStore.setBrowserOpenMode).toHaveBeenCalledWith(
 			"single_click",
