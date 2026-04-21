@@ -390,7 +390,7 @@ use utoipa::{Modify, OpenApi};
             crate::types::PrefViewMode,
             crate::types::BrowserOpenMode,
             crate::types::Language,
-            crate::types::UserPreferences,
+            crate::services::user_service::UserPreferences,
             crate::services::user_service::UpdatePreferencesReq,
             crate::services::profile_service::AvatarInfo,
             crate::services::profile_service::UserProfileInfo,

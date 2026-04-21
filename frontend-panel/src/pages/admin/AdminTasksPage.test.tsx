@@ -356,7 +356,7 @@ describe("AdminTasksPage", () => {
 		expect(screen.getByText("Trash cleanup")).toBeInTheDocument();
 		expect(screen.getByText("source:user:7")).toBeInTheDocument();
 		expect(screen.getByText("source:system")).toBeInTheDocument();
-		expect(screen.getByText("date:2026-04-17T00:01:00Z")).toBeInTheDocument();
+		expect(screen.getAllByText("date:2026-04-17T00:01:00Z")).toHaveLength(2);
 		expect(screen.getByText("entries:1/2/25")).toBeInTheDocument();
 
 		fireEvent.click(screen.getByRole("button", { name: "CaretRight" }));

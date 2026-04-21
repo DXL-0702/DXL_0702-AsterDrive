@@ -4,6 +4,7 @@ use chrono::Utc;
 use chrono_tz::Tz;
 use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
 use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, BTreeSet};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
@@ -21,12 +22,117 @@ use crate::services::{
 };
 use crate::types::{
     BrowserOpenMode, ColorPreset, Language, PrefViewMode, StoredUserConfig, ThemeMode, UserConfig,
-    UserPreferences, UserRole, UserStatus,
+    UserPreferences as StoredUserPreferences, UserRole, UserStatus,
 };
 
 const DISPLAY_TIME_ZONE_BROWSER: &str = "browser";
+const RESERVED_PREFERENCE_KEYS: &[&str] = &[
+    "theme_mode",
+    "color_preset",
+    "view_mode",
+    "browser_open_mode",
+    "sort_by",
+    "sort_order",
+    "language",
+    "display_time_zone",
+    "storage_event_stream_enabled",
+];
 
-/// PATCH request — only non-null fields are merged into existing preferences.
+/// API-facing user preference payload: built-in preferences plus custom frontend KV entries.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+pub struct UserPreferences {
+    pub theme_mode: Option<ThemeMode>,
+    pub color_preset: Option<ColorPreset>,
+    pub view_mode: Option<PrefViewMode>,
+    pub browser_open_mode: Option<BrowserOpenMode>,
+    pub sort_by: Option<SortBy>,
+    pub sort_order: Option<SortOrder>,
+    pub language: Option<Language>,
+    pub display_time_zone: Option<String>,
+    pub storage_event_stream_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub custom: BTreeMap<String, serde_json::Value>,
+}
+
+impl UserPreferences {
+    pub fn is_empty(&self) -> bool {
+        self.theme_mode.is_none()
+            && self.color_preset.is_none()
+            && self.view_mode.is_none()
+            && self.browser_open_mode.is_none()
+            && self.sort_by.is_none()
+            && self.sort_order.is_none()
+            && self.language.is_none()
+            && self.display_time_zone.is_none()
+            && self.storage_event_stream_enabled.is_none()
+            && self.custom.is_empty()
+    }
+}
+
+impl From<&UserConfig> for UserPreferences {
+    fn from(config: &UserConfig) -> Self {
+        let StoredUserPreferences {
+            theme_mode,
+            color_preset,
+            view_mode,
+            browser_open_mode,
+            sort_by,
+            sort_order,
+            language,
+            display_time_zone,
+            storage_event_stream_enabled,
+        } = config.preferences.clone();
+
+        Self {
+            theme_mode,
+            color_preset,
+            view_mode,
+            browser_open_mode,
+            sort_by,
+            sort_order,
+            language,
+            display_time_zone,
+            storage_event_stream_enabled,
+            custom: config.extra.clone(),
+        }
+    }
+}
+
+impl From<UserConfig> for UserPreferences {
+    fn from(config: UserConfig) -> Self {
+        let UserConfig { preferences, extra } = config;
+        let StoredUserPreferences {
+            theme_mode,
+            color_preset,
+            view_mode,
+            browser_open_mode,
+            sort_by,
+            sort_order,
+            language,
+            display_time_zone,
+            storage_event_stream_enabled,
+        } = preferences;
+
+        Self {
+            theme_mode,
+            color_preset,
+            view_mode,
+            browser_open_mode,
+            sort_by,
+            sort_order,
+            language,
+            display_time_zone,
+            storage_event_stream_enabled,
+            custom: extra,
+        }
+    }
+}
+
+/// PATCH request:
+/// - non-null built-in fields are merged into existing preferences
+/// - `custom` entries are upserted
+/// - `remove_custom_keys` entries are deleted
 #[derive(Debug, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct UpdatePreferencesReq {
@@ -39,6 +145,10 @@ pub struct UpdatePreferencesReq {
     pub language: Option<Language>,
     pub display_time_zone: Option<String>,
     pub storage_event_stream_enabled: Option<bool>,
+    #[serde(default)]
+    pub custom: BTreeMap<String, serde_json::Value>,
+    #[serde(default)]
+    pub remove_custom_keys: Vec<String>,
 }
 
 // ── MeResponse (从 auth route 迁移) ──────────────────────────────────
@@ -593,8 +703,7 @@ pub async fn force_delete_with_audit(
 /// 从 user Model 的 config 字段解析偏好设置。
 /// 空配置或解析失败返回 None，解析失败时记录日志。
 pub fn parse_preferences(user: &user::Model) -> Option<UserPreferences> {
-    parse_user_config(user)
-        .and_then(|config| (!config.preferences.is_empty()).then_some(config.preferences))
+    parse_user_config(user).and_then(|config| (!config.is_empty()).then_some(config.into()))
 }
 
 /// 读取用户的偏好设置（按 ID 查询后解析）。
@@ -638,20 +747,56 @@ fn normalize_display_time_zone(display_time_zone: Option<String>) -> Result<Opti
     Ok(Some(trimmed.to_string()))
 }
 
-/// 将用户配置写回 DB。空配置保持现状，不主动清理历史值。
+fn normalize_custom_preference_key(raw_key: &str) -> Result<String> {
+    let key = raw_key.trim();
+    if key.is_empty() {
+        return Err(AsterError::validation_error(
+            "custom preference key cannot be empty",
+        ));
+    }
+    if RESERVED_PREFERENCE_KEYS.contains(&key) {
+        return Err(AsterError::validation_error(format!(
+            "custom preference key '{key}' conflicts with built-in preferences"
+        )));
+    }
+    Ok(key.to_string())
+}
+
+fn normalize_custom_preferences(
+    custom: BTreeMap<String, serde_json::Value>,
+) -> Result<BTreeMap<String, serde_json::Value>> {
+    let mut normalized = BTreeMap::new();
+    for (raw_key, value) in custom {
+        let key = normalize_custom_preference_key(&raw_key)?;
+        if normalized.insert(key.clone(), value).is_some() {
+            return Err(AsterError::validation_error(format!(
+                "duplicate custom preference key '{key}' after normalization"
+            )));
+        }
+    }
+    Ok(normalized)
+}
+
+fn normalize_custom_preference_removals(remove_custom_keys: Vec<String>) -> Result<Vec<String>> {
+    let mut deduped = BTreeSet::new();
+    for raw_key in remove_custom_keys {
+        deduped.insert(normalize_custom_preference_key(&raw_key)?);
+    }
+    Ok(deduped.into_iter().collect())
+}
+
+/// 将用户配置写回 DB。空配置会清空 `users.config`。
 async fn save_user_config(
     state: &PrimaryAppState,
     user: user::Model,
     config: &UserConfig,
 ) -> Result<()> {
-    if config.is_empty() {
-        return Ok(());
-    }
-
-    let stored =
-        Some(StoredUserConfig::from_config(config).map_aster_err(AsterError::internal_error)?);
     let mut active = user.into_active_model();
-    active.config = Set(stored);
+    active.config = Set(if config.is_empty() {
+        None
+    } else {
+        Some(StoredUserConfig::from_config(config).map_aster_err(AsterError::internal_error)?)
+    });
     active.updated_at = Set(Utc::now());
     active.save(&state.db).await?;
     Ok(())
@@ -673,11 +818,25 @@ pub async fn update_preferences(
         language,
         display_time_zone,
         storage_event_stream_enabled,
+        custom,
+        remove_custom_keys,
     } = patch;
     let user = user_repo::find_by_id(&state.db, user_id).await?;
     let mut config = parse_user_config(&user).unwrap_or_default();
+    let original_config = config.clone();
     let prefs = &mut config.preferences;
     let display_time_zone = normalize_display_time_zone(display_time_zone)?;
+    let custom = normalize_custom_preferences(custom)?;
+    let remove_custom_keys = normalize_custom_preference_removals(remove_custom_keys)?;
+
+    if let Some(conflict_key) = remove_custom_keys
+        .iter()
+        .find(|key| custom.contains_key(*key))
+    {
+        return Err(AsterError::validation_error(format!(
+            "custom preference key '{conflict_key}' cannot be updated and removed in the same request"
+        )));
+    }
 
     // 合并更新（只覆盖非 None 的字段）
     prefs.theme_mode = theme_mode.or(prefs.theme_mode);
@@ -691,6 +850,14 @@ pub async fn update_preferences(
     prefs.storage_event_stream_enabled =
         storage_event_stream_enabled.or(prefs.storage_event_stream_enabled);
 
-    save_user_config(state, user, &config).await?;
-    Ok(config.preferences)
+    for key in remove_custom_keys {
+        config.extra.remove(&key);
+    }
+    config.extra.extend(custom);
+
+    if config != original_config {
+        save_user_config(state, user, &config).await?;
+    }
+
+    Ok(UserPreferences::from(config))
 }

@@ -28,9 +28,11 @@ pub use self::session::{
     put_password, refresh,
 };
 pub use crate::services::profile_service::{AvatarInfo, UserProfileInfo};
-pub use crate::services::user_service::{MeResponse, UpdatePreferencesReq, UserInfo};
+pub use crate::services::user_service::{
+    MeResponse, UpdatePreferencesReq, UserInfo, UserPreferences,
+};
 pub use crate::types::{
-    AvatarSource, BrowserOpenMode, ColorPreset, Language, PrefViewMode, ThemeMode, UserPreferences,
+    AvatarSource, BrowserOpenMode, ColorPreset, Language, PrefViewMode, ThemeMode,
 };
 
 const AUTH_MAIL_RESPONSE_FLOOR_MS: u64 = 350;

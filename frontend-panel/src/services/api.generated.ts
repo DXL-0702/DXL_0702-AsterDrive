@@ -4659,12 +4659,21 @@ export interface components {
         UpdateAvatarSourceReq: {
             source: components["schemas"]["AvatarSource"];
         };
-        /** @description PATCH request — only non-null fields are merged into existing preferences. */
+        /**
+         * @description PATCH request:
+         *     - non-null built-in fields are merged into existing preferences
+         *     - `custom` entries are upserted
+         *     - `remove_custom_keys` entries are deleted
+         */
         UpdatePreferencesReq: {
             browser_open_mode?: null | components["schemas"]["BrowserOpenMode"];
             color_preset?: null | components["schemas"]["ColorPreset"];
+            custom?: {
+                [key: string]: unknown;
+            };
             display_time_zone?: string | null;
             language?: null | components["schemas"]["Language"];
+            remove_custom_keys?: string[];
             sort_by?: null | components["schemas"]["SortBy"];
             sort_order?: null | components["schemas"]["SortOrder"];
             storage_event_stream_enabled?: boolean | null;
@@ -4778,13 +4787,13 @@ export interface components {
             updated_at: string;
             username: string;
         };
-        /**
-         * @description Stored user preferences (serialized as JSON in `users.config`).
-         *     Empty struct (all fields None) is treated as null by `get_preferences`.
-         */
+        /** @description API-facing user preference payload: built-in preferences plus custom frontend KV entries. */
         UserPreferences: {
             browser_open_mode?: null | components["schemas"]["BrowserOpenMode"];
             color_preset?: null | components["schemas"]["ColorPreset"];
+            custom?: {
+                [key: string]: unknown;
+            };
             display_time_zone?: string | null;
             language?: null | components["schemas"]["Language"];
             sort_by?: null | components["schemas"]["SortBy"];
@@ -8479,13 +8488,13 @@ export interface operations {
                 content: {
                     "application/json": {
                         code: components["schemas"]["ErrorCode"];
-                        /**
-                         * @description Stored user preferences (serialized as JSON in `users.config`).
-                         *     Empty struct (all fields None) is treated as null by `get_preferences`.
-                         */
+                        /** @description API-facing user preference payload: built-in preferences plus custom frontend KV entries. */
                         data?: {
                             browser_open_mode?: null | components["schemas"]["BrowserOpenMode"];
                             color_preset?: null | components["schemas"]["ColorPreset"];
+                            custom?: {
+                                [key: string]: unknown;
+                            };
                             display_time_zone?: string | null;
                             language?: null | components["schemas"]["Language"];
                             sort_by?: null | components["schemas"]["SortBy"];

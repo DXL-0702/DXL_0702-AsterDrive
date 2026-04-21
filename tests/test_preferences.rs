@@ -177,6 +177,8 @@ async fn test_preferences_patch_preserves_custom_user_config_keys() {
     let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
     assert_eq!(body["data"]["theme_mode"], "light");
     assert_eq!(body["data"]["language"], "zh");
+    assert_eq!(body["data"]["custom"]["custom_ui"], "nebula");
+    assert_eq!(body["data"]["custom"]["sidebar"]["collapsed"], true);
 
     let updated = user_repo::find_by_id(&db, user.id).await.unwrap();
     let stored = updated.config.expect("config should still be stored");
@@ -185,6 +187,106 @@ async fn test_preferences_patch_preserves_custom_user_config_keys() {
     assert_eq!(json["language"], "zh");
     assert_eq!(json["custom_ui"], "nebula");
     assert_eq!(json["sidebar"]["collapsed"], true);
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
+    assert_eq!(body["data"]["preferences"]["custom"]["custom_ui"], "nebula");
+    assert_eq!(
+        body["data"]["preferences"]["custom"]["sidebar"]["collapsed"],
+        true
+    );
+}
+
+// ── 偏好设置：自定义 KV 可读写删除 ─────────────────────────────
+
+#[actix_web::test]
+async fn test_preferences_custom_kv_roundtrip_and_delete() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/preferences")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "custom": {
+                "my-frontend.sidebar": { "collapsed": true },
+                "my-frontend.accent": "sunset"
+            }
+        }))
+        .to_request();
+    let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
+    assert_eq!(
+        body["data"]["custom"]["my-frontend.sidebar"]["collapsed"],
+        true
+    );
+    assert_eq!(body["data"]["custom"]["my-frontend.accent"], "sunset");
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
+    assert_eq!(
+        body["data"]["preferences"]["custom"]["my-frontend.sidebar"]["collapsed"],
+        true
+    );
+    assert_eq!(
+        body["data"]["preferences"]["custom"]["my-frontend.accent"],
+        "sunset"
+    );
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/preferences")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "remove_custom_keys": ["my-frontend.sidebar", "my-frontend.accent"]
+        }))
+        .to_request();
+    let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
+    assert!(body["data"]["custom"].is_null());
+
+    let req = test::TestRequest::get()
+        .uri("/api/v1/auth/me")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .to_request();
+    let body: Value = test::read_body_json(test::call_service(&app, req).await).await;
+    assert!(
+        body["data"]["preferences"].is_null(),
+        "removing the last custom preference should clear /auth/me preferences"
+    );
+}
+
+#[actix_web::test]
+async fn test_preferences_custom_kv_rejects_reserved_key() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::patch()
+        .uri("/api/v1/auth/preferences")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "custom": {
+                "theme_mode": "dark"
+            }
+        }))
+        .to_request();
+    let resp: actix_web::dev::ServiceResponse = test::call_service(&app, req).await;
+    assert_eq!(
+        resp.status(),
+        400,
+        "custom preference keys must not shadow built-in preferences"
+    );
 }
 
 // ── 偏好设置：非法值被拒绝 ────────────────────────────────
