@@ -4,14 +4,16 @@ use crate::types::{MediaProcessorKind, SystemConfigSource, SystemConfigValueType
 use chrono::Utc;
 
 use super::{
-    BUILTIN_IMAGES_SUPPORTED_EXTENSIONS, DEFAULT_VIPS_COMMAND, DEFAULT_VIPS_EXTENSIONS,
-    MEDIA_PROCESSING_REGISTRY_JSON_KEY, MatchedMediaProcessor, MediaProcessingMatchKind,
-    MediaProcessingProcessorConfig, MediaProcessingProcessorRuntimeConfig,
-    MediaProcessingRegistryConfig, PublicThumbnailSupport, command_is_available,
-    default_media_processing_registry, default_media_processing_registry_json, file_extension,
-    media_processing_registry, normalize_media_processing_registry_config_value,
-    normalize_vips_command, parse_media_processor_kind, processor_candidates_for_file_name,
-    processor_config_for_kind, public_thumbnail_support, vips_command_from_registry_value,
+    BUILTIN_IMAGES_SUPPORTED_EXTENSIONS, DEFAULT_FFMPEG_COMMAND, DEFAULT_FFMPEG_EXTENSIONS,
+    DEFAULT_VIPS_COMMAND, DEFAULT_VIPS_EXTENSIONS, MEDIA_PROCESSING_REGISTRY_JSON_KEY,
+    MatchedMediaProcessor, MediaProcessingMatchKind, MediaProcessingProcessorConfig,
+    MediaProcessingProcessorRuntimeConfig, MediaProcessingRegistryConfig, PublicThumbnailSupport,
+    command_is_available, default_media_processing_registry,
+    default_media_processing_registry_json, ffmpeg_command_from_registry_value, file_extension,
+    media_processing_registry, normalize_ffmpeg_command,
+    normalize_media_processing_registry_config_value, normalize_vips_command,
+    parse_media_processor_kind, processor_candidates_for_file_name, processor_config_for_kind,
+    public_thumbnail_support, vips_command_from_registry_value,
 };
 
 fn config_model(key: &str, value: &str) -> system_config::Model {
@@ -42,6 +44,10 @@ fn parse_media_processor_kind_understands_known_values() {
         Some(MediaProcessorKind::VipsCli)
     );
     assert_eq!(
+        parse_media_processor_kind("ffmpeg_cli"),
+        Some(MediaProcessorKind::FfmpegCli)
+    );
+    assert_eq!(
         parse_media_processor_kind("storage_native"),
         Some(MediaProcessorKind::StorageNative)
     );
@@ -55,6 +61,18 @@ fn normalize_vips_command_trims_and_defaults() {
         "/usr/bin/vips"
     );
     assert_eq!(normalize_vips_command(" ").unwrap(), DEFAULT_VIPS_COMMAND);
+}
+
+#[test]
+fn normalize_ffmpeg_command_trims_and_defaults() {
+    assert_eq!(
+        normalize_ffmpeg_command("  /usr/bin/ffmpeg  ").unwrap(),
+        "/usr/bin/ffmpeg"
+    );
+    assert_eq!(
+        normalize_ffmpeg_command(" ").unwrap(),
+        DEFAULT_FFMPEG_COMMAND
+    );
 }
 
 #[test]
@@ -91,6 +109,31 @@ fn vips_command_from_registry_value_prefers_draft_command() {
 }
 
 #[test]
+fn ffmpeg_command_from_registry_value_prefers_draft_command() {
+    let command = ffmpeg_command_from_registry_value(
+        r#"{
+                "version": 1,
+                "processors": [
+                    {
+                        "kind": "ffmpeg_cli",
+                        "enabled": false,
+                        "config": {
+                            "command": "  /usr/local/bin/ffmpeg  "
+                        }
+                    },
+                    {
+                        "kind": "images",
+                        "enabled": true
+                    }
+                ]
+            }"#,
+    )
+    .unwrap();
+
+    assert_eq!(command, "/usr/local/bin/ffmpeg");
+}
+
+#[test]
 fn command_is_available_rejects_blank_command() {
     assert!(!command_is_available(""));
     assert!(!command_is_available("   "));
@@ -115,6 +158,17 @@ fn default_registry_includes_known_processors_in_fixed_order() {
                 },
             },
             MediaProcessingProcessorConfig {
+                kind: MediaProcessorKind::FfmpegCli,
+                enabled: false,
+                extensions: DEFAULT_FFMPEG_EXTENSIONS
+                    .iter()
+                    .map(|extension| (*extension).to_string())
+                    .collect(),
+                config: MediaProcessingProcessorRuntimeConfig {
+                    command: Some(DEFAULT_FFMPEG_COMMAND.to_string()),
+                },
+            },
+            MediaProcessingProcessorConfig {
                 kind: MediaProcessorKind::Images,
                 enabled: true,
                 extensions: vec![],
@@ -125,9 +179,12 @@ fn default_registry_includes_known_processors_in_fixed_order() {
 
     let json = default_media_processing_registry_json();
     assert!(json.contains("\"vips_cli\""));
+    assert!(json.contains("\"ffmpeg_cli\""));
     assert!(json.contains("\"images\""));
     assert!(json.contains("\"heic\""));
     assert!(json.contains("\"avif\""));
+    assert!(json.contains("\"mp4\""));
+    assert!(json.contains("\"webm\""));
 }
 
 #[test]
@@ -147,6 +204,14 @@ fn public_thumbnail_support_exposes_enabled_processor_capabilities() {
                         }
                     },
                     {
+                        "kind": "ffmpeg_cli",
+                        "enabled": true,
+                        "extensions": ["MP4", ".webm"],
+                        "config": {
+                            "command": "/bin/sh"
+                        }
+                    },
+                    {
                         "kind": "images",
                         "enabled": false
                     }
@@ -158,7 +223,12 @@ fn public_thumbnail_support_exposes_enabled_processor_capabilities() {
         public_thumbnail_support(&runtime_config),
         PublicThumbnailSupport {
             version: 1,
-            extensions: vec!["avif".to_string(), "heic".to_string()],
+            extensions: vec![
+                "avif".to_string(),
+                "heic".to_string(),
+                "mp4".to_string(),
+                "webm".to_string(),
+            ],
         }
     );
 }
@@ -197,7 +267,7 @@ fn normalize_media_processing_registry_merges_missing_processors_with_defaults()
     .unwrap();
 
     let parsed: MediaProcessingRegistryConfig = serde_json::from_str(&normalized).unwrap();
-    assert_eq!(parsed.processors.len(), 2);
+    assert_eq!(parsed.processors.len(), 3);
     assert_eq!(
         parsed.processors[0],
         MediaProcessingProcessorConfig {
@@ -209,8 +279,22 @@ fn normalize_media_processing_registry_merges_missing_processors_with_defaults()
             },
         }
     );
-    assert_eq!(parsed.processors[1].kind, MediaProcessorKind::Images);
-    assert!(parsed.processors[1].enabled);
+    assert_eq!(
+        parsed.processors[1],
+        MediaProcessingProcessorConfig {
+            kind: MediaProcessorKind::FfmpegCli,
+            enabled: false,
+            extensions: DEFAULT_FFMPEG_EXTENSIONS
+                .iter()
+                .map(|extension| (*extension).to_string())
+                .collect(),
+            config: MediaProcessingProcessorRuntimeConfig {
+                command: Some(DEFAULT_FFMPEG_COMMAND.to_string()),
+            },
+        }
+    );
+    assert_eq!(parsed.processors[2].kind, MediaProcessorKind::Images);
+    assert!(parsed.processors[2].enabled);
 }
 
 #[test]
@@ -257,6 +341,31 @@ fn normalize_media_processing_registry_rejects_unavailable_enabled_vips_command(
 }
 
 #[test]
+fn normalize_media_processing_registry_rejects_unavailable_enabled_ffmpeg_command() {
+    let error = normalize_media_processing_registry_config_value(
+        r#"{
+                "version": 1,
+                "processors": [
+                    {
+                        "kind": "ffmpeg_cli",
+                        "enabled": true,
+                        "config": {
+                            "command": "definitely-missing-ffmpeg-cli"
+                        }
+                    },
+                    {
+                        "kind": "images",
+                        "enabled": true
+                    }
+                ]
+            }"#,
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("not available"));
+}
+
+#[test]
 fn processor_candidates_for_file_name_use_fixed_processor_priority() {
     let config = MediaProcessingRegistryConfig {
         version: 1,
@@ -267,6 +376,14 @@ fn processor_candidates_for_file_name_use_fixed_processor_priority() {
                 extensions: vec!["heic".to_string()],
                 config: MediaProcessingProcessorRuntimeConfig {
                     command: Some(DEFAULT_VIPS_COMMAND.to_string()),
+                },
+            },
+            MediaProcessingProcessorConfig {
+                kind: MediaProcessorKind::FfmpegCli,
+                enabled: true,
+                extensions: vec!["mp4".to_string()],
+                config: MediaProcessingProcessorRuntimeConfig {
+                    command: Some(DEFAULT_FFMPEG_COMMAND.to_string()),
                 },
             },
             MediaProcessingProcessorConfig {
@@ -314,6 +431,31 @@ fn processor_candidates_for_file_name_use_fixed_processor_priority() {
             },
             match_kind: MediaProcessingMatchKind::Any,
         },]
+    );
+    assert_eq!(
+        processor_candidates_for_file_name(&config, "clip.mp4"),
+        vec![
+            MatchedMediaProcessor {
+                processor: MediaProcessingProcessorConfig {
+                    kind: MediaProcessorKind::FfmpegCli,
+                    enabled: true,
+                    extensions: vec!["mp4".to_string()],
+                    config: MediaProcessingProcessorRuntimeConfig {
+                        command: Some(DEFAULT_FFMPEG_COMMAND.to_string()),
+                    },
+                },
+                match_kind: MediaProcessingMatchKind::Extension,
+            },
+            MatchedMediaProcessor {
+                processor: MediaProcessingProcessorConfig {
+                    kind: MediaProcessorKind::Images,
+                    enabled: true,
+                    extensions: vec![],
+                    config: MediaProcessingProcessorRuntimeConfig::default(),
+                },
+                match_kind: MediaProcessingMatchKind::Any,
+            },
+        ]
     );
 }
 
@@ -384,5 +526,38 @@ fn runtime_readers_keep_vips_processor_even_when_command_is_unavailable() {
     assert_eq!(
         processor.config.command.as_deref(),
         Some("definitely-missing-vips-cli")
+    );
+}
+
+#[test]
+fn runtime_readers_keep_ffmpeg_processor_even_when_command_is_unavailable() {
+    let runtime_config = RuntimeConfig::new();
+    runtime_config.apply(config_model(
+        "media_processing_registry_json",
+        r#"{
+                "version": 1,
+                "processors": [
+                    {
+                        "kind": "ffmpeg_cli",
+                        "enabled": true,
+                        "config": {
+                            "command": "definitely-missing-ffmpeg-cli"
+                        }
+                    },
+                    {
+                        "kind": "images",
+                        "enabled": true
+                    }
+                ]
+            }"#,
+    ));
+
+    let config = media_processing_registry(&runtime_config);
+    let processor = processor_config_for_kind(&config, MediaProcessorKind::FfmpegCli)
+        .expect("ffmpeg_cli processor should exist");
+    assert!(processor.enabled);
+    assert_eq!(
+        processor.config.command.as_deref(),
+        Some("definitely-missing-ffmpeg-cli")
     );
 }

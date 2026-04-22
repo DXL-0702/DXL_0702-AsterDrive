@@ -11,6 +11,8 @@ use aster_drive::types::{
     BackgroundTaskKind, BackgroundTaskStatus, MediaProcessorKind, StoragePolicyOptions,
     serialize_storage_policy_options,
 };
+use base64::Engine;
+use image::GenericImageView;
 use sea_orm::{ActiveModelTrait, Set};
 use serde_json::{Value, json};
 #[cfg(unix)]
@@ -33,6 +35,12 @@ fn tiny_webp() -> Vec<u8> {
     buf.into_inner()
 }
 
+fn tiny_mp4() -> Vec<u8> {
+    base64::engine::general_purpose::STANDARD
+        .decode("AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDEAAAN1bW9vdgAAAGxtdmhkAAAAAAAAAAAAAAAAAAAD6AAAAMgAAQAAAQAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAp90cmFrAAAAXHRraGQAAAADAAAAAAAAAAAAAAABAAAAAAAAAMgAAAAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAABAAAAAABAAAAAQAAAAAAAkZWR0cwAAABxlbHN0AAAAAAAAAAEAAADIAAAEAAABAAAAAAIXbWRpYQAAACBtZGhkAAAAAAAAAAAAAAAAAAAyAAAACgBVxAAAAAAALWhkbHIAAAAAAAAAAHZpZGUAAAAAAAAAAAAAAABWaWRlb0hhbmRsZXIAAAABwm1pbmYAAAAUdm1oZAAAAAEAAAAAAAAAAAAAACRkaW5mAAAAHGRyZWYAAAAAAAAAAQAAAAx1cmwgAAAAAQAAAYJzdGJsAAAAvnN0c2QAAAAAAAAAAQAAAK5hdmMxAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAABAAEABIAAAASAAAAAAAAAABFUxhdmM2Mi4yOC4xMDAgbGlieDI2NAAAAAAAAAAAAAAAGP//AAAANGF2Y0MBZAAK/+EAF2dkAAqs2V7ARAAAAwAEAAADAMg8SJZYAQAGaOvjyyLA/fj4AAAAABBwYXNwAAAAAQAAAAEAAAAUYnRydAAAAAAAAHcQAAAAAAAAABhzdHRzAAAAAAAAAAEAAAAFAAACAAAAABRzdHNzAAAAAAAAAAEAAAABAAAAOGN0dHMAAAAAAAAABQAAAAEAAAQAAAAAAQAACgAAAAABAAAEAAAAAAEAAAAAAAAAAQAAAgAAAAAcc3RzYwAAAAAAAAABAAAAAQAAAAUAAAABAAAAKHN0c3oAAAAAAAAAAAAAAAUAAALKAAAADAAAAAwAAAAMAAAADAAAABRzdGNvAAAAAAAAAAEAAAOlAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2Mi4xMi4xMDAAAAAIZnJlZQAAAwJtZGF0AAACrgYF//+q3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NSByMzIyMiBiMzU2MDVhIC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyNSAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTMgZGVibG9jaz0xOjA6MCBhbmFseXNlPTB4MzoweDExMyBtZT1oZXggc3VibWU9NyBwc3k9MSBwc3lfcmQ9MS4wMDowLjAwIG1peGVkX3JlZj0xIG1lX3JhbmdlPTE2IGNocm9tYV9tZT0xIHRyZWxsaXM9MSA4eDhkY3Q9MSBjcW09MCBkZWFkem9uZT0yMSwxMSBmYXN0X3Bza2lwPTEgY2hyb21hX3FwX29mZnNldD0tMiB0aHJlYWRzPTEgbG9va2FoZWFkX3RocmVhZHM9MSBzbGljZWRfdGhyZWFkcz0wIG5yPTAgZGVjaW1hdGU9MSBpbnRlcmxhY2VkPTAgYmx1cmF5X2NvbXBhdD0wIGNvbnN0cmFpbmVkX2ludHJhPTAgYmZyYW1lcz0zIGJfcHlyYW1pZD0yIGJfYWRhcHQ9MSBiX2JpYXM9MCBkaXJlY3Q9MSB3ZWlnaHRiPTEgb3Blbl9nb3A9MCB3ZWlnaHRwPTIga2V5aW50PTI1MCBrZXlpbnRfbWluPTI1IHNjZW5lY3V0PTQwIGludHJhX3JlZnJlc2g9MCByY19sb29rYWhlYWQ9NDAgcmM9Y3JmIG1idHJlZT0xIGNyZj0yMy4wIHFjb21wPTAuNjAgcXBtaW49MCBxcG1heD02OSBxcHN0ZXA9NCBpcF9yYXRpbz0xLjQwIGFxPTE6MS4wMACAAAAAFGWIhAAz//7fMvgUzcWJzsyAXJ6XAAAACEGaJGxCv/7AAAAACEGeQniF/8GBAAAACAGeYXRCv8SAAAAACAGeY2pCv8SB")
+        .expect("embedded tiny mp4 fixture should decode")
+}
+
 fn current_thumb_path(blob_hash: &str) -> String {
     format!(
         "_thumb/images-v1/{}/{}/{}.webp",
@@ -45,6 +53,15 @@ fn current_thumb_path(blob_hash: &str) -> String {
 fn vips_thumb_path(blob_hash: &str) -> String {
     format!(
         "_thumb/vips-cli-v1/{}/{}/{}.webp",
+        &blob_hash[..2],
+        &blob_hash[2..4],
+        blob_hash
+    )
+}
+
+fn ffmpeg_thumb_path(blob_hash: &str) -> String {
+    format!(
+        "_thumb/ffmpeg-cli-v1/{}/{}/{}.webp",
         &blob_hash[..2],
         &blob_hash[2..4],
         blob_hash
@@ -65,6 +82,21 @@ fn thumbnail_registry_json_with_vips_command(command: &str) -> String {
         ]
     })
     .to_string()
+}
+
+fn ffmpeg_command_for_tests() -> Option<String> {
+    for candidate in [
+        std::env::var("ASTER_TEST_FFMPEG_COMMAND").ok(),
+        Some("ffmpeg".to_string()),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if aster_drive::config::media_processing::command_is_available(&candidate) {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 fn write_fake_vips_thumbnail_command() -> std::path::PathBuf {
@@ -512,6 +544,73 @@ async fn test_thumbnail_heic_uses_vips_cli_processor_when_extension_matches() {
             .and_then(|value| value.to_str().ok()),
         Some("image/webp")
     );
+}
+
+#[actix_web::test]
+async fn test_thumbnail_mp4_uses_ffmpeg_cli_processor_when_extension_matches() {
+    let Some(ffmpeg_command) = ffmpeg_command_for_tests() else {
+        eprintln!("skipping ffmpeg_cli thumbnail test because ffmpeg is unavailable");
+        return;
+    };
+
+    let state = common::setup().await;
+    state.runtime_config.apply(common::system_config_model(
+        "media_processing_registry_json",
+        &json!({
+            "version": 1,
+            "processors": [
+                {
+                    "kind": "ffmpeg_cli",
+                    "enabled": true,
+                    "extensions": ["mp4"],
+                    "config": {
+                        "command": ffmpeg_command
+                    }
+                },
+                {
+                    "kind": "images",
+                    "enabled": true
+                }
+            ]
+        })
+        .to_string(),
+    ));
+
+    let app = create_test_app!(state.clone());
+    let (token, _) = register_and_login!(app);
+    let file_id = upload_file_bytes!(app, token, "clip.mp4", "video/mp4", tiny_mp4());
+
+    let first = request_thumbnail!(app, token, file_id);
+    assert_eq!(first.status(), 202);
+
+    aster_drive::services::task_service::drain(&state)
+        .await
+        .unwrap();
+
+    let task =
+        latest_thumbnail_task_for_processor(&state, file_id, MediaProcessorKind::FfmpegCli).await;
+    assert_eq!(task.status, BackgroundTaskStatus::Succeeded);
+
+    let blob = blob_for_file(&state, file_id).await;
+    let expected_thumbnail_path = ffmpeg_thumb_path(&blob.hash);
+    assert_eq!(
+        blob.thumbnail_path.as_deref(),
+        Some(expected_thumbnail_path.as_str())
+    );
+    assert_eq!(blob.thumbnail_version.as_deref(), Some("ffmpeg-cli-v1"));
+
+    let second = request_thumbnail!(app, token, file_id);
+    assert_eq!(second.status(), 200);
+    assert_eq!(
+        second
+            .headers()
+            .get("Content-Type")
+            .and_then(|value| value.to_str().ok()),
+        Some("image/webp")
+    );
+
+    let image = image::load_from_memory(&test::read_body(second).await).unwrap();
+    assert_eq!(image.dimensions(), (16, 16));
 }
 
 #[actix_web::test]

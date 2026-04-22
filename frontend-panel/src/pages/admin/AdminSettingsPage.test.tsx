@@ -66,11 +66,15 @@ const translationMap: Record<string, string> = {
 	settings_subcategory_mail_template: "settings_subcategory_mail_template",
 	settings_subcategory_storage_media_processing: "Media Processing",
 	settings_subcategory_storage_media_processing_desc:
-		"Configure available media processors, thumbnail limits, and optional vips CLI integration.",
+		"Configure available media processors, thumbnail limits, and optional vips or ffmpeg CLI integrations.",
 	media_processing_editor_title: "media_processing_editor_title",
 	media_processing_editor_desc: "media_processing_editor_desc",
 	media_processing_editor_validation_title:
 		"media_processing_editor_validation_title",
+	media_processing_editor_processor_disabled:
+		"media_processing_editor_processor_disabled",
+	media_processing_editor_processor_enabled:
+		"media_processing_editor_processor_enabled",
 	media_processing_editor_processor_command_desc:
 		"media_processing_editor_processor_command_desc",
 	media_processing_editor_processor_command_label:
@@ -84,6 +88,7 @@ const translationMap: Record<string, string> = {
 	media_processing_editor_processor_enabled_desc:
 		"media_processing_editor_processor_enabled_desc",
 	thumbnail_processor_images: "AsterDrive Built-in",
+	thumbnail_processor_ffmpeg_cli: "ffmpeg_cli",
 	thumbnail_processor_vips_cli: "vips_cli",
 	settings_save_hint:
 		"更改会先暂存为草稿，确认无误后再统一保存，⌘/Ctrl + S 保存。",
@@ -1518,7 +1523,7 @@ describe("AdminSettingsPage", () => {
 		expect(await screen.findByText("Media Processing")).toBeInTheDocument();
 		expect(
 			screen.getByText(
-				"Configure available media processors, thumbnail limits, and optional vips CLI integration.",
+				"Configure available media processors, thumbnail limits, and optional vips or ffmpeg CLI integrations.",
 			),
 		).toBeInTheDocument();
 		fireEvent.click(
@@ -1585,6 +1590,66 @@ describe("AdminSettingsPage", () => {
 		expect(screen.queryByLabelText("Code editor")).not.toBeInTheDocument();
 	});
 
+	it("updates the media processor toggle label when a processor is disabled", async () => {
+		mockState.listConfigs.mockResolvedValueOnce({
+			items: [
+				createConfig({
+					category: "storage.media_processing",
+					key: "media_processing_registry_json",
+					value: JSON.stringify(
+						{
+							version: 1,
+							processors: [
+								{
+									kind: "vips_cli",
+									enabled: true,
+									extensions: ["heic"],
+									config: {
+										command: "custom-vips",
+									},
+								},
+								{
+									kind: "images",
+									enabled: true,
+								},
+							],
+						},
+						null,
+						2,
+					),
+					value_type: "multiline",
+				}),
+			],
+		});
+		mockState.schema.mockResolvedValueOnce([
+			createSchemaItem({
+				category: "storage.media_processing",
+				key: "media_processing_registry_json",
+				label_i18n_key: "settings_item_media_processing_registry_json_label",
+				value_type: "multiline",
+			}),
+		]);
+
+		render(<AdminSettingsPage section="storage" />);
+
+		fireEvent.click(
+			await screen.findByRole("button", { name: /settings_section_expand/i }),
+		);
+		expect(
+			screen.getAllByText("media_processing_editor_processor_disabled"),
+		).toHaveLength(2);
+
+		fireEvent.click(
+			screen.getByRole("button", {
+				name: /switch:media-processing-vips_cli-enabled:/i,
+			}),
+		);
+
+		expect(
+			screen.getAllByText("media_processing_editor_processor_disabled"),
+		).toHaveLength(4);
+	});
+
 	it("tests the vips command against the current media processing draft", async () => {
 		mockState.listConfigs.mockResolvedValueOnce({
 			items: [
@@ -1635,9 +1700,11 @@ describe("AdminSettingsPage", () => {
 			await screen.findByRole("button", { name: /settings_section_expand/i }),
 		);
 		fireEvent.click(
-			await screen.findByRole("button", {
-				name: /media_processing_editor_processor_test_command/i,
-			}),
+			(
+				await screen.findAllByRole("button", {
+					name: /media_processing_editor_processor_test_command/i,
+				})
+			)[0],
 		);
 
 		await waitFor(() => {

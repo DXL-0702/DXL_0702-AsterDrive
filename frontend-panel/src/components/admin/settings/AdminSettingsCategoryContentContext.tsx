@@ -37,6 +37,7 @@ export interface AdminSettingsCategoryContentProps {
 		discoveryUrl: string;
 		value: string;
 	}) => Promise<string>;
+	handleTestFfmpegCliCommand: (value: string) => Promise<void>;
 	handleTestVipsCliCommand: (value: string) => Promise<void>;
 	isMobileNavigation: boolean;
 	markCustomDeleted: (key: string) => void;

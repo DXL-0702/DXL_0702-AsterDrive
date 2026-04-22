@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
+use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use crate::config::media_processing as media_processing_config;
 use crate::config::operations;
 use crate::db::repository::file_repo;
 use crate::entities::file_blob;
@@ -9,12 +11,77 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 use crate::storage::{StorageDriver, extensions::NativeThumbnailRequest};
 use crate::types::MediaProcessorKind;
+use image::ImageFormat;
 
 use super::resolve::{build_thumbnail_context, build_thumbnail_context_with_processor};
 use super::shared::{
     ResolvedMediaProcessor, StoredThumbnail, ThumbnailContext, ThumbnailData,
     requires_server_side_source_limit,
 };
+
+pub async fn probe_ffmpeg_cli_command(command: &str) -> Result<String> {
+    let command = media_processing_config::normalize_ffmpeg_command(command)?;
+    if !media_processing_config::command_is_available(&command) {
+        return Err(AsterError::validation_error(format!(
+            "ffmpeg_cli command '{command}' is not available"
+        )));
+    }
+
+    tracing::debug!(
+        processor = "ffmpeg_cli",
+        command = %command,
+        "starting ffmpeg CLI probe"
+    );
+
+    let probe_command = command.clone();
+    let output = tokio::task::spawn_blocking(move || {
+        std::process::Command::new(&probe_command)
+            .arg("-version")
+            .output()
+    })
+    .await
+    .map_aster_err_ctx(
+        "ffmpeg CLI probe task panicked",
+        AsterError::thumbnail_generation_failed,
+    )?
+    .map_err(|error| {
+        AsterError::validation_error(format!("spawn ffmpeg_cli '{command}': {error}"))
+    })?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("exit status {}", output.status)
+        };
+        return Err(AsterError::validation_error(format!(
+            "ffmpeg_cli probe failed for '{command}': {detail}"
+        )));
+    }
+
+    let detail = first_non_empty_output_line(&output.stdout)
+        .or_else(|| first_non_empty_output_line(&output.stderr))
+        .unwrap_or_default();
+
+    tracing::debug!(
+        processor = "ffmpeg_cli",
+        command = %command,
+        version = detail.as_str(),
+        "ffmpeg CLI probe completed"
+    );
+
+    if detail.is_empty() {
+        Ok(format!("ffmpeg_cli command '{command}' is available"))
+    } else {
+        Ok(format!(
+            "ffmpeg_cli command '{command}' is available: {detail}"
+        ))
+    }
+}
 
 pub async fn load_thumbnail_if_exists(
     state: &PrimaryAppState,
@@ -260,6 +327,20 @@ async fn render_thumbnail_bytes(
             )?;
             render_thumbnail_with_vips_cli(state, blob, driver.as_ref(), &command).await
         }
+        MediaProcessorKind::FfmpegCli => {
+            let command = processor.ffmpeg_command().to_string();
+            tracing::debug!(
+                blob_id = blob.id,
+                processor = "ffmpeg_cli",
+                command,
+                "rendering thumbnail via ffmpeg CLI pipeline"
+            );
+            crate::services::thumbnail_service::ensure_source_size_supported(
+                blob,
+                operations::thumbnail_max_source_bytes(&state.runtime_config),
+            )?;
+            render_thumbnail_with_ffmpeg_cli(state, blob, driver.as_ref(), &command).await
+        }
         MediaProcessorKind::StorageNative => {
             tracing::debug!(
                 blob_id = blob.id,
@@ -386,6 +467,139 @@ async fn render_thumbnail_with_vips_cli(
         );
     }
     thumbnail
+}
+
+async fn render_thumbnail_with_ffmpeg_cli(
+    state: &PrimaryAppState,
+    blob: &file_blob::Model,
+    driver: &dyn StorageDriver,
+    command: &str,
+) -> Result<Vec<u8>> {
+    let original = driver.get(&blob.storage_path).await?;
+    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+    let temp_dir = PathBuf::from(temp_root).join(format!("media-ffmpeg-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&temp_dir)
+        .await
+        .map_aster_err_ctx("create ffmpeg temp dir", AsterError::storage_driver_error)?;
+
+    let input_path = temp_dir.join("source");
+    let output_path = temp_dir.join("thumbnail.png");
+    tokio::fs::write(&input_path, original)
+        .await
+        .map_aster_err_ctx(
+            "write ffmpeg source temp file",
+            AsterError::thumbnail_generation_failed,
+        )?;
+
+    let command = command.to_string();
+    let input_arg = input_path.to_string_lossy().to_string();
+    let output_arg = output_path.to_string_lossy().to_string();
+    let max_dim = crate::services::thumbnail_service::current_thumbnail_max_dim();
+    let filter_arg = format!(
+        "thumbnail,scale=min(iw\\,{max_dim}):min(ih\\,{max_dim}):force_original_aspect_ratio=decrease"
+    );
+    tracing::debug!(
+        blob_id = blob.id,
+        processor = "ffmpeg_cli",
+        command,
+        input_path = input_arg,
+        output_path = output_arg,
+        max_dim,
+        "starting ffmpeg CLI thumbnail render"
+    );
+    tokio::task::spawn_blocking(move || {
+        let output = std::process::Command::new(&command)
+            .arg("-hide_banner")
+            .arg("-loglevel")
+            .arg("error")
+            .arg("-i")
+            .arg(&input_arg)
+            .arg("-map")
+            .arg("0:v:0")
+            .arg("-vf")
+            .arg(&filter_arg)
+            .arg("-frames:v")
+            .arg("1")
+            .arg("-an")
+            .arg("-sn")
+            .arg("-c:v")
+            .arg("png")
+            .arg("-y")
+            .arg(&output_arg)
+            .output()
+            .map_err(|error| {
+                AsterError::thumbnail_generation_failed(format!(
+                    "spawn ffmpeg CLI '{command}': {error}"
+                ))
+            })?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            let detail = if !stderr.is_empty() {
+                stderr
+            } else if !stdout.is_empty() {
+                stdout
+            } else {
+                format!("exit status {}", output.status)
+            };
+            return Err(AsterError::thumbnail_generation_failed(format!(
+                "ffmpeg CLI thumbnail command failed: {detail}"
+            )));
+        }
+        Ok::<(), AsterError>(())
+    })
+    .await
+    .map_aster_err_ctx(
+        "ffmpeg CLI thumbnail task panicked",
+        AsterError::thumbnail_generation_failed,
+    )??;
+
+    let thumbnail_png = tokio::fs::read(&output_path).await.map_aster_err_ctx(
+        "read ffmpeg thumbnail output",
+        AsterError::thumbnail_generation_failed,
+    );
+    let thumbnail = match thumbnail_png {
+        Ok(bytes) => tokio::task::spawn_blocking(move || encode_webp_from_image_bytes(bytes))
+            .await
+            .map_aster_err_ctx(
+                "ffmpeg thumbnail webp encode task panicked",
+                AsterError::thumbnail_generation_failed,
+            )?,
+        Err(error) => Err(error),
+    };
+    crate::utils::cleanup_temp_dir(temp_dir.to_string_lossy().as_ref()).await;
+    if let Ok(bytes) = &thumbnail {
+        tracing::debug!(
+            blob_id = blob.id,
+            processor = "ffmpeg_cli",
+            bytes = bytes.len(),
+            "ffmpeg CLI thumbnail render completed"
+        );
+    }
+    thumbnail
+}
+
+fn first_non_empty_output_line(output: &[u8]) -> Option<String> {
+    String::from_utf8_lossy(output)
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(str::to_string)
+}
+
+fn encode_webp_from_image_bytes(bytes: Vec<u8>) -> Result<Vec<u8>> {
+    let image = image::load_from_memory(&bytes).map_aster_err_ctx(
+        "decode ffmpeg thumbnail output",
+        AsterError::thumbnail_generation_failed,
+    )?;
+    let mut buf = Cursor::new(Vec::new());
+    image
+        .write_to(&mut buf, ImageFormat::WebP)
+        .map_aster_err_ctx(
+            "encode ffmpeg thumbnail webp",
+            AsterError::thumbnail_generation_failed,
+        )?;
+    Ok(buf.into_inner())
 }
 
 async fn load_thumbnail_from_path(

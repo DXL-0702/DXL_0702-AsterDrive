@@ -153,6 +153,7 @@ export default function AdminSettingsPage({
 		getTemplateVariableGroupLabel,
 		getTemplateVariableLabel,
 		handleBuildWopiDiscoveryPreviewConfig,
+		handleTestFfmpegCliCommand,
 		handleSaveAll,
 		handleSendTestEmail,
 		handleTestVipsCliCommand,
@@ -427,6 +428,7 @@ export default function AdminSettingsPage({
 				handleBuildWopiDiscoveryPreviewConfig={
 					handleBuildWopiDiscoveryPreviewConfig
 				}
+				handleTestFfmpegCliCommand={handleTestFfmpegCliCommand}
 				handleTestVipsCliCommand={handleTestVipsCliCommand}
 				isMobileNavigation={isMobileNavigation}
 				markCustomDeleted={markCustomDeleted}

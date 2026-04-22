@@ -23,6 +23,7 @@ import {
 
 interface MediaProcessingConfigEditorProps {
 	onChange: (value: string) => void;
+	onTestFfmpegCliCommand?: (value: string) => Promise<void>;
 	onTestVipsCliCommand?: (value: string) => Promise<void>;
 	value: string;
 }
@@ -42,6 +43,8 @@ function getProcessorLabelKey(kind: MediaProcessingEditorProcessor["kind"]) {
 	switch (kind) {
 		case "vips_cli":
 			return "thumbnail_processor_vips_cli";
+		case "ffmpeg_cli":
+			return "thumbnail_processor_ffmpeg_cli";
 		case "images":
 			return "thumbnail_processor_images";
 	}
@@ -49,6 +52,7 @@ function getProcessorLabelKey(kind: MediaProcessingEditorProcessor["kind"]) {
 
 export function MediaProcessingConfigEditor({
 	onChange,
+	onTestFfmpegCliCommand,
 	onTestVipsCliCommand,
 	value,
 }: MediaProcessingConfigEditorProps) {
@@ -56,7 +60,9 @@ export function MediaProcessingConfigEditor({
 	const [draft, setDraft] = useState<MediaProcessingEditorConfig>(() =>
 		parseDraftValue(value),
 	);
-	const [testingVipsCliCommand, setTestingVipsCliCommand] = useState(false);
+	const [testingProcessorKind, setTestingProcessorKind] = useState<
+		MediaProcessingEditorProcessor["kind"] | null
+	>(null);
 
 	useEffect(() => {
 		setDraft(parseDraftValue(value));
@@ -90,18 +96,27 @@ export function MediaProcessingConfigEditor({
 		);
 	}
 
-	const handleTestVipsCliCommand = useCallback(async () => {
-		if (!onTestVipsCliCommand) {
-			return;
-		}
+	const handleTestProcessorCommand = useCallback(
+		async (kind: MediaProcessingEditorProcessor["kind"]) => {
+			const handler =
+				kind === "vips_cli"
+					? onTestVipsCliCommand
+					: kind === "ffmpeg_cli"
+						? onTestFfmpegCliCommand
+						: undefined;
+			if (!handler) {
+				return;
+			}
 
-		setTestingVipsCliCommand(true);
-		try {
-			await onTestVipsCliCommand(serializeMediaProcessingConfig(draft));
-		} finally {
-			setTestingVipsCliCommand(false);
-		}
-	}, [draft, onTestVipsCliCommand]);
+			setTestingProcessorKind(kind);
+			try {
+				await handler(serializeMediaProcessingConfig(draft));
+			} finally {
+				setTestingProcessorKind(null);
+			}
+		},
+		[draft, onTestFfmpegCliCommand, onTestVipsCliCommand],
+	);
 
 	return (
 		<div className="space-y-4">
@@ -132,6 +147,12 @@ export function MediaProcessingConfigEditor({
 			<div className="space-y-3">
 				{draft.processors.map((processor) => {
 					const isBuiltinFallback = processor.kind === "images";
+					const supportsCommand =
+						processor.kind === "vips_cli" || processor.kind === "ffmpeg_cli";
+					const canTestCommand =
+						(processor.kind === "vips_cli" && onTestVipsCliCommand) ||
+						(processor.kind === "ffmpeg_cli" && onTestFfmpegCliCommand);
+
 					return (
 						<Card key={processor.kind} size="sm">
 							<CardHeader>
@@ -178,7 +199,9 @@ export function MediaProcessingConfigEditor({
 									/>
 									<div>
 										<p className="text-sm font-medium">
-											{t("media_processing_editor_processor_enabled")}
+											{processor.enabled
+												? t("media_processing_editor_processor_enabled")
+												: t("media_processing_editor_processor_disabled")}
 										</p>
 										<p className="text-xs text-muted-foreground">
 											{t("media_processing_editor_processor_enabled_desc")}
@@ -219,7 +242,7 @@ export function MediaProcessingConfigEditor({
 									</div>
 								) : null}
 
-								{processor.kind === "vips_cli" ? (
+								{supportsCommand ? (
 									<div className="space-y-1.5">
 										<p className="text-xs font-medium text-muted-foreground">
 											{t("media_processing_editor_processor_command_label")}
@@ -242,17 +265,17 @@ export function MediaProcessingConfigEditor({
 										<p className="text-xs text-muted-foreground">
 											{t("media_processing_editor_processor_command_desc")}
 										</p>
-										{onTestVipsCliCommand ? (
+										{canTestCommand ? (
 											<div className="pt-1">
 												<Button
 													variant="outline"
 													size="sm"
-													disabled={testingVipsCliCommand}
+													disabled={testingProcessorKind !== null}
 													onClick={() => {
-														void handleTestVipsCliCommand();
+														void handleTestProcessorCommand(processor.kind);
 													}}
 												>
-													{testingVipsCliCommand
+													{testingProcessorKind === processor.kind
 														? t(
 																"media_processing_editor_processor_testing_command",
 															)

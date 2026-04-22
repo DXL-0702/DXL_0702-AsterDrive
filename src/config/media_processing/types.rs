@@ -6,6 +6,7 @@ use utoipa::ToSchema;
 pub const MEDIA_PROCESSING_REGISTRY_VERSION: i32 = 1;
 pub const PUBLIC_THUMBNAIL_SUPPORT_VERSION: i32 = 1;
 pub const DEFAULT_VIPS_COMMAND: &str = "vips";
+pub const DEFAULT_FFMPEG_COMMAND: &str = "ffmpeg";
 pub const BUILTIN_IMAGES_SUPPORTED_EXTENSIONS: &[&str] = &[
     "jpg", "jpeg", "jpe", "png", "gif", "webp", "bmp", "tif", "tiff",
 ];
@@ -17,6 +18,10 @@ pub const DEFAULT_VIPS_EXTENSIONS: &[&str] = &[
     "jpt", "j2c", "jpc", "gif", "png", "jpg", "jpeg", "jpe", "webp", "tif", "tiff", "fits", "fit",
     "fts", "exr", "jxl", "pdf", "heic", "heif", "avif", "svs", "vms", "vmu", "ndpi", "scn", "mrxs",
     "svslide", "bif", "raw",
+];
+pub const DEFAULT_FFMPEG_EXTENSIONS: &[&str] = &[
+    "mp4", "m4v", "mov", "mkv", "webm", "avi", "mpg", "mpeg", "m2v", "ts", "m2ts", "mts", "3gp",
+    "3g2", "ogv", "flv", "wmv",
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]

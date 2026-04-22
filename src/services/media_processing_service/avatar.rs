@@ -110,6 +110,9 @@ pub async fn process_avatar_upload(
             let command = processor.vips_command().to_string();
             render_avatar_with_vips_cli(state, file_name, data, &command).await
         }
+        MediaProcessorKind::FfmpegCli => Err(AsterError::precondition_failed(
+            "ffmpeg_cli avatar processing is not supported",
+        )),
         MediaProcessorKind::StorageNative => Err(AsterError::precondition_failed(
             "storage-native avatar processing is not supported",
         )),

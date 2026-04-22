@@ -33,6 +33,7 @@ pub enum ConfigActionType {
     BuildWopiDiscoveryPreviewConfig,
     SendTestEmail,
     TestVipsCli,
+    TestFfmpegCli,
 }
 
 impl ConfigActionType {
@@ -41,6 +42,7 @@ impl ConfigActionType {
             Self::BuildWopiDiscoveryPreviewConfig => "build_wopi_discovery_preview_config",
             Self::SendTestEmail => "send_test_email",
             Self::TestVipsCli => "test_vips_cli",
+            Self::TestFfmpegCli => "test_ffmpeg_cli",
         }
     }
 }
@@ -346,6 +348,30 @@ async fn execute_media_processing_action(
             );
 
             let message = media_processing_service::probe_vips_cli_command(&command).await?;
+
+            Ok(ConfigActionResult {
+                message,
+                target_email: None,
+                value: None,
+            })
+        }
+        ConfigActionType::TestFfmpegCli => {
+            let raw_value = value.map(str::to_string).unwrap_or_else(|| {
+                state
+                    .runtime_config
+                    .get(media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY)
+                    .unwrap_or_else(media_processing::default_media_processing_registry_json)
+            });
+            let command = media_processing::ffmpeg_command_from_registry_value(&raw_value)?;
+
+            tracing::debug!(
+                actor_user_id,
+                action = %action.as_str(),
+                command = %command,
+                "config: executing media processing action"
+            );
+
+            let message = media_processing_service::probe_ffmpeg_cli_command(&command).await?;
 
             Ok(ConfigActionResult {
                 message,

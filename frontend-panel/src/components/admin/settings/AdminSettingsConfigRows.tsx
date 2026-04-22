@@ -213,6 +213,7 @@ function ConfigInputControl({
 	const {
 		editorTheme,
 		handleBuildWopiDiscoveryPreviewConfig,
+		handleTestFfmpegCliCommand,
 		handleTestVipsCliCommand,
 		t,
 		updateDraftValue,
@@ -268,6 +269,7 @@ function ConfigInputControl({
 	if (config.key === MEDIA_PROCESSING_CONFIG_KEY) {
 		return (
 			<MediaProcessingConfigEditor
+				onTestFfmpegCliCommand={handleTestFfmpegCliCommand}
 				onTestVipsCliCommand={handleTestVipsCliCommand}
 				value={draftValue}
 				onChange={(nextValue) => updateDraftValue(config.key, nextValue)}

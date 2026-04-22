@@ -96,12 +96,21 @@ fn resolved_media_processor_from_config(
     processor: &media_processing_config::MediaProcessingProcessorConfig,
 ) -> ResolvedMediaProcessor {
     match processor.kind {
-        MediaProcessorKind::VipsCli => ResolvedMediaProcessor::with_vips_command(
+        MediaProcessorKind::VipsCli => ResolvedMediaProcessor::with_command(
+            MediaProcessorKind::VipsCli,
             processor
                 .config
                 .command
                 .clone()
                 .unwrap_or_else(|| media_processing_config::DEFAULT_VIPS_COMMAND.to_string()),
+        ),
+        MediaProcessorKind::FfmpegCli => ResolvedMediaProcessor::with_command(
+            MediaProcessorKind::FfmpegCli,
+            processor
+                .config
+                .command
+                .clone()
+                .unwrap_or_else(|| media_processing_config::DEFAULT_FFMPEG_COMMAND.to_string()),
         ),
         _ => ResolvedMediaProcessor::new(processor.kind),
     }
@@ -140,6 +149,19 @@ fn processor_unavailable_reason(
             if !media_processing_config::command_is_available(command) {
                 return Ok(Some(format!(
                     "vips CLI command '{command}' is not available"
+                )));
+            }
+            Ok(None)
+        }
+        MediaProcessorKind::FfmpegCli => {
+            let command = processor
+                .config
+                .command
+                .as_deref()
+                .unwrap_or(media_processing_config::DEFAULT_FFMPEG_COMMAND);
+            if !media_processing_config::command_is_available(command) {
+                return Ok(Some(format!(
+                    "ffmpeg CLI command '{command}' is not available"
                 )));
             }
             Ok(None)

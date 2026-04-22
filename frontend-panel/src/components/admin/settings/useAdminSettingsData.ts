@@ -145,6 +145,22 @@ export function useAdminSettingsData({
 		}
 	}, []);
 
+	const handleTestFfmpegCliCommand = useCallback(async (value: string) => {
+		try {
+			const response = await adminConfigService.action(
+				MEDIA_PROCESSING_CONFIG_KEY,
+				{
+					action: "test_ffmpeg_cli" as ConfigActionType,
+					value,
+				},
+			);
+			toast.success(response.message);
+		} catch (error) {
+			handleApiError(error);
+			throw error;
+		}
+	}, []);
+
 	const load = useCallback(async (options?: { showLoading?: boolean }) => {
 		const showLoading = options?.showLoading ?? true;
 
@@ -651,6 +667,7 @@ export function useAdminSettingsData({
 		getTemplateVariableGroupLabel,
 		getTemplateVariableLabel,
 		handleBuildWopiDiscoveryPreviewConfig,
+		handleTestFfmpegCliCommand,
 		handleSaveAll,
 		handleSendTestEmail,
 		handleTestVipsCliCommand,

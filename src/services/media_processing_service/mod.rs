@@ -16,5 +16,5 @@ pub use shared::{ProcessedAvatar, StoredThumbnail, ThumbnailData, thumbnail_etag
 pub(crate) use thumbnail::generate_and_store_thumbnail_with_processor;
 pub use thumbnail::{
     delete_thumbnail, generate_and_store_thumbnail, get_or_generate_thumbnail,
-    load_thumbnail_if_exists,
+    load_thumbnail_if_exists, probe_ffmpeg_cli_command,
 };

@@ -923,6 +923,7 @@ pub enum RemoteUploadStrategy {
 pub enum MediaProcessorKind {
     Images,
     VipsCli,
+    FfmpegCli,
     StorageNative,
 }
 
@@ -931,6 +932,7 @@ impl MediaProcessorKind {
         match self {
             Self::Images => "images",
             Self::VipsCli => "vips_cli",
+            Self::FfmpegCli => "ffmpeg_cli",
             Self::StorageNative => "storage_native",
         }
     }

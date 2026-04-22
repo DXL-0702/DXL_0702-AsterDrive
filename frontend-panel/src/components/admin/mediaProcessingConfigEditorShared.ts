@@ -3,6 +3,7 @@ import type { MediaProcessorKind } from "@/types/api";
 export const MEDIA_PROCESSING_CONFIG_KEY = "media_processing_registry_json";
 export const MEDIA_PROCESSING_CONFIG_VERSION = 1;
 export const MEDIA_PROCESSING_DEFAULT_VIPS_COMMAND = "vips";
+export const MEDIA_PROCESSING_DEFAULT_FFMPEG_COMMAND = "ffmpeg";
 export const MEDIA_PROCESSING_DEFAULT_VIPS_EXTENSIONS = [
 	"csv",
 	"mat",
@@ -47,8 +48,28 @@ export const MEDIA_PROCESSING_DEFAULT_VIPS_EXTENSIONS = [
 	"bif",
 	"raw",
 ] as const;
+export const MEDIA_PROCESSING_DEFAULT_FFMPEG_EXTENSIONS = [
+	"mp4",
+	"m4v",
+	"mov",
+	"mkv",
+	"webm",
+	"avi",
+	"mpg",
+	"mpeg",
+	"m2v",
+	"ts",
+	"m2ts",
+	"mts",
+	"3gp",
+	"3g2",
+	"ogv",
+	"flv",
+	"wmv",
+] as const;
 export const MEDIA_PROCESSING_PROCESSOR_ORDER = [
 	"vips_cli",
+	"ffmpeg_cli",
 	"images",
 ] as const satisfies readonly MediaProcessorKind[];
 export type MediaProcessingEditorProcessorKind =
@@ -103,7 +124,11 @@ function readProcessorKind(
 	value: unknown,
 ): MediaProcessingEditorProcessorKind | "" {
 	const normalized = readString(value).trim().toLowerCase();
-	if (normalized === "images" || normalized === "vips_cli") {
+	if (
+		normalized === "images" ||
+		normalized === "vips_cli" ||
+		normalized === "ffmpeg_cli"
+	) {
 		return normalized;
 	}
 	return "";
@@ -113,16 +138,41 @@ function defaultEnabled(kind: MediaProcessorKind) {
 	return kind === "images";
 }
 
+function processorUsesCommand(kind: MediaProcessingEditorProcessorKind) {
+	return kind === "vips_cli" || kind === "ffmpeg_cli";
+}
+
+function defaultCommand(kind: MediaProcessingEditorProcessorKind) {
+	switch (kind) {
+		case "vips_cli":
+			return MEDIA_PROCESSING_DEFAULT_VIPS_COMMAND;
+		case "ffmpeg_cli":
+			return MEDIA_PROCESSING_DEFAULT_FFMPEG_COMMAND;
+		case "images":
+			return "";
+	}
+}
+
+function defaultExtensions(kind: MediaProcessingEditorProcessorKind) {
+	switch (kind) {
+		case "vips_cli":
+			return [...MEDIA_PROCESSING_DEFAULT_VIPS_EXTENSIONS];
+		case "ffmpeg_cli":
+			return [...MEDIA_PROCESSING_DEFAULT_FFMPEG_EXTENSIONS];
+		case "images":
+			return [];
+	}
+}
+
 function createDefaultProcessor(
 	kind: MediaProcessingEditorProcessorKind,
 ): MediaProcessingEditorProcessor {
 	return {
 		config: {
-			command: kind === "vips_cli" ? MEDIA_PROCESSING_DEFAULT_VIPS_COMMAND : "",
+			command: defaultCommand(kind),
 		},
 		enabled: defaultEnabled(kind),
-		extensions:
-			kind === "vips_cli" ? [...MEDIA_PROCESSING_DEFAULT_VIPS_EXTENSIONS] : [],
+		extensions: defaultExtensions(kind),
 		kind,
 	};
 }
@@ -143,11 +193,9 @@ function normalizeProcessor(
 
 	return {
 		config: {
-			command:
-				kind === "vips_cli"
-					? readString(runtimeConfig?.command).trim() ||
-						MEDIA_PROCESSING_DEFAULT_VIPS_COMMAND
-					: "",
+			command: processorUsesCommand(kind)
+				? readString(runtimeConfig?.command).trim() || defaultCommand(kind)
+				: "",
 		},
 		enabled: readBoolean(value.enabled, defaultEnabled(kind)),
 		extensions: kind === "images" ? [] : readStringList(value.extensions),
@@ -216,11 +264,10 @@ export function serializeMediaProcessingConfig(
 						: {}),
 					kind: processor.kind,
 				} as Record<string, unknown>;
-				if (processor.kind === "vips_cli") {
+				if (processorUsesCommand(processor.kind)) {
 					serialized.config = {
 						command:
-							processor.config.command.trim() ||
-							MEDIA_PROCESSING_DEFAULT_VIPS_COMMAND,
+							processor.config.command.trim() || defaultCommand(processor.kind),
 					};
 				}
 				return serialized;

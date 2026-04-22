@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	getMediaProcessingConfigIssues,
 	getMediaProcessingConfigIssuesFromString,
+	MEDIA_PROCESSING_DEFAULT_FFMPEG_EXTENSIONS,
 	MEDIA_PROCESSING_DEFAULT_VIPS_EXTENSIONS,
 	parseMediaProcessingConfig,
 	serializeMediaProcessingConfig,
@@ -36,6 +37,14 @@ describe("mediaProcessingConfigEditorShared", () => {
 				},
 				{
 					config: {
+						command: "ffmpeg",
+					},
+					enabled: false,
+					extensions: [...MEDIA_PROCESSING_DEFAULT_FFMPEG_EXTENSIONS],
+					kind: "ffmpeg_cli",
+				},
+				{
+					config: {
 						command: "",
 					},
 					enabled: true,
@@ -55,6 +64,14 @@ describe("mediaProcessingConfigEditorShared", () => {
 					enabled: true,
 					extensions: ["heic", "heif"],
 					kind: "vips_cli",
+				},
+				{
+					config: {
+						command: "ffmpeg",
+					},
+					enabled: false,
+					extensions: [...MEDIA_PROCESSING_DEFAULT_FFMPEG_EXTENSIONS],
+					kind: "ffmpeg_cli",
 				},
 				{
 					enabled: true,
@@ -79,6 +96,14 @@ describe("mediaProcessingConfigEditorShared", () => {
 			extensions: [...MEDIA_PROCESSING_DEFAULT_VIPS_EXTENSIONS],
 			kind: "vips_cli",
 		});
+		expect(draft.processors[1]).toEqual({
+			config: {
+				command: "ffmpeg",
+			},
+			enabled: false,
+			extensions: [...MEDIA_PROCESSING_DEFAULT_FFMPEG_EXTENSIONS],
+			kind: "ffmpeg_cli",
+		});
 	});
 
 	it("reports validation issues for invalid drafts", () => {
@@ -96,6 +121,14 @@ describe("mediaProcessingConfigEditorShared", () => {
 						enabled: false,
 						extensions: [],
 						kind: "vips_cli",
+					},
+					{
+						config: {
+							command: "",
+						},
+						enabled: false,
+						extensions: [],
+						kind: "ffmpeg_cli",
 					},
 					{
 						config: {

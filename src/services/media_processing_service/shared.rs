@@ -4,6 +4,7 @@ use crate::config::media_processing as media_processing_config;
 use crate::storage::StorageDriver;
 use crate::types::MediaProcessorKind;
 
+pub(crate) const FFMPEG_CLI_THUMBNAIL_VERSION: &str = "ffmpeg-cli-v1";
 pub(crate) const VIPS_CLI_THUMBNAIL_VERSION: &str = "vips-cli-v1";
 pub(crate) const STORAGE_NATIVE_THUMBNAIL_VERSION: &str = "storage-native-v1";
 
@@ -25,21 +26,21 @@ impl MediaOperation {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ResolvedMediaProcessor {
     kind: MediaProcessorKind,
-    vips_command: Option<String>,
+    command: Option<String>,
 }
 
 impl ResolvedMediaProcessor {
     pub(crate) fn new(kind: MediaProcessorKind) -> Self {
         Self {
             kind,
-            vips_command: None,
+            command: None,
         }
     }
 
-    pub(crate) fn with_vips_command(command: String) -> Self {
+    pub(crate) fn with_command(kind: MediaProcessorKind, command: String) -> Self {
         Self {
-            kind: MediaProcessorKind::VipsCli,
-            vips_command: Some(command),
+            kind,
+            command: Some(command),
         }
     }
 
@@ -48,9 +49,15 @@ impl ResolvedMediaProcessor {
     }
 
     pub(crate) fn vips_command(&self) -> &str {
-        self.vips_command
+        self.command
             .as_deref()
             .unwrap_or(media_processing_config::DEFAULT_VIPS_COMMAND)
+    }
+
+    pub(crate) fn ffmpeg_command(&self) -> &str {
+        self.command
+            .as_deref()
+            .unwrap_or(media_processing_config::DEFAULT_FFMPEG_COMMAND)
     }
 
     pub(crate) fn thumbnail_version(&self) -> &'static str {
@@ -59,6 +66,7 @@ impl ResolvedMediaProcessor {
                 crate::services::thumbnail_service::CURRENT_IMAGES_THUMBNAIL_VERSION
             }
             MediaProcessorKind::VipsCli => VIPS_CLI_THUMBNAIL_VERSION,
+            MediaProcessorKind::FfmpegCli => FFMPEG_CLI_THUMBNAIL_VERSION,
             MediaProcessorKind::StorageNative => STORAGE_NATIVE_THUMBNAIL_VERSION,
         }
     }
@@ -107,6 +115,10 @@ pub(crate) fn known_thumbnail_cache_paths(blob_hash: &str) -> Vec<String> {
         crate::services::thumbnail_service::thumb_path_for_version(
             blob_hash,
             VIPS_CLI_THUMBNAIL_VERSION,
+        ),
+        crate::services::thumbnail_service::thumb_path_for_version(
+            blob_hash,
+            FFMPEG_CLI_THUMBNAIL_VERSION,
         ),
         crate::services::thumbnail_service::thumb_path_for_version(
             blob_hash,

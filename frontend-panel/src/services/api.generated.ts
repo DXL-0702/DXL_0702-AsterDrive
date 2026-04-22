@@ -3187,7 +3187,7 @@ export interface components {
             part_number: number;
         };
         /** @enum {string} */
-        ConfigActionType: "build_wopi_discovery_preview_config" | "send_test_email" | "test_vips_cli";
+        ConfigActionType: "build_wopi_discovery_preview_config" | "send_test_email" | "test_vips_cli" | "test_ffmpeg_cli";
         /** @description 系统配置的 schema 信息（从 ALL_CONFIGS 生成） */
         ConfigSchemaItem: {
             category: string;
@@ -3516,7 +3516,7 @@ export interface components {
          * @description 统一媒体处理器类型（system_config / storage_policy.options）
          * @enum {string}
          */
-        MediaProcessorKind: "images" | "vips_cli" | "storage_native";
+        MediaProcessorKind: "images" | "vips_cli" | "ffmpeg_cli" | "storage_native";
         MemoryStatsResponse: {
             heap_allocated_mb: string;
             heap_peak_mb: string;
