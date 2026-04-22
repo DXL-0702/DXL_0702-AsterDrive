@@ -85,18 +85,13 @@ fn thumbnail_registry_json_with_vips_command(command: &str) -> String {
 }
 
 fn ffmpeg_command_for_tests() -> Option<String> {
-    for candidate in [
+    [
         std::env::var("ASTER_TEST_FFMPEG_COMMAND").ok(),
         Some("ffmpeg".to_string()),
     ]
     .into_iter()
     .flatten()
-    {
-        if aster_drive::config::media_processing::command_is_available(&candidate) {
-            return Some(candidate);
-        }
-    }
-    None
+    .find(|candidate| aster_drive::config::media_processing::command_is_available(candidate))
 }
 
 fn write_fake_vips_thumbnail_command() -> std::path::PathBuf {
