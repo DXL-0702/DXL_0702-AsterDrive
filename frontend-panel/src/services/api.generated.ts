@@ -4391,6 +4391,7 @@ export interface components {
             /** Format: int64 */
             s3_read_timeout_secs?: number | null;
             s3_upload_strategy?: null | components["schemas"]["S3UploadStrategy"];
+            thumbnail_extensions?: string[];
             thumbnail_processor?: null | components["schemas"]["MediaProcessorKind"];
         };
         StoragePolicySummaryInfo: {

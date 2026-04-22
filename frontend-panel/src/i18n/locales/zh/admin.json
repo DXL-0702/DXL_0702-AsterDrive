@@ -583,8 +583,6 @@
 	"remote_upload_strategy_presigned_desc": "浏览器通过 presigned URL 直接把文件上传到从节点。文件 ≤ 分片大小时单次 PUT；更大文件自动使用 multipart 直传（支持断点续传），并在从节点内部 compose。整个链路不生成完整文件中转副本，但需要从节点对浏览器可达，并暴露 `ETag` 响应头。",
 	"content_dedup": "内容去重",
 	"local_content_dedup_desc": "开启后，上传到本机存储时会在临时文件写完后再计算一次 SHA-256，并复用相同内容的 blob。关闭后会跳过这次全文件读取，每次上传都创建新的 blob。",
-	"storage_native_thumbnail": "存储原生缩略图",
-	"storage_native_thumbnail_desc": "优先让这条存储策略对应的驱动走原生缩略图链路。只有后端明确支持原生缩略图时才该启用；不支持时会回落到全局媒体处理链。",
 	"thumbnail_processor_images": "AsterDrive 内置",
 	"thumbnail_processor_vips_cli": "vips_cli",
 	"chunk_size": "分片大小 (MB)",

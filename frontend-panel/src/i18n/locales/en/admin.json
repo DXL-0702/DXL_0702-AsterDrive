@@ -583,8 +583,6 @@
 	"remote_upload_strategy_presigned_desc": "The browser uploads directly to the follower via presigned URLs. Files ≤ chunk size use a single PUT; larger files use multipart direct upload with resume support and are composed inside the follower. No full-file temporary copy is created, but the follower must be reachable from the browser and expose the `ETag` response header.",
 	"content_dedup": "Content Deduplication",
 	"local_content_dedup_desc": "When enabled, local uploads compute SHA-256 after the temporary file is written and reuse blobs with identical content. When disabled, uploads skip the extra full-file read and always create a new blob.",
-	"storage_native_thumbnail": "Storage-native thumbnails",
-	"storage_native_thumbnail_desc": "Ask this storage policy's driver for native thumbnail generation first. Only enable this when that backend explicitly supports native thumbnails; unsupported policies will fall back to the global media processing chain.",
 	"thumbnail_processor_images": "AsterDrive Built-in",
 	"thumbnail_processor_vips_cli": "vips_cli",
 	"chunk_size": "Chunk Size (MB)",

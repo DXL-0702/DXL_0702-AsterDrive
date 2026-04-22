@@ -303,16 +303,7 @@ fn resolve_thumbnail_processor_for_policy(
     let mut last_unavailable_reason = None;
     let policy_options = parse_storage_policy_options(policy.options.as_ref());
     if policy_options.thumbnail_processor == Some(MediaProcessorKind::StorageNative) {
-        let processor_config = media_processing_config::default_processor_config_for_kind(
-            MediaProcessorKind::StorageNative,
-        );
-        let unavailable_reason = thumbnail_processor_unavailable_reason(
-            state,
-            policy,
-            &processor_config,
-            Some(file_name),
-        )?;
-        if let Some(reason) = unavailable_reason {
+        if !policy_options.storage_native_thumbnail_matches_file_name(file_name) {
             tracing::debug!(
                 operation = "thumbnail",
                 policy_id = policy.id,
@@ -320,23 +311,46 @@ fn resolve_thumbnail_processor_for_policy(
                 source_extension = source_extension.as_deref().unwrap_or(""),
                 processor = MediaProcessorKind::StorageNative.as_str(),
                 processor_match = "policy",
-                skip_reason = %reason,
+                skip_reason = "policy thumbnail extension binding did not match source file",
                 media_kind = ?media_kind,
-                "skipped unavailable policy-native media processor"
+                "skipped unmatched policy-native media processor"
             );
-            last_unavailable_reason = Some(reason);
         } else {
-            tracing::debug!(
-                operation = "thumbnail",
-                policy_id = policy.id,
-                file_name,
-                source_extension = source_extension.as_deref().unwrap_or(""),
-                processor = MediaProcessorKind::StorageNative.as_str(),
-                processor_match = "policy",
-                media_kind = ?media_kind,
-                "resolved media processor from storage policy"
+            let processor_config = media_processing_config::default_processor_config_for_kind(
+                MediaProcessorKind::StorageNative,
             );
-            return Ok(resolved_thumbnail_processor_from_config(&processor_config));
+            let unavailable_reason = thumbnail_processor_unavailable_reason(
+                state,
+                policy,
+                &processor_config,
+                Some(file_name),
+            )?;
+            if let Some(reason) = unavailable_reason {
+                tracing::debug!(
+                    operation = "thumbnail",
+                    policy_id = policy.id,
+                    file_name,
+                    source_extension = source_extension.as_deref().unwrap_or(""),
+                    processor = MediaProcessorKind::StorageNative.as_str(),
+                    processor_match = "policy",
+                    skip_reason = %reason,
+                    media_kind = ?media_kind,
+                    "skipped unavailable policy-native media processor"
+                );
+                last_unavailable_reason = Some(reason);
+            } else {
+                tracing::debug!(
+                    operation = "thumbnail",
+                    policy_id = policy.id,
+                    file_name,
+                    source_extension = source_extension.as_deref().unwrap_or(""),
+                    processor = MediaProcessorKind::StorageNative.as_str(),
+                    processor_match = "policy",
+                    media_kind = ?media_kind,
+                    "resolved media processor from storage policy"
+                );
+                return Ok(resolved_thumbnail_processor_from_config(&processor_config));
+            }
         }
     }
 

@@ -25,6 +25,7 @@ describe("storagePolicyDialogShared", () => {
 				options: {
 					content_dedup: true,
 					thumbnail_processor: "storage_native",
+					thumbnail_extensions: ["png", "jpg"],
 				},
 				is_default: true,
 				chunk_size: 10 * 1024 * 1024,
@@ -44,7 +45,6 @@ describe("storagePolicyDialogShared", () => {
 			chunk_size: "10",
 			is_default: true,
 			content_dedup: true,
-			storage_native_thumbnail: true,
 			remote_download_strategy: "relay_stream",
 			remote_upload_strategy: "relay_stream",
 			s3_upload_strategy: "relay_stream",
@@ -67,7 +67,6 @@ describe("storagePolicyDialogShared", () => {
 				chunk_size: "6",
 				is_default: false,
 				content_dedup: false,
-				storage_native_thumbnail: true,
 				remote_download_strategy: "relay_stream",
 				remote_upload_strategy: "relay_stream",
 				s3_upload_strategy: "presigned",
@@ -87,7 +86,6 @@ describe("storagePolicyDialogShared", () => {
 			options: {
 				s3_upload_strategy: "presigned",
 				s3_download_strategy: "relay_stream",
-				thumbnail_processor: "storage_native",
 			},
 		});
 	});
@@ -107,7 +105,6 @@ describe("storagePolicyDialogShared", () => {
 				chunk_size: "5",
 				is_default: true,
 				content_dedup: false,
-				storage_native_thumbnail: false,
 				remote_download_strategy: "relay_stream",
 				remote_upload_strategy: "relay_stream",
 				s3_upload_strategy: "relay_stream",
@@ -143,7 +140,6 @@ describe("storagePolicyDialogShared", () => {
 				chunk_size: "4",
 				is_default: false,
 				content_dedup: false,
-				storage_native_thumbnail: false,
 				remote_download_strategy: "presigned",
 				remote_upload_strategy: "presigned",
 				s3_upload_strategy: "relay_stream",
@@ -181,7 +177,6 @@ describe("storagePolicyDialogShared", () => {
 				chunk_size: "4",
 				is_default: false,
 				content_dedup: false,
-				storage_native_thumbnail: false,
 				remote_download_strategy: "presigned",
 				remote_upload_strategy: "presigned",
 				s3_upload_strategy: "relay_stream",

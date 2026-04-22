@@ -34,7 +34,6 @@ export interface PolicyFormData {
 	chunk_size: string;
 	is_default: boolean;
 	content_dedup: boolean;
-	storage_native_thumbnail: boolean;
 	remote_download_strategy: RemoteDownloadStrategy;
 	remote_upload_strategy: RemoteUploadStrategy;
 	s3_upload_strategy: S3UploadStrategy;
@@ -93,10 +92,6 @@ export function buildPolicyOptions(form: PolicyFormData): StoragePolicyOptions {
 		});
 	}
 
-	if (form.storage_native_thumbnail) {
-		options.thumbnail_processor = "storage_native";
-	}
-
 	return options;
 }
 
@@ -122,7 +117,6 @@ export function getPolicyForm(policy: StoragePolicy): PolicyFormData {
 		is_default: policy.is_default,
 		content_dedup:
 			policy.driver_type === "local" && options.content_dedup === true,
-		storage_native_thumbnail: options.thumbnail_processor === "storage_native",
 		remote_download_strategy: getEffectiveRemoteDownloadStrategy(options),
 		remote_upload_strategy: getEffectiveRemoteUploadStrategy(options),
 		s3_upload_strategy: getEffectiveS3UploadStrategy(options),
@@ -286,7 +280,6 @@ export const emptyForm: PolicyFormData = {
 	chunk_size: "5",
 	is_default: false,
 	content_dedup: false,
-	storage_native_thumbnail: false,
 	remote_download_strategy: "relay_stream",
 	remote_upload_strategy: "relay_stream",
 	s3_upload_strategy: "relay_stream",

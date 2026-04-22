@@ -10,7 +10,12 @@ use crate::db::repository::{
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::{PrimaryAppState, PrimaryRuntimeState};
-use crate::types::{DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions};
+use crate::storage::StorageDriver;
+use crate::storage::drivers::{local::LocalDriver, remote::RemoteDriver, s3::S3Driver};
+use crate::types::{
+    DriverType, StoragePolicyOptions, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
+    parse_storage_policy_options,
+};
 
 use super::models::{
     CreateStoragePolicyInput, StoragePolicy, StoragePolicyConnectionInput, UpdateStoragePolicyInput,
@@ -20,6 +25,90 @@ use super::shared::{
     normalize_connection_fields, serialize_allowed_types, serialize_options,
     validate_remote_binding,
 };
+
+fn driver_type_name(driver_type: DriverType) -> &'static str {
+    match driver_type {
+        DriverType::Local => "local",
+        DriverType::S3 => "s3",
+        DriverType::Remote => "remote",
+    }
+}
+
+fn build_policy_support_probe_model(
+    policy_id: i64,
+    connection: &StoragePolicyConnectionInput,
+    max_file_size: i64,
+    chunk_size: i64,
+    options: StoredStoragePolicyOptions,
+) -> storage_policy::Model {
+    let now = Utc::now();
+    storage_policy::Model {
+        id: policy_id,
+        name: "__thumbnail_support_probe__".to_string(),
+        driver_type: connection.driver_type,
+        endpoint: connection.endpoint.clone(),
+        bucket: connection.bucket.clone(),
+        access_key: connection.access_key.clone(),
+        secret_key: connection.secret_key.clone(),
+        base_path: connection.base_path.clone(),
+        remote_node_id: connection.remote_node_id,
+        max_file_size,
+        allowed_types: StoredStoragePolicyAllowedTypes::empty(),
+        options,
+        is_default: false,
+        chunk_size,
+        created_at: now,
+        updated_at: now,
+    }
+}
+
+async fn ensure_storage_native_thumbnail_supported(
+    state: &PrimaryAppState,
+    policy_id: i64,
+    connection: &StoragePolicyConnectionInput,
+    max_file_size: i64,
+    chunk_size: i64,
+    options: &StoragePolicyOptions,
+    serialized_options: StoredStoragePolicyOptions,
+) -> Result<()> {
+    if !options.uses_storage_native_thumbnail() {
+        return Ok(());
+    }
+
+    let probe_policy = build_policy_support_probe_model(
+        policy_id,
+        connection,
+        max_file_size,
+        chunk_size,
+        serialized_options,
+    );
+    let supported = match connection.driver_type {
+        DriverType::Local => LocalDriver::new(&probe_policy)?
+            .as_native_thumbnail()
+            .is_some(),
+        DriverType::S3 => S3Driver::new(&probe_policy)?
+            .as_native_thumbnail()
+            .is_some(),
+        DriverType::Remote => {
+            let remote_node_id = connection.remote_node_id.ok_or_else(|| {
+                AsterError::validation_error("remote storage policy requires remote_node_id")
+            })?;
+            let follower = managed_follower_repo::find_by_id(&state.db, remote_node_id).await?;
+            RemoteDriver::new(&probe_policy, &follower)?
+                .as_native_thumbnail()
+                .is_some()
+        }
+    };
+
+    if supported {
+        return Ok(());
+    }
+
+    Err(AsterError::validation_error(format!(
+        "storage policy driver '{}' does not expose storage-native thumbnail processing",
+        driver_type_name(connection.driver_type),
+    )))
+}
 
 pub async fn list_paginated(
     state: &PrimaryAppState,
@@ -62,7 +151,28 @@ pub async fn create(
     let (endpoint, bucket) = normalize_connection_fields(driver_type, &endpoint, &bucket)?;
     let remote_node_id = validate_remote_binding(&state.db, driver_type, remote_node_id).await?;
     let allowed_types = allowed_types.unwrap_or_default();
-    let options = options.unwrap_or_default();
+    let options = options.unwrap_or_default().normalized();
+    let serialized_options = serialize_options(&options)?;
+    let chunk_size = chunk_size.unwrap_or(5_242_880);
+    let connection = StoragePolicyConnectionInput {
+        driver_type,
+        endpoint: endpoint.clone(),
+        bucket: bucket.clone(),
+        access_key: access_key.clone(),
+        secret_key: secret_key.clone(),
+        base_path: base_path.clone(),
+        remote_node_id,
+    };
+    ensure_storage_native_thumbnail_supported(
+        state,
+        0,
+        &connection,
+        max_file_size,
+        chunk_size,
+        &options,
+        serialized_options.clone(),
+    )
+    .await?;
 
     let txn = crate::db::transaction::begin(&state.db).await?;
     let now = Utc::now();
@@ -77,9 +187,9 @@ pub async fn create(
         remote_node_id: Set(remote_node_id),
         max_file_size: Set(max_file_size),
         allowed_types: Set(serialize_allowed_types(&allowed_types)?),
-        options: Set(serialize_options(&options)?),
+        options: Set(serialized_options),
         is_default: Set(false),
-        chunk_size: Set(chunk_size.unwrap_or(5_242_880)),
+        chunk_size: Set(chunk_size),
         created_at: Set(now),
         updated_at: Set(now),
         ..Default::default()
@@ -177,15 +287,54 @@ pub async fn update(
     let existing = policy_repo::find_by_id(&txn, id).await?;
     let existing_endpoint = existing.endpoint.clone();
     let existing_bucket = existing.bucket.clone();
+    let existing_base_path = existing.base_path.clone();
+    let existing_access_key = existing.access_key.clone();
+    let existing_secret_key = existing.secret_key.clone();
     let existing_remote_node_id = existing.remote_node_id;
+    let existing_max_file_size = existing.max_file_size;
+    let existing_chunk_size = existing.chunk_size;
+    let existing_options = parse_storage_policy_options(existing.options.as_ref());
     let final_endpoint = endpoint.unwrap_or_else(|| existing_endpoint.clone());
     let final_bucket = bucket.unwrap_or_else(|| existing_bucket.clone());
+    let final_base_path = base_path
+        .clone()
+        .unwrap_or_else(|| existing_base_path.clone());
+    let final_access_key = access_key
+        .clone()
+        .unwrap_or_else(|| existing_access_key.clone());
+    let final_secret_key = secret_key
+        .clone()
+        .unwrap_or_else(|| existing_secret_key.clone());
     let (normalized_endpoint, normalized_bucket) =
         normalize_connection_fields(existing.driver_type, &final_endpoint, &final_bucket)?;
     let normalized_remote_node_id = validate_remote_binding(
         &txn,
         existing.driver_type,
         remote_node_id.or(existing.remote_node_id),
+    )
+    .await?;
+    let final_max_file_size = max_file_size.unwrap_or(existing_max_file_size);
+    let final_chunk_size = chunk_size.unwrap_or(existing_chunk_size);
+    let options_provided = options.is_some();
+    let final_options = options.unwrap_or(existing_options).normalized();
+    let serialized_final_options = serialize_options(&final_options)?;
+    let final_connection = StoragePolicyConnectionInput {
+        driver_type: existing.driver_type,
+        endpoint: normalized_endpoint.clone(),
+        bucket: normalized_bucket.clone(),
+        access_key: final_access_key,
+        secret_key: final_secret_key,
+        base_path: final_base_path.clone(),
+        remote_node_id: normalized_remote_node_id,
+    };
+    ensure_storage_native_thumbnail_supported(
+        state,
+        id,
+        &final_connection,
+        final_max_file_size,
+        final_chunk_size,
+        &final_options,
+        serialized_final_options.clone(),
     )
     .await?;
 
@@ -237,8 +386,8 @@ pub async fn update(
     if let Some(v) = allowed_types {
         active.allowed_types = Set(serialize_allowed_types(&v)?);
     }
-    if let Some(v) = options {
-        active.options = Set(serialize_options(&v)?);
+    if options_provided {
+        active.options = Set(serialized_final_options);
     }
     active.updated_at = Set(Utc::now());
     let result = active

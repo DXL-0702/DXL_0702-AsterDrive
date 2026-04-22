@@ -219,6 +219,40 @@ async fn test_policy_crud() {
 }
 
 #[actix_web::test]
+async fn test_policy_rejects_storage_native_thumbnail_for_unsupported_driver() {
+    let state = common::setup().await;
+    let app = create_test_app!(state);
+    let (token, _) = register_and_login!(app);
+
+    let req = test::TestRequest::post()
+        .uri("/api/v1/admin/policies")
+        .insert_header(("Cookie", common::access_cookie_header(&token)))
+        .insert_header(common::csrf_header_for(&token))
+        .set_json(serde_json::json!({
+            "name": "Native Thumbnail Local",
+            "driver_type": "local",
+            "base_path": "/tmp/test-native-thumbnail-local",
+            "max_file_size": 0,
+            "is_default": false,
+            "options": {
+                "thumbnail_processor": "storage_native",
+                "thumbnail_extensions": ["png", ".jpg"]
+            }
+        }))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), 400);
+
+    let body: Value = test::read_body_json(resp).await;
+    assert!(
+        body["msg"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("does not expose storage-native thumbnail processing")
+    );
+}
+
+#[actix_web::test]
 async fn test_user_policy_assignment() {
     let state = common::setup().await;
     let app = create_test_app!(state);

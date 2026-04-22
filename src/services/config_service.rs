@@ -16,10 +16,10 @@ use crate::services::{
     audit_service::{self, AuditContext},
     mail_service, media_processing_service, preview_app_service, wopi_service,
 };
-use crate::types::{SystemConfigSource, SystemConfigValueType};
+use crate::types::{SystemConfigSource, SystemConfigValueType, parse_storage_policy_options};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
@@ -594,7 +594,32 @@ pub fn get_public_preview_apps(
 pub fn get_public_thumbnail_support(
     state: &PrimaryAppState,
 ) -> crate::config::media_processing::PublicThumbnailSupport {
-    crate::config::media_processing::public_thumbnail_support(&state.runtime_config)
+    let mut support =
+        crate::config::media_processing::public_thumbnail_support(&state.runtime_config);
+    let mut extensions = support.extensions.iter().cloned().collect::<BTreeSet<_>>();
+
+    for policy in state.policy_snapshot.all_policies() {
+        let options = parse_storage_policy_options(policy.options.as_ref());
+        if !options.uses_storage_native_thumbnail() || options.thumbnail_extensions.is_empty() {
+            continue;
+        }
+
+        match state.driver_registry.get_driver(&policy) {
+            Ok(driver) if driver.as_native_thumbnail().is_some() => {
+                extensions.extend(options.thumbnail_extensions);
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::debug!(
+                    policy_id = policy.id,
+                    "skip storage-native thumbnail public support for policy: {error}"
+                );
+            }
+        }
+    }
+
+    support.extensions = extensions.into_iter().collect();
+    support
 }
 
 // ── Config Schema ─────────────────────────────────────────────────────

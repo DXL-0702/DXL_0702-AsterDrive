@@ -193,6 +193,7 @@ async fn enable_default_policy_storage_native_thumbnail(state: &PrimaryAppState)
     let mut active: aster_drive::entities::storage_policy::ActiveModel = policy.into();
     active.options = Set(serialize_storage_policy_options(&StoragePolicyOptions {
         thumbnail_processor: Some(MediaProcessorKind::StorageNative),
+        thumbnail_extensions: vec!["png".to_string()],
         ..Default::default()
     })
     .unwrap());
