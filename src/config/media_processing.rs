@@ -77,6 +77,7 @@ pub struct MediaProcessingProcessorConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MediaProcessingMatchKind {
+    Policy,
     Extension,
     Any,
 }
@@ -84,6 +85,7 @@ pub enum MediaProcessingMatchKind {
 impl MediaProcessingMatchKind {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::Policy => "policy",
             Self::Extension => "extension",
             Self::Any => "any",
         }
@@ -91,7 +93,7 @@ impl MediaProcessingMatchKind {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MatchedThumbnailProcessor {
+pub struct MatchedMediaProcessor {
     pub processor: MediaProcessingProcessorConfig,
     pub match_kind: MediaProcessingMatchKind,
 }
@@ -236,10 +238,10 @@ pub fn media_processing_registry(runtime_config: &RuntimeConfig) -> MediaProcess
     }
 }
 
-pub fn thumbnail_processor_candidates(
+pub fn processor_candidates_for_file_name(
     config: &MediaProcessingRegistryConfig,
     file_name: &str,
-) -> Vec<MatchedThumbnailProcessor> {
+) -> Vec<MatchedMediaProcessor> {
     let extension = file_extension(file_name);
     let mut matched = Vec::new();
 
@@ -252,7 +254,7 @@ pub fn thumbnail_processor_candidates(
         }
 
         if processor.kind == MediaProcessorKind::Images || processor.extensions.is_empty() {
-            matched.push(MatchedThumbnailProcessor {
+            matched.push(MatchedMediaProcessor {
                 processor: processor.clone(),
                 match_kind: MediaProcessingMatchKind::Any,
             });
@@ -267,7 +269,7 @@ pub fn thumbnail_processor_candidates(
             .iter()
             .any(|candidate| candidate == extension)
         {
-            matched.push(MatchedThumbnailProcessor {
+            matched.push(MatchedMediaProcessor {
                 processor: processor.clone(),
                 match_kind: MediaProcessingMatchKind::Extension,
             });
@@ -444,13 +446,13 @@ fn normalize_extension(value: &str) -> Result<String> {
 mod tests {
     use super::{
         BUILTIN_IMAGES_SUPPORTED_EXTENSIONS, DEFAULT_VIPS_COMMAND, DEFAULT_VIPS_EXTENSIONS,
-        MEDIA_PROCESSING_REGISTRY_JSON_KEY, MatchedThumbnailProcessor, MediaProcessingMatchKind,
+        MEDIA_PROCESSING_REGISTRY_JSON_KEY, MatchedMediaProcessor, MediaProcessingMatchKind,
         MediaProcessingProcessorConfig, MediaProcessingProcessorRuntimeConfig,
         MediaProcessingRegistryConfig, PublicThumbnailSupport, command_is_available,
         default_media_processing_registry, default_media_processing_registry_json, file_extension,
         media_processing_registry, normalize_media_processing_registry_config_value,
-        normalize_vips_command, parse_media_processor_kind, processor_config_for_kind,
-        public_thumbnail_support, thumbnail_processor_candidates, vips_command_from_registry_value,
+        normalize_vips_command, parse_media_processor_kind, processor_candidates_for_file_name,
+        processor_config_for_kind, public_thumbnail_support, vips_command_from_registry_value,
     };
     use crate::config::RuntimeConfig;
     use crate::entities::system_config;
@@ -700,7 +702,7 @@ mod tests {
     }
 
     #[test]
-    fn thumbnail_processor_candidates_use_fixed_processor_priority() {
+    fn processor_candidates_for_file_name_use_fixed_processor_priority() {
         let config = MediaProcessingRegistryConfig {
             version: 1,
             processors: vec![
@@ -722,9 +724,9 @@ mod tests {
         };
 
         assert_eq!(
-            thumbnail_processor_candidates(&config, "photo.heic"),
+            processor_candidates_for_file_name(&config, "photo.heic"),
             vec![
-                MatchedThumbnailProcessor {
+                MatchedMediaProcessor {
                     processor: MediaProcessingProcessorConfig {
                         kind: MediaProcessorKind::VipsCli,
                         enabled: true,
@@ -735,7 +737,7 @@ mod tests {
                     },
                     match_kind: MediaProcessingMatchKind::Extension,
                 },
-                MatchedThumbnailProcessor {
+                MatchedMediaProcessor {
                     processor: MediaProcessingProcessorConfig {
                         kind: MediaProcessorKind::Images,
                         enabled: true,
@@ -747,8 +749,8 @@ mod tests {
             ]
         );
         assert_eq!(
-            thumbnail_processor_candidates(&config, "photo.png"),
-            vec![MatchedThumbnailProcessor {
+            processor_candidates_for_file_name(&config, "photo.png"),
+            vec![MatchedMediaProcessor {
                 processor: MediaProcessingProcessorConfig {
                     kind: MediaProcessorKind::Images,
                     enabled: true,

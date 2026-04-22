@@ -1,8 +1,9 @@
 //! 统一媒体处理服务。
 //!
-//! 第一阶段只接入 thumbnail 场景，把业务层和具体处理实现解耦。
+//! 当前已接入 thumbnail 和 avatar 场景，把业务层和具体处理实现解耦。
 
 use std::collections::BTreeSet;
+use std::io::Cursor;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -11,19 +12,39 @@ use crate::db::repository::file_repo;
 use crate::entities::{file_blob, storage_policy};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
+use crate::services::profile_service::shared::{
+    AVATAR_SIZE_LG, AVATAR_SIZE_SM, MAX_AVATAR_DECODE_ALLOC,
+};
 use crate::storage::{StorageDriver, extensions::NativeThumbnailRequest};
 use crate::types::{MediaProcessorKind, parse_storage_policy_options};
+use image::imageops::FilterType;
+use image::{DynamicImage, GenericImageView, ImageFormat, ImageReader, Limits};
 
 const VIPS_CLI_THUMBNAIL_VERSION: &str = "vips-cli-v1";
 const STORAGE_NATIVE_THUMBNAIL_VERSION: &str = "storage-native-v1";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MediaOperation {
+    Thumbnail,
+    Avatar,
+}
+
+impl MediaOperation {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Thumbnail => "thumbnail",
+            Self::Avatar => "avatar",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct ResolvedThumbnailProcessor {
+pub(crate) struct ResolvedMediaProcessor {
     kind: MediaProcessorKind,
     vips_command: Option<String>,
 }
 
-impl ResolvedThumbnailProcessor {
+impl ResolvedMediaProcessor {
     fn new(kind: MediaProcessorKind) -> Self {
         Self {
             kind,
@@ -77,9 +98,15 @@ pub struct StoredThumbnail {
     pub reused_existing_thumbnail: bool,
 }
 
+#[derive(Debug)]
+pub struct ProcessedAvatar {
+    pub small_bytes: Vec<u8>,
+    pub large_bytes: Vec<u8>,
+}
+
 struct ThumbnailContext {
     driver: Arc<dyn StorageDriver>,
-    processor: ResolvedThumbnailProcessor,
+    processor: ResolvedMediaProcessor,
 }
 
 pub async fn probe_vips_cli_command(command: &str) -> Result<String> {
@@ -149,6 +176,83 @@ pub async fn probe_vips_cli_command(command: &str) -> Result<String> {
     }
 }
 
+pub async fn process_avatar_upload(
+    state: &PrimaryAppState,
+    file_name: &str,
+    data: Vec<u8>,
+) -> Result<ProcessedAvatar> {
+    let processor = resolve_avatar_processor(&state.runtime_config, file_name)?;
+    let source_extension = media_processing_config::file_extension(file_name);
+    tracing::debug!(
+        operation = MediaOperation::Avatar.as_str(),
+        processor = processor.kind().as_str(),
+        file_name,
+        source_extension = source_extension.as_deref().unwrap_or(""),
+        source_bytes = data.len(),
+        "processing avatar upload via resolved media processor"
+    );
+
+    match processor.kind() {
+        MediaProcessorKind::Images => {
+            tokio::task::spawn_blocking(move || generate_avatar_variants(data))
+                .await
+                .map_aster_err_ctx(
+                    "avatar processing task panicked",
+                    AsterError::file_upload_failed,
+                )?
+        }
+        MediaProcessorKind::VipsCli => {
+            let command = processor.vips_command().to_string();
+            render_avatar_with_vips_cli(state, file_name, data, &command).await
+        }
+        MediaProcessorKind::StorageNative => Err(AsterError::precondition_failed(
+            "storage-native avatar processing is not supported",
+        )),
+    }
+}
+
+fn generate_avatar_variants(data: Vec<u8>) -> Result<ProcessedAvatar> {
+    let mut reader = ImageReader::new(Cursor::new(data))
+        .with_guessed_format()
+        .map_aster_err_ctx("guess avatar format", AsterError::file_type_not_allowed)?;
+
+    let mut limits = Limits::default();
+    limits.max_alloc = Some(MAX_AVATAR_DECODE_ALLOC);
+    reader.limits(limits);
+
+    let img = reader
+        .decode()
+        .map_aster_err_ctx("decode avatar", AsterError::file_type_not_allowed)?;
+
+    let (width, height) = img.dimensions();
+    if width == 0 || height == 0 {
+        return Err(AsterError::validation_error("empty image"));
+    }
+
+    let side = width.min(height);
+    let left = (width - side) / 2;
+    let top = (height - side) / 2;
+    let square = img.crop_imm(left, top, side, side);
+
+    let large = square.resize_exact(AVATAR_SIZE_LG, AVATAR_SIZE_LG, FilterType::Triangle);
+    let small = square.resize_exact(AVATAR_SIZE_SM, AVATAR_SIZE_SM, FilterType::Triangle);
+
+    let large_bytes = encode_avatar_webp(&large)?;
+    let small_bytes = encode_avatar_webp(&small)?;
+
+    Ok(ProcessedAvatar {
+        small_bytes,
+        large_bytes,
+    })
+}
+
+fn encode_avatar_webp(img: &DynamicImage) -> Result<Vec<u8>> {
+    let mut buf = Cursor::new(Vec::new());
+    img.write_to(&mut buf, ImageFormat::WebP)
+        .map_aster_err_ctx("encode avatar webp", AsterError::file_upload_failed)?;
+    Ok(buf.into_inner())
+}
+
 pub fn thumbnail_etag_value_for(blob_hash: &str, thumbnail_version: Option<&str>) -> String {
     crate::services::thumbnail_service::thumbnail_etag_value_for(blob_hash, thumbnail_version)
 }
@@ -176,7 +280,7 @@ pub(crate) fn resolve_thumbnail_processor_for_blob(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
     file_name: &str,
-) -> Result<ResolvedThumbnailProcessor> {
+) -> Result<ResolvedMediaProcessor> {
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     resolve_thumbnail_processor_for_policy(state, &policy, file_name)
 }
@@ -279,106 +383,16 @@ fn resolve_thumbnail_processor_for_policy(
     state: &PrimaryAppState,
     policy: &storage_policy::Model,
     file_name: &str,
-) -> Result<ResolvedThumbnailProcessor> {
-    let registry = media_processing_config::media_processing_registry(&state.runtime_config);
-    let source_extension = media_processing_config::file_extension(file_name);
-    let mut last_unavailable_reason = None;
-    let policy_options = parse_storage_policy_options(policy.options.as_ref());
-    if policy_options.thumbnail_processor == Some(MediaProcessorKind::StorageNative) {
-        if !policy_options.storage_native_thumbnail_matches_file_name(file_name) {
-            tracing::debug!(
-                operation = "thumbnail",
-                policy_id = policy.id,
-                file_name,
-                source_extension = source_extension.as_deref().unwrap_or(""),
-                processor = MediaProcessorKind::StorageNative.as_str(),
-                processor_match = "policy",
-                skip_reason = "policy thumbnail extension binding did not match source file",
-                "skipped unmatched policy-native media processor"
-            );
-        } else {
-            let processor_config = media_processing_config::default_processor_config_for_kind(
-                MediaProcessorKind::StorageNative,
-            );
-            let unavailable_reason = thumbnail_processor_unavailable_reason(
-                state,
-                policy,
-                &processor_config,
-                Some(file_name),
-            )?;
-            if let Some(reason) = unavailable_reason {
-                tracing::debug!(
-                    operation = "thumbnail",
-                    policy_id = policy.id,
-                    file_name,
-                    source_extension = source_extension.as_deref().unwrap_or(""),
-                    processor = MediaProcessorKind::StorageNative.as_str(),
-                    processor_match = "policy",
-                    skip_reason = %reason,
-                    "skipped unavailable policy-native media processor"
-                );
-                last_unavailable_reason = Some(reason);
-            } else {
-                tracing::debug!(
-                    operation = "thumbnail",
-                    policy_id = policy.id,
-                    file_name,
-                    source_extension = source_extension.as_deref().unwrap_or(""),
-                    processor = MediaProcessorKind::StorageNative.as_str(),
-                    processor_match = "policy",
-                    "resolved media processor from storage policy"
-                );
-                return Ok(resolved_thumbnail_processor_from_config(&processor_config));
-            }
-        }
-    }
-
-    let candidates = media_processing_config::thumbnail_processor_candidates(&registry, file_name);
-    if candidates.is_empty() {
-        let reason = last_unavailable_reason
-            .unwrap_or_else(|| format!("no enabled thumbnail processor matched '{file_name}'"));
-        return Err(AsterError::precondition_failed(reason));
-    }
-
-    for candidate in candidates {
-        let unavailable_reason = thumbnail_processor_unavailable_reason(
-            state,
-            policy,
-            &candidate.processor,
-            Some(file_name),
-        )?;
-        if let Some(reason) = unavailable_reason {
-            tracing::debug!(
-                operation = "thumbnail",
-                policy_id = policy.id,
-                file_name,
-                source_extension = source_extension.as_deref().unwrap_or(""),
-                processor = candidate.processor.kind.as_str(),
-                processor_match = candidate.match_kind.as_str(),
-                skip_reason = %reason,
-                "skipped unavailable media processor"
-            );
-            last_unavailable_reason = Some(reason);
-            continue;
-        }
-
-        tracing::debug!(
-            operation = "thumbnail",
-            policy_id = policy.id,
-            file_name,
-            source_extension = source_extension.as_deref().unwrap_or(""),
-            processor = candidate.processor.kind.as_str(),
-            processor_match = candidate.match_kind.as_str(),
-            "resolved media processor"
-        );
-        return Ok(resolved_thumbnail_processor_from_config(
-            &candidate.processor,
-        ));
-    }
-
-    let reason = last_unavailable_reason
-        .unwrap_or_else(|| format!("no available thumbnail processor matched '{file_name}'"));
-    Err(AsterError::precondition_failed(reason))
+) -> Result<ResolvedMediaProcessor> {
+    let candidates =
+        collect_thumbnail_processor_candidates(&state.runtime_config, policy, file_name);
+    resolve_media_processor_from_candidates(
+        MediaOperation::Thumbnail,
+        file_name,
+        Some(policy.id),
+        Some((state, policy)),
+        candidates,
+    )
 }
 
 fn build_thumbnail_context(
@@ -405,12 +419,11 @@ fn build_thumbnail_context_with_processor(
             .unwrap_or_else(|| {
                 media_processing_config::default_processor_config_for_kind(processor_kind)
             });
-    let processor = resolved_thumbnail_processor_from_config(&processor_config);
-    if let Some(reason) = thumbnail_processor_unavailable_reason(
-        state,
-        policy,
+    let processor = resolved_media_processor_from_config(&processor_config);
+    if let Some(reason) = processor_unavailable_reason(
         &processor_config,
         Some(source_file_name),
+        Some((state, policy)),
     )? {
         return Err(AsterError::precondition_failed(reason));
     }
@@ -418,7 +431,7 @@ fn build_thumbnail_context_with_processor(
     let driver = state.driver_registry.get_driver(policy)?;
     let source_extension = media_processing_config::file_extension(source_file_name);
     tracing::debug!(
-        operation = "thumbnail",
+        operation = MediaOperation::Thumbnail.as_str(),
         policy_id = policy.id,
         processor = processor_kind.as_str(),
         selection_source = "task_payload",
@@ -429,26 +442,25 @@ fn build_thumbnail_context_with_processor(
     Ok(ThumbnailContext { driver, processor })
 }
 
-fn resolved_thumbnail_processor_from_config(
+fn resolved_media_processor_from_config(
     processor: &media_processing_config::MediaProcessingProcessorConfig,
-) -> ResolvedThumbnailProcessor {
+) -> ResolvedMediaProcessor {
     match processor.kind {
-        MediaProcessorKind::VipsCli => ResolvedThumbnailProcessor::with_vips_command(
+        MediaProcessorKind::VipsCli => ResolvedMediaProcessor::with_vips_command(
             processor
                 .config
                 .command
                 .clone()
                 .unwrap_or_else(|| media_processing_config::DEFAULT_VIPS_COMMAND.to_string()),
         ),
-        _ => ResolvedThumbnailProcessor::new(processor.kind),
+        _ => ResolvedMediaProcessor::new(processor.kind),
     }
 }
 
-fn thumbnail_processor_unavailable_reason(
-    state: &PrimaryAppState,
-    policy: &storage_policy::Model,
+fn processor_unavailable_reason(
     processor: &media_processing_config::MediaProcessingProcessorConfig,
     source_file_name: Option<&str>,
+    storage_policy_context: Option<(&PrimaryAppState, &storage_policy::Model)>,
 ) -> Result<Option<String>> {
     match processor.kind {
         MediaProcessorKind::Images => {
@@ -477,22 +489,153 @@ fn thumbnail_processor_unavailable_reason(
                 .unwrap_or(media_processing_config::DEFAULT_VIPS_COMMAND);
             if !media_processing_config::command_is_available(command) {
                 return Ok(Some(format!(
-                    "thumbnail vips CLI command '{command}' is not available"
+                    "vips CLI command '{command}' is not available"
                 )));
             }
             Ok(None)
         }
         MediaProcessorKind::StorageNative => {
-            let driver = state.driver_registry.get_driver(policy)?;
-            if driver.as_native_thumbnail().is_none() {
-                return Ok(Some(format!(
-                    "storage policy #{} does not expose storage-native thumbnail processing",
-                    policy.id
-                )));
-            }
-            Ok(None)
+            let Some((state, policy)) = storage_policy_context else {
+                return Ok(Some(
+                    "storage-native media processor requires storage policy context".to_string(),
+                ));
+            };
+            storage_native_processor_unavailable_reason(state, policy)
         }
     }
+}
+
+fn storage_native_processor_unavailable_reason(
+    state: &PrimaryAppState,
+    policy: &storage_policy::Model,
+) -> Result<Option<String>> {
+    let driver = state.driver_registry.get_driver(policy)?;
+    if driver.as_native_thumbnail().is_none() {
+        return Ok(Some(format!(
+            "storage policy #{} does not expose storage-native thumbnail processing",
+            policy.id
+        )));
+    }
+    Ok(None)
+}
+
+fn collect_global_processor_candidates(
+    runtime_config: &crate::config::RuntimeConfig,
+    file_name: &str,
+) -> Vec<media_processing_config::MatchedMediaProcessor> {
+    let registry = media_processing_config::media_processing_registry(runtime_config);
+    media_processing_config::processor_candidates_for_file_name(&registry, file_name)
+}
+
+fn collect_thumbnail_processor_candidates(
+    runtime_config: &crate::config::RuntimeConfig,
+    policy: &storage_policy::Model,
+    file_name: &str,
+) -> Vec<media_processing_config::MatchedMediaProcessor> {
+    let source_extension = media_processing_config::file_extension(file_name);
+    let policy_options = parse_storage_policy_options(policy.options.as_ref());
+    let mut candidates = Vec::new();
+
+    if policy_options.thumbnail_processor == Some(MediaProcessorKind::StorageNative) {
+        if !policy_options.storage_native_thumbnail_matches_file_name(file_name) {
+            tracing::debug!(
+                operation = MediaOperation::Thumbnail.as_str(),
+                policy_id = policy.id,
+                file_name,
+                source_extension = source_extension.as_deref().unwrap_or(""),
+                processor = MediaProcessorKind::StorageNative.as_str(),
+                processor_match =
+                    media_processing_config::MediaProcessingMatchKind::Policy.as_str(),
+                skip_reason = "policy thumbnail extension binding did not match source file",
+                "skipped unmatched policy-native media processor"
+            );
+        } else {
+            candidates.push(media_processing_config::MatchedMediaProcessor {
+                processor: media_processing_config::default_processor_config_for_kind(
+                    MediaProcessorKind::StorageNative,
+                ),
+                match_kind: media_processing_config::MediaProcessingMatchKind::Policy,
+            });
+        }
+    }
+
+    candidates.extend(collect_global_processor_candidates(
+        runtime_config,
+        file_name,
+    ));
+    candidates
+}
+
+fn resolve_media_processor_from_candidates(
+    operation: MediaOperation,
+    file_name: &str,
+    policy_id: Option<i64>,
+    storage_policy_context: Option<(&PrimaryAppState, &storage_policy::Model)>,
+    candidates: Vec<media_processing_config::MatchedMediaProcessor>,
+) -> Result<ResolvedMediaProcessor> {
+    let source_extension = media_processing_config::file_extension(file_name);
+    if candidates.is_empty() {
+        return Err(AsterError::precondition_failed(format!(
+            "no enabled {} processor matched '{file_name}'",
+            operation.as_str()
+        )));
+    }
+
+    let mut last_unavailable_reason = None;
+    for candidate in candidates {
+        let unavailable_reason = processor_unavailable_reason(
+            &candidate.processor,
+            Some(file_name),
+            storage_policy_context,
+        )?;
+        if let Some(reason) = unavailable_reason {
+            tracing::debug!(
+                operation = operation.as_str(),
+                policy_id = ?policy_id,
+                file_name,
+                source_extension = source_extension.as_deref().unwrap_or(""),
+                processor = candidate.processor.kind.as_str(),
+                processor_match = candidate.match_kind.as_str(),
+                skip_reason = %reason,
+                "skipped unavailable media processor"
+            );
+            last_unavailable_reason = Some(reason);
+            continue;
+        }
+
+        tracing::debug!(
+            operation = operation.as_str(),
+            policy_id = ?policy_id,
+            file_name,
+            source_extension = source_extension.as_deref().unwrap_or(""),
+            processor = candidate.processor.kind.as_str(),
+            processor_match = candidate.match_kind.as_str(),
+            "resolved media processor"
+        );
+        return Ok(resolved_media_processor_from_config(&candidate.processor));
+    }
+
+    let reason = last_unavailable_reason.unwrap_or_else(|| {
+        format!(
+            "no available {} processor matched '{file_name}'",
+            operation.as_str()
+        )
+    });
+    Err(AsterError::precondition_failed(reason))
+}
+
+fn resolve_avatar_processor(
+    runtime_config: &crate::config::RuntimeConfig,
+    file_name: &str,
+) -> Result<ResolvedMediaProcessor> {
+    let candidates = collect_global_processor_candidates(runtime_config, file_name);
+    resolve_media_processor_from_candidates(
+        MediaOperation::Avatar,
+        file_name,
+        None,
+        None,
+        candidates,
+    )
 }
 
 async fn load_thumbnail_if_exists_with_context(
@@ -616,7 +759,7 @@ async fn render_thumbnail_bytes(
     blob: &file_blob::Model,
     source_mime_type: &str,
     driver: &Arc<dyn StorageDriver>,
-    processor: &ResolvedThumbnailProcessor,
+    processor: &ResolvedMediaProcessor,
 ) -> Result<Vec<u8>> {
     match processor.kind() {
         MediaProcessorKind::Images => {
@@ -654,6 +797,120 @@ async fn render_thumbnail_bytes(
             render_thumbnail_with_storage_native(blob, driver.as_ref(), source_mime_type).await
         }
     }
+}
+
+async fn render_avatar_with_vips_cli(
+    state: &PrimaryAppState,
+    file_name: &str,
+    original: Vec<u8>,
+    command: &str,
+) -> Result<ProcessedAvatar> {
+    let temp_root = crate::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
+    let temp_dir =
+        PathBuf::from(temp_root).join(format!("media-vips-avatar-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&temp_dir)
+        .await
+        .map_aster_err_ctx(
+            "create avatar vips temp dir",
+            AsterError::storage_driver_error,
+        )?;
+
+    let source_extension =
+        media_processing_config::file_extension(file_name).unwrap_or_else(|| "bin".to_string());
+    let input_path = temp_dir.join(format!("source.{source_extension}"));
+    let small_output_path = temp_dir.join("avatar-512.webp");
+    let large_output_path = temp_dir.join("avatar-1024.webp");
+    tokio::fs::write(&input_path, original)
+        .await
+        .map_aster_err_ctx(
+            "write avatar vips source temp file",
+            AsterError::file_upload_failed,
+        )?;
+
+    let command = command.to_string();
+    let input_arg = input_path.to_string_lossy().to_string();
+    let small_output_arg = small_output_path.to_string_lossy().to_string();
+    let large_output_arg = large_output_path.to_string_lossy().to_string();
+    tracing::debug!(
+        operation = MediaOperation::Avatar.as_str(),
+        processor = MediaProcessorKind::VipsCli.as_str(),
+        command,
+        input_path = input_arg,
+        small_output_path = small_output_arg,
+        large_output_path = large_output_arg,
+        "starting vips CLI avatar render"
+    );
+    tokio::task::spawn_blocking(move || {
+        for (size, output_arg) in [
+            (AVATAR_SIZE_SM, &small_output_arg),
+            (AVATAR_SIZE_LG, &large_output_arg),
+        ] {
+            let output = std::process::Command::new(&command)
+                .arg("thumbnail")
+                .arg(&input_arg)
+                .arg(output_arg)
+                .arg(size.to_string())
+                .arg("--height")
+                .arg(size.to_string())
+                .arg("--size")
+                .arg("both")
+                .arg("--crop")
+                .arg("centre")
+                .output()
+                .map_err(|error| {
+                    AsterError::file_upload_failed(format!(
+                        "spawn avatar vips CLI '{command}': {error}"
+                    ))
+                })?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                let detail = if !stderr.is_empty() {
+                    stderr
+                } else if !stdout.is_empty() {
+                    stdout
+                } else {
+                    format!("exit status {}", output.status)
+                };
+                return Err(AsterError::file_upload_failed(format!(
+                    "vips CLI avatar command failed for {size}px output: {detail}"
+                )));
+            }
+        }
+        Ok::<(), AsterError>(())
+    })
+    .await
+    .map_aster_err_ctx(
+        "avatar vips CLI task panicked",
+        AsterError::file_upload_failed,
+    )??;
+
+    let small_bytes = tokio::fs::read(&small_output_path)
+        .await
+        .map_aster_err_ctx(
+            "read avatar vips 512 output",
+            AsterError::file_upload_failed,
+        )?;
+    let large_bytes = tokio::fs::read(&large_output_path)
+        .await
+        .map_aster_err_ctx(
+            "read avatar vips 1024 output",
+            AsterError::file_upload_failed,
+        )?;
+    let _ = tokio::fs::remove_dir_all(&temp_dir).await;
+
+    tracing::debug!(
+        operation = MediaOperation::Avatar.as_str(),
+        processor = MediaProcessorKind::VipsCli.as_str(),
+        small_bytes = small_bytes.len(),
+        large_bytes = large_bytes.len(),
+        "avatar vips CLI render completed"
+    );
+
+    Ok(ProcessedAvatar {
+        small_bytes,
+        large_bytes,
+    })
 }
 
 async fn render_thumbnail_with_storage_native(
@@ -826,14 +1083,46 @@ async fn persist_thumbnail_metadata(
     }
 }
 
-fn requires_server_side_source_limit(processor: &ResolvedThumbnailProcessor) -> bool {
+fn requires_server_side_source_limit(processor: &ResolvedMediaProcessor) -> bool {
     processor.kind() != MediaProcessorKind::StorageNative
 }
 
 #[cfg(test)]
 mod tests {
-    use super::known_thumbnail_cache_paths;
+    use super::{generate_avatar_variants, known_thumbnail_cache_paths, resolve_avatar_processor};
     use crate::config::media_processing::command_is_available;
+    use crate::config::{RuntimeConfig, media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY};
+    use crate::entities::system_config;
+    use crate::types::{MediaProcessorKind, SystemConfigSource, SystemConfigValueType};
+    use actix_web::ResponseError;
+    use chrono::Utc;
+    use image::{GenericImageView, ImageFormat, Rgb, RgbImage};
+    use std::io::Cursor;
+
+    fn config_model(key: &str, value: &str) -> system_config::Model {
+        system_config::Model {
+            id: 0,
+            key: key.to_string(),
+            value: value.to_string(),
+            value_type: SystemConfigValueType::String,
+            requires_restart: false,
+            is_sensitive: false,
+            source: SystemConfigSource::System,
+            namespace: String::new(),
+            category: "test".to_string(),
+            description: "test".to_string(),
+            updated_at: Utc::now(),
+            updated_by: None,
+        }
+    }
+
+    fn sample_avatar_png(width: u32, height: u32) -> Vec<u8> {
+        let image =
+            image::DynamicImage::ImageRgb8(RgbImage::from_pixel(width, height, Rgb([255, 0, 0])));
+        let mut buf = Cursor::new(Vec::new());
+        image.write_to(&mut buf, ImageFormat::Png).unwrap();
+        buf.into_inner()
+    }
 
     #[test]
     fn known_thumbnail_cache_paths_include_current_and_legacy_namespaces() {
@@ -849,5 +1138,82 @@ mod tests {
     fn command_is_available_rejects_blank_command() {
         assert!(!command_is_available(""));
         assert!(!command_is_available("   "));
+    }
+
+    #[test]
+    fn generate_avatar_variants_generates_expected_webp_variants() {
+        let processed = generate_avatar_variants(sample_avatar_png(8, 4)).unwrap();
+        let small = image::load_from_memory(&processed.small_bytes).unwrap();
+        let large = image::load_from_memory(&processed.large_bytes).unwrap();
+
+        assert_eq!(small.dimensions(), (512, 512));
+        assert_eq!(large.dimensions(), (1024, 1024));
+    }
+
+    #[test]
+    fn generate_avatar_variants_rejects_invalid_image_bytes() {
+        let error = generate_avatar_variants(b"not-an-image".to_vec()).unwrap_err();
+        assert_eq!(error.status_code().as_u16(), 400);
+    }
+
+    #[test]
+    fn resolve_avatar_processor_uses_images_by_default() {
+        let runtime_config = RuntimeConfig::new();
+        let processor = resolve_avatar_processor(&runtime_config, "avatar.png").unwrap();
+        assert_eq!(processor.kind(), MediaProcessorKind::Images);
+    }
+
+    #[test]
+    fn resolve_avatar_processor_uses_vips_when_enabled_and_extension_matches() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(
+            MEDIA_PROCESSING_REGISTRY_JSON_KEY,
+            r#"{
+                "version": 1,
+                "processors": [
+                    {
+                        "kind": "vips_cli",
+                        "enabled": true,
+                        "extensions": ["heic"],
+                        "config": {
+                            "command": "/bin/sh"
+                        }
+                    },
+                    {
+                        "kind": "images",
+                        "enabled": true
+                    }
+                ]
+            }"#,
+        ));
+        let processor = resolve_avatar_processor(&runtime_config, "avatar.heic").unwrap();
+        assert_eq!(processor.kind(), MediaProcessorKind::VipsCli);
+    }
+
+    #[test]
+    fn resolve_avatar_processor_falls_back_to_images_when_vips_command_is_unavailable() {
+        let runtime_config = RuntimeConfig::new();
+        runtime_config.apply(config_model(
+            MEDIA_PROCESSING_REGISTRY_JSON_KEY,
+            r#"{
+                "version": 1,
+                "processors": [
+                    {
+                        "kind": "vips_cli",
+                        "enabled": true,
+                        "extensions": ["png"],
+                        "config": {
+                            "command": "definitely-missing-vips-cli"
+                        }
+                    },
+                    {
+                        "kind": "images",
+                        "enabled": true
+                    }
+                ]
+            }"#,
+        ));
+        let processor = resolve_avatar_processor(&runtime_config, "avatar.png").unwrap();
+        assert_eq!(processor.kind(), MediaProcessorKind::Images);
     }
 }
