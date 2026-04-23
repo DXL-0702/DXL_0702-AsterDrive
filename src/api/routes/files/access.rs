@@ -457,6 +457,7 @@ pub(crate) fn thumbnail_response(
 ) -> HttpResponse {
     let etag_value = media_processing_service::thumbnail_etag_value_for(
         &result.blob_hash,
+        result.thumbnail_processor.as_deref(),
         result.thumbnail_version.as_deref(),
     );
     let etag = format!("\"{etag_value}\"");

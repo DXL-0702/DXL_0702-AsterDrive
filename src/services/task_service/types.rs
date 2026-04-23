@@ -126,6 +126,7 @@ pub struct RuntimeTaskResult {
 pub struct ThumbnailGenerateTaskResult {
     pub blob_id: i64,
     pub thumbnail_path: String,
+    pub thumbnail_processor: String,
     pub thumbnail_version: String,
     pub processor: crate::types::MediaProcessorKind,
     pub reused_existing_thumbnail: bool,

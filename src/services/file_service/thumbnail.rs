@@ -23,6 +23,7 @@ fn map_thumbnail_precondition(message: String) -> AsterError {
 pub struct ThumbnailResult {
     pub data: Vec<u8>,
     pub blob_hash: String,
+    pub thumbnail_processor: Option<String>,
     pub thumbnail_version: Option<String>,
 }
 
@@ -46,6 +47,7 @@ pub(crate) async fn get_thumbnail_data_in_scope(
         Some(thumbnail) => Ok(Some(ThumbnailResult {
             data: thumbnail.data,
             blob_hash: blob.hash,
+            thumbnail_processor: Some(thumbnail.thumbnail_processor),
             thumbnail_version: Some(thumbnail.thumbnail_version),
         })),
         None => {

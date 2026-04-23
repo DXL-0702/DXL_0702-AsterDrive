@@ -535,6 +535,7 @@ mod tests {
             policy_id: Set(policy.id),
             storage_path: Set(format!("files/{}", uuid::Uuid::new_v4())),
             thumbnail_path: Set(None),
+            thumbnail_processor: Set(None),
             thumbnail_version: Set(None),
             ref_count: Set(1),
             created_at: Set(now),

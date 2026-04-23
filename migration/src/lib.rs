@@ -56,6 +56,7 @@ mod m20260417_000001_add_background_task_heartbeat;
 mod m20260417_000002_add_file_blob_thumbnail_metadata;
 mod m20260420_000001_create_auth_sessions;
 mod m20260420_000002_create_remote_nodes;
+mod m20260424_000001_normalize_thumbnail_metadata;
 mod search_acceleration;
 mod time;
 
@@ -117,6 +118,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260417_000002_add_file_blob_thumbnail_metadata::Migration),
             Box::new(m20260420_000001_create_auth_sessions::Migration),
             Box::new(m20260420_000002_create_remote_nodes::Migration),
+            Box::new(m20260424_000001_normalize_thumbnail_metadata::Migration),
         ]
     }
 }

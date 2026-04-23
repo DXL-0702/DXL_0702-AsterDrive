@@ -140,11 +140,9 @@ fn join_pipe_reader(
     }
 }
 
-pub(crate) const FFMPEG_CLI_THUMBNAIL_VERSION: &str = "ffmpeg-cli-v1";
-pub(crate) const LEGACY_IMAGES_V2_THUMBNAIL_VERSION: &str = "v2";
-pub(crate) const LEGACY_UNVERSIONED_THUMBNAIL_NAMESPACE: &str = "_thumb";
-pub(crate) const VIPS_CLI_THUMBNAIL_VERSION: &str = "vips-cli-v1";
-pub(crate) const STORAGE_NATIVE_THUMBNAIL_VERSION: &str = "storage-native-v1";
+pub(crate) const FFMPEG_CLI_THUMBNAIL_PROCESSOR_NAMESPACE: &str = "ffmpeg-cli";
+pub(crate) const STORAGE_NATIVE_THUMBNAIL_PROCESSOR_NAMESPACE: &str = "storage-native";
+pub(crate) const VIPS_CLI_THUMBNAIL_PROCESSOR_NAMESPACE: &str = "vips-cli";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MediaOperation {
@@ -198,20 +196,25 @@ impl ResolvedMediaProcessor {
             .unwrap_or(media_processing_config::DEFAULT_FFMPEG_COMMAND)
     }
 
-    pub(crate) fn thumbnail_version(&self) -> &'static str {
+    pub(crate) fn thumbnail_processor(&self) -> &'static str {
         match self.kind {
             MediaProcessorKind::Images => {
-                crate::services::thumbnail_service::CURRENT_IMAGES_THUMBNAIL_VERSION
+                crate::services::thumbnail_service::IMAGES_THUMBNAIL_PROCESSOR_NAMESPACE
             }
-            MediaProcessorKind::VipsCli => VIPS_CLI_THUMBNAIL_VERSION,
-            MediaProcessorKind::FfmpegCli => FFMPEG_CLI_THUMBNAIL_VERSION,
-            MediaProcessorKind::StorageNative => STORAGE_NATIVE_THUMBNAIL_VERSION,
+            MediaProcessorKind::VipsCli => VIPS_CLI_THUMBNAIL_PROCESSOR_NAMESPACE,
+            MediaProcessorKind::FfmpegCli => FFMPEG_CLI_THUMBNAIL_PROCESSOR_NAMESPACE,
+            MediaProcessorKind::StorageNative => STORAGE_NATIVE_THUMBNAIL_PROCESSOR_NAMESPACE,
         }
     }
 
+    pub(crate) fn thumbnail_version(&self) -> &'static str {
+        crate::services::thumbnail_service::CURRENT_THUMBNAIL_VERSION
+    }
+
     pub(crate) fn cache_path(&self, blob_hash: &str) -> String {
-        crate::services::thumbnail_service::thumb_path_for_version(
+        crate::services::thumbnail_service::thumb_path_for(
             blob_hash,
+            self.thumbnail_processor(),
             self.thumbnail_version(),
         )
     }
@@ -219,11 +222,13 @@ impl ResolvedMediaProcessor {
 
 pub struct ThumbnailData {
     pub data: Vec<u8>,
+    pub thumbnail_processor: String,
     pub thumbnail_version: String,
 }
 
 pub struct StoredThumbnail {
     pub thumbnail_path: String,
+    pub thumbnail_processor: String,
     pub thumbnail_version: String,
     pub reused_existing_thumbnail: bool,
 }
@@ -239,41 +244,36 @@ pub(crate) struct ThumbnailContext {
     pub(crate) processor: ResolvedMediaProcessor,
 }
 
-pub fn thumbnail_etag_value_for(blob_hash: &str, thumbnail_version: Option<&str>) -> String {
-    crate::services::thumbnail_service::thumbnail_etag_value_for(blob_hash, thumbnail_version)
+pub fn thumbnail_etag_value_for(
+    blob_hash: &str,
+    thumbnail_processor: Option<&str>,
+    thumbnail_version: Option<&str>,
+) -> String {
+    crate::services::thumbnail_service::thumbnail_etag_value_for(
+        blob_hash,
+        thumbnail_processor,
+        thumbnail_version,
+    )
 }
 
 pub(crate) fn known_thumbnail_cache_paths(blob_hash: &str) -> Vec<String> {
-    vec![
-        legacy_unversioned_thumbnail_path(blob_hash),
-        crate::services::thumbnail_service::thumb_path(blob_hash),
-        crate::services::thumbnail_service::thumb_path_for_version(
-            blob_hash,
-            LEGACY_IMAGES_V2_THUMBNAIL_VERSION,
-        ),
-        crate::services::thumbnail_service::thumb_path_for_version(
-            blob_hash,
-            VIPS_CLI_THUMBNAIL_VERSION,
-        ),
-        crate::services::thumbnail_service::thumb_path_for_version(
-            blob_hash,
-            FFMPEG_CLI_THUMBNAIL_VERSION,
-        ),
-        crate::services::thumbnail_service::thumb_path_for_version(
-            blob_hash,
-            STORAGE_NATIVE_THUMBNAIL_VERSION,
-        ),
-    ]
-}
-
-fn legacy_unversioned_thumbnail_path(blob_hash: &str) -> String {
-    format!(
-        "{}/{}/{}/{}.webp",
-        LEGACY_UNVERSIONED_THUMBNAIL_NAMESPACE,
-        &blob_hash[..2],
-        &blob_hash[2..4],
-        blob_hash
-    )
+    let mut paths = vec![crate::services::thumbnail_service::thumb_path(blob_hash)];
+    paths.extend(
+        [
+            VIPS_CLI_THUMBNAIL_PROCESSOR_NAMESPACE,
+            FFMPEG_CLI_THUMBNAIL_PROCESSOR_NAMESPACE,
+            STORAGE_NATIVE_THUMBNAIL_PROCESSOR_NAMESPACE,
+        ]
+        .into_iter()
+        .map(|thumbnail_processor| {
+            crate::services::thumbnail_service::thumb_path_for(
+                blob_hash,
+                thumbnail_processor,
+                crate::services::thumbnail_service::CURRENT_THUMBNAIL_VERSION,
+            )
+        }),
+    );
+    paths
 }
 
 pub(crate) fn requires_server_side_source_limit(processor: &ResolvedMediaProcessor) -> bool {
@@ -300,28 +300,39 @@ fn infer_extension_from_mime(source_mime_type: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        LEGACY_IMAGES_V2_THUMBNAIL_VERSION, MAX_CLI_OUTPUT_BYTES, join_pipe_reader,
-        known_thumbnail_cache_paths, legacy_unversioned_thumbnail_path, spawn_pipe_reader,
+        FFMPEG_CLI_THUMBNAIL_PROCESSOR_NAMESPACE, MAX_CLI_OUTPUT_BYTES,
+        STORAGE_NATIVE_THUMBNAIL_PROCESSOR_NAMESPACE, VIPS_CLI_THUMBNAIL_PROCESSOR_NAMESPACE,
+        join_pipe_reader, known_thumbnail_cache_paths, spawn_pipe_reader,
     };
     use std::io::Cursor;
 
     const HASH: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     #[test]
-    fn known_thumbnail_cache_paths_include_legacy_paths() {
+    fn known_thumbnail_cache_paths_include_normalized_namespaces() {
         let paths = known_thumbnail_cache_paths(HASH);
 
-        assert!(
-            paths
-                .iter()
-                .any(|path| path == &legacy_unversioned_thumbnail_path(HASH))
+        assert_eq!(
+            paths,
+            vec![
+                crate::services::thumbnail_service::thumb_path(HASH),
+                crate::services::thumbnail_service::thumb_path_for(
+                    HASH,
+                    VIPS_CLI_THUMBNAIL_PROCESSOR_NAMESPACE,
+                    crate::services::thumbnail_service::CURRENT_THUMBNAIL_VERSION,
+                ),
+                crate::services::thumbnail_service::thumb_path_for(
+                    HASH,
+                    FFMPEG_CLI_THUMBNAIL_PROCESSOR_NAMESPACE,
+                    crate::services::thumbnail_service::CURRENT_THUMBNAIL_VERSION,
+                ),
+                crate::services::thumbnail_service::thumb_path_for(
+                    HASH,
+                    STORAGE_NATIVE_THUMBNAIL_PROCESSOR_NAMESPACE,
+                    crate::services::thumbnail_service::CURRENT_THUMBNAIL_VERSION,
+                ),
+            ]
         );
-        assert!(paths.iter().any(|path| {
-            path == &crate::services::thumbnail_service::thumb_path_for_version(
-                HASH,
-                LEGACY_IMAGES_V2_THUMBNAIL_VERSION,
-            )
-        }));
     }
 
     #[test]

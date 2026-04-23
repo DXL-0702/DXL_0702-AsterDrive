@@ -4625,6 +4625,7 @@ export interface components {
             processor: components["schemas"]["MediaProcessorKind"];
             reused_existing_thumbnail: boolean;
             thumbnail_path: string;
+            thumbnail_processor: string;
             thumbnail_version: string;
         };
         TrashContents: {
@@ -10308,7 +10309,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description File not found */
+            /** @description File not found or thumbnail unavailable */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -10322,7 +10323,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Thumbnail generation failed */
+            /** @description Unexpected thumbnail generation failure */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -11605,7 +11606,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Share or file not found */
+            /** @description Share or file not found, or thumbnail unavailable */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -11619,7 +11620,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Thumbnail generation failed */
+            /** @description Unexpected thumbnail generation failure */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -11780,7 +11781,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Share or file not found */
+            /** @description Share or file not found, or thumbnail unavailable */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -11794,7 +11795,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Thumbnail generation failed */
+            /** @description Unexpected thumbnail generation failure */
             500: {
                 headers: {
                     [name: string]: unknown;
@@ -14657,7 +14658,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description File not found */
+            /** @description File not found or thumbnail unavailable */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -14671,7 +14672,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description Thumbnail generation failed */
+            /** @description Unexpected thumbnail generation failure */
             500: {
                 headers: {
                     [name: string]: unknown;

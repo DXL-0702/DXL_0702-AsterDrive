@@ -586,6 +586,7 @@ mod tests {
             policy_id: Set(policy_id),
             storage_path: Set(storage_path.to_string()),
             thumbnail_path: Set(None),
+            thumbnail_processor: Set(None),
             thumbnail_version: Set(None),
             ref_count: Set(ref_count),
             created_at: Set(now),

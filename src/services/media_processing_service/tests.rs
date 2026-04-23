@@ -44,18 +44,16 @@ fn available_test_command() -> String {
 }
 
 #[test]
-fn known_thumbnail_cache_paths_include_current_and_legacy_namespaces() {
+fn known_thumbnail_cache_paths_include_normalized_namespaces() {
     let hash = "abc".repeat(21) + "a";
     let paths = known_thumbnail_cache_paths(&hash);
     assert_eq!(
         paths,
         vec![
-            format!("_thumb/ab/ca/{hash}.webp"),
-            format!("_thumb/images-v1/ab/ca/{hash}.webp"),
-            format!("_thumb/v2/ab/ca/{hash}.webp"),
-            format!("_thumb/vips-cli-v1/ab/ca/{hash}.webp"),
-            format!("_thumb/ffmpeg-cli-v1/ab/ca/{hash}.webp"),
-            format!("_thumb/storage-native-v1/ab/ca/{hash}.webp"),
+            format!("_thumb/images/1/ab/ca/{hash}.webp"),
+            format!("_thumb/vips-cli/1/ab/ca/{hash}.webp"),
+            format!("_thumb/ffmpeg-cli/1/ab/ca/{hash}.webp"),
+            format!("_thumb/storage-native/1/ab/ca/{hash}.webp"),
         ]
     );
 }

@@ -156,7 +156,7 @@ async fn store_test_file(
 
 fn thumb_path(blob_hash: &str) -> String {
     format!(
-        "_thumb/{}/{}/{}.webp",
+        "_thumb/images/1/{}/{}/{}.webp",
         &blob_hash[..2],
         &blob_hash[2..4],
         blob_hash
@@ -165,7 +165,7 @@ fn thumb_path(blob_hash: &str) -> String {
 
 fn current_thumb_path(blob_hash: &str) -> String {
     format!(
-        "_thumb/images-v1/{}/{}/{}.webp",
+        "_thumb/images/1/{}/{}/{}.webp",
         &blob_hash[..2],
         &blob_hash[2..4],
         blob_hash

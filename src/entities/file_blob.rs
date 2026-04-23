@@ -13,6 +13,7 @@ pub struct Model {
     pub policy_id: i64,
     pub storage_path: String,
     pub thumbnail_path: Option<String>,
+    pub thumbnail_processor: Option<String>,
     pub thumbnail_version: Option<String>,
     pub ref_count: i32,
     pub created_at: DateTimeUtc,

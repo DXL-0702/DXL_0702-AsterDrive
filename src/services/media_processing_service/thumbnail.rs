@@ -107,6 +107,7 @@ pub async fn get_or_generate_thumbnail(
         return Ok(data);
     }
 
+    let thumbnail_processor = ctx.processor.thumbnail_processor().to_string();
     let thumbnail_version = ctx.processor.thumbnail_version().to_string();
     let thumbnail_path = ctx.processor.cache_path(&blob.hash);
     let webp_bytes = render_thumbnail_bytes(
@@ -121,9 +122,14 @@ pub async fn get_or_generate_thumbnail(
 
     if let Err(error) = ctx.driver.put(&thumbnail_path, &webp_bytes).await {
         tracing::warn!("failed to store thumbnail {thumbnail_path}: {error}");
-    } else if let Err(error) =
-        file_repo::set_thumbnail_metadata(&state.db, blob.id, &thumbnail_path, &thumbnail_version)
-            .await
+    } else if let Err(error) = file_repo::set_thumbnail_metadata(
+        &state.db,
+        blob.id,
+        &thumbnail_path,
+        &thumbnail_processor,
+        &thumbnail_version,
+    )
+    .await
     {
         tracing::warn!(
             blob_id = blob.id,
@@ -134,6 +140,7 @@ pub async fn get_or_generate_thumbnail(
 
     Ok(ThumbnailData {
         data: webp_bytes,
+        thumbnail_processor,
         thumbnail_version,
     })
 }
@@ -200,21 +207,28 @@ async fn load_thumbnail_if_exists_with_context(
         )?;
     }
 
+    let expected_processor = ctx.processor.thumbnail_processor();
     let expected_version = ctx.processor.thumbnail_version();
-    if blob.thumbnail_version.as_deref() != Some(expected_version)
-        && (blob.thumbnail_path.is_some() || blob.thumbnail_version.is_some())
+    if (blob.thumbnail_processor.as_deref() != Some(expected_processor)
+        || blob.thumbnail_version.as_deref() != Some(expected_version))
+        && (blob.thumbnail_path.is_some()
+            || blob.thumbnail_processor.is_some()
+            || blob.thumbnail_version.is_some())
     {
         tracing::debug!(
             blob_id = blob.id,
             processor = ctx.processor.kind().as_str(),
+            persisted_thumbnail_processor = blob.thumbnail_processor.as_deref(),
             persisted_thumbnail_version = blob.thumbnail_version.as_deref(),
+            expected_thumbnail_processor = expected_processor,
             expected_thumbnail_version = expected_version,
             "clearing stale thumbnail metadata before loading"
         );
         clear_thumbnail_metadata(state, blob).await;
     }
 
-    if blob.thumbnail_version.as_deref() == Some(expected_version)
+    if blob.thumbnail_processor.as_deref() == Some(expected_processor)
+        && blob.thumbnail_version.as_deref() == Some(expected_version)
         && let Some(path) = blob.thumbnail_path.as_deref()
         && let Some(data) = load_thumbnail_from_path(state, blob, &ctx.driver, path, true).await?
     {
@@ -222,12 +236,14 @@ async fn load_thumbnail_if_exists_with_context(
             blob_id = blob.id,
             processor = ctx.processor.kind().as_str(),
             thumbnail_path = path,
+            thumbnail_processor = expected_processor,
             thumbnail_version = expected_version,
             cache_source = "persisted_metadata",
             "thumbnail cache hit"
         );
         return Ok(Some(ThumbnailData {
             data,
+            thumbnail_processor: expected_processor.to_string(),
             thumbnail_version: expected_version.to_string(),
         }));
     }
@@ -240,13 +256,22 @@ async fn load_thumbnail_if_exists_with_context(
             blob_id = blob.id,
             processor = ctx.processor.kind().as_str(),
             thumbnail_path = expected_path,
+            thumbnail_processor = expected_processor,
             thumbnail_version = expected_version,
             cache_source = "computed_path",
             "thumbnail cache hit"
         );
-        persist_thumbnail_metadata(state, blob, &expected_path, expected_version).await;
+        persist_thumbnail_metadata(
+            state,
+            blob,
+            &expected_path,
+            expected_processor,
+            expected_version,
+        )
+        .await;
         return Ok(Some(ThumbnailData {
             data,
+            thumbnail_processor: expected_processor.to_string(),
             thumbnail_version: expected_version.to_string(),
         }));
     }
@@ -270,17 +295,20 @@ async fn generate_and_store_with_context(
         );
         return Ok(StoredThumbnail {
             thumbnail_path: ctx.processor.cache_path(&blob.hash),
+            thumbnail_processor: existing.thumbnail_processor,
             thumbnail_version: existing.thumbnail_version,
             reused_existing_thumbnail: true,
         });
     }
 
+    let thumbnail_processor = ctx.processor.thumbnail_processor().to_string();
     let thumbnail_version = ctx.processor.thumbnail_version().to_string();
     let thumbnail_path = ctx.processor.cache_path(&blob.hash);
     tracing::debug!(
         blob_id = blob.id,
         processor = ctx.processor.kind().as_str(),
         thumbnail_path,
+        thumbnail_processor,
         thumbnail_version,
         "rendering thumbnail because cache miss"
     );
@@ -294,12 +322,20 @@ async fn generate_and_store_with_context(
     )
     .await?;
     let stored_path = ctx.driver.put(&thumbnail_path, &webp_bytes).await?;
-    file_repo::set_thumbnail_metadata(&state.db, blob.id, &stored_path, &thumbnail_version).await?;
+    file_repo::set_thumbnail_metadata(
+        &state.db,
+        blob.id,
+        &stored_path,
+        &thumbnail_processor,
+        &thumbnail_version,
+    )
+    .await?;
 
     tracing::debug!(
         blob_id = blob.id,
         processor = ctx.processor.kind().as_str(),
         stored_path,
+        thumbnail_processor,
         thumbnail_version,
         bytes = webp_bytes.len(),
         "thumbnail rendered and stored"
@@ -307,6 +343,7 @@ async fn generate_and_store_with_context(
 
     Ok(StoredThumbnail {
         thumbnail_path: stored_path,
+        thumbnail_processor,
         thumbnail_version,
         reused_existing_thumbnail: false,
     })
@@ -727,9 +764,12 @@ async fn persist_thumbnail_metadata(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
     path: &str,
+    processor: &str,
     version: &str,
 ) {
-    if let Err(error) = file_repo::set_thumbnail_metadata(&state.db, blob.id, path, version).await {
+    if let Err(error) =
+        file_repo::set_thumbnail_metadata(&state.db, blob.id, path, processor, version).await
+    {
         tracing::warn!(
             blob_id = blob.id,
             path,

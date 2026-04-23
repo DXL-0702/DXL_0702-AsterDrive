@@ -331,6 +331,7 @@ pub async fn get_shared_thumbnail(
     Ok(file_service::ThumbnailResult {
         data: thumbnail.data,
         blob_hash: blob.hash,
+        thumbnail_processor: Some(thumbnail.thumbnail_processor),
         thumbnail_version: Some(thumbnail.thumbnail_version),
     })
 }
@@ -359,6 +360,7 @@ pub async fn get_shared_folder_file_thumbnail(
     Ok(file_service::ThumbnailResult {
         data: thumbnail.data,
         blob_hash: blob.hash,
+        thumbnail_processor: Some(thumbnail.thumbnail_processor),
         thumbnail_version: Some(thumbnail.thumbnail_version),
     })
 }

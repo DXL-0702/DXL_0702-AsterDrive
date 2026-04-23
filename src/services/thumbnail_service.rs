@@ -12,30 +12,45 @@ use crate::storage::StorageDriver;
 
 const THUMB_MAX_DIM: u32 = 200;
 const THUMB_PREFIX: &str = "_thumb";
-pub(crate) const CURRENT_IMAGES_THUMBNAIL_VERSION: &str = "images-v1";
+pub(crate) const CURRENT_THUMBNAIL_VERSION: &str = "1";
+pub(crate) const IMAGES_THUMBNAIL_PROCESSOR_NAMESPACE: &str = "images";
 /// 单次解码最大内存分配（防止恶意/超大图 OOM）
 const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
 
 /// 计算缩略图在存储驱动中的路径
 pub(crate) fn thumb_path(blob_hash: &str) -> String {
-    thumb_path_for_version(blob_hash, CURRENT_IMAGES_THUMBNAIL_VERSION)
+    thumb_path_for(
+        blob_hash,
+        IMAGES_THUMBNAIL_PROCESSOR_NAMESPACE,
+        CURRENT_THUMBNAIL_VERSION,
+    )
 }
 
-pub(crate) fn thumb_path_for_version(blob_hash: &str, version: &str) -> String {
+pub(crate) fn thumb_path_for(
+    blob_hash: &str,
+    thumbnail_processor: &str,
+    thumbnail_version: &str,
+) -> String {
     format!(
-        "{}/{}/{}/{}/{}.webp",
+        "{}/{}/{}/{}/{}/{}.webp",
         THUMB_PREFIX,
-        version,
+        thumbnail_processor,
+        thumbnail_version,
         &blob_hash[..2],
         &blob_hash[2..4],
         blob_hash
     )
 }
 
-pub(crate) fn thumbnail_etag_value_for(blob_hash: &str, thumbnail_version: Option<&str>) -> String {
+pub(crate) fn thumbnail_etag_value_for(
+    blob_hash: &str,
+    thumbnail_processor: Option<&str>,
+    thumbnail_version: Option<&str>,
+) -> String {
     format!(
-        "thumb-{}-{blob_hash}",
-        thumbnail_version.unwrap_or(CURRENT_IMAGES_THUMBNAIL_VERSION)
+        "thumb-{}-{}-{blob_hash}",
+        thumbnail_processor.unwrap_or(IMAGES_THUMBNAIL_PROCESSOR_NAMESPACE),
+        thumbnail_version.unwrap_or(CURRENT_THUMBNAIL_VERSION)
     )
 }
 
@@ -128,6 +143,7 @@ mod tests {
             policy_id: 1,
             storage_path: "files/test".to_string(),
             thumbnail_path: None,
+            thumbnail_processor: None,
             thumbnail_version: None,
             ref_count: 1,
             created_at: Utc::now(),
@@ -166,7 +182,7 @@ mod tests {
         let hash = "abc".repeat(21) + "a";
         assert_eq!(
             thumb_path(&hash),
-            format!("_thumb/images-v1/ab/ca/{hash}.webp")
+            format!("_thumb/images/1/ab/ca/{hash}.webp")
         );
     }
 
@@ -174,17 +190,17 @@ mod tests {
     fn thumbnail_etag_uses_thumbnail_version_namespace() {
         let hash = "abc".repeat(21) + "a";
         assert_eq!(
-            thumbnail_etag_value_for(&hash, None),
-            format!("thumb-images-v1-{hash}")
+            thumbnail_etag_value_for(&hash, None, None),
+            format!("thumb-images-1-{hash}")
         );
     }
 
     #[test]
-    fn thumbnail_etag_can_use_persisted_thumbnail_version() {
+    fn thumbnail_etag_can_use_persisted_processor_and_version() {
         let hash = "abc".repeat(21) + "a";
         assert_eq!(
-            thumbnail_etag_value_for(&hash, Some("v3")),
-            format!("thumb-v3-{hash}")
+            thumbnail_etag_value_for(&hash, Some("vips-cli"), Some("7")),
+            format!("thumb-vips-cli-7-{hash}")
         );
     }
 }

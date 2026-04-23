@@ -197,6 +197,7 @@ pub(super) async fn process_thumbnail_generate_task(
         blob_id = blob.id,
         processor = payload.processor.as_str(),
         reused_existing_thumbnail = stored.reused_existing_thumbnail,
+        thumbnail_processor = stored.thumbnail_processor,
         thumbnail_version = stored.thumbnail_version,
         thumbnail_path = stored.thumbnail_path,
         "thumbnail background task completed render phase"
@@ -234,6 +235,7 @@ pub(super) async fn process_thumbnail_generate_task(
     let result_json = serialize_task_result(&ThumbnailGenerateTaskResult {
         blob_id: blob.id,
         thumbnail_path: stored.thumbnail_path.clone(),
+        thumbnail_processor: stored.thumbnail_processor.clone(),
         thumbnail_version: stored.thumbnail_version.clone(),
         processor: payload.processor,
         reused_existing_thumbnail: stored.reused_existing_thumbnail,
