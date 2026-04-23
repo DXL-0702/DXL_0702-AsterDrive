@@ -1247,7 +1247,7 @@ mod tests {
 
     use super::{
         MediaProcessorKind, S3DownloadStrategy, S3UploadStrategy, StoragePolicyOptions,
-        parse_storage_policy_options,
+        parse_storage_policy_options, serialize_storage_policy_options,
     };
     use std::time::Duration;
 
@@ -1457,12 +1457,14 @@ mod tests {
         .unwrap();
         assert_eq!(json, r#"{"remote_upload_strategy":"presigned"}"#);
 
-        let json = serde_json::to_string(&StoragePolicyOptions {
-            thumbnail_processor: Some(MediaProcessorKind::StorageNative),
-            thumbnail_extensions: vec![".PNG".to_string(), "png".to_string()],
-            ..Default::default()
-        })
-        .unwrap();
+        let json = String::from(
+            serialize_storage_policy_options(&StoragePolicyOptions {
+                thumbnail_processor: Some(MediaProcessorKind::StorageNative),
+                thumbnail_extensions: vec![".PNG".to_string(), "png".to_string()],
+                ..Default::default()
+            })
+            .unwrap(),
+        );
         assert_eq!(
             json,
             r#"{"thumbnail_processor":"storage_native","thumbnail_extensions":["png"]}"#

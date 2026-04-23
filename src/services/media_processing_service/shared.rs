@@ -114,6 +114,7 @@ fn join_pipe_reader(
 
 pub(crate) const FFMPEG_CLI_THUMBNAIL_VERSION: &str = "ffmpeg-cli-v1";
 pub(crate) const LEGACY_IMAGES_V2_THUMBNAIL_VERSION: &str = "v2";
+pub(crate) const LEGACY_UNVERSIONED_THUMBNAIL_NAMESPACE: &str = "_thumb";
 pub(crate) const VIPS_CLI_THUMBNAIL_VERSION: &str = "vips-cli-v1";
 pub(crate) const STORAGE_NATIVE_THUMBNAIL_VERSION: &str = "storage-native-v1";
 
@@ -216,6 +217,7 @@ pub fn thumbnail_etag_value_for(blob_hash: &str, thumbnail_version: Option<&str>
 
 pub(crate) fn known_thumbnail_cache_paths(blob_hash: &str) -> Vec<String> {
     vec![
+        legacy_unversioned_thumbnail_path(blob_hash),
         crate::services::thumbnail_service::thumb_path(blob_hash),
         crate::services::thumbnail_service::thumb_path_for_version(
             blob_hash,
@@ -234,6 +236,16 @@ pub(crate) fn known_thumbnail_cache_paths(blob_hash: &str) -> Vec<String> {
             STORAGE_NATIVE_THUMBNAIL_VERSION,
         ),
     ]
+}
+
+fn legacy_unversioned_thumbnail_path(blob_hash: &str) -> String {
+    format!(
+        "{}/{}/{}/{}.webp",
+        LEGACY_UNVERSIONED_THUMBNAIL_NAMESPACE,
+        &blob_hash[..2],
+        &blob_hash[2..4],
+        blob_hash
+    )
 }
 
 pub(crate) fn requires_server_side_source_limit(processor: &ResolvedMediaProcessor) -> bool {
@@ -259,14 +271,22 @@ fn infer_extension_from_mime(source_mime_type: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{LEGACY_IMAGES_V2_THUMBNAIL_VERSION, known_thumbnail_cache_paths};
+    use super::{
+        LEGACY_IMAGES_V2_THUMBNAIL_VERSION, known_thumbnail_cache_paths,
+        legacy_unversioned_thumbnail_path,
+    };
 
     const HASH: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     #[test]
-    fn known_thumbnail_cache_paths_include_legacy_v2_path() {
+    fn known_thumbnail_cache_paths_include_legacy_paths() {
         let paths = known_thumbnail_cache_paths(HASH);
 
+        assert!(
+            paths
+                .iter()
+                .any(|path| path == &legacy_unversioned_thumbnail_path(HASH))
+        );
         assert!(paths.iter().any(|path| {
             path == &crate::services::thumbnail_service::thumb_path_for_version(
                 HASH,

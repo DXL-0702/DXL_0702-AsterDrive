@@ -157,7 +157,9 @@ describe("useBlobUrl", () => {
 
 		first.unmount();
 
-		const second = renderHook(() => useBlobUrl("/thumb", { lane: "thumbnail" }));
+		const second = renderHook(() =>
+			useBlobUrl("/thumb", { lane: "thumbnail" }),
+		);
 		await waitFor(() => {
 			expect(second.result.current.loading).toBe(false);
 		});
