@@ -52,8 +52,10 @@ describe("thumbnailSupportStore", () => {
 		expect(mockState.get).toHaveBeenCalledTimes(1);
 	});
 
-	it("can invalidate a failed bootstrap and force a refresh", async () => {
-		mockState.get.mockRejectedValueOnce(new Error("offline"));
+	it("keeps failed bootstraps retryable for the next ordinary load", async () => {
+		mockState.get
+			.mockRejectedValueOnce(new Error("offline"))
+			.mockResolvedValueOnce(supportConfig);
 
 		const { useThumbnailSupportStore } = await loadStore();
 
@@ -62,16 +64,9 @@ describe("thumbnailSupportStore", () => {
 		expect(mockState.get).toHaveBeenCalledTimes(1);
 		expect(mockState.warn).toHaveBeenCalledTimes(1);
 		expect(useThumbnailSupportStore.getState().config).toBeNull();
-		expect(useThumbnailSupportStore.getState().isLoaded).toBe(true);
-
-		useThumbnailSupportStore.getState().invalidate();
-
-		expect(useThumbnailSupportStore.getState().config).toBeNull();
 		expect(useThumbnailSupportStore.getState().isLoaded).toBe(false);
 
-		mockState.get.mockResolvedValueOnce(supportConfig);
-
-		await useThumbnailSupportStore.getState().load({ force: true });
+		await useThumbnailSupportStore.getState().load();
 
 		expect(mockState.get).toHaveBeenCalledTimes(2);
 		expect(useThumbnailSupportStore.getState().config).toEqual(supportConfig);

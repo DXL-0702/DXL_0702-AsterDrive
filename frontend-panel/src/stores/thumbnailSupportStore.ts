@@ -42,13 +42,13 @@ export const useThumbnailSupportStore = create<ThumbnailSupportState>(
 					});
 				} catch (error) {
 					logger.warn(
-						"thumbnail support bootstrap failed, using empty support list",
+						"thumbnail support bootstrap failed, keeping support list retryable",
 						error,
 					);
 					if (latestLoadToken !== loadToken) return;
 					set({
 						config: null,
-						isLoaded: true,
+						isLoaded: false,
 					});
 				} finally {
 					if (inFlightLoad === loadPromise) {

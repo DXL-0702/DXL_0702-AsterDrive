@@ -108,6 +108,35 @@ describe("useBlobUrl", () => {
 		clearBlobUrlCache();
 	});
 
+	it("keeps polling thumbnails after the first 202 retry window is exhausted", async () => {
+		for (let attempt = 0; attempt < 6; attempt += 1) {
+			mockState.get.mockResolvedValueOnce({
+				status: 202,
+				data: new Blob([]),
+				headers: { "retry-after": "0.001" },
+			});
+		}
+		mockState.get.mockResolvedValueOnce({
+			status: 200,
+			data: new Blob(["image"]),
+			headers: { etag: '"etag-202"' },
+		});
+		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
+
+		const { result } = renderHook(() =>
+			useBlobUrl("/thumb", { lane: "thumbnail" }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.get).toHaveBeenCalledTimes(7);
+		});
+		await waitFor(() => {
+			expect(result.current.blobUrl).toBe("blob:1");
+		});
+		expect(result.current.error).toBe(false);
+		clearBlobUrlCache();
+	});
+
 	it("exposes errors and allows retries after failures", async () => {
 		mockState.get
 			.mockRejectedValueOnce(new Error("fetch failed"))
