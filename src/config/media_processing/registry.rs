@@ -2,6 +2,8 @@ use std::collections::{BTreeSet, HashSet};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
 
 use crate::config::RuntimeConfig;
 use crate::errors::{AsterError, Result};
@@ -302,7 +304,43 @@ fn is_executable_file(path: &Path) -> bool {
 
 #[cfg(windows)]
 fn is_executable_file(path: &Path) -> bool {
-    path.is_file()
+    windows_executable_candidates(path)
+        .into_iter()
+        .any(|candidate| candidate.is_file())
+}
+
+#[cfg(windows)]
+fn windows_executable_candidates(path: &Path) -> Vec<PathBuf> {
+    let mut candidates = vec![path.to_path_buf()];
+    if path.extension().is_some() {
+        return candidates;
+    }
+
+    let base = path.as_os_str().to_os_string();
+    for extension in windows_pathext_values() {
+        let mut candidate = base.clone();
+        candidate.push(extension);
+        candidates.push(PathBuf::from(candidate));
+    }
+    candidates
+}
+
+#[cfg(windows)]
+fn windows_pathext_values() -> Vec<String> {
+    std::env::var_os("PATHEXT")
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".to_string())
+        .split(';')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            if value.starts_with('.') {
+                value.to_string()
+            } else {
+                format!(".{value}")
+            }
+        })
+        .collect()
 }
 
 fn parse_media_processing_registry_config(value: &str) -> Result<MediaProcessingRegistryConfig> {
@@ -371,8 +409,9 @@ fn validate_media_processing_registry_config(
                 processor.config.command = Some(normalized_command);
             }
             MediaProcessorKind::StorageNative => {
-                normalize_match_list(&mut processor.extensions)?;
-                processor.config = MediaProcessingProcessorRuntimeConfig::default();
+                return Err(AsterError::validation_error(
+                    "media processing config does not support 'storage_native'; use storage policy thumbnail options instead",
+                ));
             }
         }
 

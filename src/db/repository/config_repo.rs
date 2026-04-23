@@ -245,10 +245,17 @@ fn env_flag_enabled<F>(get_env: &F, name: &str) -> bool
 where
     F: Fn(&str) -> Option<String>,
 {
-    get_env(name)
-        .as_deref()
-        .and_then(parse_bool_like)
-        .unwrap_or(false)
+    let value = get_env(name);
+    match value.as_deref() {
+        Some(raw) => match parse_bool_like(raw) {
+            Some(parsed) => parsed,
+            None => {
+                tracing::warn!("invalid boolean for {}: {}", name, raw);
+                false
+            }
+        },
+        None => false,
+    }
 }
 
 fn parse_bool_like(value: &str) -> Option<bool> {
@@ -409,6 +416,25 @@ mod tests {
             ffmpeg.config.command.as_deref(),
             Some(media_processing::DEFAULT_FFMPEG_COMMAND)
         );
+    }
+
+    #[tokio::test]
+    async fn ensure_defaults_ignores_invalid_bootstrap_media_processor_flags() {
+        let db = setup_db().await;
+
+        ensure_defaults_with_env(&db, &|name| match name {
+            BOOTSTRAP_ENABLE_VIPS_CLI_ENV => Some("definitely".to_string()),
+            _ => None,
+        })
+        .await
+        .expect("ensure_defaults should succeed");
+
+        let config = media_processing_registry_config(&db).await;
+        let vips =
+            media_processing::processor_config_for_kind(&config, MediaProcessorKind::VipsCli)
+                .expect("vips config should exist");
+
+        assert!(!vips.enabled);
     }
 
     #[tokio::test]

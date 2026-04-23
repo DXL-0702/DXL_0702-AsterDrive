@@ -281,7 +281,7 @@ describe("AdminAuditPage", () => {
 				offset: 0,
 			});
 		});
-		expect(screen.getByText("report.pdf")).toBeInTheDocument();
+		expect(await screen.findByText("report.pdf")).toBeInTheDocument();
 		expect(screen.getByText("date:2026-03-28T00:00:00Z")).toBeInTheDocument();
 		expect(screen.getByText("entries:1/2/21")).toBeInTheDocument();
 
@@ -295,7 +295,9 @@ describe("AdminAuditPage", () => {
 				offset: 20,
 			});
 		});
-		expect(screen.getAllByText("---")).toHaveLength(2);
+		await waitFor(() => {
+			expect(screen.getAllByText("---")).toHaveLength(2);
+		});
 
 		fireEvent.change(screen.getByPlaceholderText("audit_filter_action"), {
 			target: { value: "file_delete" },
@@ -309,7 +311,7 @@ describe("AdminAuditPage", () => {
 				offset: 0,
 			});
 		});
-		expect(screen.getByText("file_delete")).toBeInTheDocument();
+		expect(await screen.findByText("file_delete")).toBeInTheDocument();
 
 		fireEvent.click(
 			screen.getAllByRole("button", { name: "select-folder" })[0],

@@ -36,6 +36,13 @@ fn sample_avatar_png(width: u32, height: u32) -> Vec<u8> {
     buf.into_inner()
 }
 
+fn available_test_command() -> String {
+    std::env::current_exe()
+        .expect("current test executable path should be available")
+        .to_string_lossy()
+        .into_owned()
+}
+
 #[test]
 fn known_thumbnail_cache_paths_include_current_and_legacy_namespaces() {
     let hash = "abc".repeat(21) + "a";
@@ -85,25 +92,27 @@ fn resolve_avatar_processor_uses_images_by_default() {
 #[test]
 fn resolve_avatar_processor_uses_vips_when_enabled_and_extension_matches() {
     let runtime_config = RuntimeConfig::new();
+    let command = available_test_command();
     runtime_config.apply(config_model(
         MEDIA_PROCESSING_REGISTRY_JSON_KEY,
-        r#"{
-                "version": 1,
-                "processors": [
-                    {
-                        "kind": "vips_cli",
-                        "enabled": true,
-                        "extensions": ["heic"],
-                        "config": {
-                            "command": "/bin/sh"
-                        }
+        &serde_json::json!({
+            "version": 1,
+            "processors": [
+                {
+                    "kind": "vips_cli",
+                    "enabled": true,
+                    "extensions": ["heic"],
+                    "config": {
+                        "command": command,
                     },
-                    {
-                        "kind": "images",
-                        "enabled": true
-                    }
-                ]
-            }"#,
+                },
+                {
+                    "kind": "images",
+                    "enabled": true,
+                },
+            ],
+        })
+        .to_string(),
     ));
     let processor = resolve_avatar_processor(&runtime_config, "avatar.heic").unwrap();
     assert_eq!(processor.kind(), MediaProcessorKind::VipsCli);

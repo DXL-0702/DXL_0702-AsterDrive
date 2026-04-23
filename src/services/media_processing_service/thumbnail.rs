@@ -174,7 +174,7 @@ pub async fn delete_thumbnail(state: &PrimaryAppState, blob: &file_blob::Model) 
     }
 
     for path in paths {
-        if driver.exists(&path).await.unwrap_or(false) {
+        if driver.exists(&path).await? {
             driver.delete(&path).await?;
         }
     }

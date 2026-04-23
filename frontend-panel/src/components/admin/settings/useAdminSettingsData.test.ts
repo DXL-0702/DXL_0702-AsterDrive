@@ -1,6 +1,10 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MEDIA_PROCESSING_CONFIG_KEY } from "@/components/admin/mediaProcessingConfigEditorShared";
+import {
+	MEDIA_PROCESSING_CONFIG_KEY,
+	MEDIA_PROCESSING_CONFIG_VERSION,
+	type MediaProcessingEditorConfig,
+} from "@/components/admin/mediaProcessingConfigEditorShared";
 import {
 	PREVIEW_APP_PROTECTED_BUILTIN_KEYS,
 	PREVIEW_APPS_CONFIG_KEY,
@@ -126,30 +130,33 @@ function createValidPreviewAppsConfig(
 }
 
 function createValidMediaProcessingConfig(
-	overrides: Partial<Record<"processors" | "version", unknown>> = {},
+	overrides: Partial<
+		Pick<MediaProcessingEditorConfig, "processors" | "version">
+	> = {},
 ) {
-	return JSON.stringify(
-		{
-			version: 1,
-			processors: [
-				{
-					enabled: false,
-					extensions: ["heic", "heif"],
-					kind: "vips_cli",
-					config: {
-						command: "vips",
-					},
+	const config: MediaProcessingEditorConfig = {
+		version: overrides.version ?? MEDIA_PROCESSING_CONFIG_VERSION,
+		processors: overrides.processors ?? [
+			{
+				config: {
+					command: "vips",
 				},
-				{
-					enabled: true,
-					kind: "images",
+				enabled: false,
+				extensions: ["heic", "heif"],
+				kind: "vips_cli",
+			},
+			{
+				config: {
+					command: "",
 				},
-			],
-			...overrides,
-		},
-		null,
-		2,
-	);
+				enabled: true,
+				extensions: [],
+				kind: "images",
+			},
+		],
+	};
+
+	return JSON.stringify(config, null, 2);
 }
 
 function createBaseConfigs() {
@@ -455,15 +462,19 @@ describe("useAdminSettingsData", () => {
 		const nextMediaProcessingValue = createValidMediaProcessingConfig({
 			processors: [
 				{
-					enabled: true,
-					extensions: ["heic", "avif"],
-					kind: "vips_cli",
 					config: {
 						command: "/usr/local/bin/vips",
 					},
+					enabled: true,
+					extensions: ["heic", "avif"],
+					kind: "vips_cli",
 				},
 				{
+					config: {
+						command: "",
+					},
 					enabled: true,
+					extensions: [],
 					kind: "images",
 				},
 			],
@@ -530,6 +541,35 @@ describe("useAdminSettingsData", () => {
 		expect(
 			result.current.visibleCustomConfigs.map((config) => config.key),
 		).toEqual(["custom.accent"]);
+	});
+
+	it("does not reload public config stores when only public_site_url changes", async () => {
+		const { onPublicSiteUrlChanged, result } = renderUseAdminSettingsData();
+
+		await waitFor(() => expect(result.current.loading).toBe(false));
+
+		act(() => {
+			result.current.updateDraftValue(
+				"public_site_url",
+				"https://only-public.example.com",
+			);
+		});
+
+		await act(async () => {
+			await result.current.handleSaveAll();
+		});
+
+		expect(mockState.setConfig).toHaveBeenCalledWith(
+			"public_site_url",
+			"https://only-public.example.com",
+		);
+		expect(onPublicSiteUrlChanged).toHaveBeenCalledWith(
+			"https://only-public.example.com",
+		);
+		expect(mockState.previewInvalidate).not.toHaveBeenCalled();
+		expect(mockState.previewLoad).not.toHaveBeenCalled();
+		expect(mockState.thumbnailSupportInvalidate).not.toHaveBeenCalled();
+		expect(mockState.thumbnailSupportLoad).not.toHaveBeenCalled();
 	});
 
 	it("reloads configs after save failure and reports the error", async () => {

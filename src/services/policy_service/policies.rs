@@ -40,6 +40,10 @@ fn ensure_storage_native_thumbnail_supported(
         return Ok(());
     }
 
+    if crate::storage::driver_type_supports_native_thumbnail(connection.driver_type) {
+        return Ok(());
+    }
+
     Err(AsterError::validation_error(format!(
         "storage policy driver '{}' does not expose storage-native thumbnail processing",
         driver_type_name(connection.driver_type),

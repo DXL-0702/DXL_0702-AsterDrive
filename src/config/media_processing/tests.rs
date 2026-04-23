@@ -33,6 +33,13 @@ fn config_model(key: &str, value: &str) -> system_config::Model {
     }
 }
 
+fn available_test_command() -> String {
+    std::env::current_exe()
+        .expect("current test executable path should be available")
+        .to_string_lossy()
+        .into_owned()
+}
+
 #[test]
 fn parse_media_processor_kind_understands_known_values() {
     assert_eq!(
@@ -161,6 +168,23 @@ fn command_is_available_rejects_non_executable_files() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+#[cfg(windows)]
+#[test]
+fn command_is_available_accepts_extensionless_windows_paths_matching_pathext() {
+    let dir = std::env::temp_dir().join(format!(
+        "aster-media-command-test-{}",
+        rand::random::<u64>()
+    ));
+    std::fs::create_dir_all(&dir).unwrap();
+    let extensionless = dir.join("fake-tool");
+    let executable = dir.join("fake-tool.exe");
+    std::fs::write(&executable, b"").unwrap();
+
+    assert!(command_is_available(extensionless.to_str().unwrap()));
+
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 #[test]
 fn default_registry_includes_known_processors_in_fixed_order() {
     let config = default_media_processing_registry();
@@ -212,33 +236,35 @@ fn default_registry_includes_known_processors_in_fixed_order() {
 #[test]
 fn public_thumbnail_support_exposes_enabled_processor_capabilities() {
     let runtime_config = RuntimeConfig::new();
+    let command = available_test_command();
     runtime_config.apply(config_model(
         MEDIA_PROCESSING_REGISTRY_JSON_KEY,
-        r#"{
-                "version": 1,
-                "processors": [
-                    {
-                        "kind": "vips_cli",
-                        "enabled": true,
-                        "extensions": ["HEIC", ".avif"],
-                        "config": {
-                            "command": "/bin/sh"
-                        }
+        &serde_json::json!({
+            "version": 1,
+            "processors": [
+                {
+                    "kind": "vips_cli",
+                    "enabled": true,
+                    "extensions": ["HEIC", ".avif"],
+                    "config": {
+                        "command": command,
                     },
-                    {
-                        "kind": "ffmpeg_cli",
-                        "enabled": true,
-                        "extensions": ["MP4", ".webm"],
-                        "config": {
-                            "command": "/bin/sh"
-                        }
+                },
+                {
+                    "kind": "ffmpeg_cli",
+                    "enabled": true,
+                    "extensions": ["MP4", ".webm"],
+                    "config": {
+                        "command": available_test_command(),
                     },
-                    {
-                        "kind": "images",
-                        "enabled": false
-                    }
-                ]
-            }"#,
+                },
+                {
+                    "kind": "images",
+                    "enabled": false,
+                },
+            ],
+        })
+        .to_string(),
     ));
 
     assert_eq!(
@@ -277,10 +303,10 @@ fn normalize_media_processing_registry_merges_missing_processors_with_defaults()
                 "processors": [
                     {
                         "kind": "vips_cli",
-                        "enabled": true,
+                        "enabled": false,
                         "extensions": ["HEIC", ".heif", "heic"],
                         "config": {
-                            "command": "  /bin/sh  "
+                            "command": "  custom-vips  "
                         }
                     }
                 ]
@@ -294,10 +320,10 @@ fn normalize_media_processing_registry_merges_missing_processors_with_defaults()
         parsed.processors[0],
         MediaProcessingProcessorConfig {
             kind: MediaProcessorKind::VipsCli,
-            enabled: true,
+            enabled: false,
             extensions: vec!["heic".to_string(), "heif".to_string()],
             config: MediaProcessingProcessorRuntimeConfig {
-                command: Some("/bin/sh".to_string()),
+                command: Some("custom-vips".to_string()),
             },
         }
     );
@@ -317,6 +343,33 @@ fn normalize_media_processing_registry_merges_missing_processors_with_defaults()
     );
     assert_eq!(parsed.processors[2].kind, MediaProcessorKind::Images);
     assert!(parsed.processors[2].enabled);
+}
+
+#[test]
+fn normalize_media_processing_registry_rejects_storage_native_processor() {
+    let error = normalize_media_processing_registry_config_value(
+        r#"{
+                "version": 1,
+                "processors": [
+                    {
+                        "kind": "storage_native",
+                        "enabled": true,
+                        "extensions": ["png"]
+                    },
+                    {
+                        "kind": "images",
+                        "enabled": true
+                    }
+                ]
+            }"#,
+    )
+    .unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("does not support 'storage_native'")
+    );
 }
 
 #[test]

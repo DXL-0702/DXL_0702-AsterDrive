@@ -10,6 +10,7 @@ use crate::storage::StorageDriver;
 use crate::types::MediaProcessorKind;
 
 const CLI_PROCESS_TIMEOUT: Duration = Duration::from_secs(60);
+const MAX_CLI_OUTPUT_BYTES: usize = 16 * 1024 * 1024;
 
 pub(crate) struct TempDirGuard {
     path: PathBuf,
@@ -96,7 +97,22 @@ where
 {
     std::thread::spawn(move || {
         let mut output = Vec::new();
-        pipe.read_to_end(&mut output)?;
+        let mut buffer = [0_u8; 8192];
+        loop {
+            let read = pipe.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+
+            if output.len() + read > MAX_CLI_OUTPUT_BYTES {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("CLI output exceeded {} bytes", MAX_CLI_OUTPUT_BYTES),
+                ));
+            }
+
+            output.extend_from_slice(&buffer[..read]);
+        }
         Ok(output)
     })
 }
@@ -272,9 +288,10 @@ fn infer_extension_from_mime(source_mime_type: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        LEGACY_IMAGES_V2_THUMBNAIL_VERSION, known_thumbnail_cache_paths,
-        legacy_unversioned_thumbnail_path,
+        LEGACY_IMAGES_V2_THUMBNAIL_VERSION, MAX_CLI_OUTPUT_BYTES, join_pipe_reader,
+        known_thumbnail_cache_paths, legacy_unversioned_thumbnail_path, spawn_pipe_reader,
     };
+    use std::io::Cursor;
 
     const HASH: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
@@ -293,5 +310,13 @@ mod tests {
                 LEGACY_IMAGES_V2_THUMBNAIL_VERSION,
             )
         }));
+    }
+
+    #[test]
+    fn spawn_pipe_reader_rejects_output_over_limit() {
+        let data = vec![0_u8; MAX_CLI_OUTPUT_BYTES + 1];
+        let result = join_pipe_reader(Some(spawn_pipe_reader(Cursor::new(data))));
+
+        assert!(result.is_err());
     }
 }

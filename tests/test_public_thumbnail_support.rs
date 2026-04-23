@@ -6,6 +6,13 @@ mod common;
 use actix_web::test;
 use serde_json::{Value, json};
 
+fn available_test_command() -> String {
+    std::env::current_exe()
+        .expect("current test executable path should be available")
+        .to_string_lossy()
+        .into_owned()
+}
+
 #[actix_web::test]
 async fn test_public_thumbnail_support_returns_default_builtin_extensions() {
     let state = common::setup().await;
@@ -34,6 +41,7 @@ async fn test_public_thumbnail_support_merges_builtin_and_enabled_vips_extension
     let state = common::setup().await;
     let app = create_test_app!(state);
     let (token, _) = register_and_login!(app);
+    let command = available_test_command();
 
     let req = test::TestRequest::put()
         .uri("/api/v1/admin/config/media_processing_registry_json")
@@ -48,7 +56,7 @@ async fn test_public_thumbnail_support_merges_builtin_and_enabled_vips_extension
                         "enabled": true,
                         "extensions": ["HEIC", ".avif"],
                         "config": {
-                            "command": "/bin/sh"
+                            "command": command
                         }
                     },
                     {

@@ -158,6 +158,37 @@ fn encode_avatar_webp(img: &DynamicImage) -> Result<Vec<u8>> {
     Ok(buf.into_inner())
 }
 
+fn validate_avatar_variant_output(bytes: &[u8], expected_size: u32, label: &str) -> Result<()> {
+    let mut reader = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()
+        .map_aster_err_ctx(
+            "guess avatar vips output format",
+            AsterError::file_upload_failed,
+        )?;
+
+    if reader.format() != Some(ImageFormat::WebP) {
+        return Err(AsterError::file_upload_failed(format!(
+            "avatar vips {label} output is not WebP"
+        )));
+    }
+
+    let mut limits = Limits::default();
+    limits.max_alloc = Some(MAX_AVATAR_DECODE_ALLOC);
+    reader.limits(limits);
+
+    let image = reader
+        .decode()
+        .map_aster_err_ctx("decode avatar vips output", AsterError::file_upload_failed)?;
+    let (width, height) = image.dimensions();
+    if width != expected_size || height != expected_size {
+        return Err(AsterError::file_upload_failed(format!(
+            "avatar vips {label} output has unexpected dimensions {width}x{height}"
+        )));
+    }
+
+    Ok(())
+}
+
 async fn render_avatar_with_vips_cli(
     state: &PrimaryAppState,
     file_name: &str,
@@ -255,12 +286,14 @@ async fn render_avatar_with_vips_cli(
             "read avatar vips 1024 output",
             AsterError::file_upload_failed,
         )?;
+    validate_avatar_variant_output(&small_bytes, AVATAR_SIZE_SM, "512")?;
+    validate_avatar_variant_output(&large_bytes, AVATAR_SIZE_LG, "1024")?;
     tracing::debug!(
         operation = MediaOperation::Avatar.as_str(),
         processor = MediaProcessorKind::VipsCli.as_str(),
         small_bytes = small_bytes.len(),
         large_bytes = large_bytes.len(),
-        "avatar vips CLI render completed"
+        "avatar vips CLI render completed and validated"
     );
 
     Ok(ProcessedAvatar {

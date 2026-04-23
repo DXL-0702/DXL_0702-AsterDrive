@@ -1,6 +1,7 @@
 //! 存储子模块：`driver`。
 
 use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::types::DriverType;
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
@@ -15,6 +16,14 @@ pub struct PresignedDownloadOptions {
     pub response_cache_control: Option<String>,
     pub response_content_disposition: Option<String>,
     pub response_content_type: Option<String>,
+}
+
+pub fn driver_type_supports_native_thumbnail(driver_type: DriverType) -> bool {
+    match driver_type {
+        DriverType::Local => false,
+        DriverType::S3 => false,
+        DriverType::Remote => false,
+    }
 }
 
 pub trait StoragePathVisitor: Send {
