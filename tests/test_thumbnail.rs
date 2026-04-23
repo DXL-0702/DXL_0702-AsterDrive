@@ -94,7 +94,7 @@ fn ffmpeg_command_for_tests() -> Option<String> {
     .find(|candidate| aster_drive::config::media_processing::command_is_available(candidate))
 }
 
-fn write_fake_vips_thumbnail_command() -> std::path::PathBuf {
+fn write_fake_vips_thumbnail_command() -> (std::path::PathBuf, std::path::PathBuf) {
     let dir = std::env::temp_dir().join(format!(
         "aster-drive-thumbnail-vips-{}",
         uuid::Uuid::new_v4()
@@ -103,12 +103,14 @@ fn write_fake_vips_thumbnail_command() -> std::path::PathBuf {
 
     let output_fixture_path = dir.join("fixture.webp");
     std::fs::write(&output_fixture_path, tiny_webp()).unwrap();
+    let input_log_path = dir.join("input-path.txt");
 
     let script_path = dir.join("fake-vips");
     std::fs::write(
         &script_path,
         format!(
-            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"vips-8.16.0\"\n  exit 0\nfi\nif [ \"$1\" = \"thumbnail\" ]; then\n  cp '{}' \"$3\"\n  exit 0\nfi\necho \"unexpected args: $@\" >&2\nexit 1\n",
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then\n  echo \"vips-8.16.0\"\n  exit 0\nfi\nif [ \"$1\" = \"thumbnail\" ]; then\n  printf '%s' \"$2\" > '{}'\n  cp '{}' \"$3\"\n  exit 0\nfi\necho \"unexpected args: $@\" >&2\nexit 1\n",
+            input_log_path.display(),
             output_fixture_path.display()
         ),
     )
@@ -119,7 +121,7 @@ fn write_fake_vips_thumbnail_command() -> std::path::PathBuf {
         permissions.set_mode(0o755);
         std::fs::set_permissions(&script_path, permissions).unwrap();
     }
-    script_path
+    (script_path, input_log_path)
 }
 
 macro_rules! upload_file_bytes {
@@ -478,7 +480,7 @@ async fn test_thumbnail_vips_cli_missing_command_falls_back_to_images() {
 #[actix_web::test]
 async fn test_thumbnail_heic_uses_vips_cli_processor_when_extension_matches() {
     let state = common::setup().await;
-    let fake_vips = write_fake_vips_thumbnail_command();
+    let (fake_vips, input_log_path) = write_fake_vips_thumbnail_command();
     state.runtime_config.apply(common::system_config_model(
         "media_processing_registry_json",
         &json!({
@@ -538,6 +540,12 @@ async fn test_thumbnail_heic_uses_vips_cli_processor_when_extension_matches() {
             .get("Content-Type")
             .and_then(|value| value.to_str().ok()),
         Some("image/webp")
+    );
+
+    let logged_input_path = std::fs::read_to_string(&input_log_path).unwrap();
+    assert!(
+        logged_input_path.ends_with("/source.heic"),
+        "expected fake vips input path to preserve the source extension, got {logged_input_path}"
     );
 }
 

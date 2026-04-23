@@ -5,6 +5,7 @@
 use crate::errors::Result;
 use crate::storage::driver::{PresignedDownloadOptions, StoragePathVisitor};
 use async_trait::async_trait;
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::io::AsyncRead;
 
@@ -62,6 +63,12 @@ pub trait StreamUploadDriver: Send + Sync {
     ///
     /// 这是 put_reader 默认实现的基础；暴露出来供需要显式控制临时文件生命周期的调用方使用。
     async fn put_file(&self, storage_path: &str, local_path: &str) -> Result<String>;
+}
+
+/// 本地路径暴露（仅用于把底层文件路径安全交给受控的外部命令）
+pub trait LocalPathStorageDriver: Send + Sync {
+    /// 解析某个存储对象在本机文件系统上的真实绝对路径。
+    fn resolve_local_path(&self, path: &str) -> Result<PathBuf>;
 }
 
 #[derive(Debug, Clone)]

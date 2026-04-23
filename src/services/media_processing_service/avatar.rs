@@ -12,7 +12,7 @@ use image::imageops::FilterType;
 use image::{DynamicImage, GenericImageView, ImageFormat, ImageReader, Limits};
 
 use super::resolve::resolve_avatar_processor;
-use super::shared::{MediaOperation, ProcessedAvatar};
+use super::shared::{MediaOperation, ProcessedAvatar, cli_source_temp_path};
 
 pub async fn probe_vips_cli_command(command: &str) -> Result<String> {
     let command = media_processing_config::normalize_vips_command(command)?;
@@ -177,9 +177,7 @@ async fn render_avatar_with_vips_cli(
             AsterError::storage_driver_error,
         )?;
 
-    let source_extension =
-        media_processing_config::file_extension(file_name).unwrap_or_else(|| "bin".to_string());
-    let input_path = temp_dir.join(format!("source.{source_extension}"));
+    let input_path = cli_source_temp_path(&temp_dir, file_name, "");
     let small_output_path = temp_dir.join("avatar-512.webp");
     let large_output_path = temp_dir.join("avatar-1024.webp");
     tokio::fs::write(&input_path, original)

@@ -3,7 +3,7 @@
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::driver::{BlobMetadata, StorageDriver, StoragePathVisitor};
-use crate::storage::extensions::{ListStorageDriver, StreamUploadDriver};
+use crate::storage::extensions::{ListStorageDriver, LocalPathStorageDriver, StreamUploadDriver};
 use async_trait::async_trait;
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
@@ -276,6 +276,16 @@ impl StorageDriver for LocalDriver {
 
     fn as_stream_upload(&self) -> Option<&dyn StreamUploadDriver> {
         Some(self)
+    }
+
+    fn as_local_path(&self) -> Option<&dyn LocalPathStorageDriver> {
+        Some(self)
+    }
+}
+
+impl LocalPathStorageDriver for LocalDriver {
+    fn resolve_local_path(&self, path: &str) -> Result<PathBuf> {
+        self.full_path(path)
     }
 }
 

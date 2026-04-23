@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::config::media_processing as media_processing_config;
@@ -130,4 +131,21 @@ pub(crate) fn known_thumbnail_cache_paths(blob_hash: &str) -> Vec<String> {
 
 pub(crate) fn requires_server_side_source_limit(processor: &ResolvedMediaProcessor) -> bool {
     processor.kind() != MediaProcessorKind::StorageNative
+}
+
+pub(crate) fn cli_source_temp_path(
+    temp_dir: &std::path::Path,
+    source_file_name: &str,
+    source_mime_type: &str,
+) -> PathBuf {
+    let extension = media_processing_config::file_extension(source_file_name)
+        .or_else(|| infer_extension_from_mime(source_mime_type))
+        .unwrap_or_else(|| "bin".to_string());
+    temp_dir.join(format!("source.{extension}"))
+}
+
+fn infer_extension_from_mime(source_mime_type: &str) -> Option<String> {
+    mime_guess::get_mime_extensions_str(source_mime_type)
+        .and_then(|extensions| extensions.first().copied())
+        .map(str::to_string)
 }

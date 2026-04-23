@@ -108,6 +108,13 @@ pub trait StorageDriver: Send + Sync {
         None
     }
 
+    /// 获取本地文件路径暴露能力
+    ///
+    /// 仅本地文件系统等真正持有本机绝对路径的驱动返回 Some。
+    fn as_local_path(&self) -> Option<&dyn super::extensions::LocalPathStorageDriver> {
+        None
+    }
+
     /// 获取存储侧原生缩略图支持
     ///
     /// OneDrive / 数据万象 / 对象存储图片处理等驱动返回 Some。

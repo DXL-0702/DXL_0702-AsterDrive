@@ -3,6 +3,7 @@
 //! 当前已接入 thumbnail 和 avatar 场景，把业务层和具体处理实现解耦。
 
 mod avatar;
+mod cli_input;
 mod resolve;
 mod shared;
 #[cfg(test)]

@@ -13,6 +13,7 @@ use crate::storage::{StorageDriver, extensions::NativeThumbnailRequest};
 use crate::types::MediaProcessorKind;
 use image::ImageFormat;
 
+use super::cli_input::prepare_cli_source;
 use super::resolve::{build_thumbnail_context, build_thumbnail_context_with_processor};
 use super::shared::{
     ResolvedMediaProcessor, StoredThumbnail, ThumbnailContext, ThumbnailData,
@@ -105,8 +106,15 @@ pub async fn get_or_generate_thumbnail(
 
     let thumbnail_version = ctx.processor.thumbnail_version().to_string();
     let thumbnail_path = ctx.processor.cache_path(&blob.hash);
-    let webp_bytes =
-        render_thumbnail_bytes(state, blob, source_mime_type, &ctx.driver, &ctx.processor).await?;
+    let webp_bytes = render_thumbnail_bytes(
+        state,
+        blob,
+        file_name,
+        source_mime_type,
+        &ctx.driver,
+        &ctx.processor,
+    )
+    .await?;
 
     if let Err(error) = ctx.driver.put(&thumbnail_path, &webp_bytes).await {
         tracing::warn!("failed to store thumbnail {thumbnail_path}: {error}");
@@ -134,7 +142,7 @@ pub async fn generate_and_store_thumbnail(
     source_mime_type: &str,
 ) -> Result<StoredThumbnail> {
     let ctx = build_thumbnail_context(state, blob, file_name)?;
-    generate_and_store_with_context(state, blob, source_mime_type, &ctx).await
+    generate_and_store_with_context(state, blob, file_name, source_mime_type, &ctx).await
 }
 
 pub(crate) async fn generate_and_store_thumbnail_with_processor(
@@ -147,7 +155,7 @@ pub(crate) async fn generate_and_store_thumbnail_with_processor(
     let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
     let ctx =
         build_thumbnail_context_with_processor(state, &policy, source_file_name, processor_kind)?;
-    generate_and_store_with_context(state, blob, source_mime_type, &ctx).await
+    generate_and_store_with_context(state, blob, source_file_name, source_mime_type, &ctx).await
 }
 
 pub async fn delete_thumbnail(state: &PrimaryAppState, blob: &file_blob::Model) -> Result<()> {
@@ -246,6 +254,7 @@ async fn load_thumbnail_if_exists_with_context(
 async fn generate_and_store_with_context(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
+    source_file_name: &str,
     source_mime_type: &str,
     ctx: &ThumbnailContext,
 ) -> Result<StoredThumbnail> {
@@ -272,8 +281,15 @@ async fn generate_and_store_with_context(
         thumbnail_version,
         "rendering thumbnail because cache miss"
     );
-    let webp_bytes =
-        render_thumbnail_bytes(state, blob, source_mime_type, &ctx.driver, &ctx.processor).await?;
+    let webp_bytes = render_thumbnail_bytes(
+        state,
+        blob,
+        source_file_name,
+        source_mime_type,
+        &ctx.driver,
+        &ctx.processor,
+    )
+    .await?;
     let stored_path = ctx.driver.put(&thumbnail_path, &webp_bytes).await?;
     file_repo::set_thumbnail_metadata(&state.db, blob.id, &stored_path, &thumbnail_version).await?;
 
@@ -296,6 +312,7 @@ async fn generate_and_store_with_context(
 async fn render_thumbnail_bytes(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
+    source_file_name: &str,
     source_mime_type: &str,
     driver: &Arc<dyn StorageDriver>,
     processor: &ResolvedMediaProcessor,
@@ -325,7 +342,15 @@ async fn render_thumbnail_bytes(
                 blob,
                 operations::thumbnail_max_source_bytes(&state.runtime_config),
             )?;
-            render_thumbnail_with_vips_cli(state, blob, driver.as_ref(), &command).await
+            render_thumbnail_with_vips_cli(
+                state,
+                blob,
+                source_file_name,
+                source_mime_type,
+                driver.as_ref(),
+                &command,
+            )
+            .await
         }
         MediaProcessorKind::FfmpegCli => {
             let command = processor.ffmpeg_command().to_string();
@@ -339,7 +364,15 @@ async fn render_thumbnail_bytes(
                 blob,
                 operations::thumbnail_max_source_bytes(&state.runtime_config),
             )?;
-            render_thumbnail_with_ffmpeg_cli(state, blob, driver.as_ref(), &command).await
+            render_thumbnail_with_ffmpeg_cli(
+                state,
+                blob,
+                source_file_name,
+                source_mime_type,
+                driver.as_ref(),
+                &command,
+            )
+            .await
         }
         MediaProcessorKind::StorageNative => {
             tracing::debug!(
@@ -385,34 +418,38 @@ async fn render_thumbnail_with_storage_native(
 async fn render_thumbnail_with_vips_cli(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
+    source_file_name: &str,
+    source_mime_type: &str,
     driver: &dyn StorageDriver,
     command: &str,
 ) -> Result<Vec<u8>> {
-    let original = driver.get(&blob.storage_path).await?;
     let temp_root = crate::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
     let temp_dir = PathBuf::from(temp_root).join(format!("media-vips-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&temp_dir)
         .await
         .map_aster_err_ctx("create vips temp dir", AsterError::storage_driver_error)?;
 
-    let input_path = temp_dir.join("source");
     let output_path = temp_dir.join("thumbnail.webp");
-    tokio::fs::write(&input_path, original)
-        .await
-        .map_aster_err_ctx(
-            "write vips source temp file",
-            AsterError::thumbnail_generation_failed,
-        )?;
+    let prepared_input = prepare_cli_source(
+        driver,
+        &blob.storage_path,
+        source_file_name,
+        source_mime_type,
+        &temp_dir,
+        false,
+    )
+    .await?;
 
     let command = command.to_string();
-    let input_arg = input_path.to_string_lossy().to_string();
+    let input_arg = prepared_input.input_arg().to_string();
     let output_arg = output_path.to_string_lossy().to_string();
     let max_dim = crate::services::thumbnail_service::current_thumbnail_max_dim();
     tracing::debug!(
         blob_id = blob.id,
         processor = "vips_cli",
         command,
-        input_path = input_arg,
+        input_arg = input_arg,
+        input_source = prepared_input.kind().as_str(),
         output_path = output_arg,
         max_dim,
         "starting vips CLI thumbnail render"
@@ -472,27 +509,30 @@ async fn render_thumbnail_with_vips_cli(
 async fn render_thumbnail_with_ffmpeg_cli(
     state: &PrimaryAppState,
     blob: &file_blob::Model,
+    source_file_name: &str,
+    source_mime_type: &str,
     driver: &dyn StorageDriver,
     command: &str,
 ) -> Result<Vec<u8>> {
-    let original = driver.get(&blob.storage_path).await?;
     let temp_root = crate::utils::paths::runtime_temp_dir(&state.config.server.temp_dir);
     let temp_dir = PathBuf::from(temp_root).join(format!("media-ffmpeg-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&temp_dir)
         .await
         .map_aster_err_ctx("create ffmpeg temp dir", AsterError::storage_driver_error)?;
 
-    let input_path = temp_dir.join("source");
     let output_path = temp_dir.join("thumbnail.png");
-    tokio::fs::write(&input_path, original)
-        .await
-        .map_aster_err_ctx(
-            "write ffmpeg source temp file",
-            AsterError::thumbnail_generation_failed,
-        )?;
+    let prepared_input = prepare_cli_source(
+        driver,
+        &blob.storage_path,
+        source_file_name,
+        source_mime_type,
+        &temp_dir,
+        true,
+    )
+    .await?;
 
     let command = command.to_string();
-    let input_arg = input_path.to_string_lossy().to_string();
+    let input_arg = prepared_input.input_arg().to_string();
     let output_arg = output_path.to_string_lossy().to_string();
     let max_dim = crate::services::thumbnail_service::current_thumbnail_max_dim();
     let filter_arg = format!(
@@ -502,7 +542,8 @@ async fn render_thumbnail_with_ffmpeg_cli(
         blob_id = blob.id,
         processor = "ffmpeg_cli",
         command,
-        input_path = input_arg,
+        input_arg = input_arg,
+        input_source = prepared_input.kind().as_str(),
         output_path = output_arg,
         max_dim,
         "starting ffmpeg CLI thumbnail render"
