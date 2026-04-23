@@ -1,5 +1,6 @@
 //! 工具子模块：`paths`。
 
+use crate::errors::{AsterError, Result};
 use std::path::{Component, Path, PathBuf};
 
 pub const DEFAULT_DATA_DIR: &str = "data";
@@ -64,25 +65,18 @@ fn normalize_path(path: &Path) -> PathBuf {
     }
 }
 
-fn render_runtime_relative_path(base_dir: &Path, resolved: &Path) -> String {
+fn render_runtime_relative_path(base_dir: &Path, resolved: &Path) -> Result<String> {
     let normalized_base_dir = normalize_path(base_dir);
     let normalized_resolved = normalize_path(resolved);
 
     match normalized_resolved.strip_prefix(&normalized_base_dir) {
-        Ok(stripped) if stripped.as_os_str().is_empty() => ".".to_string(),
-        Ok(stripped) => stripped.to_string_lossy().to_string(),
-        Err(_) => {
-            // 解析后的路径逃出了 base_dir。这通常意味着 admin 在 config.toml 里写了
-            // 含 `..` 的相对路径并跨过了 data/ 边界，或者直接给了绝对路径。
-            // 我们仍按"绝对路径"返回（保持向后兼容），但打 warn 让运维能在启动日志里
-            // 立刻发现"配置值实际指向的位置"，避免静默使用预期外的目录。
-            tracing::warn!(
-                base_dir = %normalized_base_dir.display(),
-                resolved = %normalized_resolved.display(),
-                "configured path resolved outside data base_dir; check config for unintended `..` segments"
-            );
-            normalized_resolved.to_string_lossy().to_string()
-        }
+        Ok(stripped) if stripped.as_os_str().is_empty() => Ok(".".to_string()),
+        Ok(stripped) => Ok(stripped.to_string_lossy().to_string()),
+        Err(_) => Err(AsterError::config_error(format!(
+            "configured relative path resolves outside data base_dir: base_dir='{}', resolved='{}'",
+            normalized_base_dir.display(),
+            normalized_resolved.display()
+        ))),
     }
 }
 
@@ -93,16 +87,20 @@ fn is_data_prefixed_relative_path(path: &Path) -> bool {
     )
 }
 
-pub fn resolve_config_relative_path(base_dir: &Path, config_dir: &Path, value: &str) -> String {
+pub fn resolve_config_relative_path(
+    base_dir: &Path,
+    config_dir: &Path,
+    value: &str,
+) -> Result<String> {
     if value.is_empty() {
-        return value.to_string();
+        return Ok(value.to_string());
     }
 
     let configured_path = Path::new(value);
     if configured_path.is_absolute() {
-        return normalize_path(configured_path)
+        return Ok(normalize_path(configured_path)
             .to_string_lossy()
-            .to_string();
+            .to_string());
     }
 
     let anchor_dir = if is_data_prefixed_relative_path(configured_path) {
@@ -119,13 +117,13 @@ pub fn resolve_config_relative_sqlite_url(
     base_dir: &Path,
     config_dir: &Path,
     value: &str,
-) -> String {
+) -> Result<String> {
     if value == "sqlite::memory:" {
-        return value.to_string();
+        return Ok(value.to_string());
     }
 
     let Some(path_and_query) = value.strip_prefix("sqlite://") else {
-        return value.to_string();
+        return Ok(value.to_string());
     };
     let (raw_path, raw_query) = match path_and_query.split_once('?') {
         Some((path, query)) => (path, Some(query)),
@@ -133,7 +131,7 @@ pub fn resolve_config_relative_sqlite_url(
     };
 
     if raw_path.is_empty() || raw_path == ":memory:" {
-        return value.to_string();
+        return Ok(value.to_string());
     }
 
     let configured_path = Path::new(raw_path);
@@ -142,12 +140,12 @@ pub fn resolve_config_relative_sqlite_url(
             .to_string_lossy()
             .to_string()
     } else {
-        resolve_config_relative_path(base_dir, config_dir, raw_path)
+        resolve_config_relative_path(base_dir, config_dir, raw_path)?
     };
 
     match raw_query {
-        Some(query) => format!("sqlite://{resolved_path}?{query}"),
-        None => format!("sqlite://{resolved_path}"),
+        Some(query) => Ok(format!("sqlite://{resolved_path}?{query}")),
+        None => Ok(format!("sqlite://{resolved_path}")),
     }
 }
 
@@ -304,15 +302,15 @@ mod tests {
         let config_dir = Path::new("/srv/asterdrive/data");
 
         assert_eq!(
-            resolve_config_relative_path(base_dir, config_dir, ".tmp"),
+            resolve_config_relative_path(base_dir, config_dir, ".tmp").unwrap(),
             "data/.tmp"
         );
         assert_eq!(
-            resolve_config_relative_path(base_dir, config_dir, "data/.tmp"),
+            resolve_config_relative_path(base_dir, config_dir, "data/.tmp").unwrap(),
             "data/.tmp"
         );
         assert_eq!(
-            resolve_config_relative_path(base_dir, config_dir, "../shared"),
+            resolve_config_relative_path(base_dir, config_dir, "../shared").unwrap(),
             "shared"
         );
     }
@@ -327,7 +325,8 @@ mod tests {
                 base_dir,
                 config_dir,
                 DEFAULT_CONFIG_SQLITE_DATABASE_URL
-            ),
+            )
+            .unwrap(),
             "sqlite://data/asterdrive.db?mode=rwc"
         );
         assert_eq!(
@@ -335,7 +334,8 @@ mod tests {
                 base_dir,
                 config_dir,
                 "sqlite://data/asterdrive.db?mode=rwc"
-            ),
+            )
+            .unwrap(),
             "sqlite://data/asterdrive.db?mode=rwc"
         );
         assert_eq!(
@@ -343,8 +343,33 @@ mod tests {
                 base_dir,
                 config_dir,
                 "sqlite:///var/lib/asterdrive/custom.db?mode=rwc"
-            ),
+            )
+            .unwrap(),
             "sqlite:///var/lib/asterdrive/custom.db?mode=rwc"
         );
+    }
+
+    #[test]
+    fn resolve_config_relative_path_rejects_values_outside_base_dir() {
+        let base_dir = Path::new("/srv/asterdrive");
+        let config_dir = Path::new("/srv/asterdrive/data");
+
+        let error = resolve_config_relative_path(base_dir, config_dir, "../../shared")
+            .expect_err("path outside base_dir should be rejected");
+        assert!(error.to_string().contains("outside data base_dir"));
+    }
+
+    #[test]
+    fn resolve_config_relative_sqlite_url_rejects_values_outside_base_dir() {
+        let base_dir = Path::new("/srv/asterdrive");
+        let config_dir = Path::new("/srv/asterdrive/data");
+
+        let error = resolve_config_relative_sqlite_url(
+            base_dir,
+            config_dir,
+            "sqlite://../../shared/asterdrive.db?mode=rwc",
+        )
+        .expect_err("sqlite path outside base_dir should be rejected");
+        assert!(error.to_string().contains("outside data base_dir"));
     }
 }

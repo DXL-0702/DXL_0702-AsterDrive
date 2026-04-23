@@ -23,7 +23,7 @@ fn redis_backend_target(redis_url: &str) -> String {
     }
 }
 
-/// 通用缓存后端 trait（dyn compatible，用 bytes 接口）
+/// 通用缓存后端 trait（支持 trait object，统一使用 bytes 接口）
 #[async_trait]
 pub trait CacheBackend: Send + Sync {
     async fn get_bytes(&self, key: &str) -> Option<Vec<u8>>;

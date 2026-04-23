@@ -264,7 +264,7 @@ impl From<StoredTaskSteps> for String {
     }
 }
 
-/// Raw mixed owner payload stored in `resource_locks.owner_info`.
+/// Raw JSON payload stored in `resource_locks.owner_info`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
 pub struct StoredLockOwnerInfo(pub String);
 
@@ -912,7 +912,6 @@ pub enum RemoteUploadStrategy {
     /// 主控节点直接把完整请求体流式中继到从节点
     RelayStream,
     /// 浏览器通过 presigned URL 直接把对象写到从节点
-    #[serde(alias = "chunked")]
     Presigned,
 }
 
@@ -1488,11 +1487,21 @@ mod tests {
     }
 
     #[test]
-    fn removed_remote_chunked_strategy_aliases_to_presigned() {
+    fn invalid_remote_upload_strategy_falls_back_to_default() {
         let options = parse_storage_policy_options(r#"{"remote_upload_strategy":"chunked"}"#);
         assert_eq!(
             options.effective_remote_upload_strategy(),
-            RemoteUploadStrategy::Presigned
+            RemoteUploadStrategy::RelayStream
         );
+    }
+
+    #[test]
+    fn serialize_remote_presigned_strategy_uses_canonical_literal() {
+        let json = serde_json::to_string(&StoragePolicyOptions {
+            remote_upload_strategy: Some(RemoteUploadStrategy::Presigned),
+            ..Default::default()
+        })
+        .unwrap();
+        assert_eq!(json, r#"{"remote_upload_strategy":"presigned"}"#);
     }
 }

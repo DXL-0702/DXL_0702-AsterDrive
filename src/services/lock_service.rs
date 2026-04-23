@@ -1,7 +1,5 @@
 //! 服务模块：`lock_service`。
 
-use std::io::Cursor;
-
 use chrono::{Duration, Utc};
 use sea_orm::{ConnectionTrait, Set};
 use serde::{Deserialize, Serialize};
@@ -34,13 +32,6 @@ pub struct WebdavLockOwnerInfo {
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct TextLockOwnerInfo {
     pub value: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LegacyWopiLockOwnerPayload {
-    kind: String,
-    app_key: String,
-    lock: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -257,22 +248,9 @@ pub(crate) fn serialize_resource_lock_owner_info(
         return Ok(None);
     };
 
-    let raw = match owner_info {
-        ResourceLockOwnerInfo::Wopi(payload) => {
-            serde_json::to_string(&LegacyWopiLockOwnerPayload {
-                kind: "wopi".to_string(),
-                app_key: payload.app_key.clone(),
-                lock: payload.lock.clone(),
-            })
-            .map_err(|error| {
-                AsterError::internal_error(format!(
-                    "serialize resource lock WOPI owner payload: {error}"
-                ))
-            })?
-        }
-        ResourceLockOwnerInfo::Webdav(payload) => payload.xml.clone(),
-        ResourceLockOwnerInfo::Text(payload) => payload.value.clone(),
-    };
+    let raw = serde_json::to_string(owner_info).map_err(|error| {
+        AsterError::internal_error(format!("serialize resource lock owner payload: {error}"))
+    })?;
 
     Ok(Some(StoredLockOwnerInfo(raw)))
 }
@@ -283,29 +261,14 @@ pub(crate) fn deserialize_resource_lock_owner_info(
     let Some(raw) = lock.owner_info.as_ref() else {
         return Ok(None);
     };
-    let raw = raw.as_ref();
-
-    if let Some(payload) = parse_wopi_owner_payload(raw) {
-        return Ok(Some(ResourceLockOwnerInfo::Wopi(payload)));
-    }
-
-    if xmltree::Element::parse(Cursor::new(raw.as_bytes())).is_ok() {
-        return Ok(Some(ResourceLockOwnerInfo::Webdav(WebdavLockOwnerInfo {
-            xml: raw.to_string(),
-        })));
-    }
-
-    Ok(Some(ResourceLockOwnerInfo::Text(TextLockOwnerInfo {
-        value: raw.to_string(),
-    })))
-}
-
-fn parse_wopi_owner_payload(raw: &str) -> Option<WopiLockOwnerInfo> {
-    let payload = serde_json::from_str::<LegacyWopiLockOwnerPayload>(raw).ok()?;
-    (payload.kind == "wopi").then_some(WopiLockOwnerInfo {
-        app_key: payload.app_key,
-        lock: payload.lock,
-    })
+    serde_json::from_str(raw.as_ref())
+        .map(Some)
+        .map_err(|error| {
+            AsterError::internal_error(format!(
+                "deserialize resource lock owner payload for lock #{}: {error}",
+                lock.id
+            ))
+        })
 }
 
 async fn do_unlock_by_entity(
@@ -613,34 +576,74 @@ mod tests {
     }
 
     #[test]
-    fn deserializes_webdav_xml_owner_payload() {
-        let parsed = deserialize_resource_lock_owner_info(&sample_lock(Some(StoredLockOwnerInfo(
+    fn serializes_and_deserializes_webdav_owner_payload() {
+        let owner_info = ResourceLockOwnerInfo::Webdav(WebdavLockOwnerInfo {
+            xml: "<D:owner xmlns:D=\"DAV:\"><D:href>mailto:test@example.com</D:href></D:owner>"
+                .to_string(),
+        });
+        let stored = serialize_resource_lock_owner_info(Some(&owner_info))
+            .expect("webdav payload should serialize")
+            .expect("stored owner info should exist");
+        let parsed = deserialize_resource_lock_owner_info(&sample_lock(Some(stored)))
+            .expect("webdav payload should deserialize");
+
+        assert_eq!(parsed, Some(owner_info));
+    }
+
+    #[test]
+    fn serializes_and_deserializes_text_owner_payload() {
+        let owner_info = ResourceLockOwnerInfo::Text(TextLockOwnerInfo {
+            value: "user@example.com".to_string(),
+        });
+        let stored = serialize_resource_lock_owner_info(Some(&owner_info))
+            .expect("text payload should serialize")
+            .expect("stored owner info should exist");
+        let parsed = deserialize_resource_lock_owner_info(&sample_lock(Some(stored)))
+            .expect("text owner payload should deserialize");
+
+        assert_eq!(parsed, Some(owner_info));
+    }
+
+    #[test]
+    fn rejects_legacy_webdav_xml_owner_payload() {
+        let error = deserialize_resource_lock_owner_info(&sample_lock(Some(StoredLockOwnerInfo(
             "<D:owner xmlns:D=\"DAV:\"><D:href>mailto:test@example.com</D:href></D:owner>"
                 .to_string(),
         ))))
-        .expect("xml owner payload should deserialize");
+        .expect_err("legacy raw xml payload should be rejected");
 
-        assert_eq!(
-            parsed,
-            Some(ResourceLockOwnerInfo::Webdav(WebdavLockOwnerInfo {
-                xml: "<D:owner xmlns:D=\"DAV:\"><D:href>mailto:test@example.com</D:href></D:owner>"
-                    .to_string(),
-            }))
+        assert!(
+            error
+                .to_string()
+                .contains("deserialize resource lock owner payload")
         );
     }
 
     #[test]
-    fn falls_back_to_text_owner_payload() {
-        let parsed = deserialize_resource_lock_owner_info(&sample_lock(Some(StoredLockOwnerInfo(
+    fn rejects_legacy_text_owner_payload() {
+        let error = deserialize_resource_lock_owner_info(&sample_lock(Some(StoredLockOwnerInfo(
             "user@example.com".to_string(),
         ))))
-        .expect("text owner payload should deserialize");
+        .expect_err("legacy raw text payload should be rejected");
 
-        assert_eq!(
-            parsed,
-            Some(ResourceLockOwnerInfo::Text(TextLockOwnerInfo {
-                value: "user@example.com".to_string(),
-            }))
+        assert!(
+            error
+                .to_string()
+                .contains("deserialize resource lock owner payload")
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_owner_payload_kind() {
+        let error = deserialize_resource_lock_owner_info(&sample_lock(Some(StoredLockOwnerInfo(
+            r#"{"kind":"legacy","value":"user@example.com"}"#.to_string(),
+        ))))
+        .expect_err("unknown owner payload kind should be rejected");
+
+        assert!(
+            error
+                .to_string()
+                .contains("deserialize resource lock owner payload")
         );
     }
 

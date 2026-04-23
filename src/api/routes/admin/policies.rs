@@ -1,6 +1,9 @@
 //! 管理员 API 路由：`policies`。
 
-use crate::api::dto::admin as dto;
+use crate::api::dto::admin::{
+    CreatePolicyGroupReq, CreatePolicyReq, MigratePolicyGroupUsersReq, PatchPolicyGroupReq,
+    PatchPolicyReq, PolicyGroupItemReq, TestPolicyParamsReq,
+};
 use crate::api::dto::validate_request;
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
@@ -11,12 +14,6 @@ use crate::runtime::PrimaryAppState;
 use crate::services::{audit_service, auth_service::Claims, policy_service};
 use crate::types::DriverType;
 use actix_web::{HttpRequest, HttpResponse, web};
-
-// Re-export DTOs for backwards compatibility with admin/mod.rs re-exports
-pub use dto::{
-    CreatePolicyGroupReq, CreatePolicyReq, MigratePolicyGroupUsersReq, PatchPolicyGroupReq,
-    PatchPolicyReq, PolicyGroupItemReq, TestPolicyParamsReq,
-};
 
 // ── Conversion helpers (must stay here because they use policy_service types) ──────────
 

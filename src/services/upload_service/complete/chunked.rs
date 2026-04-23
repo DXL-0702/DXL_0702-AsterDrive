@@ -254,7 +254,7 @@ async fn stage_assembled_blob_upload(
     assembled: &AssembledTempFile,
 ) -> Result<AssembledBlobPlan> {
     if let Some(file_hash) = assembled.file_hash.as_ref() {
-        let storage_path = crate::utils::storage_path_from_hash(file_hash);
+        let storage_path = crate::utils::storage_path_from_blob_key(file_hash);
 
         // exists() 作为冗余 PUT 的软短路：失败/返回 false 都会退化为一次 PUT，
         // 语义等同；真正的并发安全由内容寻址 + find_or_create_blob 保证。

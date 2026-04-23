@@ -16,10 +16,6 @@ use actix_governor::Governor;
 use actix_web::middleware::Condition;
 use actix_web::{HttpRequest, HttpResponse, web};
 
-pub use crate::api::routes::team_requests::{
-    AddTeamMemberReq, ListTeamMembersQuery, PatchTeamMemberReq,
-};
-
 pub fn routes(rl: &RateLimitConfig) -> impl actix_web::dev::HttpServiceFactory + use<> {
     let limiter = rate_limit::build_governor(&rl.api, &rl.trusted_proxies);
 

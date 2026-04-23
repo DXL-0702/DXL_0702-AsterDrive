@@ -4,7 +4,7 @@ use actix_web::http::header;
 use super::streaming::AbortAwareStream;
 use super::types::DownloadOutcome;
 
-// 向后兼容的 HttpResponse 包装，仅在路由/中间件层使用。
+// DownloadOutcome 到 HttpResponse 的路由层组装函数，仅在路由/中间件层使用。
 //
 // 这些函数在 api 层调用，把 DownloadOutcome 组装成 actix_web::HttpResponse。
 // 服务层（download.rs）本身不调用它们；它们存放在此处是为了避免跨文件重复。

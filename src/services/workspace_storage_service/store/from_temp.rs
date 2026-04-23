@@ -245,7 +245,7 @@ async fn compute_dedup_target(
     };
 
     Ok(DedupTarget {
-        storage_path: crate::utils::storage_path_from_hash(&file_hash),
+        storage_path: crate::utils::storage_path_from_blob_key(&file_hash),
         file_hash,
     })
 }

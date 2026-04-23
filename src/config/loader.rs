@@ -53,7 +53,7 @@ fn load_from_dir(
         .try_deserialize::<Config>()
         .map_aster_err(AsterError::config_error)?;
 
-    resolve_loaded_paths(base_dir, &config_path, &mut cfg);
+    resolve_loaded_paths(base_dir, &config_path, &mut cfg)?;
 
     eprintln!(
         "[INFO] Configuration loaded from: {}",
@@ -101,13 +101,14 @@ fn create_default_config(config_path: &Path, default: &Config) -> Result<()> {
     Ok(())
 }
 
-fn resolve_loaded_paths(base_dir: &Path, config_path: &Path, cfg: &mut Config) {
+fn resolve_loaded_paths(base_dir: &Path, config_path: &Path, cfg: &mut Config) -> Result<()> {
     let config_dir = config_path.parent().unwrap_or(base_dir);
 
-    cfg.server.temp_dir = resolve_config_relative_path(base_dir, config_dir, &cfg.server.temp_dir);
+    cfg.server.temp_dir = resolve_config_relative_path(base_dir, config_dir, &cfg.server.temp_dir)?;
     cfg.server.upload_temp_dir =
-        resolve_config_relative_path(base_dir, config_dir, &cfg.server.upload_temp_dir);
-    cfg.database.url = resolve_config_relative_sqlite_url(base_dir, config_dir, &cfg.database.url);
+        resolve_config_relative_path(base_dir, config_dir, &cfg.server.upload_temp_dir)?;
+    cfg.database.url = resolve_config_relative_sqlite_url(base_dir, config_dir, &cfg.database.url)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -274,6 +275,38 @@ upload_temp_dir = "data/.uploads"
         let cfg = load_from_dir(&dir, Some("sqlite://data/asterdrive.db?mode=rwc"), false).unwrap();
 
         assert_eq!(cfg.database.url, DEFAULT_SQLITE_DATABASE_URL);
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn load_rejects_relative_paths_outside_base_dir() {
+        let dir = make_temp_dir("path-outside-base-dir");
+        write(
+            &dir.join(DEFAULT_CONFIG_PATH),
+            br#"[server]
+temp_dir = "../../outside/.tmp"
+"#,
+        );
+
+        let err = load_from_dir(&dir, None, false).unwrap_err();
+        assert!(err.to_string().contains("outside data base_dir"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn load_rejects_sqlite_url_outside_base_dir() {
+        let dir = make_temp_dir("sqlite-url-outside-base-dir");
+        write(
+            &dir.join(DEFAULT_CONFIG_PATH),
+            br#"[database]
+url = "sqlite://../../outside/asterdrive.db?mode=rwc"
+"#,
+        );
+
+        let err = load_from_dir(&dir, None, false).unwrap_err();
+        assert!(err.to_string().contains("outside data base_dir"));
 
         let _ = std::fs::remove_dir_all(dir);
     }

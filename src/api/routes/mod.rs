@@ -16,7 +16,6 @@ pub mod search;
 pub mod share_public;
 pub mod shares;
 pub mod tasks;
-pub mod team_requests;
 pub mod teams;
 pub mod trash;
 pub mod webdav_accounts;

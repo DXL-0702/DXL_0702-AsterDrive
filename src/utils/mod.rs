@@ -129,11 +129,6 @@ pub fn storage_path_from_blob_key(blob_key: &str) -> String {
     format!("{}/{}/{}", &blob_key[..2], &blob_key[2..4], blob_key)
 }
 
-/// 兼容旧调用方：SHA-256 hash 仍然走同一套分片路径规则。
-pub fn storage_path_from_hash(hash: &str) -> String {
-    storage_path_from_blob_key(hash)
-}
-
 /// macOS / Office 生成的隐藏文件名，不在目录列表中显示
 pub fn is_hidden_name(name: &str) -> bool {
     name.starts_with("._")
@@ -299,9 +294,9 @@ mod tests {
     }
 
     #[test]
-    fn test_storage_path_from_hash() {
+    fn test_storage_path_from_blob_key() {
         let hash = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
-        assert_eq!(storage_path_from_hash(hash), format!("ab/cd/{hash}"));
+        assert_eq!(storage_path_from_blob_key(hash), format!("ab/cd/{hash}"));
     }
 
     #[tokio::test]

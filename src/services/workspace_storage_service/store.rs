@@ -135,7 +135,7 @@ pub(crate) async fn create_empty(
 
     let txn = crate::db::transaction::begin(&state.db).await?;
     let blob = if should_dedup {
-        let storage_path = crate::utils::storage_path_from_hash(EMPTY_SHA256);
+        let storage_path = crate::utils::storage_path_from_blob_key(EMPTY_SHA256);
         let blob = file_repo::find_or_create_blob(
             &txn,
             EMPTY_SHA256,

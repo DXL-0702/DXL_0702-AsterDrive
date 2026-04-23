@@ -411,9 +411,7 @@ async fn build_wopi_discovery_preview_apps_into_config(
 
     let mut next_apps = Vec::with_capacity(config.apps.len() + imported_apps.len());
     for app in &config.apps {
-        if is_generated_wopi_discovery_app(app, discovery_url)
-            || is_legacy_wopi_discovery_seed_app(app, discovery_url)
-        {
+        if is_generated_wopi_discovery_app(app, discovery_url) {
             continue;
         }
         next_apps.push(app.clone());
@@ -486,20 +484,6 @@ fn is_generated_wopi_discovery_app(
     app.provider == preview_app_service::PreviewAppProvider::Wopi
         && app.key.contains(PREVIEW_APP_DISCOVERY_GENERATED_SEGMENT)
         && app.config.discovery_url.as_deref() == Some(discovery_url)
-}
-
-fn is_legacy_wopi_discovery_seed_app(
-    app: &preview_app_service::PublicPreviewAppDefinition,
-    discovery_url: &str,
-) -> bool {
-    app.provider == preview_app_service::PreviewAppProvider::Wopi
-        && app.config.discovery_url.as_deref() == Some(discovery_url)
-        && app.extensions.is_empty()
-        && app.config.action.is_none()
-        && app.config.action_url.is_none()
-        && app.config.action_url_template.is_none()
-        && app.key.starts_with("custom.wopi.")
-        && !app.key.contains(PREVIEW_APP_DISCOVERY_GENERATED_SEGMENT)
 }
 
 fn generated_preview_app_key_prefix(discovery_url: &str) -> String {
@@ -723,6 +707,7 @@ mod tests {
     use super::{
         PREVIEW_APP_DISCOVERY_GENERATED_SEGMENT, build_imported_wopi_preview_apps,
         generated_preview_app_key_prefix, generated_preview_app_suffix,
+        is_generated_wopi_discovery_app,
     };
     use crate::services::{preview_app_service, wopi_service};
     use std::collections::BTreeMap;
@@ -740,7 +725,8 @@ mod tests {
     #[test]
     fn build_imported_wopi_preview_apps_preserves_existing_enabled_state() {
         let discovery_url = "http://localhost:8080/hosting/discovery";
-        let existing_key = "legacy.onlyoffice__wopi_discovery__word".to_string();
+        let existing_key =
+            "custom.wopi.localhost.8080.hosting.discovery__wopi_discovery__word".to_string();
         let existing_generated = BTreeMap::from([(
             "word".to_string(),
             preview_app_service::PublicPreviewAppDefinition {
@@ -812,5 +798,28 @@ mod tests {
             generated_preview_app_suffix("custom.wopi.office.esaps.net__wopi_discovery__word"),
             Some("word")
         );
+    }
+
+    #[test]
+    fn legacy_wopi_seed_is_not_treated_as_generated_app() {
+        let discovery_url = "http://localhost:8080/hosting/discovery";
+        let legacy_seed = preview_app_service::PublicPreviewAppDefinition {
+            key: "custom.wopi.word".to_string(),
+            provider: preview_app_service::PreviewAppProvider::Wopi,
+            icon: "http://localhost:8080/word.ico".to_string(),
+            enabled: true,
+            label_i18n_key: None,
+            labels: BTreeMap::from([("en".to_string(), "Word".to_string())]),
+            extensions: Vec::new(),
+            config: preview_app_service::PublicPreviewAppConfig {
+                discovery_url: Some(discovery_url.to_string()),
+                ..Default::default()
+            },
+        };
+
+        assert!(!is_generated_wopi_discovery_app(
+            &legacy_seed,
+            discovery_url
+        ));
     }
 }

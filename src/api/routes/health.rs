@@ -108,11 +108,6 @@ pub async fn ready(state: web::Data<PrimaryAppState>) -> HttpResponse {
     primary_ready(state).await
 }
 
-#[cfg_attr(not(all(debug_assertions, feature = "openapi")), allow(dead_code))]
-pub async fn ready_follower_compat(state: web::Data<FollowerAppState>) -> HttpResponse {
-    follower_ready(state).await
-}
-
 pub async fn memory() -> HttpResponse {
     let (allocated, peak) = crate::alloc::stats();
     HttpResponse::Ok().json(ApiResponse::ok(MemoryStatsResponse {

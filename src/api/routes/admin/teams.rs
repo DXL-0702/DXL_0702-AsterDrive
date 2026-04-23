@@ -1,14 +1,12 @@
 //! 管理员 API 路由：`teams`。
 
 use crate::api::dto::admin::{AdminCreateTeamReq, AdminPatchTeamReq, AdminTeamListQuery};
+use crate::api::dto::teams::{AddTeamMemberReq, ListTeamMembersQuery, PatchTeamMemberReq};
 use crate::api::dto::validate_request;
 use crate::api::pagination::LimitOffsetQuery;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use crate::api::pagination::OffsetPage;
 use crate::api::response::ApiResponse;
-use crate::api::routes::team_requests::{
-    AddTeamMemberReq, ListTeamMembersQuery, PatchTeamMemberReq,
-};
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{audit_service, auth_service::Claims, team_service};
