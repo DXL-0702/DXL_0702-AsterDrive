@@ -73,6 +73,27 @@ describe("thumbnailSupportStore", () => {
 		expect(useThumbnailSupportStore.getState().isLoaded).toBe(true);
 	});
 
+	it("deduplicates concurrent non-forced loads", async () => {
+		let resolveLoad!: (value: typeof supportConfig) => void;
+		const pendingLoad = new Promise<typeof supportConfig>((resolve) => {
+			resolveLoad = resolve;
+		});
+		mockState.get.mockReturnValueOnce(pendingLoad);
+
+		const { useThumbnailSupportStore } = await loadStore();
+
+		const firstLoad = useThumbnailSupportStore.getState().load();
+		const secondLoad = useThumbnailSupportStore.getState().load();
+
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+
+		resolveLoad(supportConfig);
+		await Promise.all([firstLoad, secondLoad]);
+
+		expect(useThumbnailSupportStore.getState().config).toEqual(supportConfig);
+		expect(useThumbnailSupportStore.getState().isLoaded).toBe(true);
+	});
+
 	it("starts a new forced refresh instead of reusing an existing load", async () => {
 		let resolveInitialLoad!: (value: typeof supportConfig) => void;
 		const initialLoad = new Promise<typeof supportConfig>((resolve) => {

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::config::RuntimeConfig;
 use crate::config::auth_runtime;
 use crate::config::avatar;
+use crate::config::bool_like::parse_bool_like;
 use crate::config::branding;
 use crate::config::cors;
 use crate::config::definitions::{ALL_CONFIGS, ConfigDef};
@@ -203,14 +204,6 @@ pub fn apply_definition(mut config: system_config::Model) -> system_config::Mode
     config.category = def.category.to_string();
     config.description = def.description.to_string();
     config
-}
-
-fn parse_bool_like(value: &str) -> Option<bool> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "true" | "1" | "yes" | "on" => Some(true),
-        "false" | "0" | "no" | "off" => Some(false),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

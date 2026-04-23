@@ -13,7 +13,7 @@ use image::{DynamicImage, GenericImageView, ImageFormat, ImageReader, Limits};
 
 use super::resolve::resolve_avatar_processor;
 use super::shared::{
-    MediaOperation, ProcessedAvatar, TempDirGuard, cli_source_temp_path,
+    MediaOperation, ProcessedAvatar, TempDirGuard, cli_output_detail, cli_source_temp_path,
     run_cli_command_with_timeout,
 };
 
@@ -41,17 +41,9 @@ pub async fn probe_vips_cli_command(command: &str) -> Result<String> {
     .map_aster_err_ctx("vips CLI probe task panicked", AsterError::validation_error)??;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let detail = if !stderr.is_empty() {
-            stderr
-        } else if !stdout.is_empty() {
-            stdout
-        } else {
-            format!("exit status {}", output.status)
-        };
         return Err(AsterError::validation_error(format!(
-            "vips_cli probe failed for '{command}': {detail}"
+            "vips_cli probe failed for '{command}': {}",
+            cli_output_detail(&output)
         )));
     }
 
@@ -229,48 +221,25 @@ async fn render_avatar_with_vips_cli(
         large_output_path = large_output_arg,
         "starting vips CLI avatar render"
     );
-    tokio::task::spawn_blocking(move || {
-        for (size, output_arg) in [
-            (AVATAR_SIZE_SM, &small_output_arg),
-            (AVATAR_SIZE_LG, &large_output_arg),
-        ] {
-            let size_arg = size.to_string();
-            let output = run_cli_command_with_timeout(
-                &command,
-                &[
-                    "thumbnail",
-                    &input_arg,
-                    output_arg,
-                    &size_arg,
-                    "--height",
-                    &size_arg,
-                    "--size",
-                    "both",
-                    "--crop",
-                    "centre",
-                ],
-                AsterError::file_upload_failed,
-            )?;
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                let detail = if !stderr.is_empty() {
-                    stderr
-                } else if !stdout.is_empty() {
-                    stdout
-                } else {
-                    format!("exit status {}", output.status)
-                };
-                return Err(AsterError::file_upload_failed(format!(
-                    "vips CLI avatar command failed for {size}px output: {detail}"
-                )));
-            }
-        }
-        Ok::<(), AsterError>(())
-    })
-    .await
-    .map_aster_err_ctx(
-        "avatar vips CLI task panicked",
+    let small_task = tokio::task::spawn_blocking({
+        let command = command.clone();
+        let input_arg = input_arg.clone();
+        let output_arg = small_output_arg.clone();
+        move || run_avatar_vips_variant(&command, &input_arg, &output_arg, AVATAR_SIZE_SM)
+    });
+    let large_task = tokio::task::spawn_blocking({
+        let command = command.clone();
+        let input_arg = input_arg.clone();
+        let output_arg = large_output_arg.clone();
+        move || run_avatar_vips_variant(&command, &input_arg, &output_arg, AVATAR_SIZE_LG)
+    });
+
+    small_task.await.map_aster_err_ctx(
+        "avatar vips CLI 512 task panicked",
+        AsterError::file_upload_failed,
+    )??;
+    large_task.await.map_aster_err_ctx(
+        "avatar vips CLI 1024 task panicked",
         AsterError::file_upload_failed,
     )??;
 
@@ -300,4 +269,36 @@ async fn render_avatar_with_vips_cli(
         small_bytes,
         large_bytes,
     })
+}
+
+fn run_avatar_vips_variant(
+    command: &str,
+    input_arg: &str,
+    output_arg: &str,
+    size: u32,
+) -> Result<()> {
+    let size_arg = size.to_string();
+    let output = run_cli_command_with_timeout(
+        command,
+        &[
+            "thumbnail",
+            input_arg,
+            output_arg,
+            &size_arg,
+            "--height",
+            &size_arg,
+            "--size",
+            "both",
+            "--crop",
+            "centre",
+        ],
+        AsterError::file_upload_failed,
+    )?;
+    if !output.status.success() {
+        return Err(AsterError::file_upload_failed(format!(
+            "vips CLI avatar command failed for {size}px output: {}",
+            cli_output_detail(&output)
+        )));
+    }
+    Ok(())
 }

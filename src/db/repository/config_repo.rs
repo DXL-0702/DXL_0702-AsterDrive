@@ -1,5 +1,6 @@
 //! 仓储模块：`config_repo`。
 
+use crate::config::bool_like::parse_bool_like;
 use crate::config::definitions::{ALL_CONFIGS, ConfigDef, MEDIA_PROCESSING_REGISTRY_JSON_KEY};
 use crate::config::media_processing;
 use crate::db::repository::pagination_repo::fetch_offset_page;
@@ -255,14 +256,6 @@ where
             }
         },
         None => false,
-    }
-}
-
-fn parse_bool_like(value: &str) -> Option<bool> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "true" | "1" | "yes" | "on" => Some(true),
-        "false" | "0" | "no" | "off" => Some(false),
-        _ => None,
     }
 }
 
