@@ -5,7 +5,7 @@ mod avatar_image;
 mod avatar_storage;
 mod info;
 mod profile;
-mod shared;
+pub(crate) mod shared;
 
 pub use avatar::{
     avatar_image_response, cleanup_avatar_upload, get_avatar_bytes, set_avatar_source,

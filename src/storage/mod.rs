@@ -8,8 +8,13 @@ pub mod policy_snapshot;
 pub mod registry;
 pub mod remote_protocol;
 
-pub use driver::{BlobMetadata, PresignedDownloadOptions, StorageDriver, StoragePathVisitor};
-pub use extensions::{ListStorageDriver, PresignedStorageDriver, StreamUploadDriver};
+pub use driver::{
+    BlobMetadata, PresignedDownloadOptions, StorageDriver, StoragePathVisitor,
+    driver_type_supports_native_thumbnail,
+};
+pub use extensions::{
+    ListStorageDriver, LocalPathStorageDriver, PresignedStorageDriver, StreamUploadDriver,
+};
 pub use multipart::MultipartStorageDriver;
 pub use policy_snapshot::PolicySnapshot;
 pub use registry::DriverRegistry;

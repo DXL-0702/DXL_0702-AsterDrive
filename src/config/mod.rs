@@ -2,11 +2,13 @@
 
 pub mod auth_runtime;
 pub mod avatar;
+pub mod bool_like;
 pub mod branding;
 pub mod cors;
 pub mod definitions;
 mod loader;
 pub mod mail;
+pub mod media_processing;
 pub mod node_mode;
 pub mod operations;
 mod runtime_config;

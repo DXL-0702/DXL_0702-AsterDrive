@@ -292,6 +292,10 @@ async fn run_health_test_for_node<S: PrimaryRuntimeState>(
         return Ok(RemoteNodeHealthTestOutcome::Skipped);
     }
 
+    if !node.is_enabled {
+        return Ok(RemoteNodeHealthTestOutcome::Skipped);
+    }
+
     if let Err(error) =
         sync_remote_binding_config_with_timeout(&node, REMOTE_BINDING_SYNC_TIMEOUT).await
     {
@@ -299,9 +303,6 @@ async fn run_health_test_for_node<S: PrimaryRuntimeState>(
             remote_node_id = node.id,
             "failed to sync remote binding config during health test: {error}"
         );
-    }
-    if !node.is_enabled {
-        return Ok(RemoteNodeHealthTestOutcome::Skipped);
     }
 
     let probed = probe_and_persist_node(state, &node).await?;

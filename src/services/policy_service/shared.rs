@@ -2,6 +2,7 @@
 
 use chrono::Utc;
 use sea_orm::Set;
+use validator::Validate;
 
 use crate::db::repository::{managed_follower_repo, policy_group_repo, policy_repo};
 use crate::entities::{storage_policy_group, storage_policy_group_item};
@@ -31,7 +32,11 @@ pub(super) fn serialize_allowed_types(
 pub(super) fn serialize_options(
     options: &StoragePolicyOptions,
 ) -> Result<StoredStoragePolicyOptions> {
-    serialize_storage_policy_options(options).map_err(|error| {
+    let options = options.clone().normalized();
+    options
+        .validate()
+        .map_err(|error| AsterError::validation_error(error.to_string()))?;
+    serialize_storage_policy_options(&options).map_err(|error| {
         AsterError::internal_error(format!("serialize storage policy options: {error}"))
     })
 }

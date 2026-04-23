@@ -6,53 +6,26 @@ use image::ImageFormat;
 use image::imageops::FilterType;
 use image::{ImageReader, Limits};
 
-use crate::config::operations;
-use crate::db::repository::file_repo;
 use crate::entities::file_blob;
 use crate::errors::{AsterError, MapAsterErr, Result};
-use crate::runtime::PrimaryAppState;
 use crate::storage::StorageDriver;
 
 const THUMB_MAX_DIM: u32 = 200;
 const THUMB_PREFIX: &str = "_thumb";
-const THUMB_VERSION: &str = "v2";
+pub(crate) const CURRENT_IMAGES_THUMBNAIL_VERSION: &str = "images-v1";
 /// 单次解码最大内存分配（防止恶意/超大图 OOM）
 const MAX_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
 
-/// 判断 MIME 类型是否支持生成缩略图
-pub fn is_supported_mime(mime: &str) -> bool {
-    matches!(
-        mime,
-        "image/jpeg" | "image/png" | "image/gif" | "image/webp" | "image/bmp" | "image/tiff"
-    )
-}
-
-pub fn ensure_supported_mime(mime: &str) -> Result<()> {
-    if is_supported_mime(mime) {
-        return Ok(());
-    }
-
-    Err(AsterError::validation_error(format!(
-        "thumbnails are not supported for MIME type '{mime}'"
-    )))
-}
-
 /// 计算缩略图在存储驱动中的路径
 pub(crate) fn thumb_path(blob_hash: &str) -> String {
+    thumb_path_for_version(blob_hash, CURRENT_IMAGES_THUMBNAIL_VERSION)
+}
+
+pub(crate) fn thumb_path_for_version(blob_hash: &str, version: &str) -> String {
     format!(
         "{}/{}/{}/{}/{}.webp",
         THUMB_PREFIX,
-        THUMB_VERSION,
-        &blob_hash[..2],
-        &blob_hash[2..4],
-        blob_hash
-    )
-}
-
-pub(crate) fn legacy_thumb_path(blob_hash: &str) -> String {
-    format!(
-        "{}/{}/{}/{}.webp",
-        THUMB_PREFIX,
+        version,
         &blob_hash[..2],
         &blob_hash[2..4],
         blob_hash
@@ -62,152 +35,17 @@ pub(crate) fn legacy_thumb_path(blob_hash: &str) -> String {
 pub(crate) fn thumbnail_etag_value_for(blob_hash: &str, thumbnail_version: Option<&str>) -> String {
     format!(
         "thumb-{}-{blob_hash}",
-        thumbnail_version.unwrap_or(THUMB_VERSION)
+        thumbnail_version.unwrap_or(CURRENT_IMAGES_THUMBNAIL_VERSION)
     )
 }
 
-pub(crate) fn thumbnail_version(blob: &file_blob::Model) -> &str {
-    blob.thumbnail_version.as_deref().unwrap_or(THUMB_VERSION)
+pub(crate) fn current_thumbnail_max_dim() -> u32 {
+    THUMB_MAX_DIM
 }
 
-pub(crate) fn is_thumbnail_path(path: &str) -> bool {
+pub fn is_thumbnail_path(path: &str) -> bool {
     path.trim_start_matches('/')
         .starts_with(&format!("{THUMB_PREFIX}/"))
-}
-
-/// 尝试获取已有缩略图，如果不存在则返回 None。
-pub async fn load_thumbnail_if_exists(
-    state: &PrimaryAppState,
-    blob: &file_blob::Model,
-) -> Result<Option<Vec<u8>>> {
-    ensure_source_size_supported(
-        blob,
-        operations::thumbnail_max_source_bytes(&state.runtime_config),
-    )?;
-    let Some(path) = blob.thumbnail_path.as_deref() else {
-        return Ok(None);
-    };
-    let driver = thumbnail_driver(state, blob)?;
-    match driver.get(path).await {
-        Ok(data) => Ok(Some(data)),
-        Err(error) => match driver.exists(path).await {
-            Ok(false) => {
-                if let Err(clear_error) =
-                    file_repo::clear_thumbnail_metadata(&state.db, blob.id).await
-                {
-                    tracing::warn!(
-                        blob_id = blob.id,
-                        path,
-                        "failed to clear stale thumbnail metadata: {clear_error}"
-                    );
-                }
-                Ok(None)
-            }
-            Ok(true) => Err(error),
-            Err(exists_error) => {
-                tracing::warn!(
-                    blob_id = blob.id,
-                    path,
-                    "thumbnail get failed and existence recheck also failed: {exists_error}"
-                );
-                Err(error)
-            }
-        },
-    }
-}
-
-/// 获取或同步生成缩略图（仅用于公开分享等无法等待的场景）
-pub async fn get_or_generate(state: &PrimaryAppState, blob: &file_blob::Model) -> Result<Vec<u8>> {
-    if let Some(data) = load_thumbnail_if_exists(state, blob).await? {
-        return Ok(data);
-    }
-
-    let driver = thumbnail_driver(state, blob)?;
-    let path = thumb_path(&blob.hash);
-    if driver.exists(&path).await.unwrap_or(false) {
-        if let Err(error) =
-            file_repo::set_thumbnail_metadata(&state.db, blob.id, &path, THUMB_VERSION).await
-        {
-            tracing::warn!(
-                blob_id = blob.id,
-                path,
-                "failed to persist existing thumbnail metadata: {error}"
-            );
-        }
-        return driver.get(&path).await;
-    }
-    let webp_bytes = render_thumbnail_bytes(driver.as_ref(), blob).await?;
-
-    if let Err(e) = driver.put(&path, &webp_bytes).await {
-        tracing::warn!("failed to store thumbnail {path}: {e}");
-    } else if let Err(error) =
-        file_repo::set_thumbnail_metadata(&state.db, blob.id, &path, THUMB_VERSION).await
-    {
-        tracing::warn!(
-            blob_id = blob.id,
-            path,
-            "failed to persist thumbnail metadata after synchronous generation: {error}"
-        );
-    }
-
-    Ok(webp_bytes)
-}
-
-/// 严格生成并写回缩略图。
-///
-/// 如果缩略图已存在，会直接复用并返回 `(path, true)`。
-/// 如果本次成功生成并持久化，会返回 `(path, false)`。
-pub async fn generate_and_store(
-    state: &PrimaryAppState,
-    blob: &file_blob::Model,
-) -> Result<(String, bool)> {
-    ensure_source_size_supported(
-        blob,
-        operations::thumbnail_max_source_bytes(&state.runtime_config),
-    )?;
-    let driver = thumbnail_driver(state, blob)?;
-    let path = thumb_path(&blob.hash);
-
-    if driver.exists(&path).await.unwrap_or(false) {
-        if let Err(error) =
-            file_repo::set_thumbnail_metadata(&state.db, blob.id, &path, THUMB_VERSION).await
-        {
-            tracing::warn!(
-                blob_id = blob.id,
-                path,
-                "failed to persist existing thumbnail metadata: {error}"
-            );
-        }
-        return Ok((path, true));
-    }
-
-    let webp_bytes = render_thumbnail_bytes(driver.as_ref(), blob).await?;
-    let stored_path = driver.put(&path, &webp_bytes).await?;
-    file_repo::set_thumbnail_metadata(&state.db, blob.id, &stored_path, THUMB_VERSION).await?;
-    Ok((stored_path, false))
-}
-
-/// 删除缩略图（blob 物理删除时调用）
-pub async fn delete_thumbnail(state: &PrimaryAppState, blob: &file_blob::Model) -> Result<()> {
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    let driver = state.driver_registry.get_driver(&policy)?;
-
-    let mut paths = std::collections::BTreeSet::new();
-    if let Some(path) = blob.thumbnail_path.as_ref() {
-        paths.insert(path.clone());
-    }
-    paths.insert(thumb_path(&blob.hash));
-    paths.insert(legacy_thumb_path(&blob.hash));
-
-    for path in paths {
-        if driver.exists(&path).await.unwrap_or(false) {
-            driver.delete(&path).await?;
-        }
-    }
-    if let Err(e) = file_repo::clear_thumbnail_metadata(&state.db, blob.id).await {
-        tracing::warn!(blob_id = %blob.id, "failed to clear thumbnail metadata: {e}");
-    }
-    Ok(())
 }
 
 /// 解码图片 → 缩放 → 编码为 WebP（CPU 密集，应在 spawn_blocking 中调用）
@@ -248,15 +86,7 @@ fn encode_webp(img: &image::DynamicImage) -> Result<Vec<u8>> {
     Ok(buf.into_inner())
 }
 
-fn thumbnail_driver(
-    state: &PrimaryAppState,
-    blob: &file_blob::Model,
-) -> Result<std::sync::Arc<dyn StorageDriver>> {
-    let policy = state.policy_snapshot.get_policy_or_err(blob.policy_id)?;
-    state.driver_registry.get_driver(&policy)
-}
-
-async fn render_thumbnail_bytes(
+pub(crate) async fn render_thumbnail_bytes(
     driver: &dyn StorageDriver,
     blob: &file_blob::Model,
 ) -> Result<Vec<u8>> {
@@ -269,7 +99,10 @@ async fn render_thumbnail_bytes(
         )?
 }
 
-fn ensure_source_size_supported(blob: &file_blob::Model, max_source_bytes: i64) -> Result<()> {
+pub(crate) fn ensure_source_size_supported(
+    blob: &file_blob::Model,
+    max_source_bytes: i64,
+) -> Result<()> {
     if blob.size > max_source_bytes {
         return Err(AsterError::validation_error(format!(
             "thumbnail source exceeds {} MiB limit",
@@ -331,7 +164,10 @@ mod tests {
     #[test]
     fn thumbnail_paths_are_versioned() {
         let hash = "abc".repeat(21) + "a";
-        assert_eq!(thumb_path(&hash), format!("_thumb/v2/ab/ca/{hash}.webp"));
+        assert_eq!(
+            thumb_path(&hash),
+            format!("_thumb/images-v1/ab/ca/{hash}.webp")
+        );
     }
 
     #[test]
@@ -339,7 +175,7 @@ mod tests {
         let hash = "abc".repeat(21) + "a";
         assert_eq!(
             thumbnail_etag_value_for(&hash, None),
-            format!("thumb-v2-{hash}")
+            format!("thumb-images-v1-{hash}")
         );
     }
 

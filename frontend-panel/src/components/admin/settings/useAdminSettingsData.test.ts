@@ -1,6 +1,11 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	MEDIA_PROCESSING_CONFIG_KEY,
+	MEDIA_PROCESSING_CONFIG_VERSION,
+	type MediaProcessingEditorConfig,
+} from "@/components/admin/mediaProcessingConfigEditorShared";
+import {
 	PREVIEW_APP_PROTECTED_BUILTIN_KEYS,
 	PREVIEW_APPS_CONFIG_KEY,
 } from "@/components/admin/previewAppsConfigEditorShared";
@@ -22,6 +27,8 @@ const mockState = vi.hoisted(() => ({
 	sendTestEmail: vi.fn(),
 	setConfig: vi.fn(),
 	templateVariables: vi.fn(),
+	thumbnailSupportInvalidate: vi.fn(),
+	thumbnailSupportLoad: vi.fn(),
 	toastSuccess: vi.fn(),
 }));
 
@@ -57,6 +64,17 @@ vi.mock("@/stores/previewAppStore", () => {
 	});
 
 	return { usePreviewAppStore };
+});
+
+vi.mock("@/stores/thumbnailSupportStore", () => {
+	const useThumbnailSupportStore = Object.assign(vi.fn(), {
+		getState: () => ({
+			invalidate: mockState.thumbnailSupportInvalidate,
+			load: mockState.thumbnailSupportLoad,
+		}),
+	});
+
+	return { useThumbnailSupportStore };
 });
 
 const translationMap: Record<string, string> = {
@@ -111,6 +129,36 @@ function createValidPreviewAppsConfig(
 	);
 }
 
+function createValidMediaProcessingConfig(
+	overrides: Partial<
+		Pick<MediaProcessingEditorConfig, "processors" | "version">
+	> = {},
+) {
+	const config: MediaProcessingEditorConfig = {
+		version: overrides.version ?? MEDIA_PROCESSING_CONFIG_VERSION,
+		processors: overrides.processors ?? [
+			{
+				config: {
+					command: "vips",
+				},
+				enabled: false,
+				extensions: ["heic", "heif"],
+				kind: "vips_cli",
+			},
+			{
+				config: {
+					command: "",
+				},
+				enabled: true,
+				extensions: [],
+				kind: "images",
+			},
+		],
+	};
+
+	return JSON.stringify(config, null, 2);
+}
+
 function createBaseConfigs() {
 	return [
 		createConfig(),
@@ -124,6 +172,12 @@ function createBaseConfigs() {
 			category: "general.preview",
 			key: PREVIEW_APPS_CONFIG_KEY,
 			value: createValidPreviewAppsConfig(),
+			value_type: "multiline",
+		}),
+		createConfig({
+			category: "storage.media_processing",
+			key: MEDIA_PROCESSING_CONFIG_KEY,
+			value: createValidMediaProcessingConfig(),
 			value_type: "multiline",
 		}),
 	];
@@ -151,6 +205,7 @@ function createCorsConfigs(overrides?: {
 function getConfigCategory(key: string) {
 	if (key.startsWith("custom")) return "custom";
 	if (key === PREVIEW_APPS_CONFIG_KEY) return "general.preview";
+	if (key === MEDIA_PROCESSING_CONFIG_KEY) return "storage.media_processing";
 	return "general";
 }
 
@@ -159,7 +214,9 @@ function getMockConfigSource(key: string): SystemConfigSource {
 }
 
 function getMockConfigValueType(key: string): SystemConfigValueType {
-	return key === PREVIEW_APPS_CONFIG_KEY ? "multiline" : "string";
+	return key === PREVIEW_APPS_CONFIG_KEY || key === MEDIA_PROCESSING_CONFIG_KEY
+		? "multiline"
+		: "string";
 }
 
 function renderUseAdminSettingsData() {
@@ -190,6 +247,8 @@ describe("useAdminSettingsData", () => {
 		mockState.sendTestEmail.mockReset();
 		mockState.setConfig.mockReset();
 		mockState.templateVariables.mockReset();
+		mockState.thumbnailSupportInvalidate.mockReset();
+		mockState.thumbnailSupportLoad.mockReset();
 		mockState.toastSuccess.mockReset();
 
 		mockState.listConfigs.mockResolvedValue({
@@ -198,6 +257,7 @@ describe("useAdminSettingsData", () => {
 		mockState.schema.mockResolvedValue([]);
 		mockState.templateVariables.mockResolvedValue([]);
 		mockState.previewLoad.mockResolvedValue(undefined);
+		mockState.thumbnailSupportLoad.mockResolvedValue(undefined);
 		mockState.deleteConfig.mockResolvedValue(undefined);
 		mockState.setConfig.mockImplementation((key: string, value: string) =>
 			Promise.resolve(
@@ -376,7 +436,7 @@ describe("useAdminSettingsData", () => {
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
 	});
 
-	it("saves changes, syncs public site url, and invalidates preview apps when preview config changes", async () => {
+	it("saves changes, syncs public site url, and reloads public config stores when preview config changes", async () => {
 		const { onPublicSiteUrlChanged, result } = renderUseAdminSettingsData();
 
 		await waitFor(() => expect(result.current.loading).toBe(false));
@@ -399,6 +459,26 @@ describe("useAdminSettingsData", () => {
 				provider: "url_template",
 			},
 		]);
+		const nextMediaProcessingValue = createValidMediaProcessingConfig({
+			processors: [
+				{
+					config: {
+						command: "/usr/local/bin/vips",
+					},
+					enabled: true,
+					extensions: ["heic", "avif"],
+					kind: "vips_cli",
+				},
+				{
+					config: {
+						command: "",
+					},
+					enabled: true,
+					extensions: [],
+					kind: "images",
+				},
+			],
+		});
 
 		act(() => {
 			result.current.updateDraftValue(
@@ -408,6 +488,10 @@ describe("useAdminSettingsData", () => {
 			result.current.updateDraftValue(
 				PREVIEW_APPS_CONFIG_KEY,
 				nextPreviewValue,
+			);
+			result.current.updateDraftValue(
+				MEDIA_PROCESSING_CONFIG_KEY,
+				nextMediaProcessingValue,
 			);
 			result.current.markCustomDeleted("custom.theme");
 			result.current.appendCustomDraftRow();
@@ -434,12 +518,20 @@ describe("useAdminSettingsData", () => {
 			PREVIEW_APPS_CONFIG_KEY,
 			nextPreviewValue,
 		);
+		expect(mockState.setConfig).toHaveBeenCalledWith(
+			MEDIA_PROCESSING_CONFIG_KEY,
+			nextMediaProcessingValue,
+		);
 		expect(mockState.setConfig).toHaveBeenCalledWith("custom.accent", "sunset");
 		expect(onPublicSiteUrlChanged).toHaveBeenCalledWith(
 			"https://next.example.com",
 		);
 		expect(mockState.previewInvalidate).toHaveBeenCalledTimes(1);
 		expect(mockState.previewLoad).toHaveBeenCalledWith({ force: true });
+		expect(mockState.thumbnailSupportInvalidate).toHaveBeenCalledTimes(1);
+		expect(mockState.thumbnailSupportLoad).toHaveBeenCalledWith({
+			force: true,
+		});
 		expect(mockState.toastSuccess).toHaveBeenCalledWith("settings_saved");
 
 		await waitFor(() => {
@@ -449,6 +541,35 @@ describe("useAdminSettingsData", () => {
 		expect(
 			result.current.visibleCustomConfigs.map((config) => config.key),
 		).toEqual(["custom.accent"]);
+	});
+
+	it("does not reload public config stores when only public_site_url changes", async () => {
+		const { onPublicSiteUrlChanged, result } = renderUseAdminSettingsData();
+
+		await waitFor(() => expect(result.current.loading).toBe(false));
+
+		act(() => {
+			result.current.updateDraftValue(
+				"public_site_url",
+				"https://only-public.example.com",
+			);
+		});
+
+		await act(async () => {
+			await result.current.handleSaveAll();
+		});
+
+		expect(mockState.setConfig).toHaveBeenCalledWith(
+			"public_site_url",
+			"https://only-public.example.com",
+		);
+		expect(onPublicSiteUrlChanged).toHaveBeenCalledWith(
+			"https://only-public.example.com",
+		);
+		expect(mockState.previewInvalidate).not.toHaveBeenCalled();
+		expect(mockState.previewLoad).not.toHaveBeenCalled();
+		expect(mockState.thumbnailSupportInvalidate).not.toHaveBeenCalled();
+		expect(mockState.thumbnailSupportLoad).not.toHaveBeenCalled();
 	});
 
 	it("reloads configs after save failure and reports the error", async () => {

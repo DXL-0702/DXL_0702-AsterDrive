@@ -5,6 +5,7 @@ use crate::config::auth_runtime;
 use crate::config::branding;
 use crate::config::definitions::ALL_CONFIGS;
 use crate::config::mail;
+use crate::config::media_processing;
 use crate::config::site_url;
 use crate::config::system_config as shared_system_config;
 use crate::db::repository::{config_repo, user_repo};
@@ -13,12 +14,12 @@ use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::{self, AuditContext},
-    mail_service, preview_app_service, wopi_service,
+    mail_service, media_processing_service, preview_app_service, wopi_service,
 };
-use crate::types::{SystemConfigSource, SystemConfigValueType};
+use crate::types::{SystemConfigSource, SystemConfigValueType, parse_storage_policy_options};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
 
@@ -31,6 +32,8 @@ const PREVIEW_APP_DISCOVERY_GENERATED_SEGMENT: &str = "__wopi_discovery__";
 pub enum ConfigActionType {
     BuildWopiDiscoveryPreviewConfig,
     SendTestEmail,
+    TestVipsCli,
+    TestFfmpegCli,
 }
 
 impl ConfigActionType {
@@ -38,6 +41,8 @@ impl ConfigActionType {
         match self {
             Self::BuildWopiDiscoveryPreviewConfig => "build_wopi_discovery_preview_config",
             Self::SendTestEmail => "send_test_email",
+            Self::TestVipsCli => "test_vips_cli",
+            Self::TestFfmpegCli => "test_ffmpeg_cli",
         }
     }
 }
@@ -189,6 +194,9 @@ pub async fn execute_action(
         preview_app_service::PREVIEW_APPS_CONFIG_KEY => {
             execute_preview_app_action(state, action, actor_user_id, value, discovery_url).await
         }
+        media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY => {
+            execute_media_processing_action(state, action, actor_user_id, value).await
+        }
         _ => Err(AsterError::record_not_found(format!(
             "config action target '{key}'"
         ))),
@@ -312,6 +320,69 @@ async fn execute_preview_app_action(
             "action '{}' is not supported for '{}'",
             action.as_str(),
             preview_app_service::PREVIEW_APPS_CONFIG_KEY
+        ))),
+    }
+}
+
+async fn execute_media_processing_action(
+    state: &PrimaryAppState,
+    action: ConfigActionType,
+    actor_user_id: i64,
+    value: Option<&str>,
+) -> Result<ConfigActionResult> {
+    match action {
+        ConfigActionType::TestVipsCli => {
+            let raw_value = value.map(str::to_string).unwrap_or_else(|| {
+                state
+                    .runtime_config
+                    .get(media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY)
+                    .unwrap_or_else(media_processing::default_media_processing_registry_json)
+            });
+            let command = media_processing::vips_command_from_registry_value(&raw_value)?;
+
+            tracing::debug!(
+                actor_user_id,
+                action = %action.as_str(),
+                command = %command,
+                "config: executing media processing action"
+            );
+
+            let message = media_processing_service::probe_vips_cli_command(&command).await?;
+
+            Ok(ConfigActionResult {
+                message,
+                target_email: None,
+                value: None,
+            })
+        }
+        ConfigActionType::TestFfmpegCli => {
+            let raw_value = value.map(str::to_string).unwrap_or_else(|| {
+                state
+                    .runtime_config
+                    .get(media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY)
+                    .unwrap_or_else(media_processing::default_media_processing_registry_json)
+            });
+            let command = media_processing::ffmpeg_command_from_registry_value(&raw_value)?;
+
+            tracing::debug!(
+                actor_user_id,
+                action = %action.as_str(),
+                command = %command,
+                "config: executing media processing action"
+            );
+
+            let message = media_processing_service::probe_ffmpeg_cli_command(&command).await?;
+
+            Ok(ConfigActionResult {
+                message,
+                target_email: None,
+                value: None,
+            })
+        }
+        _ => Err(AsterError::validation_error(format!(
+            "action '{}' is not supported for '{}'",
+            action.as_str(),
+            media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY
         ))),
     }
 }
@@ -544,6 +615,37 @@ pub fn get_public_preview_apps(
     state: &PrimaryAppState,
 ) -> preview_app_service::PublicPreviewAppsConfig {
     preview_app_service::get_public_preview_apps(state)
+}
+
+pub fn get_public_thumbnail_support(
+    state: &PrimaryAppState,
+) -> crate::config::media_processing::PublicThumbnailSupport {
+    let mut support =
+        crate::config::media_processing::public_thumbnail_support(&state.runtime_config);
+    let mut extensions = support.extensions.iter().cloned().collect::<BTreeSet<_>>();
+
+    for policy in state.policy_snapshot.all_policies() {
+        let options = parse_storage_policy_options(policy.options.as_ref());
+        if !options.uses_storage_native_thumbnail() || options.thumbnail_extensions.is_empty() {
+            continue;
+        }
+
+        match state.driver_registry.get_driver(&policy) {
+            Ok(driver) if driver.as_native_thumbnail().is_some() => {
+                extensions.extend(options.thumbnail_extensions);
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::debug!(
+                    policy_id = policy.id,
+                    "skip storage-native thumbnail public support for policy: {error}"
+                );
+            }
+        }
+    }
+
+    support.extensions = extensions.into_iter().collect();
+    support
 }
 
 // ── Config Schema ─────────────────────────────────────────────────────

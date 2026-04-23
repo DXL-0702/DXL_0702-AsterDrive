@@ -1,15 +1,27 @@
 //! 仓储模块：`config_repo`。
 
-use crate::config::definitions::{ALL_CONFIGS, ConfigDef};
+use crate::config::bool_like::parse_bool_like;
+use crate::config::definitions::{ALL_CONFIGS, ConfigDef, MEDIA_PROCESSING_REGISTRY_JSON_KEY};
+use crate::config::media_processing;
 use crate::db::repository::pagination_repo::fetch_offset_page;
 use crate::entities::system_config::{self, Entity as SystemConfig};
 use crate::errors::{AsterError, Result};
-use crate::types::{SystemConfigSource, SystemConfigValueType};
+use crate::types::{MediaProcessorKind, SystemConfigSource, SystemConfigValueType};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, QueryOrder, Set,
     TryInsertResult,
 };
+
+const BOOTSTRAP_ENABLE_VIPS_CLI_ENV: &str = "ASTER_BOOTSTRAP_ENABLE_VIPS_CLI";
+const BOOTSTRAP_ENABLE_FFMPEG_CLI_ENV: &str = "ASTER_BOOTSTRAP_ENABLE_FFMPEG_CLI";
+const BOOTSTRAP_MEDIA_PROCESSOR_ENV_FLAGS: &[(MediaProcessorKind, &str)] = &[
+    (MediaProcessorKind::VipsCli, BOOTSTRAP_ENABLE_VIPS_CLI_ENV),
+    (
+        MediaProcessorKind::FfmpegCli,
+        BOOTSTRAP_ENABLE_FFMPEG_CLI_ENV,
+    ),
+];
 
 fn find_definition(key: &str) -> Option<&'static ConfigDef> {
     ALL_CONFIGS.iter().find(|def| def.key == key)
@@ -188,12 +200,79 @@ pub async fn ensure_system_value_if_missing<C: ConnectionTrait>(
     Ok(inserted)
 }
 
+fn resolve_default_value<F>(def: &ConfigDef, get_env: &F) -> String
+where
+    F: Fn(&str) -> Option<String>,
+{
+    if def.key == MEDIA_PROCESSING_REGISTRY_JSON_KEY {
+        return bootstrap_media_processing_registry_default_value(get_env);
+    }
+
+    (def.default_fn)()
+}
+
+fn bootstrap_media_processing_registry_default_value<F>(get_env: &F) -> String
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let enabled_processors = bootstrap_enabled_media_processors(get_env);
+
+    if enabled_processors.is_empty() {
+        return media_processing::default_media_processing_registry_json();
+    }
+
+    let mut config = media_processing::default_media_processing_registry();
+    for processor in &mut config.processors {
+        if enabled_processors.contains(&processor.kind) {
+            processor.enabled = true;
+        }
+    }
+
+    serde_json::to_string_pretty(&config)
+        .expect("bootstrapped media processing registry should serialize")
+}
+
+fn bootstrap_enabled_media_processors<F>(get_env: &F) -> Vec<MediaProcessorKind>
+where
+    F: Fn(&str) -> Option<String>,
+{
+    BOOTSTRAP_MEDIA_PROCESSOR_ENV_FLAGS
+        .iter()
+        .filter_map(|(kind, env_name)| env_flag_enabled(get_env, env_name).then_some(*kind))
+        .collect()
+}
+
+fn env_flag_enabled<F>(get_env: &F, name: &str) -> bool
+where
+    F: Fn(&str) -> Option<String>,
+{
+    let value = get_env(name);
+    match value.as_deref() {
+        Some(raw) => match parse_bool_like(raw) {
+            Some(parsed) => parsed,
+            None => {
+                tracing::warn!("invalid boolean for {}: {}", name, raw);
+                false
+            }
+        },
+        None => false,
+    }
+}
+
 /// 确保所有系统配置存在，同步元信息（不覆盖用户修改的 value）
 pub async fn ensure_defaults<C: ConnectionTrait>(db: &C) -> Result<usize> {
+    ensure_defaults_with_env(db, &|name| std::env::var(name).ok()).await
+}
+
+async fn ensure_defaults_with_env<C, F>(db: &C, get_env: &F) -> Result<usize>
+where
+    C: ConnectionTrait,
+    F: Fn(&str) -> Option<String>,
+{
     let mut count = 0;
 
     for def in ALL_CONFIGS {
-        let default_value = (def.default_fn)();
+        let default_value = resolve_default_value(def, get_env);
         let now = Utc::now();
         let inserted =
             match SystemConfig::insert(build_system_active_model(def, default_value, now, None))
@@ -235,4 +314,173 @@ pub async fn ensure_defaults<C: ConnectionTrait>(db: &C) -> Result<usize> {
     }
 
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::DatabaseConfig;
+    use crate::db;
+    use migration::{Migrator, MigratorTrait};
+
+    async fn setup_db() -> sea_orm::DatabaseConnection {
+        let db = db::connect(&DatabaseConfig {
+            url: "sqlite::memory:".to_string(),
+            pool_size: 1,
+            retry_count: 0,
+        })
+        .await
+        .expect("config repo test DB should connect");
+        Migrator::up(&db, None)
+            .await
+            .expect("config repo migrations should succeed");
+        db
+    }
+
+    async fn media_processing_registry_config(
+        db: &sea_orm::DatabaseConnection,
+    ) -> media_processing::MediaProcessingRegistryConfig {
+        let stored = find_by_key(db, MEDIA_PROCESSING_REGISTRY_JSON_KEY)
+            .await
+            .expect("media processing config lookup should succeed")
+            .expect("media processing config should exist");
+        serde_json::from_str(&stored.value)
+            .expect("stored media processing config should be valid JSON")
+    }
+
+    #[tokio::test]
+    async fn ensure_defaults_keeps_media_processing_registry_default_when_bootstrap_env_disabled() {
+        let db = setup_db().await;
+
+        ensure_defaults_with_env(&db, &|_| None)
+            .await
+            .expect("ensure_defaults should succeed");
+
+        let stored = find_by_key(&db, MEDIA_PROCESSING_REGISTRY_JSON_KEY)
+            .await
+            .expect("media processing config lookup should succeed")
+            .expect("media processing config should exist");
+
+        assert_eq!(
+            stored.value,
+            media_processing::default_media_processing_registry_json()
+        );
+    }
+
+    #[tokio::test]
+    async fn ensure_defaults_bootstraps_cli_processors_without_losing_default_bindings() {
+        let db = setup_db().await;
+
+        ensure_defaults_with_env(&db, &|name| match name {
+            BOOTSTRAP_ENABLE_VIPS_CLI_ENV | BOOTSTRAP_ENABLE_FFMPEG_CLI_ENV => {
+                Some("1".to_string())
+            }
+            _ => None,
+        })
+        .await
+        .expect("ensure_defaults should succeed");
+
+        let config = media_processing_registry_config(&db).await;
+        let vips =
+            media_processing::processor_config_for_kind(&config, MediaProcessorKind::VipsCli)
+                .expect("vips config should exist");
+        let ffmpeg =
+            media_processing::processor_config_for_kind(&config, MediaProcessorKind::FfmpegCli)
+                .expect("ffmpeg config should exist");
+
+        assert!(vips.enabled);
+        assert_eq!(
+            vips.extensions,
+            media_processing::default_processor_config_for_kind(MediaProcessorKind::VipsCli)
+                .extensions
+        );
+        assert_eq!(
+            vips.config.command.as_deref(),
+            Some(media_processing::DEFAULT_VIPS_COMMAND)
+        );
+
+        assert!(ffmpeg.enabled);
+        assert_eq!(
+            ffmpeg.extensions,
+            media_processing::default_processor_config_for_kind(MediaProcessorKind::FfmpegCli)
+                .extensions
+        );
+        assert_eq!(
+            ffmpeg.config.command.as_deref(),
+            Some(media_processing::DEFAULT_FFMPEG_COMMAND)
+        );
+    }
+
+    #[tokio::test]
+    async fn ensure_defaults_ignores_invalid_bootstrap_media_processor_flags() {
+        let db = setup_db().await;
+
+        ensure_defaults_with_env(&db, &|name| match name {
+            BOOTSTRAP_ENABLE_VIPS_CLI_ENV => Some("definitely".to_string()),
+            _ => None,
+        })
+        .await
+        .expect("ensure_defaults should succeed");
+
+        let config = media_processing_registry_config(&db).await;
+        let vips =
+            media_processing::processor_config_for_kind(&config, MediaProcessorKind::VipsCli)
+                .expect("vips config should exist");
+
+        assert!(!vips.enabled);
+    }
+
+    #[tokio::test]
+    async fn ensure_defaults_does_not_override_existing_media_processing_registry() {
+        let db = setup_db().await;
+        let existing = r#"{
+  "version": 1,
+  "processors": [
+    {
+      "kind": "vips_cli",
+      "enabled": false,
+      "extensions": [
+        "heic"
+      ],
+      "config": {
+        "command": "vips"
+      }
+    },
+    {
+      "kind": "ffmpeg_cli",
+      "enabled": true,
+      "extensions": [
+        "mp4"
+      ],
+      "config": {
+        "command": "ffmpeg"
+      }
+    },
+    {
+      "kind": "images",
+      "enabled": true
+    }
+  ]
+}"#;
+
+        ensure_system_value_if_missing(&db, MEDIA_PROCESSING_REGISTRY_JSON_KEY, existing)
+            .await
+            .expect("initial media processing config insert should succeed");
+
+        ensure_defaults_with_env(&db, &|name| match name {
+            BOOTSTRAP_ENABLE_VIPS_CLI_ENV | BOOTSTRAP_ENABLE_FFMPEG_CLI_ENV => {
+                Some("1".to_string())
+            }
+            _ => None,
+        })
+        .await
+        .expect("ensure_defaults should succeed");
+
+        let stored = find_by_key(&db, MEDIA_PROCESSING_REGISTRY_JSON_KEY)
+            .await
+            .expect("media processing config lookup should succeed")
+            .expect("media processing config should exist");
+
+        assert_eq!(stored.value, existing);
+    }
 }

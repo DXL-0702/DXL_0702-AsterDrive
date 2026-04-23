@@ -7,10 +7,13 @@ type BlobFetchLane = "default" | "thumbnail";
 interface BlobCacheEntry {
 	blob?: Blob;
 	lane?: BlobFetchLane;
+	missing?: boolean;
+	needsRefresh?: boolean;
 	objectUrl?: string;
 	etag?: string | null;
 	promise?: Promise<string>;
 	refCount: number;
+	refreshTimer?: ReturnType<typeof setTimeout>;
 	revokeTimer?: ReturnType<typeof setTimeout>;
 }
 
@@ -36,6 +39,10 @@ const activeBlobFetches: Record<BlobFetchLane, number> = {
 
 function shouldPersistBlobInSession(lane: BlobFetchLane) {
 	return lane === "thumbnail";
+}
+
+function isMissingThumbnailResponse(status: number, lane: BlobFetchLane) {
+	return lane === "thumbnail" && status === 404;
 }
 
 function scheduleBlobFetch<T>(lane: BlobFetchLane, task: () => Promise<T>) {
@@ -64,6 +71,10 @@ function revokeEntry(path: string, entry: BlobCacheEntry) {
 	if (entry.revokeTimer) {
 		clearTimeout(entry.revokeTimer);
 		entry.revokeTimer = undefined;
+	}
+	if (entry.refreshTimer) {
+		clearTimeout(entry.refreshTimer);
+		entry.refreshTimer = undefined;
 	}
 	if (entry.objectUrl) {
 		URL.revokeObjectURL(entry.objectUrl);
@@ -119,6 +130,7 @@ async function acquireBlobUrl(
 	}
 	if (
 		cached?.objectUrl &&
+		!cached.needsRefresh &&
 		(cached.refCount > 0 ||
 			shouldPersistBlobInSession(cached.lane ?? lane) ||
 			shouldPersistBlobInSession(lane))
@@ -127,6 +139,17 @@ async function acquireBlobUrl(
 		cached.refCount += 1;
 		return cached.objectUrl;
 	}
+	if (
+		cached?.missing &&
+		!cached.needsRefresh &&
+		(cached.refCount > 0 ||
+			shouldPersistBlobInSession(cached.lane ?? lane) ||
+			shouldPersistBlobInSession(lane))
+	) {
+		cached.lane = lane;
+		cached.refCount += 1;
+		return "";
+	}
 	if (cached?.promise) {
 		cached.lane = lane;
 		cached.refCount += 1;
@@ -134,6 +157,11 @@ async function acquireBlobUrl(
 	}
 
 	const entry: BlobCacheEntry = cached ?? { refCount: 0 };
+	if (entry.refreshTimer) {
+		clearTimeout(entry.refreshTimer);
+		entry.refreshTimer = undefined;
+	}
+	entry.needsRefresh = false;
 	entry.lane = lane;
 	entry.refCount += 1;
 	const previousBlob = entry.blob;
@@ -152,30 +180,65 @@ async function acquireBlobUrl(
 				headers,
 				responseType: "blob",
 				validateStatus: (status) =>
-					status === 200 || status === 304 || status === 202,
+					status === 200 ||
+					status === 304 ||
+					status === 202 ||
+					isMissingThumbnailResponse(status, lane),
 			}),
 		);
 
 		// 202 = 缩略图正在后台生成，稍后重试
 		if (response.status === 202) {
-			if (attempt >= MAX_RETRIES) return previousObjectUrl ?? "";
 			const retryAfter = Number(response.headers["retry-after"]) || 2;
+			if (attempt >= MAX_RETRIES) {
+				const current = blobUrlCache.get(path);
+				if (current && !current.refreshTimer) {
+					current.promise = undefined;
+					current.refreshTimer = setTimeout(() => {
+						const latest = blobUrlCache.get(path);
+						if (!latest) return;
+						latest.refreshTimer = undefined;
+						latest.needsRefresh = true;
+						notifyBlobUrlInvalidation(path);
+					}, retryAfter * 1000);
+				}
+				return previousObjectUrl ?? "";
+			}
 			await new Promise((r) => setTimeout(r, retryAfter * 1000));
 			return fetchWithRetry(attempt + 1);
 		}
 
 		const current = blobUrlCache.get(path);
 		if (!current) {
+			if (isMissingThumbnailResponse(response.status, lane)) {
+				return "";
+			}
 			if (response.status === 200) {
 				return URL.createObjectURL(response.data);
 			}
 			return previousObjectUrl ?? "";
 		}
 
+		if (isMissingThumbnailResponse(response.status, lane)) {
+			current.blob = undefined;
+			current.objectUrl = undefined;
+			current.etag = null;
+			current.missing = true;
+			current.needsRefresh = false;
+			current.promise = undefined;
+			if (previousObjectUrl) {
+				URL.revokeObjectURL(previousObjectUrl);
+			}
+			notifyBlobUrlInvalidation(path);
+			return "";
+		}
+
 		if (response.status === 304 && previousObjectUrl) {
 			current.objectUrl = previousObjectUrl;
 			current.blob = previousBlob;
 			current.etag = previousEtag;
+			current.missing = false;
+			current.needsRefresh = false;
 			current.promise = undefined;
 			return previousObjectUrl;
 		}
@@ -188,6 +251,8 @@ async function acquireBlobUrl(
 		current.blob = blob;
 		current.objectUrl = objectUrl;
 		current.etag = response.headers.etag ?? null;
+		current.missing = false;
+		current.needsRefresh = false;
 		current.promise = undefined;
 		if (previousObjectUrl && previousObjectUrl !== objectUrl) {
 			URL.revokeObjectURL(previousObjectUrl);
@@ -203,6 +268,8 @@ async function acquireBlobUrl(
 			current.blob = previousBlob;
 			current.objectUrl = previousObjectUrl;
 			current.etag = previousEtag;
+			current.missing = false;
+			current.needsRefresh = false;
 			if (!current.objectUrl && current.refCount <= 0) {
 				blobUrlCache.delete(path);
 			}

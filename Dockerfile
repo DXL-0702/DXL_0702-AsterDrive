@@ -37,7 +37,7 @@ RUN cargo build --release --features "${CARGO_FEATURES}"
 # Stage 3: Alpine runtime
 FROM alpine:3.23
 
-RUN apk add --no-cache ca-certificates sqlite-libs && \
+RUN apk add --no-cache ca-certificates sqlite-libs vips-tools ffmpeg libheif && \
     addgroup -S -g 10001 aster && \
     adduser -S -D -H -u 10001 -G aster -s /sbin/nologin aster && \
     mkdir -p /data && \
@@ -56,6 +56,9 @@ EXPOSE 3000
 
 WORKDIR /
 ENV ASTER__SERVER__HOST=0.0.0.0
+ENV ASTER_BOOTSTRAP_ENABLE_VIPS_CLI=true
+ENV ASTER_BOOTSTRAP_ENABLE_FFMPEG_CLI=true
+
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD ["wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/health/ready"]

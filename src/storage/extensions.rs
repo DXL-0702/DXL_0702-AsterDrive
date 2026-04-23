@@ -5,6 +5,7 @@
 use crate::errors::Result;
 use crate::storage::driver::{PresignedDownloadOptions, StoragePathVisitor};
 use async_trait::async_trait;
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::io::AsyncRead;
 
@@ -62,6 +63,30 @@ pub trait StreamUploadDriver: Send + Sync {
     ///
     /// 这是 put_reader 默认实现的基础；暴露出来供需要显式控制临时文件生命周期的调用方使用。
     async fn put_file(&self, storage_path: &str, local_path: &str) -> Result<String>;
+}
+
+/// 本地路径暴露（仅用于把底层文件路径安全交给受控的外部命令）
+pub trait LocalPathStorageDriver: Send + Sync {
+    /// 解析某个存储对象在本机文件系统上的真实绝对路径。
+    fn resolve_local_path(&self, path: &str) -> Result<PathBuf>;
+}
+
+#[derive(Debug, Clone)]
+pub struct NativeThumbnailRequest {
+    pub storage_path: String,
+    pub source_mime_type: String,
+    pub max_width: u32,
+    pub max_height: u32,
+}
+
+/// 存储侧原生缩略图支持（OneDrive / 数据万象 / 对象存储图片处理等）
+#[async_trait]
+pub trait NativeThumbnailStorageDriver: Send + Sync {
+    /// 返回 `None` 表示该驱动当前不支持这个对象或 MIME 的原生缩略图能力。
+    async fn get_native_thumbnail(
+        &self,
+        request: &NativeThumbnailRequest,
+    ) -> Result<Option<Vec<u8>>>;
 }
 
 /// 为所有 StorageDriver 提供 StreamUploadDriver 的默认实现

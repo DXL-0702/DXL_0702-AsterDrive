@@ -5,8 +5,11 @@ mod common;
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use actix_web::dev::Service;
 use actix_web::{App, HttpServer, test, web};
 use aster_drive::api::error_code::ErrorCode;
 use aster_drive::db::repository::{
@@ -16,7 +19,7 @@ use aster_drive::db::repository::{
 use aster_drive::entities::storage_policy;
 use aster_drive::services::{
     auth_service, file_service, folder_service, managed_follower_service, master_binding_service,
-    policy_service, thumbnail_service, upload_service,
+    policy_service, upload_service,
 };
 use aster_drive::storage::remote_protocol::{
     RemoteStorageClient, RemoteStorageComposeRequest, sign_internal_request, sign_presigned_request,
@@ -79,6 +82,45 @@ async fn spawn_internal_storage_server(
         handle,
         task,
     }
+}
+
+async fn spawn_counting_internal_storage_server(
+    state: aster_drive::runtime::FollowerAppState,
+) -> (TestHttpServer, Arc<AtomicUsize>) {
+    let listener = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .expect("test internal storage listener should bind");
+    let addr = listener
+        .local_addr()
+        .expect("test internal storage listener should expose local addr");
+    let state_for_server = state.clone();
+    let request_count = Arc::new(AtomicUsize::new(0));
+    let request_count_for_server = request_count.clone();
+    let server = HttpServer::new(move || {
+        let request_count = request_count_for_server.clone();
+        App::new()
+            .wrap_fn(move |req, srv| {
+                request_count.fetch_add(1, Ordering::Relaxed);
+                srv.call(req)
+            })
+            .app_data(web::Data::new(state_for_server.clone()))
+            .service(
+                web::scope("/api/v1").service(aster_drive::api::routes::internal_storage::routes()),
+            )
+    })
+    .listen(listener)
+    .expect("counting internal storage server should listen")
+    .run();
+    let handle = server.handle();
+    let task = tokio::spawn(server);
+
+    (
+        TestHttpServer {
+            base_url: format!("http://127.0.0.1:{}", addr.port()),
+            handle,
+            task,
+        },
+        request_count,
+    )
 }
 
 async fn create_remote_policy(
@@ -1364,6 +1406,141 @@ async fn test_saved_remote_node_connection_endpoint_returns_precondition_failed_
 }
 
 #[actix_web::test]
+async fn test_disabled_remote_nodes_skip_network_during_health_checks() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let (provider_server, request_count) =
+        spawn_counting_internal_storage_server(provider_state.follower_view()).await;
+
+    let remote_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "disabled-health-check-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            namespace: "disabled-health-check-space".to_string(),
+            is_enabled: false,
+        },
+    )
+    .await
+    .expect("disabled remote node should be created");
+
+    let stats = managed_follower_service::run_health_tests(&consumer_state)
+        .await
+        .expect("health checks should finish");
+
+    assert_eq!(stats.checked, 0);
+    assert_eq!(stats.healthy, 0);
+    assert_eq!(stats.failed, 0);
+    assert_eq!(stats.skipped, 1);
+    assert_eq!(
+        request_count.load(Ordering::Relaxed),
+        0,
+        "disabled remote nodes should not send health-check traffic",
+    );
+
+    let remote_node_model = managed_follower_repo::find_by_id(&consumer_state.db, remote_node.id)
+        .await
+        .expect("disabled remote node should remain queryable");
+    assert_eq!(remote_node_model.last_checked_at, None);
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_health_checks_only_touch_enabled_remote_nodes_in_mixed_sets() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let (enabled_server, enabled_request_count) =
+        spawn_counting_internal_storage_server(provider_state.follower_view()).await;
+    let (disabled_server, disabled_request_count) =
+        spawn_counting_internal_storage_server(provider_state.follower_view()).await;
+
+    let provider_ingress_policy = provider_state
+        .policy_snapshot
+        .system_default_policy()
+        .expect("provider default ingress policy should exist");
+
+    let enabled_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "enabled-health-check-target".to_string(),
+            base_url: enabled_server.base_url.clone(),
+            namespace: "mixed-health-check-enabled-space".to_string(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("enabled remote node should be created");
+    let enabled_node_model = managed_follower_repo::find_by_id(&consumer_state.db, enabled_node.id)
+        .await
+        .expect("enabled remote node should be queryable");
+
+    master_binding_service::upsert_from_enrollment(
+        &provider_state.db,
+        master_binding_service::UpsertMasterBindingInput {
+            name: "enabled-health-check-access".to_string(),
+            master_url: "http://master.example.com".to_string(),
+            access_key: enabled_node_model.access_key.clone(),
+            secret_key: enabled_node_model.secret_key.clone(),
+            namespace: "mixed-health-check-enabled-space".to_string(),
+            ingress_policy_id: provider_ingress_policy.id,
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("provider binding for enabled node should be created");
+    provider_state
+        .driver_registry
+        .reload_master_bindings(&provider_state.db)
+        .await
+        .expect("provider binding registry should reload");
+
+    let disabled_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "disabled-health-check-target".to_string(),
+            base_url: disabled_server.base_url.clone(),
+            namespace: "mixed-health-check-disabled-space".to_string(),
+            is_enabled: false,
+        },
+    )
+    .await
+    .expect("disabled remote node should be created");
+
+    let stats = managed_follower_service::run_health_tests(&consumer_state)
+        .await
+        .expect("mixed health checks should finish");
+
+    assert_eq!(stats.checked, 1);
+    assert_eq!(stats.healthy, 1);
+    assert_eq!(stats.failed, 0);
+    assert_eq!(stats.skipped, 1);
+    assert_eq!(
+        enabled_request_count.load(Ordering::Relaxed),
+        2,
+        "enabled remote node should sync binding and probe capabilities",
+    );
+    assert_eq!(
+        disabled_request_count.load(Ordering::Relaxed),
+        0,
+        "disabled remote node should not send any health-check traffic",
+    );
+
+    let enabled_node_model = managed_follower_repo::find_by_id(&consumer_state.db, enabled_node.id)
+        .await
+        .expect("enabled remote node should remain queryable");
+    let disabled_node_model =
+        managed_follower_repo::find_by_id(&consumer_state.db, disabled_node.id)
+            .await
+            .expect("disabled remote node should remain queryable");
+    assert!(enabled_node_model.last_checked_at.is_some());
+    assert_eq!(disabled_node_model.last_checked_at, None);
+
+    enabled_server.stop().await;
+    disabled_server.stop().await;
+}
+
+#[actix_web::test]
 async fn test_thumbnail_endpoint_returns_precondition_failed_when_remote_node_disabled() {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
@@ -1469,9 +1646,14 @@ async fn test_thumbnail_endpoint_returns_precondition_failed_when_remote_node_di
     let created_blob = file_repo::find_blob_by_id(&consumer_state.db, created_file.blob_id)
         .await
         .expect("uploaded blob should be queryable");
-    thumbnail_service::generate_and_store(&consumer_state, &created_blob)
-        .await
-        .expect("thumbnail should generate while remote node is enabled");
+    aster_drive::services::media_processing_service::generate_and_store_thumbnail(
+        &consumer_state,
+        &created_blob,
+        &created_file.name,
+        &created_file.mime_type,
+    )
+    .await
+    .expect("thumbnail should generate while remote node is enabled");
 
     managed_follower_service::update(
         &consumer_state,

@@ -7,7 +7,7 @@ use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     audit_service::AuditContext, auth_service::Claims, direct_link_service, file_service,
-    preview_link_service, thumbnail_service, wopi_service, workspace_models::FileInfo,
+    media_processing_service, preview_link_service, wopi_service, workspace_models::FileInfo,
     workspace_storage_service::WorkspaceStorageScope,
 };
 use actix_web::{HttpRequest, HttpResponse, web};
@@ -171,8 +171,8 @@ pub async fn download(
         (status = 400, description = "Thumbnail not supported for this file type"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 412, description = "Storage backend is disabled or not ready"),
-        (status = 404, description = "File not found"),
-        (status = 500, description = "Thumbnail generation failed"),
+        (status = 404, description = "File not found or thumbnail unavailable"),
+        (status = 500, description = "Unexpected thumbnail generation failure"),
     ),
     security(("bearer" = [])),
 )]
@@ -322,8 +322,8 @@ pub(crate) async fn team_open_wopi(
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 412, description = "Storage backend is disabled or not ready"),
-        (status = 404, description = "File not found"),
-        (status = 500, description = "Thumbnail generation failed"),
+        (status = 404, description = "File not found or thumbnail unavailable"),
+        (status = 500, description = "Unexpected thumbnail generation failure"),
     ),
     security(("bearer" = [])),
 )]
@@ -455,7 +455,7 @@ pub(crate) fn thumbnail_response(
     if_none_match: Option<&str>,
     cache_control: String,
 ) -> HttpResponse {
-    let etag_value = thumbnail_service::thumbnail_etag_value_for(
+    let etag_value = media_processing_service::thumbnail_etag_value_for(
         &result.blob_hash,
         result.thumbnail_version.as_deref(),
     );

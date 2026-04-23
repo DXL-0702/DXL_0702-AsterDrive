@@ -1,6 +1,7 @@
 //! 存储子模块：`driver`。
 
 use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::types::DriverType;
 use async_trait::async_trait;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
@@ -15,6 +16,14 @@ pub struct PresignedDownloadOptions {
     pub response_cache_control: Option<String>,
     pub response_content_disposition: Option<String>,
     pub response_content_type: Option<String>,
+}
+
+pub fn driver_type_supports_native_thumbnail(driver_type: DriverType) -> bool {
+    match driver_type {
+        DriverType::Local => false,
+        DriverType::S3 => false,
+        DriverType::Remote => false,
+    }
 }
 
 pub trait StoragePathVisitor: Send {
@@ -105,6 +114,20 @@ pub trait StorageDriver: Send + Sync {
     ///
     /// S3 支持原生流式上传；本地存储基于临时文件提供通用实现。
     fn as_stream_upload(&self) -> Option<&dyn super::extensions::StreamUploadDriver> {
+        None
+    }
+
+    /// 获取本地文件路径暴露能力
+    ///
+    /// 仅本地文件系统等真正持有本机绝对路径的驱动返回 Some。
+    fn as_local_path(&self) -> Option<&dyn super::extensions::LocalPathStorageDriver> {
+        None
+    }
+
+    /// 获取存储侧原生缩略图支持
+    ///
+    /// OneDrive / 数据万象 / 对象存储图片处理等驱动返回 Some。
+    fn as_native_thumbnail(&self) -> Option<&dyn super::extensions::NativeThumbnailStorageDriver> {
         None
     }
 

@@ -6,9 +6,9 @@ use sea_orm::Set;
 use crate::entities::user_profile;
 use crate::types::AvatarSource;
 
-pub(super) const MAX_AVATAR_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
-pub(super) const AVATAR_SIZE_SM: u32 = 512;
-pub(super) const AVATAR_SIZE_LG: u32 = 1024;
+pub(crate) const MAX_AVATAR_DECODE_ALLOC: u64 = 128 * 1024 * 1024;
+pub(crate) const AVATAR_SIZE_SM: u32 = 512;
+pub(crate) const AVATAR_SIZE_LG: u32 = 1024;
 
 pub(super) fn stored_avatar_prefix(profile: Option<&user_profile::Model>) -> Option<&str> {
     profile

@@ -4,10 +4,11 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::path::Path;
 use std::time::Duration;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::ToSchema;
-use validator::Validate;
+use validator::{Validate, ValidationError};
 
 /// PATCH 请求里的可空字段三态：
 /// - `Absent`：字段未传，保持不变
@@ -915,6 +916,28 @@ pub enum RemoteUploadStrategy {
     Presigned,
 }
 
+/// 统一媒体处理器类型（system_config / storage_policy.options）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum MediaProcessorKind {
+    Images,
+    VipsCli,
+    FfmpegCli,
+    StorageNative,
+}
+
+impl MediaProcessorKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Images => "images",
+            Self::VipsCli => "vips_cli",
+            Self::FfmpegCli => "ffmpeg_cli",
+            Self::StorageNative => "storage_native",
+        }
+    }
+}
+
 /// Raw JSON array stored in `storage_policies.allowed_types`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, DeriveValueType)]
 pub struct StoredStoragePolicyAllowedTypes(pub String);
@@ -980,6 +1003,7 @@ const DEFAULT_S3_READ_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_S3_OPERATION_TIMEOUT_SECS: u64 = 60 * 60;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, Validate)]
+#[validate(schema(function = "validate_storage_policy_options"))]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct StoragePolicyOptions {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -990,6 +1014,11 @@ pub struct StoragePolicyOptions {
     pub remote_download_strategy: Option<RemoteDownloadStrategy>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub remote_upload_strategy: Option<RemoteUploadStrategy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[validate(custom(function = "validate_storage_policy_thumbnail_processor"))]
+    pub thumbnail_processor: Option<MediaProcessorKind>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub thumbnail_extensions: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_dedup: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1024,6 +1053,34 @@ impl StoragePolicyOptions {
             .unwrap_or(RemoteUploadStrategy::RelayStream)
     }
 
+    pub fn uses_storage_native_thumbnail(&self) -> bool {
+        self.thumbnail_processor == Some(MediaProcessorKind::StorageNative)
+    }
+
+    pub fn normalize_in_place(&mut self) {
+        self.thumbnail_extensions =
+            normalize_storage_policy_thumbnail_extensions(&self.thumbnail_extensions);
+    }
+
+    pub fn normalized(mut self) -> Self {
+        self.normalize_in_place();
+        self
+    }
+
+    pub fn storage_native_thumbnail_matches_file_name(&self, file_name: &str) -> bool {
+        if !self.uses_storage_native_thumbnail() {
+            return false;
+        }
+
+        file_extension_suffix(file_name)
+            .map(|extension| {
+                self.thumbnail_extensions
+                    .iter()
+                    .any(|candidate| candidate == &extension)
+            })
+            .unwrap_or(false)
+    }
+
     pub fn effective_s3_connect_timeout(&self) -> Duration {
         Duration::from_secs(
             self.s3_connect_timeout_secs
@@ -1049,19 +1106,83 @@ impl StoragePolicyOptions {
     }
 }
 
+fn validate_storage_policy_thumbnail_processor(
+    value: &MediaProcessorKind,
+) -> std::result::Result<(), ValidationError> {
+    if *value != MediaProcessorKind::StorageNative {
+        let mut error = ValidationError::new("invalid");
+        error.message = Some("thumbnail_processor only supports 'storage_native'".into());
+        return Err(error);
+    }
+
+    Ok(())
+}
+
+fn normalize_storage_policy_thumbnail_extensions(values: &[String]) -> Vec<String> {
+    let mut normalized = Vec::new();
+    for value in values {
+        let Some(extension) = normalize_thumbnail_extension(value) else {
+            continue;
+        };
+        if !normalized.iter().any(|candidate| candidate == &extension) {
+            normalized.push(extension);
+        }
+    }
+    normalized
+}
+
+fn normalize_thumbnail_extension(value: &str) -> Option<String> {
+    let normalized = value.trim().trim_start_matches('.').to_ascii_lowercase();
+    (!normalized.is_empty()).then_some(normalized)
+}
+
+fn file_extension_suffix(file_name: &str) -> Option<String> {
+    Path::new(file_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .and_then(normalize_thumbnail_extension)
+}
+
+fn validate_storage_policy_options(
+    value: &StoragePolicyOptions,
+) -> std::result::Result<(), ValidationError> {
+    let normalized = value.clone().normalized();
+    let uses_storage_native_thumbnail = normalized.uses_storage_native_thumbnail();
+    let has_thumbnail_extensions = !normalized.thumbnail_extensions.is_empty();
+
+    if uses_storage_native_thumbnail && !has_thumbnail_extensions {
+        let mut error = ValidationError::new("invalid");
+        error.message = Some(
+            "thumbnail_extensions is required when thumbnail_processor is 'storage_native'".into(),
+        );
+        return Err(error);
+    }
+
+    if !uses_storage_native_thumbnail && has_thumbnail_extensions {
+        let mut error = ValidationError::new("invalid");
+        error.message =
+            Some("thumbnail_extensions requires thumbnail_processor 'storage_native'".into());
+        return Err(error);
+    }
+
+    Ok(())
+}
+
 pub fn parse_storage_policy_options(options: &str) -> StoragePolicyOptions {
-    serde_json::from_str(options).unwrap_or_else(|e| {
+    let mut parsed = serde_json::from_str(options).unwrap_or_else(|e| {
         if !options.is_empty() && options != "{}" {
             tracing::warn!("invalid storage policy options JSON '{options}': {e}");
         }
         StoragePolicyOptions::default()
-    })
+    });
+    parsed.normalize_in_place();
+    parsed
 }
 
 pub fn serialize_storage_policy_options(
     options: &StoragePolicyOptions,
 ) -> std::result::Result<StoredStoragePolicyOptions, serde_json::Error> {
-    serde_json::to_string(options).map(StoredStoragePolicyOptions)
+    serde_json::to_string(&options.clone().normalized()).map(StoredStoragePolicyOptions)
 }
 
 pub fn parse_storage_policy_allowed_types(raw: &str) -> Vec<String> {
@@ -1122,9 +1243,11 @@ impl TokenType {
 #[cfg(test)]
 mod tests {
     use crate::types::{RemoteDownloadStrategy, RemoteUploadStrategy};
+    use validator::Validate;
 
     use super::{
-        S3DownloadStrategy, S3UploadStrategy, StoragePolicyOptions, parse_storage_policy_options,
+        MediaProcessorKind, S3DownloadStrategy, S3UploadStrategy, StoragePolicyOptions,
+        parse_storage_policy_options, serialize_storage_policy_options,
     };
     use std::time::Duration;
 
@@ -1180,6 +1303,70 @@ mod tests {
             options.effective_remote_download_strategy(),
             RemoteDownloadStrategy::Presigned
         );
+    }
+
+    #[test]
+    fn explicit_thumbnail_processor_maps_to_media_processor_kind() {
+        let options = parse_storage_policy_options(r#"{"thumbnail_processor":"storage_native"}"#);
+        assert_eq!(
+            options.thumbnail_processor,
+            Some(MediaProcessorKind::StorageNative)
+        );
+    }
+
+    #[test]
+    fn thumbnail_extensions_are_normalized_on_parse() {
+        let options = parse_storage_policy_options(
+            r#"{"thumbnail_processor":"storage_native","thumbnail_extensions":[" .PNG ","png",".Jpg","","  "]}"#,
+        );
+        assert_eq!(
+            options.thumbnail_extensions,
+            vec!["png".to_string(), "jpg".to_string()]
+        );
+    }
+
+    #[test]
+    fn thumbnail_processor_validation_rejects_non_storage_native_values() {
+        let options = parse_storage_policy_options(r#"{"thumbnail_processor":"vips_cli"}"#);
+        let error = options.validate().unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("thumbnail_processor only supports")
+        );
+    }
+
+    #[test]
+    fn storage_native_thumbnail_requires_extensions() {
+        let options = parse_storage_policy_options(r#"{"thumbnail_processor":"storage_native"}"#);
+        let error = options.validate().unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("thumbnail_extensions is required")
+        );
+    }
+
+    #[test]
+    fn thumbnail_extensions_require_storage_native_processor() {
+        let options = parse_storage_policy_options(r#"{"thumbnail_extensions":["png"]}"#);
+        let error = options.validate().unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("thumbnail_extensions requires thumbnail_processor")
+        );
+    }
+
+    #[test]
+    fn storage_native_thumbnail_matches_file_name_by_extension() {
+        let options = parse_storage_policy_options(
+            r#"{"thumbnail_processor":"storage_native","thumbnail_extensions":["png","heic"]}"#,
+        );
+        assert!(options.storage_native_thumbnail_matches_file_name("cover.PNG"));
+        assert!(options.storage_native_thumbnail_matches_file_name("photo.heic"));
+        assert!(!options.storage_native_thumbnail_matches_file_name("clip.mp4"));
+        assert!(!options.storage_native_thumbnail_matches_file_name("README"));
     }
 
     #[test]
@@ -1269,6 +1456,19 @@ mod tests {
         })
         .unwrap();
         assert_eq!(json, r#"{"remote_upload_strategy":"presigned"}"#);
+
+        let json = String::from(
+            serialize_storage_policy_options(&StoragePolicyOptions {
+                thumbnail_processor: Some(MediaProcessorKind::StorageNative),
+                thumbnail_extensions: vec![".PNG".to_string(), "png".to_string()],
+                ..Default::default()
+            })
+            .unwrap(),
+        );
+        assert_eq!(
+            json,
+            r#"{"thumbnail_processor":"storage_native","thumbnail_extensions":["png"]}"#
+        );
 
         let json = serde_json::to_string(&StoragePolicyOptions {
             s3_operation_timeout_secs: Some(600),

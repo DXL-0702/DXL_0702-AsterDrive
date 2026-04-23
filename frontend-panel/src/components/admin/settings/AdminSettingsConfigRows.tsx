@@ -1,3 +1,5 @@
+import { MediaProcessingConfigEditor } from "@/components/admin/MediaProcessingConfigEditor";
+import { MEDIA_PROCESSING_CONFIG_KEY } from "@/components/admin/mediaProcessingConfigEditorShared";
 import { PreviewAppsConfigEditor } from "@/components/admin/PreviewAppsConfigEditor";
 import { PREVIEW_APPS_CONFIG_KEY } from "@/components/admin/previewAppsConfigEditorShared";
 import { useAdminSettingsCategoryContent } from "@/components/admin/settings/AdminSettingsCategoryContentContext";
@@ -211,6 +213,8 @@ function ConfigInputControl({
 	const {
 		editorTheme,
 		handleBuildWopiDiscoveryPreviewConfig,
+		handleTestFfmpegCliCommand,
+		handleTestVipsCliCommand,
 		t,
 		updateDraftValue,
 	} = useAdminSettingsCategoryContent();
@@ -256,6 +260,17 @@ function ConfigInputControl({
 				onBuildWopiDiscoveryPreviewConfig={
 					handleBuildWopiDiscoveryPreviewConfig
 				}
+				value={draftValue}
+				onChange={(nextValue) => updateDraftValue(config.key, nextValue)}
+			/>
+		);
+	}
+
+	if (config.key === MEDIA_PROCESSING_CONFIG_KEY) {
+		return (
+			<MediaProcessingConfigEditor
+				onTestFfmpegCliCommand={handleTestFfmpegCliCommand}
+				onTestVipsCliCommand={handleTestVipsCliCommand}
 				value={draftValue}
 				onChange={(nextValue) => updateDraftValue(config.key, nextValue)}
 			/>

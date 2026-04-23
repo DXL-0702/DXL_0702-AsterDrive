@@ -103,6 +103,15 @@ impl PolicySnapshot {
         self.snapshot.read().policies_by_id.get(&policy_id).cloned()
     }
 
+    pub fn all_policies(&self) -> Vec<storage_policy::Model> {
+        self.snapshot
+            .read()
+            .policies_by_id
+            .values()
+            .cloned()
+            .collect()
+    }
+
     pub fn get_policy_or_err(&self, policy_id: i64) -> Result<storage_policy::Model> {
         self.get_policy(policy_id)
             .ok_or_else(|| AsterError::storage_policy_not_found(format!("policy #{policy_id}")))

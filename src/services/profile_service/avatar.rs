@@ -11,9 +11,10 @@ use crate::db::repository::{user_profile_repo, user_repo};
 use crate::entities::user_profile;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
+use crate::services::media_processing_service;
 use crate::types::AvatarSource;
 
-use super::avatar_image::{process_avatar_image, read_avatar_upload};
+use super::avatar_image::read_avatar_upload;
 use super::avatar_storage::{
     avatar_variant_file_path, cleanup_local_avatar_prefix, delete_upload_objects, user_avatar_dir,
 };
@@ -55,11 +56,17 @@ pub async fn upload_avatar(
         operations::avatar_max_upload_size_bytes(&state.runtime_config),
     )
     .await?;
-    let (small_bytes, large_bytes) = process_avatar_image(upload_data)?;
+    let processed_avatar = media_processing_service::process_avatar_upload(
+        state,
+        &upload_data.file_name,
+        upload_data.bytes,
+    )
+    .await?;
     user_repo::check_quota(
         &state.db,
         user_id,
-        i64::try_from(small_bytes.len() + large_bytes.len()).unwrap_or(i64::MAX),
+        i64::try_from(processed_avatar.small_bytes.len() + processed_avatar.large_bytes.len())
+            .unwrap_or(i64::MAX),
     )
     .await?;
     let version = existing
@@ -72,8 +79,8 @@ pub async fn upload_avatar(
     let small_path = avatar_variant_file_path(&prefix, AVATAR_SIZE_SM);
     let large_path = avatar_variant_file_path(&prefix, AVATAR_SIZE_LG);
 
-    write_local_avatar(&small_path, &small_bytes).await?;
-    if let Err(e) = write_local_avatar(&large_path, &large_bytes).await {
+    write_local_avatar(&small_path, &processed_avatar.small_bytes).await?;
+    if let Err(e) = write_local_avatar(&large_path, &processed_avatar.large_bytes).await {
         cleanup_local_avatar_prefix(&prefix, &avatar_root_dir).await;
         return Err(e);
     }

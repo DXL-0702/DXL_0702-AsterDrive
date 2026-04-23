@@ -108,6 +108,35 @@ describe("useBlobUrl", () => {
 		clearBlobUrlCache();
 	});
 
+	it("keeps polling thumbnails after the first 202 retry window is exhausted", async () => {
+		for (let attempt = 0; attempt < 6; attempt += 1) {
+			mockState.get.mockResolvedValueOnce({
+				status: 202,
+				data: new Blob([]),
+				headers: { "retry-after": "0.001" },
+			});
+		}
+		mockState.get.mockResolvedValueOnce({
+			status: 200,
+			data: new Blob(["image"]),
+			headers: { etag: '"etag-202"' },
+		});
+		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
+
+		const { result } = renderHook(() =>
+			useBlobUrl("/thumb", { lane: "thumbnail" }),
+		);
+
+		await waitFor(() => {
+			expect(mockState.get).toHaveBeenCalledTimes(7);
+		});
+		await waitFor(() => {
+			expect(result.current.blobUrl).toBe("blob:1");
+		});
+		expect(result.current.error).toBe(false);
+		clearBlobUrlCache();
+	});
+
 	it("exposes errors and allows retries after failures", async () => {
 		mockState.get
 			.mockRejectedValueOnce(new Error("fetch failed"))
@@ -135,6 +164,39 @@ describe("useBlobUrl", () => {
 			expect(result.current.blobUrl).toBe("blob:1");
 		});
 		expect(result.current.error).toBe(false);
+		clearBlobUrlCache();
+	});
+
+	it("treats thumbnail 404 responses as a cacheable missing blob without warning", async () => {
+		mockState.get.mockResolvedValue({
+			status: 404,
+			data: new Blob([]),
+			headers: {},
+		});
+		const { clearBlobUrlCache, useBlobUrl } = await loadHookModule();
+
+		const first = renderHook(() => useBlobUrl("/thumb", { lane: "thumbnail" }));
+
+		await waitFor(() => {
+			expect(first.result.current.loading).toBe(false);
+		});
+		expect(first.result.current.blobUrl).toBeNull();
+		expect(first.result.current.error).toBe(false);
+		expect(mockState.warn).not.toHaveBeenCalled();
+
+		first.unmount();
+
+		const second = renderHook(() =>
+			useBlobUrl("/thumb", { lane: "thumbnail" }),
+		);
+		await waitFor(() => {
+			expect(second.result.current.loading).toBe(false);
+		});
+		expect(second.result.current.blobUrl).toBeNull();
+		expect(second.result.current.error).toBe(false);
+		expect(mockState.get).toHaveBeenCalledTimes(1);
+
+		second.unmount();
 		clearBlobUrlCache();
 	});
 

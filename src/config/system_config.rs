@@ -6,10 +6,12 @@ use std::sync::Arc;
 use crate::config::RuntimeConfig;
 use crate::config::auth_runtime;
 use crate::config::avatar;
+use crate::config::bool_like::parse_bool_like;
 use crate::config::branding;
 use crate::config::cors;
 use crate::config::definitions::{ALL_CONFIGS, ConfigDef};
 use crate::config::mail;
+use crate::config::media_processing;
 use crate::config::operations;
 use crate::config::site_url;
 use crate::config::wopi;
@@ -145,6 +147,9 @@ where
         | operations::THUMBNAIL_MAX_SOURCE_BYTES_KEY => {
             operations::normalize_bytes_config_value(key, value)
         }
+        media_processing::MEDIA_PROCESSING_REGISTRY_JSON_KEY => {
+            media_processing::normalize_media_processing_registry_config_value(value)
+        }
         mail::MAIL_SMTP_HOST_KEY => mail::normalize_smtp_host_config_value(value),
         mail::MAIL_SMTP_PORT_KEY => mail::normalize_smtp_port_config_value(value),
         mail::MAIL_FROM_ADDRESS_KEY => mail::normalize_mail_address_config_value(value),
@@ -199,14 +204,6 @@ pub fn apply_definition(mut config: system_config::Model) -> system_config::Mode
     config.category = def.category.to_string();
     config.description = def.description.to_string();
     config
-}
-
-fn parse_bool_like(value: &str) -> Option<bool> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "true" | "1" | "yes" | "on" => Some(true),
-        "false" | "0" | "no" | "off" => Some(false),
-        _ => None,
-    }
 }
 
 #[cfg(test)]
