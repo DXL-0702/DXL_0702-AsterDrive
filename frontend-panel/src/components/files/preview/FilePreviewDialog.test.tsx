@@ -6,15 +6,20 @@ const mockState = vi.hoisted(() => ({
 	downloadPath: vi.fn((fileId: number) => `/files/${fileId}/download`),
 	profile: {
 		category: "markdown",
-		defaultMode: "code",
+		defaultMode: "builtin.code",
 		isBlobPreview: false,
 		isEditableText: true,
 		isTextBased: true,
 		options: [
-			{ icon: "TextT", key: "code", labelKey: "mode_code", mode: "code" },
+			{
+				icon: "TextT",
+				key: "builtin.code",
+				labelKey: "mode_code",
+				mode: "code",
+			},
 			{
 				icon: "MarkdownLogo",
-				key: "markdown",
+				key: "builtin.markdown",
 				labelKey: "mode_markdown",
 				mode: "markdown",
 			},
@@ -311,15 +316,20 @@ describe("FilePreviewDialog", () => {
 		mockState.previewAppStore.load.mockReset();
 		mockState.profile = {
 			category: "markdown",
-			defaultMode: "code",
+			defaultMode: "builtin.code",
 			isBlobPreview: false,
 			isEditableText: true,
 			isTextBased: true,
 			options: [
-				{ icon: "TextT", key: "code", labelKey: "mode_code", mode: "code" },
+				{
+					icon: "TextT",
+					key: "builtin.code",
+					labelKey: "mode_code",
+					mode: "code",
+				},
 				{
 					icon: "MarkdownLogo",
-					key: "markdown",
+					key: "builtin.markdown",
 					labelKey: "mode_markdown",
 					mode: "markdown",
 				},
@@ -377,18 +387,28 @@ describe("FilePreviewDialog", () => {
 	it("reveals extra open methods after expanding the more button", async () => {
 		mockState.profile = {
 			category: "markdown",
-			defaultMode: "code",
+			defaultMode: "builtin.code",
 			isBlobPreview: false,
 			isEditableText: true,
 			isTextBased: true,
 			options: [
-				{ icon: "TextT", key: "code", labelKey: "mode_code", mode: "code" },
+				{
+					icon: "TextT",
+					key: "builtin.code",
+					labelKey: "mode_code",
+					mode: "code",
+				},
 			],
 			allOptions: [
-				{ icon: "TextT", key: "code", labelKey: "mode_code", mode: "code" },
+				{
+					icon: "TextT",
+					key: "builtin.code",
+					labelKey: "mode_code",
+					mode: "code",
+				},
 				{
 					icon: "MarkdownLogo",
-					key: "markdown",
+					key: "builtin.markdown",
 					labelKey: "mode_markdown",
 					mode: "markdown",
 				},
@@ -491,14 +511,14 @@ describe("FilePreviewDialog", () => {
 	it("opens the configured custom video browser from the chooser", async () => {
 		mockState.profile = {
 			category: "video",
-			defaultMode: "video",
+			defaultMode: "builtin.video",
 			isBlobPreview: true,
 			isEditableText: false,
 			isTextBased: false,
 			options: [
 				{
 					icon: "Monitor",
-					key: "video",
+					key: "builtin.video",
 					labelKey: "open_with_video",
 					mode: "video",
 				},
@@ -536,14 +556,14 @@ describe("FilePreviewDialog", () => {
 	it("lets plain video previews size the dialog from their content", async () => {
 		mockState.profile = {
 			category: "video",
-			defaultMode: "video",
+			defaultMode: "builtin.video",
 			isBlobPreview: true,
 			isEditableText: false,
 			isTextBased: false,
 			options: [
 				{
 					icon: "Monitor",
-					key: "video",
+					key: "builtin.video",
 					labelKey: "open_with_video",
 					mode: "video",
 				},
@@ -578,14 +598,14 @@ describe("FilePreviewDialog", () => {
 	it("lets image previews size to content without forcing a fixed-height work area", async () => {
 		mockState.profile = {
 			category: "image",
-			defaultMode: "image",
+			defaultMode: "builtin.image",
 			isBlobPreview: true,
 			isEditableText: false,
 			isTextBased: false,
 			options: [
 				{
 					icon: "Eye",
-					key: "image",
+					key: "builtin.image",
 					labelKey: "open_with_image",
 					mode: "image",
 				},
@@ -610,20 +630,20 @@ describe("FilePreviewDialog", () => {
 	it("auto-opens hybrid svg previews directly and still allows switching modes", async () => {
 		mockState.profile = {
 			category: "image",
-			defaultMode: "image",
+			defaultMode: "builtin.image",
 			isBlobPreview: true,
 			isEditableText: true,
 			isTextBased: true,
 			options: [
 				{
 					icon: "Eye",
-					key: "image",
+					key: "builtin.image",
 					labelKey: "open_with_image",
 					mode: "image",
 				},
 				{
 					icon: "TextT",
-					key: "code",
+					key: "builtin.code",
 					labelKey: "mode_code",
 					mode: "code",
 				},
@@ -659,7 +679,7 @@ describe("FilePreviewDialog", () => {
 	it("renders iframe url-template previews in the fixed-height workspace", async () => {
 		mockState.profile = {
 			category: "document",
-			defaultMode: "office_microsoft",
+			defaultMode: "builtin.office_microsoft",
 			isBlobPreview: false,
 			isEditableText: false,
 			isTextBased: false,
@@ -672,7 +692,7 @@ describe("FilePreviewDialog", () => {
 							"https://view.officeapps.live.com/op/embed.aspx?src={{file_preview_url}}",
 					},
 					icon: "Globe",
-					key: "office_microsoft",
+					key: "builtin.office_microsoft",
 					labelKey: "open_with_office_microsoft",
 					mode: "url_template",
 				},
@@ -707,7 +727,7 @@ describe("FilePreviewDialog", () => {
 	it("passes the configured table delimiter strategy through to the preview", async () => {
 		mockState.profile = {
 			category: "csv",
-			defaultMode: "table",
+			defaultMode: "builtin.table",
 			isBlobPreview: false,
 			isEditableText: true,
 			isTextBased: true,
@@ -717,7 +737,7 @@ describe("FilePreviewDialog", () => {
 						delimiter: "auto",
 					},
 					icon: "Table",
-					key: "table",
+					key: "builtin.table",
 					labelKey: "open_with_table",
 					mode: "table",
 				},
@@ -741,7 +761,7 @@ describe("FilePreviewDialog", () => {
 	it("passes url-template previews through even without a preview link factory", async () => {
 		mockState.profile = {
 			category: "document",
-			defaultMode: "office_microsoft",
+			defaultMode: "builtin.office_microsoft",
 			isBlobPreview: false,
 			isEditableText: false,
 			isTextBased: false,
@@ -754,7 +774,7 @@ describe("FilePreviewDialog", () => {
 							"https://view.officeapps.live.com/op/embed.aspx?src={{file_preview_url}}",
 					},
 					icon: "Globe",
-					key: "office_microsoft",
+					key: "builtin.office_microsoft",
 					labelKey: "open_with_office_microsoft",
 					mode: "url_template",
 				},

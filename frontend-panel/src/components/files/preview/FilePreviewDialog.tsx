@@ -148,8 +148,10 @@ export function FilePreviewDialog({
 			Boolean(profile) &&
 			profile?.category === "image" &&
 			profile.isTextBased &&
-			preferredMode === "image",
-		[openMode, preferredMode, profile],
+			allOptions.some(
+				(option) => option.key === preferredMode && option.mode === "image",
+			),
+		[allOptions, openMode, preferredMode, profile],
 	);
 
 	const [mode, setMode] = useState<OpenWithMode | null>(null);

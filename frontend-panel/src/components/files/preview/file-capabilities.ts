@@ -343,10 +343,10 @@ const MICROSOFT_VIEWER_CONFIG = {
 		"https://view.officeapps.live.com/op/embed.aspx?src={{file_preview_url}}",
 } as const;
 
-export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
+export const BUILTIN_PREVIEW_OPTIONS: Record<string, OpenWithOption[]> = {
 	image: [
 		{
-			key: "image",
+			key: "builtin.image",
 			mode: "image",
 			labelKey: "open_with_image",
 			icon: PREVIEW_APP_ICON_URLS.image,
@@ -354,7 +354,7 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	video: [
 		{
-			key: "video",
+			key: "builtin.video",
 			mode: "video",
 			labelKey: "open_with_video",
 			icon: PREVIEW_APP_ICON_URLS.video,
@@ -362,7 +362,7 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	audio: [
 		{
-			key: "audio",
+			key: "builtin.audio",
 			mode: "audio",
 			labelKey: "open_with_audio",
 			icon: PREVIEW_APP_ICON_URLS.audio,
@@ -370,7 +370,7 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	pdf: [
 		{
-			key: "pdf",
+			key: "builtin.pdf",
 			mode: "pdf",
 			labelKey: "open_with_pdf",
 			icon: PREVIEW_APP_ICON_URLS.pdf,
@@ -378,14 +378,14 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	document: [
 		{
-			key: "office_microsoft",
+			key: "builtin.office_microsoft",
 			mode: "url_template",
 			labelKey: "open_with_office_microsoft",
 			icon: PREVIEW_APP_ICON_URLS.microsoftOnedrive,
 			config: MICROSOFT_VIEWER_CONFIG,
 		},
 		{
-			key: "office_google",
+			key: "builtin.office_google",
 			mode: "url_template",
 			labelKey: "open_with_office_google",
 			icon: PREVIEW_APP_ICON_URLS.googleDrive,
@@ -394,14 +394,14 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	spreadsheet: [
 		{
-			key: "office_microsoft",
+			key: "builtin.office_microsoft",
 			mode: "url_template",
 			labelKey: "open_with_office_microsoft",
 			icon: PREVIEW_APP_ICON_URLS.microsoftOnedrive,
 			config: MICROSOFT_VIEWER_CONFIG,
 		},
 		{
-			key: "office_google",
+			key: "builtin.office_google",
 			mode: "url_template",
 			labelKey: "open_with_office_google",
 			icon: PREVIEW_APP_ICON_URLS.googleDrive,
@@ -410,14 +410,14 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	presentation: [
 		{
-			key: "office_microsoft",
+			key: "builtin.office_microsoft",
 			mode: "url_template",
 			labelKey: "open_with_office_microsoft",
 			icon: PREVIEW_APP_ICON_URLS.microsoftOnedrive,
 			config: MICROSOFT_VIEWER_CONFIG,
 		},
 		{
-			key: "office_google",
+			key: "builtin.office_google",
 			mode: "url_template",
 			labelKey: "open_with_office_google",
 			icon: PREVIEW_APP_ICON_URLS.googleDrive,
@@ -426,13 +426,13 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	markdown: [
 		{
-			key: "markdown",
+			key: "builtin.markdown",
 			mode: "markdown",
 			labelKey: "open_with_markdown",
 			icon: PREVIEW_APP_ICON_URLS.markdown,
 		},
 		{
-			key: "code",
+			key: "builtin.code",
 			mode: "code",
 			labelKey: "open_with_code",
 			icon: PREVIEW_APP_ICON_URLS.code,
@@ -440,14 +440,14 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	csv: [
 		{
-			key: "table",
+			key: BUILTIN_TABLE_PREVIEW_APP_KEY,
 			mode: "table",
 			labelKey: "open_with_table",
 			icon: PREVIEW_APP_ICON_URLS.table,
 			config: { delimiter: DEFAULT_TABLE_PREVIEW_DELIMITER },
 		},
 		{
-			key: "code",
+			key: "builtin.code",
 			mode: "code",
 			labelKey: "open_with_code",
 			icon: PREVIEW_APP_ICON_URLS.code,
@@ -455,14 +455,14 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	tsv: [
 		{
-			key: "table",
+			key: BUILTIN_TABLE_PREVIEW_APP_KEY,
 			mode: "table",
 			labelKey: "open_with_table",
 			icon: PREVIEW_APP_ICON_URLS.table,
 			config: { delimiter: DEFAULT_TABLE_PREVIEW_DELIMITER },
 		},
 		{
-			key: "code",
+			key: "builtin.code",
 			mode: "code",
 			labelKey: "open_with_code",
 			icon: PREVIEW_APP_ICON_URLS.code,
@@ -470,13 +470,13 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	json: [
 		{
-			key: "formatted",
+			key: "builtin.formatted",
 			mode: "formatted",
 			labelKey: "open_with_formatted",
 			icon: PREVIEW_APP_ICON_URLS.json,
 		},
 		{
-			key: "code",
+			key: "builtin.code",
 			mode: "code",
 			labelKey: "open_with_code",
 			icon: PREVIEW_APP_ICON_URLS.code,
@@ -484,13 +484,13 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	xml: [
 		{
-			key: "formatted",
+			key: "builtin.formatted",
 			mode: "formatted",
 			labelKey: "open_with_formatted",
 			icon: PREVIEW_APP_ICON_URLS.xml,
 		},
 		{
-			key: "code",
+			key: "builtin.code",
 			mode: "code",
 			labelKey: "open_with_code",
 			icon: PREVIEW_APP_ICON_URLS.code,
@@ -498,7 +498,7 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	text: [
 		{
-			key: "code",
+			key: "builtin.code",
 			mode: "code",
 			labelKey: "open_with_code",
 			icon: PREVIEW_APP_ICON_URLS.code,
@@ -506,32 +506,18 @@ export const OPEN_WITH_OPTIONS: Record<string, OpenWithOption[]> = {
 	],
 	svg: [
 		{
-			key: "image",
+			key: "builtin.image",
 			mode: "image",
 			labelKey: "open_with_image",
 			icon: PREVIEW_APP_ICON_URLS.image,
 		},
 		{
-			key: "code",
+			key: "builtin.code",
 			mode: "code",
 			labelKey: "open_with_code",
 			icon: PREVIEW_APP_ICON_URLS.code,
 		},
 	],
-};
-
-const BUILTIN_KEY_BY_LEGACY_OPTION_KEY: Partial<Record<string, string>> = {
-	audio: "builtin.audio",
-	code: "builtin.code",
-	formatted: "builtin.formatted",
-	image: "builtin.image",
-	markdown: "builtin.markdown",
-	office_google: "builtin.office_google",
-	office_microsoft: "builtin.office_microsoft",
-	pdf: "builtin.pdf",
-	table: BUILTIN_TABLE_PREVIEW_APP_KEY,
-	try_text: "builtin.try_text",
-	video: "builtin.video",
 };
 
 type ConfiguredPreviewApp = PublicPreviewAppDefinition;
@@ -639,7 +625,7 @@ export function getFileTypeInfo(file: PreviewableFileLike): FileTypeInfo {
 	return DEFAULT_TYPE_INFO;
 }
 
-function detectLegacyFilePreviewProfile(
+function detectBuiltinFilePreviewProfile(
 	file: PreviewableFileLike,
 ): FilePreviewProfile {
 	const typeInfo = getFileTypeInfo(file);
@@ -652,8 +638,8 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: true,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "image",
-			options: OPEN_WITH_OPTIONS.svg,
+			defaultMode: "builtin.image",
+			options: BUILTIN_PREVIEW_OPTIONS.svg,
 		};
 	}
 
@@ -663,8 +649,8 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: true,
 			isTextBased: false,
 			isEditableText: false,
-			defaultMode: "image",
-			options: OPEN_WITH_OPTIONS.image,
+			defaultMode: "builtin.image",
+			options: BUILTIN_PREVIEW_OPTIONS.image,
 		};
 	}
 	if (typeInfo.category === "video") {
@@ -673,8 +659,8 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: true,
 			isTextBased: false,
 			isEditableText: false,
-			defaultMode: "video",
-			options: OPEN_WITH_OPTIONS.video,
+			defaultMode: "builtin.video",
+			options: BUILTIN_PREVIEW_OPTIONS.video,
 		};
 	}
 	if (typeInfo.category === "audio") {
@@ -683,8 +669,8 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: true,
 			isTextBased: false,
 			isEditableText: false,
-			defaultMode: "audio",
-			options: OPEN_WITH_OPTIONS.audio,
+			defaultMode: "builtin.audio",
+			options: BUILTIN_PREVIEW_OPTIONS.audio,
 		};
 	}
 	if (typeInfo.category === "pdf") {
@@ -693,8 +679,8 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: true,
 			isTextBased: false,
 			isEditableText: false,
-			defaultMode: "pdf",
-			options: OPEN_WITH_OPTIONS.pdf,
+			defaultMode: "builtin.pdf",
+			options: BUILTIN_PREVIEW_OPTIONS.pdf,
 		};
 	}
 	if (typeInfo.category === "document") {
@@ -703,13 +689,17 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: false,
 			isEditableText: false,
-			defaultMode: isOpenDocument ? "office_google" : "office_microsoft",
+			defaultMode: isOpenDocument
+				? "builtin.office_google"
+				: "builtin.office_microsoft",
 			options: isOpenDocument
-				? [OPEN_WITH_OPTIONS.document[1]].filter(
-						(option): option is (typeof OPEN_WITH_OPTIONS.document)[number] =>
+				? [BUILTIN_PREVIEW_OPTIONS.document[1]].filter(
+						(
+							option,
+						): option is (typeof BUILTIN_PREVIEW_OPTIONS.document)[number] =>
 							option !== undefined,
 					)
-				: OPEN_WITH_OPTIONS.document,
+				: BUILTIN_PREVIEW_OPTIONS.document,
 		};
 	}
 	if (typeInfo.category === "spreadsheet") {
@@ -718,15 +708,17 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: false,
 			isEditableText: false,
-			defaultMode: isOpenDocument ? "office_google" : "office_microsoft",
+			defaultMode: isOpenDocument
+				? "builtin.office_google"
+				: "builtin.office_microsoft",
 			options: isOpenDocument
-				? [OPEN_WITH_OPTIONS.spreadsheet[1]].filter(
+				? [BUILTIN_PREVIEW_OPTIONS.spreadsheet[1]].filter(
 						(
 							option,
-						): option is (typeof OPEN_WITH_OPTIONS.spreadsheet)[number] =>
+						): option is (typeof BUILTIN_PREVIEW_OPTIONS.spreadsheet)[number] =>
 							option !== undefined,
 					)
-				: OPEN_WITH_OPTIONS.spreadsheet,
+				: BUILTIN_PREVIEW_OPTIONS.spreadsheet,
 		};
 	}
 	if (typeInfo.category === "presentation") {
@@ -735,15 +727,17 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: false,
 			isEditableText: false,
-			defaultMode: isOpenDocument ? "office_google" : "office_microsoft",
+			defaultMode: isOpenDocument
+				? "builtin.office_google"
+				: "builtin.office_microsoft",
 			options: isOpenDocument
-				? [OPEN_WITH_OPTIONS.presentation[1]].filter(
+				? [BUILTIN_PREVIEW_OPTIONS.presentation[1]].filter(
 						(
 							option,
-						): option is (typeof OPEN_WITH_OPTIONS.presentation)[number] =>
+						): option is (typeof BUILTIN_PREVIEW_OPTIONS.presentation)[number] =>
 							option !== undefined,
 					)
-				: OPEN_WITH_OPTIONS.presentation,
+				: BUILTIN_PREVIEW_OPTIONS.presentation,
 		};
 	}
 	if (typeInfo.category === "markdown") {
@@ -752,8 +746,8 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "markdown",
-			options: OPEN_WITH_OPTIONS.markdown,
+			defaultMode: "builtin.markdown",
+			options: BUILTIN_PREVIEW_OPTIONS.markdown,
 		};
 	}
 	if (typeInfo.category === "csv") {
@@ -762,8 +756,8 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "table",
-			options: OPEN_WITH_OPTIONS.csv,
+			defaultMode: BUILTIN_TABLE_PREVIEW_APP_KEY,
+			options: BUILTIN_PREVIEW_OPTIONS.csv,
 		};
 	}
 	if (typeInfo.category === "tsv") {
@@ -772,8 +766,8 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "table",
-			options: OPEN_WITH_OPTIONS.tsv,
+			defaultMode: BUILTIN_TABLE_PREVIEW_APP_KEY,
+			options: BUILTIN_PREVIEW_OPTIONS.tsv,
 		};
 	}
 	if (typeInfo.category === "json") {
@@ -782,8 +776,8 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "formatted",
-			options: OPEN_WITH_OPTIONS.json,
+			defaultMode: "builtin.formatted",
+			options: BUILTIN_PREVIEW_OPTIONS.json,
 		};
 	}
 	if (typeInfo.category === "xml") {
@@ -792,8 +786,8 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "formatted",
-			options: OPEN_WITH_OPTIONS.xml,
+			defaultMode: "builtin.formatted",
+			options: BUILTIN_PREVIEW_OPTIONS.xml,
 		};
 	}
 
@@ -811,8 +805,8 @@ function detectLegacyFilePreviewProfile(
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "code",
-			options: OPEN_WITH_OPTIONS.text,
+			defaultMode: "builtin.code",
+			options: BUILTIN_PREVIEW_OPTIONS.text,
 		};
 	}
 
@@ -826,7 +820,7 @@ function detectLegacyFilePreviewProfile(
 			typeInfo.category === "unknown"
 				? [
 						{
-							key: "try_text",
+							key: "builtin.try_text",
 							mode: "code",
 							labelKey: "open_with_try_text",
 							icon: PREVIEW_APP_ICON_URLS.file,
@@ -860,21 +854,16 @@ function normalizeConfiguredOption(
 	};
 }
 
-function normalizeLegacyOptionForConfiguredProfile(
+function resolveBuiltinOptionForConfiguredProfile(
 	option: OpenWithOption,
 	appMap: Map<string, OpenWithOption>,
-	unavailableBuiltinKeys = new Set<string>(),
+	availableAppKeys: Set<string>,
 ) {
-	const builtinKey = BUILTIN_KEY_BY_LEGACY_OPTION_KEY[option.key];
-	if (!builtinKey) {
-		return option;
-	}
-
-	if (unavailableBuiltinKeys.has(builtinKey)) {
+	if (option.key.startsWith("builtin.") && !availableAppKeys.has(option.key)) {
 		return null;
 	}
 
-	return appMap.get(builtinKey) ?? option;
+	return appMap.get(option.key) ?? option;
 }
 
 function getConfiguredBuiltinPreviewIcon(
@@ -979,14 +968,14 @@ function detectConfiguredFilePreviewProfile(
 	file: PreviewableFileLike,
 	previewApps: PublicPreviewAppsConfig,
 ): FilePreviewProfile {
-	const legacyProfile = detectLegacyFilePreviewProfile(file);
+	const builtinProfile = detectBuiltinFilePreviewProfile(file);
 	const allConfiguredApps = previewApps.apps ?? [];
 	const configuredApps = allConfiguredApps.filter(
 		isConfiguredPreviewAppEnabled,
 	);
 	const configuredOptions = configuredApps
 		.map((app) => {
-			const option = normalizeConfiguredOption(app, legacyProfile.category);
+			const option = normalizeConfiguredOption(app, builtinProfile.category);
 			return option ? ([app.key, option] as const) : null;
 		})
 		.filter(
@@ -997,54 +986,44 @@ function detectConfiguredFilePreviewProfile(
 		);
 	const appMap = new Map(configuredOptions);
 	const availableAppKeys = new Set(configuredApps.map((app) => app.key));
-	const unavailableBuiltinKeys = new Set(
-		Object.values(BUILTIN_KEY_BY_LEGACY_OPTION_KEY).filter(
-			(key): key is string => {
-				if (!key) {
-					return false;
-				}
-				return !availableAppKeys.has(key);
-			},
-		),
-	);
 	const matchedConfiguredOptions = configuredApps
 		.filter((app) => matchesConfiguredApp(file, app))
 		.map((app) => appMap.get(app.key) ?? null)
 		.filter((option): option is OpenWithOption => option !== null);
 
-	const fallbackOptions = legacyProfile.options
+	const builtinOptions = builtinProfile.options
 		.map((option) =>
-			normalizeLegacyOptionForConfiguredProfile(
+			resolveBuiltinOptionForConfiguredProfile(
 				option,
 				appMap,
-				unavailableBuiltinKeys,
+				availableAppKeys,
 			),
 		)
 		.filter((option): option is OpenWithOption => option !== null);
 	const options = mergeOpenWithOptions(
 		matchedConfiguredOptions,
-		fallbackOptions,
+		builtinOptions,
 	);
 	const registeredOptions = configuredOptions.map(([, option]) => option);
 	const allOptions = mergeOpenWithOptions(options, registeredOptions);
 	let defaultMode = matchedConfiguredOptions[0]?.key ?? null;
 
-	if (defaultMode === null && legacyProfile.defaultMode) {
-		const legacyDefaultOption = legacyProfile.options.find(
-			(option) => option.key === legacyProfile.defaultMode,
+	if (defaultMode === null && builtinProfile.defaultMode) {
+		const builtinDefaultOption = builtinProfile.options.find(
+			(option) => option.key === builtinProfile.defaultMode,
 		);
-		const legacyDefault = legacyDefaultOption
-			? normalizeLegacyOptionForConfiguredProfile(
-					legacyDefaultOption,
+		const builtinDefault = builtinDefaultOption
+			? resolveBuiltinOptionForConfiguredProfile(
+					builtinDefaultOption,
 					appMap,
-					unavailableBuiltinKeys,
+					availableAppKeys,
 				)
 			: null;
 		if (
-			legacyDefault &&
-			allOptions.some((option) => option.key === legacyDefault.key)
+			builtinDefault &&
+			allOptions.some((option) => option.key === builtinDefault.key)
 		) {
-			defaultMode = legacyDefault.key;
+			defaultMode = builtinDefault.key;
 		}
 	}
 
@@ -1056,7 +1035,7 @@ function detectConfiguredFilePreviewProfile(
 	}
 
 	return {
-		...legacyProfile,
+		...builtinProfile,
 		defaultMode,
 		allOptions,
 		options,
@@ -1068,7 +1047,7 @@ export function detectFilePreviewProfile(
 	previewApps?: PublicPreviewAppsConfig | null,
 ): FilePreviewProfile {
 	if (!previewApps) {
-		return detectLegacyFilePreviewProfile(file);
+		return detectBuiltinFilePreviewProfile(file);
 	}
 	return detectConfiguredFilePreviewProfile(file, previewApps);
 }
@@ -1089,5 +1068,5 @@ export function getDefaultOpenWith(
 }
 
 export function isEditableTextFile(file: PreviewableFileLike) {
-	return detectLegacyFilePreviewProfile(file).isEditableText;
+	return detectBuiltinFilePreviewProfile(file).isEditableText;
 }

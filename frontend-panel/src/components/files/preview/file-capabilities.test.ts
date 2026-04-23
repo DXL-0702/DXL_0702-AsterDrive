@@ -175,73 +175,77 @@ describe("file preview capabilities", () => {
 			isBlobPreview: false,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "markdown",
+			defaultMode: "builtin.markdown",
 		});
 		expect(detectFilePreviewProfile(json)).toMatchObject({
 			category: "json",
-			defaultMode: "formatted",
+			defaultMode: "builtin.formatted",
 		});
 		expect(detectFilePreviewProfile(xml)).toMatchObject({
 			category: "xml",
-			defaultMode: "formatted",
+			defaultMode: "builtin.formatted",
 		});
 		expect(detectFilePreviewProfile(image)).toMatchObject({
 			category: "image",
 			isBlobPreview: true,
-			defaultMode: "image",
+			defaultMode: "builtin.image",
 		});
 		expect(detectFilePreviewProfile(svg)).toMatchObject({
 			category: "image",
 			isBlobPreview: true,
 			isTextBased: true,
 			isEditableText: true,
-			defaultMode: "image",
+			defaultMode: "builtin.image",
 		});
 		expect(detectFilePreviewProfile(document)).toMatchObject({
 			category: "document",
 			isBlobPreview: false,
-			defaultMode: "office_microsoft",
+			defaultMode: "builtin.office_microsoft",
 			isEditableText: false,
 		});
 		expect(detectFilePreviewProfile(tsv)).toMatchObject({
 			category: "tsv",
-			defaultMode: "table",
+			defaultMode: "builtin.table",
 			isEditableText: true,
 		});
 		expect(detectFilePreviewProfile(shell)).toMatchObject({
 			category: "text",
-			defaultMode: "code",
+			defaultMode: "builtin.code",
 		});
 		expect(detectFilePreviewProfile(unknown)).toMatchObject({
 			category: "unknown",
 			defaultMode: null,
 			isEditableText: true,
 			options: [
-				{ key: "try_text", mode: "code", labelKey: "open_with_try_text" },
+				{
+					key: "builtin.try_text",
+					mode: "code",
+					labelKey: "open_with_try_text",
+				},
 			],
 		});
 
 		expect(getAvailableOpenWithOptions(json)).toEqual([
 			expect.objectContaining({
-				key: "formatted",
+				key: "builtin.formatted",
 				mode: "formatted",
 			}),
 			expect.objectContaining({ mode: "code" }),
 		]);
 		expect(getAvailableOpenWithOptions(svg)).toEqual([
 			expect.objectContaining({
-				key: "image",
+				key: "builtin.image",
 				mode: "image",
 			}),
 			expect.objectContaining({
-				key: "code",
+				key: "builtin.code",
 				mode: "code",
 			}),
 		]);
-		expect(getDefaultOpenWith(json)).toBe("formatted");
-		expect(getDefaultOpenWith(svg)).toBe("image");
-		expect(getDefaultOpenWith(document)).toBe("office_microsoft");
-		expect(getDefaultOpenWith(tsv)).toBe("table");
+		expect(getDefaultOpenWith(json)).toBe("builtin.formatted");
+		expect(getDefaultOpenWith(svg)).toBe("builtin.image");
+		expect(getDefaultOpenWith(document)).toBe("builtin.office_microsoft");
+		expect(getDefaultOpenWith(tsv)).toBe("builtin.table");
 		expect(isEditableTextFile(markdown)).toBe(true);
 		expect(isEditableTextFile(image)).toBe(false);
 		expect(isEditableTextFile(svg)).toBe(true);
@@ -256,10 +260,10 @@ describe("file preview capabilities", () => {
 
 		expect(detectFilePreviewProfile(document)).toMatchObject({
 			category: "document",
-			defaultMode: "office_google",
+			defaultMode: "builtin.office_google",
 			options: [
 				expect.objectContaining({
-					key: "office_google",
+					key: "builtin.office_google",
 					mode: "url_template",
 				}),
 			],
@@ -471,7 +475,7 @@ describe("file preview capabilities", () => {
 
 		for (const file of [vue, dart, proto, tf]) {
 			expect(isEditableTextFile(file)).toBe(true);
-			expect(getDefaultOpenWith(file)).toBe("code");
+			expect(getDefaultOpenWith(file)).toBe("builtin.code");
 		}
 	});
 
@@ -488,7 +492,7 @@ describe("file preview capabilities", () => {
 		expect(detectFilePreviewProfile(unknown).isEditableText).toBe(true);
 		expect(detectFilePreviewProfile(unknown).options).toEqual([
 			expect.objectContaining({
-				key: "try_text",
+				key: "builtin.try_text",
 				mode: "code",
 				labelKey: "open_with_try_text",
 			}),
