@@ -1009,9 +1009,6 @@ export function StoragePolicyDialog({
 																</>
 															) : (
 																<>
-																	<div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-sm text-muted-foreground">
-																		{t("policy_wizard_local_rules_helper")}
-																	</div>
 																	{renderLocalContentDedupField()}
 																</>
 															)}
@@ -1088,17 +1085,7 @@ export function StoragePolicyDialog({
 													{renderRemoteRulesHelper()}
 												</div>
 											</section>
-										) : (
-											<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
-												{renderSectionIntro(
-													t("policy_editor_storage_title"),
-													t("policy_editor_storage_desc"),
-												)}
-												<div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-sm text-muted-foreground">
-													{t("policy_wizard_local_rules_helper")}
-												</div>
-											</section>
-										)}
+										) : null}
 
 										<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
 											{renderSectionIntro(

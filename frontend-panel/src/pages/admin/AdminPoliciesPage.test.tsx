@@ -675,6 +675,9 @@ describe("AdminPoliciesPage", () => {
 			target: { value: "/srv/data" },
 		});
 		advanceCreateWizardToRulesStep();
+		expect(
+			screen.queryByText("policy_wizard_local_rules_helper"),
+		).not.toBeInTheDocument();
 		fireEvent.change(screen.getByLabelText("max_file_size (bytes)"), {
 			target: { value: "2048" },
 		});
@@ -1090,7 +1093,9 @@ describe("AdminPoliciesPage", () => {
 		expect(
 			screen.getByText("policy_editor_overview_title"),
 		).toBeInTheDocument();
-		expect(screen.getByText("policy_editor_storage_title")).toBeInTheDocument();
+		expect(
+			screen.queryByText("policy_editor_storage_title"),
+		).not.toBeInTheDocument();
 		expect(screen.getByText("policy_editor_rules_title")).toBeInTheDocument();
 		expect(screen.getByTestId("policy-summary-card")).toBeInTheDocument();
 		expect(screen.getByTestId("policy-summary-card").parentElement).toHaveClass(
