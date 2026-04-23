@@ -52,8 +52,10 @@ pub(crate) async fn prepare_cli_source(
 ) -> Result<PreparedCliSource> {
     if let Some(local_path_driver) = driver.as_local_path() {
         let path = local_path_driver.resolve_local_path(storage_path)?;
+        let input_path = cli_source_temp_path(temp_dir, source_file_name, source_mime_type);
+        materialize_local_cli_source(&path, &input_path).await?;
         return Ok(PreparedCliSource {
-            input_arg: path.to_string_lossy().into_owned(),
+            input_arg: input_path.to_string_lossy().into_owned(),
             kind: PreparedCliSourceKind::LocalPath,
         });
     }
@@ -98,6 +100,26 @@ pub(crate) async fn prepare_cli_source(
         input_arg: input_path.to_string_lossy().into_owned(),
         kind: PreparedCliSourceKind::StreamedTempFile,
     })
+}
+
+async fn materialize_local_cli_source(source_path: &Path, input_path: &Path) -> Result<()> {
+    match tokio::fs::hard_link(source_path, input_path).await {
+        Ok(()) => Ok(()),
+        Err(link_error) => {
+            tracing::debug!(
+                source_path = %source_path.display(),
+                input_path = %input_path.display(),
+                "failed to hard-link local media source for CLI input; falling back to copy: {link_error}"
+            );
+            tokio::fs::copy(source_path, input_path)
+                .await
+                .map(|_| ())
+                .map_aster_err_ctx(
+                    "copy local media source temp file",
+                    AsterError::thumbnail_generation_failed,
+                )
+        }
+    }
 }
 
 #[cfg(test)]
@@ -265,17 +287,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn prepare_cli_source_prefers_local_path() {
+    async fn prepare_cli_source_materializes_local_path_with_source_extension() {
         let temp_dir = std::env::temp_dir().join(format!(
             "aster-media-cli-input-local-{}",
             rand::random::<u64>()
         ));
         tokio::fs::create_dir_all(&temp_dir).await.unwrap();
+        let source_path = temp_dir.join("example-source.heic");
+        tokio::fs::write(&source_path, b"local-source")
+            .await
+            .unwrap();
 
         let prepared = prepare_cli_source(
-            &LocalPathOnlyDriver {
-                path: PathBuf::from("/tmp/example-source.heic"),
-            },
+            &LocalPathOnlyDriver { path: source_path },
             "blob/source",
             "avatar.heic",
             "image/heic",
@@ -286,7 +310,39 @@ mod tests {
         .unwrap();
 
         assert_eq!(prepared.kind(), PreparedCliSourceKind::LocalPath);
-        assert_eq!(prepared.input_arg(), "/tmp/example-source.heic");
+        assert!(prepared.input_arg().ends_with("source.heic"));
+        let stored = tokio::fs::read(prepared.input_arg()).await.unwrap();
+        assert_eq!(stored, b"local-source");
+        crate::utils::cleanup_temp_dir(temp_dir.to_string_lossy().as_ref()).await;
+    }
+
+    #[tokio::test]
+    async fn prepare_cli_source_materializes_extensionless_local_path() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "aster-media-cli-input-local-extensionless-{}",
+            rand::random::<u64>()
+        ));
+        tokio::fs::create_dir_all(&temp_dir).await.unwrap();
+        let source_path = temp_dir.join("content-addressed-source");
+        tokio::fs::write(&source_path, b"local-source")
+            .await
+            .unwrap();
+
+        let prepared = prepare_cli_source(
+            &LocalPathOnlyDriver { path: source_path },
+            "blob/source",
+            "dataset.csv",
+            "text/csv",
+            &temp_dir,
+            true,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(prepared.kind(), PreparedCliSourceKind::LocalPath);
+        assert!(prepared.input_arg().ends_with("source.csv"));
+        let stored = tokio::fs::read(prepared.input_arg()).await.unwrap();
+        assert_eq!(stored, b"local-source");
         crate::utils::cleanup_temp_dir(temp_dir.to_string_lossy().as_ref()).await;
     }
 

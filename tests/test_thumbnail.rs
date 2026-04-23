@@ -52,7 +52,7 @@ fn current_thumb_path(blob_hash: &str) -> String {
 
 fn vips_thumb_path(blob_hash: &str) -> String {
     format!(
-        "_thumb/vips-cli-v2/{}/{}/{}.webp",
+        "_thumb/vips-cli-v1/{}/{}/{}.webp",
         &blob_hash[..2],
         &blob_hash[2..4],
         blob_hash
@@ -61,7 +61,7 @@ fn vips_thumb_path(blob_hash: &str) -> String {
 
 fn ffmpeg_thumb_path(blob_hash: &str) -> String {
     format!(
-        "_thumb/ffmpeg-cli-v2/{}/{}/{}.webp",
+        "_thumb/ffmpeg-cli-v1/{}/{}/{}.webp",
         &blob_hash[..2],
         &blob_hash[2..4],
         blob_hash
@@ -414,7 +414,7 @@ async fn test_thumbnail_dedup_same_blob() {
 }
 
 #[actix_web::test]
-async fn test_thumbnail_failed_task_returns_error_without_requeue() {
+async fn test_thumbnail_failed_task_returns_not_found_without_requeue() {
     let state = common::setup().await;
     let app = create_test_app!(state.clone());
     let (token, _) = register_and_login!(app);
@@ -437,13 +437,13 @@ async fn test_thumbnail_failed_task_returns_error_without_requeue() {
     assert_eq!(count_before, 1);
 
     let resp = request_thumbnail!(app, token, file_id);
-    assert_eq!(resp.status(), 500);
+    assert_eq!(resp.status(), 404);
     let body: Value = test::read_body_json(resp).await;
-    assert_eq!(body["code"], json!(ErrorCode::ThumbnailFailed as i32));
+    assert_eq!(body["code"], json!(ErrorCode::NotFound as i32));
 
     for _ in 0..3 {
         let resp = request_thumbnail!(app, token, file_id);
-        assert_eq!(resp.status(), 500);
+        assert_eq!(resp.status(), 404);
     }
 
     let count_after = thumbnail_task_count(&state, file_id).await;
@@ -530,7 +530,7 @@ async fn test_thumbnail_heic_uses_vips_cli_processor_when_extension_matches() {
         blob.thumbnail_path.as_deref(),
         Some(expected_thumbnail_path.as_str())
     );
-    assert_eq!(blob.thumbnail_version.as_deref(), Some("vips-cli-v2"));
+    assert_eq!(blob.thumbnail_version.as_deref(), Some("vips-cli-v1"));
 
     let second = request_thumbnail!(app, token, file_id);
     assert_eq!(second.status(), 200);
@@ -600,7 +600,7 @@ async fn test_thumbnail_mp4_uses_ffmpeg_cli_processor_when_extension_matches() {
         blob.thumbnail_path.as_deref(),
         Some(expected_thumbnail_path.as_str())
     );
-    assert_eq!(blob.thumbnail_version.as_deref(), Some("ffmpeg-cli-v2"));
+    assert_eq!(blob.thumbnail_version.as_deref(), Some("ffmpeg-cli-v1"));
 
     let second = request_thumbnail!(app, token, file_id);
     assert_eq!(second.status(), 200);

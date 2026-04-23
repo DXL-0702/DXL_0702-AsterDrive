@@ -37,16 +37,18 @@ fn sample_avatar_png(width: u32, height: u32) -> Vec<u8> {
 }
 
 #[test]
-fn known_thumbnail_cache_paths_include_current_and_legacy_namespaces() {
+fn known_thumbnail_cache_paths_include_current_namespaces() {
     let hash = "abc".repeat(21) + "a";
     let paths = known_thumbnail_cache_paths(&hash);
-    assert!(paths.contains(&format!("_thumb/images-v1/ab/ca/{hash}.webp")));
-    assert!(paths.contains(&format!("_thumb/v2/ab/ca/{hash}.webp")));
-    assert!(paths.contains(&format!("_thumb/vips-cli-v2/ab/ca/{hash}.webp")));
-    assert!(paths.contains(&format!("_thumb/ffmpeg-cli-v2/ab/ca/{hash}.webp")));
-    assert!(paths.contains(&format!("_thumb/vips-cli-v1/ab/ca/{hash}.webp")));
-    assert!(paths.contains(&format!("_thumb/ffmpeg-cli-v1/ab/ca/{hash}.webp")));
-    assert!(paths.contains(&format!("_thumb/storage-native-v1/ab/ca/{hash}.webp")));
+    assert_eq!(
+        paths,
+        vec![
+            format!("_thumb/images-v1/ab/ca/{hash}.webp"),
+            format!("_thumb/vips-cli-v1/ab/ca/{hash}.webp"),
+            format!("_thumb/ffmpeg-cli-v1/ab/ca/{hash}.webp"),
+            format!("_thumb/storage-native-v1/ab/ca/{hash}.webp"),
+        ]
+    );
 }
 
 #[test]

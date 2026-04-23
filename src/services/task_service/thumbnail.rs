@@ -56,10 +56,8 @@ pub(crate) async fn ensure_thumbnail_task(
             | BackgroundTaskStatus::Processing
             | BackgroundTaskStatus::Retry => return Ok(()),
             BackgroundTaskStatus::Failed => {
-                return Err(AsterError::thumbnail_generation_failed(
-                    existing
-                        .last_error
-                        .unwrap_or_else(|| "thumbnail generation failed".to_string()),
+                return Err(AsterError::record_not_found(
+                    "thumbnail is unavailable for this file",
                 ));
             }
             BackgroundTaskStatus::Succeeded | BackgroundTaskStatus::Canceled => {}

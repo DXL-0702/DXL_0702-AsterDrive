@@ -171,8 +171,8 @@ pub async fn download(
         (status = 400, description = "Thumbnail not supported for this file type"),
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 412, description = "Storage backend is disabled or not ready"),
-        (status = 404, description = "File not found"),
-        (status = 500, description = "Thumbnail generation failed"),
+        (status = 404, description = "File not found or thumbnail unavailable"),
+        (status = 500, description = "Unexpected thumbnail generation failure"),
     ),
     security(("bearer" = [])),
 )]
@@ -322,8 +322,8 @@ pub(crate) async fn team_open_wopi(
         (status = 401, description = crate::api::constants::OPENAPI_UNAUTHORIZED),
         (status = 403, description = "Forbidden"),
         (status = 412, description = "Storage backend is disabled or not ready"),
-        (status = 404, description = "File not found"),
-        (status = 500, description = "Thumbnail generation failed"),
+        (status = 404, description = "File not found or thumbnail unavailable"),
+        (status = 500, description = "Unexpected thumbnail generation failure"),
     ),
     security(("bearer" = [])),
 )]
