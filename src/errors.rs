@@ -3,6 +3,10 @@
 use actix_web::http::StatusCode;
 use std::any::Any;
 
+use crate::storage::error::{
+    StorageErrorKind, storage_driver_error_display_message, storage_driver_error_kind_from_message,
+};
+
 /// 计数宏：计算传入标识符的数量（放在 define_errors! 之前，因为后者在展开时会调用此宏）
 macro_rules! count {
     () => { 0 };
@@ -39,6 +43,9 @@ macro_rules! define_errors {
 
             /// 错误详情
             pub fn message(&self) -> &str {
+                if let AsterError::StorageDriverError(msg) = self {
+                    return storage_driver_error_display_message(msg);
+                }
                 match self {
                     $(AsterError::$variant(msg) => msg.as_str(),)*
                 }
@@ -128,6 +135,17 @@ define_errors! {
 }
 
 impl AsterError {
+    pub fn storage_error_kind(&self) -> Option<StorageErrorKind> {
+        match self {
+            Self::StorageDriverError(message) => {
+                Some(storage_driver_error_kind_from_message(message))
+            }
+            Self::PreconditionFailed(_) => Some(StorageErrorKind::Precondition),
+            Self::UnsupportedDriver(_) => Some(StorageErrorKind::Unsupported),
+            _ => None,
+        }
+    }
+
     /// HTTP 状态码映射
     pub fn http_status(&self) -> StatusCode {
         match self {

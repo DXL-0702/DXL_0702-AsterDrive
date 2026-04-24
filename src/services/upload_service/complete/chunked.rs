@@ -5,7 +5,7 @@ use crate::entities::{file, storage_policy, upload_session};
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::shared::{
-    mark_session_failed, transition_upload_session_to_assembling,
+    handle_completion_error, transition_upload_session_to_assembling,
 };
 use crate::services::workspace_storage_service::{self, PreparedNonDedupBlobUpload};
 use crate::storage::driver::StorageDriver;
@@ -62,9 +62,9 @@ pub(super) async fn complete_chunked_upload(
             Ok(created)
         }
         Err(error) => {
-            // session 一旦进入 failed，就不允许客户端继续 retry 当前 upload_id，
-            // 必须重新 init 一个新的会话，避免半成品状态被反复叠加。
-            mark_session_failed(db, &upload_id).await;
+            // 本地装配错误仍然会把 session 置为 failed；
+            // 但远端存储瞬时不可用时应恢复为 uploading，让客户端稍后重试。
+            handle_completion_error(db, &upload_id, UploadSessionStatus::Uploading, &error).await;
             Err(error)
         }
     }

@@ -3,6 +3,7 @@
 use crate::entities::{managed_follower, storage_policy};
 use crate::errors::{AsterError, Result};
 use crate::storage::driver::{BlobMetadata, PresignedDownloadOptions, StorageDriver};
+use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::storage::extensions::{ListStorageDriver, PresignedStorageDriver, StreamUploadDriver};
 use crate::storage::multipart::MultipartStorageDriver;
 use crate::storage::remote_protocol::RemoteStorageClient;
@@ -21,7 +22,8 @@ impl RemoteDriver {
 
     pub fn new(policy: &storage_policy::Model, follower: &managed_follower::Model) -> Result<Self> {
         if follower.namespace.trim().is_empty() {
-            return Err(AsterError::storage_driver_error(
+            return Err(storage_driver_error(
+                StorageErrorKind::Misconfigured,
                 "remote node namespace cannot be empty",
             ));
         }
@@ -153,9 +155,10 @@ impl StreamUploadDriver for RemoteDriver {
         size: i64,
     ) -> Result<String> {
         let size = u64::try_from(size).map_err(|_| {
-            AsterError::storage_driver_error(format!(
-                "remote stream upload size must be non-negative, got {size}"
-            ))
+            storage_driver_error(
+                StorageErrorKind::Precondition,
+                format!("remote stream upload size must be non-negative, got {size}"),
+            )
         })?;
         self.client
             .put_reader(&self.object_key(storage_path), reader, size)
@@ -174,7 +177,10 @@ impl StreamUploadDriver for RemoteDriver {
             storage_path,
             Box::new(file),
             i64::try_from(metadata.len()).map_err(|_| {
-                AsterError::storage_driver_error("remote put_file size exceeds i64 range")
+                storage_driver_error(
+                    StorageErrorKind::Precondition,
+                    "remote put_file size exceeds i64 range",
+                )
             })?,
         )
         .await
@@ -239,10 +245,16 @@ impl MultipartStorageDriver for RemoteDriver {
             let remote_key = self.object_key(&part_key);
             let metadata = self.client.metadata(&remote_key).await?;
             let part_size = i64::try_from(metadata.size).map_err(|_| {
-                AsterError::storage_driver_error("remote multipart part size exceeds i64 range")
+                storage_driver_error(
+                    StorageErrorKind::Precondition,
+                    "remote multipart part size exceeds i64 range",
+                )
             })?;
             expected_size = expected_size.checked_add(part_size).ok_or_else(|| {
-                AsterError::storage_driver_error("remote multipart expected size overflow")
+                storage_driver_error(
+                    StorageErrorKind::Precondition,
+                    "remote multipart expected size overflow",
+                )
             })?;
             part_keys.push(remote_key);
         }

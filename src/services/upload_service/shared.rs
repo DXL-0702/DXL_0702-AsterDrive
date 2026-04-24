@@ -6,6 +6,7 @@ use sea_orm::{ConnectionTrait, Set};
 use crate::db::repository::{file_repo, upload_session_repo};
 use crate::entities::{file, upload_session};
 use crate::errors::{AsterError, Result};
+use crate::storage::StorageErrorKind;
 use crate::types::UploadSessionStatus;
 use crate::utils::id;
 
@@ -133,6 +134,121 @@ pub(super) async fn mark_session_failed<C: ConnectionTrait>(db: &C, upload_id: &
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum UploadStorageErrorClass {
+    Retryable,
+    RequiresIntervention,
+    NotFound,
+    Terminal,
+}
+
+pub(super) fn classify_upload_storage_error(error: &AsterError) -> UploadStorageErrorClass {
+    match error {
+        AsterError::RecordNotFound(_) => UploadStorageErrorClass::NotFound,
+        AsterError::PreconditionFailed(_)
+        | AsterError::ValidationError(_)
+        | AsterError::UnsupportedDriver(_) => UploadStorageErrorClass::RequiresIntervention,
+        AsterError::StorageDriverError(_) => match error.storage_error_kind() {
+            Some(StorageErrorKind::Transient | StorageErrorKind::RateLimited) => {
+                UploadStorageErrorClass::Retryable
+            }
+            Some(StorageErrorKind::Auth)
+            | Some(StorageErrorKind::Permission)
+            | Some(StorageErrorKind::Misconfigured)
+            | Some(StorageErrorKind::Unsupported)
+            | Some(StorageErrorKind::Precondition) => UploadStorageErrorClass::RequiresIntervention,
+            Some(StorageErrorKind::NotFound) => UploadStorageErrorClass::NotFound,
+            Some(StorageErrorKind::Unknown) | None => UploadStorageErrorClass::Terminal,
+        },
+        _ => UploadStorageErrorClass::Terminal,
+    }
+}
+
+pub(super) fn upload_completion_error_is_retryable(error: &AsterError) -> bool {
+    matches!(
+        classify_upload_storage_error(error),
+        UploadStorageErrorClass::Retryable
+    )
+}
+
+pub(super) fn upload_storage_error_class_label(class: UploadStorageErrorClass) -> &'static str {
+    match class {
+        UploadStorageErrorClass::Retryable => "retryable",
+        UploadStorageErrorClass::RequiresIntervention => "requires_operator_intervention",
+        UploadStorageErrorClass::NotFound => "not_found",
+        UploadStorageErrorClass::Terminal => "terminal",
+    }
+}
+
+async fn restore_session_status_after_retryable_completion_error<C: ConnectionTrait>(
+    db: &C,
+    upload_id: &str,
+    restore_status: UploadSessionStatus,
+) -> Result<()> {
+    if upload_session_repo::try_transition_status(
+        db,
+        upload_id,
+        UploadSessionStatus::Assembling,
+        restore_status,
+    )
+    .await?
+    {
+        return Ok(());
+    }
+
+    match upload_session_repo::find_by_id(db, upload_id).await {
+        Ok(session) if session.status == restore_status => {}
+        Ok(session) if session.status == UploadSessionStatus::Assembling => {
+            tracing::warn!(
+                upload_id,
+                restore_status = ?restore_status,
+                current_status = ?session.status,
+                "upload session remained in assembling after a retryable completion error"
+            );
+        }
+        Ok(session) => {
+            tracing::debug!(
+                upload_id,
+                restore_status = ?restore_status,
+                current_status = ?session.status,
+                "upload session status changed before retryable completion error recovery finished"
+            );
+        }
+        Err(error) => {
+            tracing::warn!(
+                upload_id,
+                restore_status = ?restore_status,
+                "failed to reload upload session after retryable completion error: {error}"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+pub(super) async fn handle_completion_error<C: ConnectionTrait>(
+    db: &C,
+    upload_id: &str,
+    restore_status: UploadSessionStatus,
+    error: &AsterError,
+) {
+    if upload_completion_error_is_retryable(error) {
+        if let Err(restore_error) =
+            restore_session_status_after_retryable_completion_error(db, upload_id, restore_status)
+                .await
+        {
+            tracing::warn!(
+                upload_id,
+                restore_status = ?restore_status,
+                "failed to restore upload session after retryable completion error: {restore_error}"
+            );
+        }
+        return;
+    }
+
+    mark_session_failed(db, upload_id).await;
+}
+
 pub(super) async fn mark_session_failed_with_expiration<C: ConnectionTrait>(
     db: &C,
     upload_id: &str,
@@ -243,5 +359,46 @@ mod tests {
         assert_eq!(upload_session_status_label(Completed), "completed");
         assert_eq!(upload_session_status_label(Failed), "failed");
         assert_eq!(upload_session_status_label(Presigned), "presigned");
+    }
+
+    #[test]
+    fn classify_upload_storage_error_marks_transient_remote_failures_retryable() {
+        let error = AsterError::storage_driver_error(
+            "remote storage request failed: error sending request for url (http://127.0.0.1:9)",
+        );
+        assert_eq!(
+            classify_upload_storage_error(&error),
+            UploadStorageErrorClass::Retryable
+        );
+    }
+
+    #[test]
+    fn classify_upload_storage_error_marks_remote_auth_failures_as_intervention() {
+        let error = AsterError::storage_driver_error(
+            "remote node authentication failed: delete remote storage object: denied",
+        );
+        assert_eq!(
+            classify_upload_storage_error(&error),
+            UploadStorageErrorClass::RequiresIntervention
+        );
+    }
+
+    #[test]
+    fn classify_upload_storage_error_marks_precondition_failures_as_intervention() {
+        let error = AsterError::precondition_failed("remote node #1 is disabled");
+        assert_eq!(
+            classify_upload_storage_error(&error),
+            UploadStorageErrorClass::RequiresIntervention
+        );
+    }
+
+    #[test]
+    fn classify_upload_storage_error_marks_not_found_errors() {
+        let error =
+            AsterError::storage_driver_error("S3 abort_multipart_upload failed: NoSuchUpload");
+        assert_eq!(
+            classify_upload_storage_error(&error),
+            UploadStorageErrorClass::NotFound
+        );
     }
 }

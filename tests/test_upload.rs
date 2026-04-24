@@ -123,6 +123,7 @@ struct UploadSessionSpec<'a> {
     expires_at: chrono::DateTime<chrono::Utc>,
     total_chunks: i32,
     received_count: i32,
+    policy_id: Option<i64>,
     s3_temp_key: Option<&'a str>,
     s3_multipart_id: Option<&'a str>,
     file_id: Option<i64>,
@@ -140,6 +141,7 @@ impl<'a> UploadSessionSpec<'a> {
             expires_at,
             total_chunks: 0,
             received_count: 0,
+            policy_id: None,
             s3_temp_key: None,
             s3_multipart_id: None,
             file_id: None,
@@ -149,6 +151,11 @@ impl<'a> UploadSessionSpec<'a> {
     fn chunks(mut self, total_chunks: i32, received_count: i32) -> Self {
         self.total_chunks = total_chunks;
         self.received_count = received_count;
+        self
+    }
+
+    fn policy(mut self, policy_id: i64) -> Self {
+        self.policy_id = Some(policy_id);
         self
     }
 
@@ -176,6 +183,7 @@ async fn create_upload_session(
         .await
         .unwrap()
         .expect("default policy should exist in test setup");
+    let policy_id = spec.policy_id.unwrap_or(policy.id);
     let now = chrono::Utc::now();
     upload_session_repo::create(
         &state.db,
@@ -189,7 +197,7 @@ async fn create_upload_session(
             total_chunks: Set(spec.total_chunks),
             received_count: Set(spec.received_count),
             folder_id: Set(None),
-            policy_id: Set(policy.id),
+            policy_id: Set(policy_id),
             status: Set(spec.status),
             s3_temp_key: Set(spec.s3_temp_key.map(str::to_string)),
             s3_multipart_id: Set(spec.s3_multipart_id.map(str::to_string)),
@@ -201,6 +209,78 @@ async fn create_upload_session(
     )
     .await
     .unwrap();
+}
+
+async fn create_dead_remote_policy(
+    state: &aster_drive::runtime::PrimaryAppState,
+) -> aster_drive::entities::storage_policy::Model {
+    use aster_drive::db::repository::managed_follower_repo;
+    use aster_drive::entities::{managed_follower, storage_policy};
+    use aster_drive::types::{
+        DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions,
+    };
+    use sea_orm::Set;
+
+    let now = chrono::Utc::now();
+    let remote_node = managed_follower_repo::create(
+        &state.db,
+        managed_follower::ActiveModel {
+            name: Set(format!("dead-remote-{}", uuid::Uuid::new_v4())),
+            base_url: Set("http://127.0.0.1:9".to_string()),
+            access_key: Set("dead-remote-ak".to_string()),
+            secret_key: Set("dead-remote-sk".to_string()),
+            namespace: Set(format!("dead-remote-{}", uuid::Uuid::new_v4())),
+            is_enabled: Set(true),
+            last_capabilities: Set(
+                "{\"protocol_version\":\"v1\",\"supports_list\":true}".to_string()
+            ),
+            last_error: Set(String::new()),
+            last_checked_at: Set(Some(now)),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    let policy = policy_repo::create(
+        &state.db,
+        storage_policy::ActiveModel {
+            name: Set(format!("dead-remote-policy-{}", uuid::Uuid::new_v4())),
+            driver_type: Set(DriverType::Remote),
+            endpoint: Set(String::new()),
+            bucket: Set(String::new()),
+            access_key: Set(String::new()),
+            secret_key: Set(String::new()),
+            base_path: Set("dead-remote".to_string()),
+            remote_node_id: Set(Some(remote_node.id)),
+            max_file_size: Set(0),
+            allowed_types: Set(StoredStoragePolicyAllowedTypes::empty()),
+            options: Set(StoredStoragePolicyOptions::empty()),
+            is_default: Set(false),
+            chunk_size: Set(5),
+            created_at: Set(now),
+            updated_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    state
+        .policy_snapshot
+        .reload(&state.db)
+        .await
+        .expect("policy snapshot should reload after creating dead remote policy");
+    state
+        .driver_registry
+        .reload_managed_followers(&state.db)
+        .await
+        .expect("driver registry should reload managed followers after creating dead remote node");
+    state.driver_registry.invalidate(policy.id);
+
+    policy
 }
 
 fn s3_test_client(endpoint: &str) -> aws_sdk_s3::Client {
@@ -1520,6 +1600,139 @@ async fn test_complete_upload_marks_session_failed_after_assembly_error() {
 }
 
 #[actix_web::test]
+async fn test_complete_upload_keeps_presigned_multipart_session_retryable_after_storage_error() {
+    use aster_drive::db::repository::upload_session_repo;
+    use aster_drive::services::{auth_service, upload_service};
+    use aster_drive::types::UploadSessionStatus;
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "presigretry",
+        "presigned-retry@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let remote_policy = create_dead_remote_policy(&state).await;
+    let upload_id = new_test_upload_id();
+
+    create_upload_session(
+        &state,
+        user.id,
+        UploadSessionSpec::new(
+            &upload_id,
+            UploadSessionStatus::Presigned,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(2, 0)
+        .policy(remote_policy.id)
+        .s3(
+            Some("upload/data/files/presigned-retry-temp"),
+            Some("presigned-retry-multipart"),
+        ),
+    )
+    .await;
+
+    let parts = Some(vec![
+        (1, "\"etag-1\"".to_string()),
+        (2, "\"etag-2\"".to_string()),
+    ]);
+    let err = upload_service::complete_upload(&state, &upload_id, user.id, parts.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "E031");
+
+    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(session.status, UploadSessionStatus::Presigned);
+    assert_eq!(session.file_id, None);
+
+    let retry_err = upload_service::complete_upload(&state, &upload_id, user.id, parts)
+        .await
+        .unwrap_err();
+    assert_eq!(retry_err.code(), "E031");
+
+    let session_after_retry = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(session_after_retry.status, UploadSessionStatus::Presigned);
+    assert_eq!(session_after_retry.file_id, None);
+}
+
+#[actix_web::test]
+async fn test_complete_upload_keeps_remote_chunked_session_retryable_after_storage_error() {
+    use aster_drive::db::repository::upload_session_repo;
+    use aster_drive::services::{auth_service, upload_service};
+    use aster_drive::types::UploadSessionStatus;
+
+    let state = common::setup().await;
+    let user = auth_service::register(
+        &state,
+        "rchunkretry",
+        "remote-chunk-retry@test.com",
+        "password123",
+    )
+    .await
+    .unwrap();
+    let remote_policy = create_dead_remote_policy(&state).await;
+    let upload_id = new_test_upload_id();
+
+    create_upload_session(
+        &state,
+        user.id,
+        UploadSessionSpec::new(
+            &upload_id,
+            UploadSessionStatus::Uploading,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(2, 2)
+        .policy(remote_policy.id),
+    )
+    .await;
+
+    let chunk0 = aster_drive::utils::paths::upload_chunk_path(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+        0,
+    );
+    let chunk1 = aster_drive::utils::paths::upload_chunk_path(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+        1,
+    );
+    let chunk_dir = std::path::Path::new(&chunk0)
+        .parent()
+        .expect("chunk path should have parent");
+    tokio::fs::create_dir_all(chunk_dir).await.unwrap();
+    tokio::fs::write(&chunk0, b"12345").await.unwrap();
+    tokio::fs::write(&chunk1, b"67890").await.unwrap();
+
+    let err = upload_service::complete_upload(&state, &upload_id, user.id, None)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code(), "E031");
+
+    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(session.status, UploadSessionStatus::Uploading);
+    assert_eq!(session.file_id, None);
+
+    let retry_err = upload_service::complete_upload(&state, &upload_id, user.id, None)
+        .await
+        .unwrap_err();
+    assert_eq!(retry_err.code(), "E031");
+
+    let session_after_retry = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(session_after_retry.status, UploadSessionStatus::Uploading);
+    assert_eq!(session_after_retry.file_id, None);
+}
+
+#[actix_web::test]
 async fn test_upload_service_complete_rejects_assembling_session() {
     use aster_drive::services::{auth_service, upload_service};
 
@@ -1830,6 +2043,58 @@ async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
 }
 
 #[actix_web::test]
+async fn test_upload_service_cleanup_expired_keeps_remote_sessions_when_storage_is_unavailable() {
+    use aster_drive::db::repository::upload_session_repo;
+    use aster_drive::services::{auth_service, upload_service};
+    use aster_drive::types::UploadSessionStatus;
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "cleanrem", "cleanup-remote@test.com", "password123")
+        .await
+        .unwrap();
+    let remote_policy = create_dead_remote_policy(&state).await;
+
+    let upload_id = new_test_upload_id();
+    create_upload_session(
+        &state,
+        user.id,
+        UploadSessionSpec::new(
+            &upload_id,
+            UploadSessionStatus::Uploading,
+            chrono::Utc::now() - chrono::Duration::minutes(5),
+        )
+        .chunks(2, 1)
+        .policy(remote_policy.id)
+        .s3(
+            Some("upload/data/files/cleanup-remote-temp"),
+            Some("cleanup-remote-multipart"),
+        ),
+    )
+    .await;
+
+    let expired_dir = aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+    );
+    tokio::fs::create_dir_all(&expired_dir).await.unwrap();
+    tokio::fs::write(format!("{expired_dir}/chunk_0"), b"temp")
+        .await
+        .unwrap();
+
+    let cleaned = upload_service::cleanup_expired(&state).await.unwrap();
+    assert_eq!(cleaned, 0);
+
+    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(session.status, UploadSessionStatus::Uploading);
+    assert!(
+        !std::path::Path::new(&expired_dir).exists(),
+        "expired temp dir should still be removed when session is kept for retry"
+    );
+}
+
+#[actix_web::test]
 async fn test_cancel_upload_keeps_multipart_session_for_grace_cleanup() {
     use aster_drive::db::repository::{upload_session_part_repo, upload_session_repo};
     use aster_drive::services::{auth_service, upload_service};
@@ -1897,6 +2162,64 @@ async fn test_cancel_upload_keeps_multipart_session_for_grace_cleanup() {
         .unwrap()
         .expect("session row should remain available during grace window");
     assert_eq!(part.etag, "etag-1");
+}
+
+#[actix_web::test]
+async fn test_cancel_upload_keeps_remote_session_when_object_cleanup_is_unavailable() {
+    use aster_drive::db::repository::upload_session_repo;
+    use aster_drive::services::{auth_service, upload_service};
+    use aster_drive::types::UploadSessionStatus;
+
+    let state = common::setup().await;
+    let user = auth_service::register(&state, "cancelrem", "cancel-remote@test.com", "password123")
+        .await
+        .unwrap();
+    let remote_policy = create_dead_remote_policy(&state).await;
+    let upload_id = new_test_upload_id();
+    create_upload_session(
+        &state,
+        user.id,
+        UploadSessionSpec::new(
+            &upload_id,
+            UploadSessionStatus::Uploading,
+            chrono::Utc::now() + chrono::Duration::hours(1),
+        )
+        .chunks(2, 0)
+        .policy(remote_policy.id)
+        .s3(Some("upload/data/files/cancel-remote-temp"), None),
+    )
+    .await;
+
+    let temp_dir = aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &upload_id,
+    );
+    tokio::fs::create_dir_all(&temp_dir).await.unwrap();
+    tokio::fs::write(format!("{temp_dir}/chunk_0"), b"temp")
+        .await
+        .unwrap();
+
+    let canceled_at = chrono::Utc::now();
+    upload_service::cancel_upload(&state, &upload_id, user.id)
+        .await
+        .unwrap();
+
+    let session = upload_session_repo::find_by_id(&state.db, &upload_id)
+        .await
+        .unwrap();
+    assert_eq!(session.status, UploadSessionStatus::Failed);
+    assert!(
+        session.expires_at > canceled_at,
+        "cancel should defer cleanup instead of deleting the session when remote cleanup is blocked"
+    );
+    assert!(
+        session.expires_at <= canceled_at + chrono::Duration::seconds(20),
+        "deferred cancel cleanup grace window should stay short"
+    );
+    assert!(
+        !std::path::Path::new(&temp_dir).exists(),
+        "cancel should still clean local temp data when remote cleanup is blocked"
+    );
 }
 
 #[actix_web::test]

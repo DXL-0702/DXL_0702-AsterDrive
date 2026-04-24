@@ -4,6 +4,7 @@ use super::s3_config::normalize_s3_endpoint_and_bucket;
 use crate::entities::storage_policy;
 use crate::errors::{AsterError, MapAsterErr, Result};
 use crate::storage::driver::{BlobMetadata, PresignedDownloadOptions, StorageDriver};
+use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::storage::extensions::{ListStorageDriver, PresignedStorageDriver, StreamUploadDriver};
 use crate::storage::multipart::MultipartStorageDriver;
 use crate::utils::numbers;
@@ -153,7 +154,7 @@ impl S3Driver {
     const ERROR_BODY_PREVIEW_LIMIT: usize = 512;
 
     fn rewrap_message_as_storage_error(err: AsterError) -> AsterError {
-        AsterError::storage_driver_error(err.message().to_string())
+        storage_driver_error(StorageErrorKind::Misconfigured, err.message().to_string())
     }
 
     pub fn new(policy: &storage_policy::Model) -> Result<Self> {
@@ -345,7 +346,73 @@ impl S3Driver {
     where
         E: StdError + ProvideErrorMetadata + Send + Sync + 'static,
     {
-        AsterError::storage_driver_error(format!("{ctx}: {}", Self::format_sdk_error(&err)))
+        let kind = Self::classify_sdk_error(&err);
+        storage_driver_error(kind, format!("{ctx}: {}", Self::format_sdk_error(&err)))
+    }
+
+    fn classify_sdk_error<E>(err: &SdkError<E>) -> StorageErrorKind
+    where
+        E: StdError + ProvideErrorMetadata + Send + Sync + 'static,
+    {
+        match err {
+            SdkError::ConstructionFailure(_) => return StorageErrorKind::Misconfigured,
+            SdkError::TimeoutError(_)
+            | SdkError::DispatchFailure(_)
+            | SdkError::ResponseError(_) => {
+                return StorageErrorKind::Transient;
+            }
+            SdkError::ServiceError(_) => {}
+            _ => return StorageErrorKind::Unknown,
+        }
+
+        if let Some(code) = err.code() {
+            match code {
+                "InvalidAccessKeyId"
+                | "SignatureDoesNotMatch"
+                | "AuthorizationHeaderMalformed"
+                | "ExpiredToken"
+                | "InvalidToken" => return StorageErrorKind::Auth,
+                "AccessDenied" => return StorageErrorKind::Permission,
+                "NoSuchKey" | "NoSuchUpload" | "NoSuchVersion" | "NotFound" => {
+                    return StorageErrorKind::NotFound;
+                }
+                "NoSuchBucket"
+                | "InvalidBucketName"
+                | "AuthorizationQueryParametersError"
+                | "InvalidURI"
+                | "PermanentRedirect" => return StorageErrorKind::Misconfigured,
+                "OperationAborted" | "PreconditionFailed" | "ConditionalRequestConflict" => {
+                    return StorageErrorKind::Precondition;
+                }
+                "SlowDown"
+                | "Throttling"
+                | "ThrottlingException"
+                | "TooManyRequestsException"
+                | "RequestLimitExceeded" => return StorageErrorKind::RateLimited,
+                "RequestTimeout"
+                | "RequestTimeoutException"
+                | "InternalError"
+                | "InternalFailure"
+                | "ServiceUnavailable" => return StorageErrorKind::Transient,
+                "MethodNotAllowed" | "NotImplemented" => return StorageErrorKind::Unsupported,
+                _ => {}
+            }
+        }
+
+        if let Some(status) = err.raw_response().map(|raw| raw.status()) {
+            match status.as_u16() {
+                401 => return StorageErrorKind::Auth,
+                403 => return StorageErrorKind::Permission,
+                404 => return StorageErrorKind::NotFound,
+                405 | 501 => return StorageErrorKind::Unsupported,
+                409 | 412 => return StorageErrorKind::Precondition,
+                429 => return StorageErrorKind::RateLimited,
+                500 | 502 | 503 | 504 => return StorageErrorKind::Transient,
+                _ => {}
+            }
+        }
+
+        StorageErrorKind::Unknown
     }
 }
 
@@ -383,7 +450,9 @@ impl StorageDriver for S3Driver {
             .body
             .collect()
             .await
-            .map_aster_err_ctx("S3 read body failed", AsterError::storage_driver_error)?
+            .map_aster_err_ctx("S3 read body failed", |message| {
+                storage_driver_error(StorageErrorKind::Transient, message)
+            })?
             .into_bytes();
 
         Ok(bytes.to_vec())
@@ -548,7 +617,9 @@ impl PresignedStorageDriver for S3Driver {
         let presign_config = PresigningConfig::builder()
             .expires_in(clamp_presign_ttl(expires, "S3 presigned_url"))
             .build()
-            .map_aster_err_ctx("presign config", AsterError::storage_driver_error)?;
+            .map_aster_err_ctx("presign config", |message| {
+                storage_driver_error(StorageErrorKind::Misconfigured, message)
+            })?;
 
         let mut request = self.client.get_object().bucket(&self.bucket).key(&key);
         if let Some(cache_control) = options.response_cache_control {
@@ -564,7 +635,9 @@ impl PresignedStorageDriver for S3Driver {
         let url = request
             .presigned(presign_config)
             .await
-            .map_aster_err_ctx("S3 presigned URL failed", AsterError::storage_driver_error)?;
+            .map_aster_err_ctx("S3 presigned URL failed", |message| {
+                storage_driver_error(StorageErrorKind::Misconfigured, message)
+            })?;
 
         Ok(Some(url.uri().to_string()))
     }
@@ -574,7 +647,9 @@ impl PresignedStorageDriver for S3Driver {
         let presign_config = PresigningConfig::builder()
             .expires_in(clamp_presign_ttl(expires, "S3 presigned_put_url"))
             .build()
-            .map_aster_err_ctx("presign config", AsterError::storage_driver_error)?;
+            .map_aster_err_ctx("presign config", |message| {
+                storage_driver_error(StorageErrorKind::Misconfigured, message)
+            })?;
 
         let url = self
             .client
@@ -583,7 +658,9 @@ impl PresignedStorageDriver for S3Driver {
             .key(&key)
             .presigned(presign_config)
             .await
-            .map_aster_err_ctx("S3 presigned PUT failed", AsterError::storage_driver_error)?;
+            .map_aster_err_ctx("S3 presigned PUT failed", |message| {
+                storage_driver_error(StorageErrorKind::Misconfigured, message)
+            })?;
 
         Ok(Some(url.uri().to_string()))
     }
@@ -740,7 +817,10 @@ impl MultipartStorageDriver for S3Driver {
             .map_err(|err| Self::map_sdk_error("S3 create_multipart_upload failed", err))?;
 
         resp.upload_id().map(|s| s.to_string()).ok_or_else(|| {
-            AsterError::storage_driver_error("S3 multipart upload: missing upload_id")
+            storage_driver_error(
+                StorageErrorKind::Unknown,
+                "S3 multipart upload: missing upload_id",
+            )
         })
     }
 
@@ -755,7 +835,9 @@ impl MultipartStorageDriver for S3Driver {
         let presign_config = PresigningConfig::builder()
             .expires_in(clamp_presign_ttl(expires, "S3 presigned_upload_part_url"))
             .build()
-            .map_aster_err_ctx("presign config", AsterError::storage_driver_error)?;
+            .map_aster_err_ctx("presign config", |message| {
+                storage_driver_error(StorageErrorKind::Misconfigured, message)
+            })?;
 
         let url = self
             .client
@@ -766,10 +848,9 @@ impl MultipartStorageDriver for S3Driver {
             .part_number(part_number)
             .presigned(presign_config)
             .await
-            .map_aster_err_ctx(
-                "S3 presigned upload_part failed",
-                AsterError::storage_driver_error,
-            )?;
+            .map_aster_err_ctx("S3 presigned upload_part failed", |message| {
+                storage_driver_error(StorageErrorKind::Misconfigured, message)
+            })?;
 
         Ok(url.uri().to_string())
     }
@@ -830,9 +911,12 @@ impl MultipartStorageDriver for S3Driver {
             .await
             .map_err(|err| Self::map_sdk_error("S3 upload_part failed", err))?;
 
-        resp.e_tag()
-            .map(str::to_string)
-            .ok_or_else(|| AsterError::storage_driver_error("S3 multipart upload: missing ETag"))
+        resp.e_tag().map(str::to_string).ok_or_else(|| {
+            storage_driver_error(
+                StorageErrorKind::Unknown,
+                "S3 multipart upload: missing ETag",
+            )
+        })
     }
 
     async fn abort_multipart_upload(&self, path: &str, upload_id: &str) -> Result<()> {
@@ -894,6 +978,8 @@ mod tests {
     use crate::entities::storage_policy;
     use crate::errors::AsterError;
     use crate::storage::driver::StorageDriver;
+    use crate::storage::error::StorageErrorKind;
+    use crate::storage::multipart::MultipartStorageDriver;
     use crate::types::{StoragePolicyOptions, serialize_storage_policy_options};
     use aws_sdk_s3::config::{BehaviorVersion, Credentials, Region};
     use aws_smithy_http_client::test_util::capture_request;
@@ -930,8 +1016,9 @@ mod tests {
         )
     }
 
-    fn assert_storage_driver_error(err: AsterError) {
+    fn assert_storage_driver_error(err: AsterError, expected_kind: StorageErrorKind) {
         assert_eq!(err.code(), "E031");
+        assert_eq!(err.storage_error_kind(), Some(expected_kind));
         assert!(
             err.message().contains("http_status=404"),
             "expected raw HTTP status in '{}'",
@@ -1056,7 +1143,7 @@ mod tests {
         let err = driver.put("foo.txt", b"hello").await.unwrap_err();
         request.expect_request();
 
-        assert_storage_driver_error(err);
+        assert_storage_driver_error(err, StorageErrorKind::Misconfigured);
     }
 
     #[tokio::test]
@@ -1088,6 +1175,32 @@ mod tests {
             "expected raw body preview in '{}'",
             err.message()
         );
+        assert_eq!(err.storage_error_kind(), Some(StorageErrorKind::Permission));
+    }
+
+    #[tokio::test]
+    async fn abort_multipart_upload_maps_no_such_upload_to_not_found() {
+        let response = http::Response::builder()
+            .status(404)
+            .header("x-amz-request-id", "req-404")
+            .body(SdkBody::from(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+                <Error>
+                    <Code>NoSuchUpload</Code>
+                    <Message>The specified multipart upload does not exist</Message>
+                </Error>"#,
+            ))
+            .expect("mocked response");
+        let (driver, request) = mocked_driver(response);
+
+        let err = driver
+            .abort_multipart_upload("foo.txt", "upload-1")
+            .await
+            .unwrap_err();
+        request.expect_request();
+
+        assert_eq!(err.code(), "E031");
+        assert_eq!(err.storage_error_kind(), Some(StorageErrorKind::NotFound));
     }
 
     #[tokio::test]

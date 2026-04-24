@@ -5,6 +5,7 @@ use crate::db::repository::{managed_follower_repo, policy_repo};
 use crate::entities::managed_follower;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryRuntimeState;
+use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::storage::remote_protocol::{
     RemoteBindingSyncRequest, RemoteStorageCapabilities, RemoteStorageClient,
     normalize_remote_base_url,
@@ -412,10 +413,13 @@ async fn sync_remote_binding_config_with_timeout(
     tokio::time::timeout(timeout, sync_remote_binding_config(node))
         .await
         .map_err(|_| {
-            AsterError::storage_driver_error(format!(
-                "sync remote binding config timed out after {}s",
-                timeout.as_secs()
-            ))
+            storage_driver_error(
+                StorageErrorKind::Transient,
+                format!(
+                    "sync remote binding config timed out after {}s",
+                    timeout.as_secs()
+                ),
+            )
         })?
 }
 
@@ -428,9 +432,10 @@ fn map_remote_node_db_err(error: DbErr) -> AsterError {
 }
 
 fn map_connection_test_error(error: AsterError) -> AsterError {
-    match error {
-        AsterError::StorageDriverError(message) => AsterError::validation_error(message),
-        other => other,
+    if matches!(error, AsterError::StorageDriverError(_)) {
+        AsterError::validation_error(error.message().to_string())
+    } else {
+        error
     }
 }
 

@@ -424,8 +424,9 @@ async fn probe_storage_driver(
 }
 
 fn map_connection_test_error(error: AsterError) -> AsterError {
-    match error {
-        AsterError::StorageDriverError(message) => AsterError::validation_error(message),
-        other => other,
+    if matches!(error, AsterError::StorageDriverError(_)) {
+        AsterError::validation_error(error.message().to_string())
+    } else {
+        error
     }
 }

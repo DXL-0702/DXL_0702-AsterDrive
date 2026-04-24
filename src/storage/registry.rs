@@ -1,9 +1,11 @@
 //! 存储子模块：`registry`。
 
+use super::StorageErrorKind;
 use super::driver::StorageDriver;
 use super::drivers::local::LocalDriver;
 use super::drivers::remote::RemoteDriver;
 use super::drivers::s3::S3Driver;
+use super::error::storage_driver_error;
 use super::multipart::MultipartStorageDriver;
 use crate::db::repository::{managed_follower_repo, master_binding_repo};
 use crate::entities::storage_policy;
@@ -77,10 +79,13 @@ impl DriverRegistry {
         self.get_entry(policy)?
             .as_multipart_driver()
             .ok_or_else(|| {
-                AsterError::storage_driver_error(format!(
-                    "storage policy {} (driver: {:?}) does not support multipart upload",
-                    policy.id, policy.driver_type
-                ))
+                storage_driver_error(
+                    StorageErrorKind::Unsupported,
+                    format!(
+                        "storage policy {} (driver: {:?}) does not support multipart upload",
+                        policy.id, policy.driver_type
+                    ),
+                )
             })
     }
 
@@ -169,12 +174,16 @@ impl DriverRegistry {
             DriverType::Local => Ok(DriverEntry::Local(Arc::new(LocalDriver::new(policy)?))),
             DriverType::Remote => {
                 let remote_node_id = policy.remote_node_id.ok_or_else(|| {
-                    AsterError::storage_driver_error("remote storage policy missing remote_node_id")
+                    storage_driver_error(
+                        StorageErrorKind::Misconfigured,
+                        "remote storage policy missing remote_node_id",
+                    )
                 })?;
                 let remote_node = self.get_managed_follower(remote_node_id).ok_or_else(|| {
-                    AsterError::storage_driver_error(format!(
-                        "remote node #{remote_node_id} not loaded in registry"
-                    ))
+                    storage_driver_error(
+                        StorageErrorKind::Misconfigured,
+                        format!("remote node #{remote_node_id} not loaded in registry"),
+                    )
                 })?;
                 if !remote_node.is_enabled {
                     return Err(AsterError::precondition_failed(format!(

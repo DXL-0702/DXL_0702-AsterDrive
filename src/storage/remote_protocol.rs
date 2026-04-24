@@ -1,7 +1,9 @@
 //! 远端节点内部对象协议与客户端。
 
+use crate::api::error_code::ErrorCode;
 use crate::errors::{AsterError, Result};
 use crate::storage::driver::{BlobMetadata, PresignedDownloadOptions};
+use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use futures::TryStreamExt;
 use hmac::{Hmac, KeyInit, Mac};
 use percent_encoding::{AsciiSet, CONTROLS, percent_encode};
@@ -224,25 +226,33 @@ impl RemoteStorageClient {
         let body = ensure_success(response, "probe remote storage capabilities").await?;
         let envelope: ApiEnvelope<RemoteStorageCapabilities> = serde_json::from_slice(&body)
             .map_err(|e| {
-                AsterError::storage_driver_error(format!(
-                    "decode remote storage capabilities response: {e}"
-                ))
+                storage_driver_error(
+                    StorageErrorKind::Misconfigured,
+                    format!("decode remote storage capabilities response: {e}"),
+                )
             })?;
         if envelope.code != 0 {
-            return Err(AsterError::storage_driver_error(format!(
-                "remote storage capabilities failed: {}",
-                envelope.msg
-            )));
+            return Err(storage_driver_error(
+                remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
+                format!("remote storage capabilities failed: {}", envelope.msg),
+            ));
         }
         envelope.data.ok_or_else(|| {
-            AsterError::storage_driver_error("remote storage capabilities response missing data")
+            storage_driver_error(
+                StorageErrorKind::Misconfigured,
+                "remote storage capabilities response missing data",
+            )
         })
     }
 
     pub async fn put_bytes(&self, key: &str, data: &[u8]) -> Result<()> {
         let url = self.object_url(key)?;
-        let content_length = u64::try_from(data.len())
-            .map_err(|_| AsterError::storage_driver_error("remote upload body length overflow"))?;
+        let content_length = u64::try_from(data.len()).map_err(|_| {
+            storage_driver_error(
+                StorageErrorKind::Precondition,
+                "remote upload body length overflow",
+            )
+        })?;
         let response = self
             .signed_request(Method::PUT, url, Some(content_length))
             .body(data.to_vec())
@@ -346,18 +356,22 @@ impl RemoteStorageClient {
         let body = ensure_success(response, "get remote storage metadata").await?;
         let envelope: ApiEnvelope<RemoteStorageObjectMetadata> = serde_json::from_slice(&body)
             .map_err(|e| {
-                AsterError::storage_driver_error(format!(
-                    "decode remote storage metadata response: {e}"
-                ))
+                storage_driver_error(
+                    StorageErrorKind::Misconfigured,
+                    format!("decode remote storage metadata response: {e}"),
+                )
             })?;
         if envelope.code != 0 {
-            return Err(AsterError::storage_driver_error(format!(
-                "remote storage metadata failed: {}",
-                envelope.msg
-            )));
+            return Err(storage_driver_error(
+                remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
+                format!("remote storage metadata failed: {}", envelope.msg),
+            ));
         }
         let metadata = envelope.data.ok_or_else(|| {
-            AsterError::storage_driver_error("remote storage metadata response missing data")
+            storage_driver_error(
+                StorageErrorKind::Misconfigured,
+                "remote storage metadata response missing data",
+            )
         })?;
         Ok(BlobMetadata {
             size: metadata.size,
@@ -378,15 +392,16 @@ impl RemoteStorageClient {
         let body = ensure_success(response, "list remote storage objects").await?;
         let envelope: ApiEnvelope<RemoteStorageListResponse> = serde_json::from_slice(&body)
             .map_err(|e| {
-                AsterError::storage_driver_error(format!(
-                    "decode remote storage list response: {e}"
-                ))
+                storage_driver_error(
+                    StorageErrorKind::Misconfigured,
+                    format!("decode remote storage list response: {e}"),
+                )
             })?;
         if envelope.code != 0 {
-            return Err(AsterError::storage_driver_error(format!(
-                "remote storage list failed: {}",
-                envelope.msg
-            )));
+            return Err(storage_driver_error(
+                remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
+                format!("remote storage list failed: {}", envelope.msg),
+            ));
         }
         Ok(envelope.data.unwrap_or_default().items)
     }
@@ -394,10 +409,16 @@ impl RemoteStorageClient {
     pub async fn sync_binding(&self, binding: &RemoteBindingSyncRequest) -> Result<()> {
         let url = self.url_for_path(&format!("{INTERNAL_STORAGE_BASE_PATH}/binding"))?;
         let body = serde_json::to_vec(binding).map_err(|e| {
-            AsterError::storage_driver_error(format!("encode remote binding sync request: {e}"))
+            storage_driver_error(
+                StorageErrorKind::Unknown,
+                format!("encode remote binding sync request: {e}"),
+            )
         })?;
         let content_length = u64::try_from(body.len()).map_err(|_| {
-            AsterError::storage_driver_error("remote binding sync body length overflow")
+            storage_driver_error(
+                StorageErrorKind::Precondition,
+                "remote binding sync body length overflow",
+            )
         })?;
         let response = self
             .signed_request(Method::PUT, url, Some(content_length))
@@ -481,10 +502,17 @@ impl RemoteStorageClient {
             expected_size,
         })
         .map_err(|e| {
-            AsterError::storage_driver_error(format!("encode remote compose request: {e}"))
+            storage_driver_error(
+                StorageErrorKind::Unknown,
+                format!("encode remote compose request: {e}"),
+            )
         })?;
-        let content_length = u64::try_from(body.len())
-            .map_err(|_| AsterError::storage_driver_error("remote compose body length overflow"))?;
+        let content_length = u64::try_from(body.len()).map_err(|_| {
+            storage_driver_error(
+                StorageErrorKind::Precondition,
+                "remote compose body length overflow",
+            )
+        })?;
         let response = self
             .signed_request(Method::POST, url, Some(content_length))
             .header(reqwest::header::CONTENT_TYPE, "application/json")
@@ -495,18 +523,22 @@ impl RemoteStorageClient {
         let body = ensure_success(response, "compose remote storage objects").await?;
         let envelope: ApiEnvelope<RemoteStorageComposeResponse> = serde_json::from_slice(&body)
             .map_err(|e| {
-                AsterError::storage_driver_error(format!(
-                    "decode remote storage compose response: {e}"
-                ))
+                storage_driver_error(
+                    StorageErrorKind::Misconfigured,
+                    format!("decode remote storage compose response: {e}"),
+                )
             })?;
         if envelope.code != 0 {
-            return Err(AsterError::storage_driver_error(format!(
-                "remote storage compose failed: {}",
-                envelope.msg
-            )));
+            return Err(storage_driver_error(
+                remote_api_error_kind(envelope.code).unwrap_or(StorageErrorKind::Unknown),
+                format!("remote storage compose failed: {}", envelope.msg),
+            ));
         }
         envelope.data.ok_or_else(|| {
-            AsterError::storage_driver_error("remote storage compose response missing data")
+            storage_driver_error(
+                StorageErrorKind::Misconfigured,
+                "remote storage compose response missing data",
+            )
         })
     }
 
@@ -547,8 +579,12 @@ impl RemoteStorageClient {
 
     fn url_for_path(&self, path: &str) -> Result<reqwest::Url> {
         let joined = format!("{}{}", self.base_url, path);
-        reqwest::Url::parse(&joined)
-            .map_err(|e| AsterError::storage_driver_error(format!("build remote storage url: {e}")))
+        reqwest::Url::parse(&joined).map_err(|e| {
+            storage_driver_error(
+                StorageErrorKind::Misconfigured,
+                format!("build remote storage url: {e}"),
+            )
+        })
     }
 
     fn object_url(&self, key: &str) -> Result<reqwest::Url> {
@@ -572,15 +608,19 @@ fn remote_http_client() -> Result<reqwest::Client> {
     REMOTE_HTTP_CLIENT
         .as_ref()
         .cloned()
-        .map_err(|message| AsterError::storage_driver_error(message.clone()))
+        .map_err(|message| storage_driver_error(StorageErrorKind::Misconfigured, message.clone()))
 }
 
 fn presigned_expires_at(expires: Duration) -> Result<i64> {
     let expires_secs = i64::try_from(expires.as_secs()).map_err(|_| {
-        AsterError::storage_driver_error("remote presigned URL expiry exceeds i64 range")
+        storage_driver_error(
+            StorageErrorKind::Precondition,
+            "remote presigned URL expiry exceeds i64 range",
+        )
     })?;
     if expires_secs <= 0 {
-        return Err(AsterError::storage_driver_error(
+        return Err(storage_driver_error(
+            StorageErrorKind::Precondition,
             "remote presigned URL expiry must be positive",
         ));
     }
@@ -588,7 +628,12 @@ fn presigned_expires_at(expires: Duration) -> Result<i64> {
     chrono::Utc::now()
         .timestamp()
         .checked_add(expires_secs)
-        .ok_or_else(|| AsterError::storage_driver_error("remote presigned URL expiry overflow"))
+        .ok_or_else(|| {
+            storage_driver_error(
+                StorageErrorKind::Precondition,
+                "remote presigned URL expiry overflow",
+            )
+        })
 }
 
 fn presigned_request_target(url: &reqwest::Url) -> String {
@@ -601,9 +646,15 @@ fn presigned_request_target(url: &reqwest::Url) -> String {
 
 fn map_reqwest_error(error: reqwest::Error) -> AsterError {
     if error.is_timeout() {
-        AsterError::storage_driver_error(format!("remote storage request timed out: {error}"))
+        storage_driver_error(
+            StorageErrorKind::Transient,
+            format!("remote storage request timed out: {error}"),
+        )
     } else {
-        AsterError::storage_driver_error(format!("remote storage request failed: {error}"))
+        storage_driver_error(
+            StorageErrorKind::Transient,
+            format!("remote storage request failed: {error}"),
+        )
     }
 }
 
@@ -639,28 +690,111 @@ async fn build_remote_status_error(
 ) -> AsterError {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
-    let remote_message = serde_json::from_str::<ApiEnvelope<serde_json::Value>>(&body)
-        .ok()
-        .map(|envelope| envelope.msg)
+    let envelope = serde_json::from_str::<ApiEnvelope<serde_json::Value>>(&body).ok();
+    let remote_code = envelope.as_ref().map(|value| value.code);
+    let remote_message = envelope
+        .as_ref()
+        .map(|envelope| envelope.msg.as_str())
         .filter(|msg| !msg.is_empty())
+        .map(str::to_string)
         .unwrap_or_else(|| body.trim().to_string());
     let message = if remote_message.is_empty() {
         format!("{context}: remote node returned HTTP {status}")
     } else {
         format!("{context}: {remote_message}")
     };
+    let kind = remote_code
+        .and_then(remote_api_error_kind)
+        .unwrap_or_else(|| remote_status_error_kind(status));
 
     match status {
         reqwest::StatusCode::NOT_FOUND if not_found_as_record => {
             AsterError::record_not_found("remote storage object not found")
         }
-        reqwest::StatusCode::UNAUTHORIZED => AsterError::storage_driver_error(format!(
-            "remote node authentication failed: {message}"
-        )),
-        reqwest::StatusCode::FORBIDDEN => {
-            AsterError::storage_driver_error(format!("remote node access forbidden: {message}"))
-        }
         reqwest::StatusCode::PRECONDITION_FAILED => AsterError::precondition_failed(message),
-        _ => AsterError::storage_driver_error(message),
+        _ => storage_driver_error(kind, message),
+    }
+}
+
+fn remote_api_error_kind(code: i32) -> Option<StorageErrorKind> {
+    match code {
+        code if code == ErrorCode::BadRequest as i32 => Some(StorageErrorKind::Misconfigured),
+        code if code == ErrorCode::NotFound as i32
+            || code == ErrorCode::FileNotFound as i32
+            || code == ErrorCode::UploadSessionNotFound as i32 =>
+        {
+            Some(StorageErrorKind::NotFound)
+        }
+        code if code == ErrorCode::RateLimited as i32 => Some(StorageErrorKind::RateLimited),
+        code if code == ErrorCode::AuthFailed as i32
+            || code == ErrorCode::TokenExpired as i32
+            || code == ErrorCode::TokenInvalid as i32 =>
+        {
+            Some(StorageErrorKind::Auth)
+        }
+        code if code == ErrorCode::Forbidden as i32 => Some(StorageErrorKind::Permission),
+        code if code == ErrorCode::PreconditionFailed as i32 => {
+            Some(StorageErrorKind::Precondition)
+        }
+        code if code == ErrorCode::UnsupportedDriver as i32 => Some(StorageErrorKind::Unsupported),
+        code if code == ErrorCode::StorageDriverError as i32 => Some(StorageErrorKind::Unknown),
+        _ => None,
+    }
+}
+
+fn remote_status_error_kind(status: reqwest::StatusCode) -> StorageErrorKind {
+    match status {
+        reqwest::StatusCode::BAD_REQUEST | reqwest::StatusCode::UNPROCESSABLE_ENTITY => {
+            StorageErrorKind::Misconfigured
+        }
+        reqwest::StatusCode::UNAUTHORIZED => StorageErrorKind::Auth,
+        reqwest::StatusCode::FORBIDDEN => StorageErrorKind::Permission,
+        reqwest::StatusCode::NOT_FOUND => StorageErrorKind::NotFound,
+        reqwest::StatusCode::CONFLICT | reqwest::StatusCode::PRECONDITION_FAILED => {
+            StorageErrorKind::Precondition
+        }
+        reqwest::StatusCode::METHOD_NOT_ALLOWED | reqwest::StatusCode::NOT_IMPLEMENTED => {
+            StorageErrorKind::Unsupported
+        }
+        reqwest::StatusCode::TOO_MANY_REQUESTS => StorageErrorKind::RateLimited,
+        status if status.is_server_error() => StorageErrorKind::Transient,
+        _ => StorageErrorKind::Unknown,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remote_api_error_kind_maps_auth_codes() {
+        assert_eq!(
+            remote_api_error_kind(ErrorCode::AuthFailed as i32),
+            Some(StorageErrorKind::Auth)
+        );
+        assert_eq!(
+            remote_api_error_kind(ErrorCode::TokenExpired as i32),
+            Some(StorageErrorKind::Auth)
+        );
+    }
+
+    #[test]
+    fn remote_api_error_kind_maps_unsupported_driver() {
+        assert_eq!(
+            remote_api_error_kind(ErrorCode::UnsupportedDriver as i32),
+            Some(StorageErrorKind::Unsupported)
+        );
+    }
+
+    #[test]
+    fn remote_status_error_kind_maps_rate_limit_and_server_errors() {
+        assert_eq!(
+            remote_status_error_kind(reqwest::StatusCode::TOO_MANY_REQUESTS),
+            StorageErrorKind::RateLimited
+        );
+        assert_eq!(
+            remote_status_error_kind(reqwest::StatusCode::SERVICE_UNAVAILABLE),
+            StorageErrorKind::Transient
+        );
     }
 }

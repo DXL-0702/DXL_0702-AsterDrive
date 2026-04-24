@@ -14,11 +14,12 @@ use chrono::Utc;
 
 use crate::db::repository::upload_session_part_repo;
 use crate::entities::{file, upload_session};
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::upload_service::scope::{load_upload_session, personal_scope, team_scope};
 use crate::services::upload_service::shared::{
-    find_file_by_session, mark_session_failed, transition_upload_session_to_assembling,
+    find_file_by_session, handle_completion_error, transition_upload_session_to_assembling,
+    upload_completion_error_is_retryable,
 };
 use crate::services::{
     workspace_models::FileInfo,
@@ -143,10 +144,20 @@ async fn ensure_uploaded_s3_object_size(
     declared_size: i64,
     missing_message: &str,
 ) -> Result<i64> {
-    let meta = driver
-        .metadata(temp_key)
-        .await
-        .map_aster_err_with(|| AsterError::upload_assembly_failed(missing_message))?;
+    let meta = match driver.metadata(temp_key).await {
+        Ok(meta) => meta,
+        Err(error) => match driver.exists(temp_key).await {
+            Ok(false) => return Err(AsterError::upload_assembly_failed(missing_message)),
+            Ok(true) => return Err(error),
+            Err(exists_error) => {
+                tracing::warn!(
+                    temp_key = %temp_key,
+                    "failed to verify uploaded temp object existence after metadata error: metadata_error={error}, exists_error={exists_error}"
+                );
+                return Err(error);
+            }
+        },
+    };
     let actual_size = u64_to_i64(meta.size, "blob_size")?;
 
     if actual_size != declared_size {
@@ -225,9 +236,32 @@ async fn complete_s3_multipart_upload_session(
     let result = async {
         completed_parts.sort_by_key(|(part_number, _)| *part_number);
         // multipart complete 之前要先把 part 列表排序；驱动层依赖有序 part 序列。
-        multipart
+        if let Err(error) = multipart
             .complete_multipart_upload(&temp_key, &multipart_id, completed_parts)
-            .await?;
+            .await
+        {
+            // 远端节点可能已经完成了 multipart，但最终响应在返回前丢了。
+            // 这时继续按已落盘对象收尾，避免把可恢复的上传直接打成 failed。
+            if upload_completion_error_is_retryable(&error)
+                && let Ok(actual_size) = ensure_uploaded_s3_object_size(
+                    driver_ref,
+                    &temp_key,
+                    session.total_size,
+                    missing_message,
+                )
+                .await
+            {
+                return finalize_s3_upload_session(
+                    state,
+                    &session,
+                    policy.id,
+                    &temp_key,
+                    actual_size,
+                )
+                .await;
+            }
+            return Err(error);
+        }
 
         let actual_size = ensure_uploaded_s3_object_size(
             driver_ref,
@@ -253,7 +287,7 @@ async fn complete_s3_multipart_upload_session(
             Ok(file)
         }
         Err(error) => {
-            mark_session_failed(db, &upload_id).await;
+            handle_completion_error(db, &upload_id, expected_status, &error).await;
             Err(error)
         }
     }
@@ -316,7 +350,7 @@ async fn complete_presigned_upload(
             Ok(file)
         }
         Err(error) => {
-            mark_session_failed(db, &upload_id).await;
+            handle_completion_error(db, &upload_id, UploadSessionStatus::Presigned, &error).await;
             Err(error)
         }
     }
