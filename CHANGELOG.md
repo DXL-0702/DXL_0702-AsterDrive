@@ -5,6 +5,130 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.0.1-alpha.24] - 2026-04-24
+
+### Release Highlights
+
+- **统一媒体处理服务落地** — 新增可配置媒体处理链路，支持内置图片处理、`vips_cli`、`ffmpeg_cli` 与存储原生缩略图能力
+- **缩略图能力大幅增强** — 缩略图升级至 v2，支持处理器元数据、旧缓存兼容、公开能力查询与前端智能降级
+- **Docker 部署开箱支持媒体处理** — Docker 镜像内置 `vips-tools`、`ffmpeg`、`libheif`，并默认启用 CLI 媒体处理器
+- **Docker follower 自动 enroll** — 从节点支持通过环境变量首次启动自动接入主控，减少远程节点部署的手工步骤
+- **后台任务管理增强** — 管理后台支持任务类型/状态筛选，并新增按条件清理历史终态任务能力
+- **存储错误分类体系落地** — 存储驱动错误细分为鉴权、权限、配置、限流、瞬时失败等类型，并映射到更明确的 API subcode 与前端文案
+- **上传完成流程更可靠** — 上传完成阶段统一处理，可重试的存储瞬时错误不再直接把 session 标记为失败
+- **beta 前兼容数据规范化** — 新增迁移清理旧缩略图、预览应用、远程上传策略与锁 owner 数据格式
+
+### Added
+
+- **媒体处理与缩略图**
+  - 新增 `media_processing` 配置模块，统一管理处理器注册表、默认配置、扩展名匹配、命令规范化与公开缩略图能力导出
+  - 新增 `media_processing_service`，统一承载头像处理、缩略图生成、CLI 输入准备、处理器解析与共享处理逻辑
+  - 新增 `vips_cli` 与 `ffmpeg_cli` 媒体处理器，支持通过 libvips / ffmpeg 处理更多图片、视频与 HEIC 等输入格式
+  - 新增公开接口 `/api/v1/public/thumbnail-support`，前端可在请求缩略图前获取服务端支持的扩展名能力
+  - `file_blobs` 新增 `thumbnail_processor` 元数据字段，用于和 `thumbnail_version` 一起区分不同处理链路生成的缓存
+  - 存储策略新增 `thumbnail_processor = "storage_native"` 与 `thumbnail_extensions`，支持按扩展名绑定存储原生缩略图能力
+- **管理后台**
+  - 新增媒体处理配置编辑器，支持编辑处理器启用状态、扩展名列表、CLI 命令，并触发 `vips` / `ffmpeg` 可用性探测
+  - 系统设置页新增媒体处理配置入口与相关中英文文案
+  - 后台任务页新增筛选工具栏、任务清理弹窗与独立任务表格组件
+  - 后台任务 API 新增 `kind` / `status` 查询筛选，以及 `POST /admin/tasks/cleanup` 清理接口
+  - 前端新增 `thumbnailSupportService` 与 `thumbnailSupportStore`，集中加载并缓存公开缩略图能力
+- **Docker 与远程节点**
+  - 新增 follower 环境变量自动 enroll 服务，支持首次启动自动写入 seed config、兑换 enrollment token 并绑定主控
+  - 新增 `docs/deployment/docker-follower.md`，说明 Docker 从节点自动 enroll 部署流程
+  - Docker 镜像新增 `vips-tools`、`ffmpeg`、`libheif`，并默认启用 CLI 媒体处理 bootstrap 配置
+- **错误体系**
+  - 新增 `StorageErrorKind` 分类体系，覆盖鉴权失败、权限拒绝、配置错误、对象不存在、限流、瞬时失败、前置条件失败、不支持操作等类型
+  - API 错误响应新增结构化 `error` 信息，包含 `internal_code` 与 `subcode`
+  - 前端 `ApiError` 支持解析 `subcode`，并新增上传、缩略图、头像、存储、远程节点等细粒度错误文案
+
+### Changed
+
+- **媒体处理行为**
+  - 缩略图生成从内置 `image` 处理为主，升级为按处理器优先级解析的统一链路
+  - 缩略图缓存路径和 ETag 纳入 `thumbnail_processor` 与 `thumbnail_version`，避免不同处理器或版本之间复用错误缓存
+  - 头像上传处理迁移到统一媒体处理服务，支持内置图片处理与 `vips_cli` 处理路径
+  - 前端缩略图组件改为先读取公开支持列表，仅对支持扩展名请求缩略图，减少无意义请求和错误 toast
+  - 缩略图任务 payload、display name 与完成结果补充处理器信息，便于后台任务去重和排查
+- **上传与存储**
+  - 上传完成流程抽出 `run_upload_completion_stage`，统一处理 assembling、完成、错误恢复与失败标记
+  - 上传 session 在可重试存储错误下会恢复到原状态，允许客户端再次完成；不可恢复错误仍会标记失败
+  - S3 驱动升级错误分类，识别 `NoSuchKey`、`NoSuchUpload`、`SlowDown`、`Throttling`、`ServiceUnavailable` 等 provider 错误
+  - 远程存储协议将远端 API 错误码和 HTTP 状态映射为本地 `StorageErrorKind`，跨节点错误更一致
+  - AWS SDK S3 升级到 `1.131.0`，`reqwest` 升级到 `0.13`
+- **后台任务与运行时**
+  - 后台任务调度结果处理提取为独立函数，成功任务降低日志噪音，失败时记录 runtime 结果
+  - 管理端任务列表改为服务端筛选，前端通过 URL search params 保存任务类型与状态过滤条件
+  - 任务清理新增只删除终态任务的约束，并支持按完成时间、任务类型、终态状态组合筛选
+  - follower 模式继续跳过 primary-only 后台任务，仅保留 follower-safe 基础任务
+- **配置与预览应用**
+  - `config_service` 拆分为 `actions`、`public`、`schema`、`system` 子模块
+  - 预览应用内置 key 统一添加 `builtin.` 命名空间，例如 `builtin.image`、`builtin.video`、`builtin.pdf`
+  - 预览应用配置移除旧版 `label_i18n_key` 字段，改用 `labels` 本地化标签
+  - 管理后台移除本机存储策略里冗余的提示区块
+  - 系统配置默认值初始化支持通过 bootstrap 环境变量启用媒体处理器
+- **内部重构**
+  - `file_service/deletion.rs` 拆分为 `soft_delete`、`purge`、`blob_cleanup` 子模块，并补充 blob 清理并发与重试保护
+  - `user_service.rs` 拆分为 `admin`、`models`、`preferences`、`queries` 子模块
+  - 媒体处理模块拆分为配置层与服务层，CLI 输入准备、处理器解析、头像/缩略图处理职责更清晰
+
+### Fixed
+
+- **上传可靠性**
+  - 修复上传完成阶段遇到临时性存储错误后 session 直接失败的问题；限流/瞬时失败现在可重试
+  - 改善直接 relay、chunk、assembly、临时对象缺失、大小不匹配等上传错误的 subcode 和前端提示
+  - 修复 S3 multipart ETag 带引号时可能导致 complete 失败的风险
+- **缩略图与媒体处理**
+  - 修复不同缩略图处理器或版本之间可能复用旧缓存的问题
+  - 修复旧版未带版本/处理器的缩略图缓存无法平滑迁移的问题，新增历史路径读取与元数据回填
+  - 缩略图输出增加格式、尺寸、大小上限校验，防止 CLI 异常输出被当作有效图片
+  - CLI 输入源准备支持本地路径、预签名 URL、流式临时文件等多种策略，提升远程存储下的处理可靠性
+  - 前端缩略图加载失败后降级为文件图标，减少不支持格式导致的反复请求和错误干扰
+- **存储与远程节点**
+  - 存储驱动错误展示时剥离内部分类前缀，避免用户看到不友好的编码消息
+  - 远程存储协议对远端状态码、远端业务错误和网络错误做分类，便于客户端判断鉴权、权限、配置或临时故障
+  - Docker follower bootstrap 对已完成、过期、被替换 token 且本地已有绑定的场景做幂等跳过，避免重复启动失败
+- **数据清理与一致性**
+  - 文件永久删除逻辑增强：blob cleanup 先 claim，删除失败会恢复 claim，避免并发清理误删或留下不可恢复状态
+  - blob 删除失败后会检查对象是否已不存在，若对象已消失则允许继续删除 DB 行，提升清理幂等性
+  - 资源锁过期清理在清除 `is_locked` 缓存前检查是否已有替代锁，避免并发重锁时误清锁状态
+  - 资源锁 `owner_info` 从旧 XML / 纯文本兼容形态迁移为结构化 JSON，提升反序列化稳定性
+- **前端错误体验**
+  - `useApiError` 支持 subcode 优先映射，使上传、缩略图、头像、存储、远程节点等错误显示更具体
+  - HTTP 客户端解析响应中的 `error.subcode`，不再只能依赖顶层错误码
+  - 新增大量中英文错误文案，覆盖存储鉴权、权限、配置、限流、瞬时失败、缩略图处理器不可用、头像处理失败等场景
+
+### Breaking Changes
+
+- **数据库迁移（必须执行）**
+  - `m20260424_000001_normalize_thumbnail_metadata`：为 `file_blobs` 添加 `thumbnail_processor` 字段
+  - `m20260424_000002_normalize_beta_compat_data`：清理 beta 前兼容数据，属于单向规范化迁移
+- **预览应用配置**
+  - 内置预览应用 key 统一改为 `builtin.*`；依赖旧 key 的外部配置需要确认迁移结果
+  - 预览应用配置 schema 不再使用旧版 `label_i18n_key` 字段，应改用 `labels`
+- **媒体处理配置**
+  - 新增系统配置项 `media_processing_registry_json`
+  - 如果启用 `vips_cli` / `ffmpeg_cli`，运行环境必须存在对应命令
+  - Docker 镜像默认启用 CLI 媒体处理；非 Docker 部署如需同等能力，需要自行安装 `vips` / `ffmpeg` 并配置
+- **存储策略配置**
+  - 旧的 `remote_upload_strategy = "chunked"` 会被迁移为 `"presigned"`
+  - `thumbnail_extensions` 仅在 `thumbnail_processor = "storage_native"` 时有效，否则配置校验会失败
+- **API 错误结构**
+  - API 错误响应新增 `error` 字段；旧客户端忽略该字段不受影响，新客户端可使用 `subcode` 做细粒度提示
+  - 存储错误码从笼统 `StorageDriverError` 分化为更具体的存储错误类型
+
+### Notes
+
+- Docker 部署现在默认具备更完整的媒体处理能力；systemd / 裸机部署如果想启用同等能力，需要自行安装 `vips`、`ffmpeg` 与相关编解码依赖
+- `m20260424_000002_normalize_beta_compat_data` 的 down migration 为空，升级前建议备份数据库
+- 前端会依赖 `/api/v1/public/thumbnail-support` 判断是否请求缩略图，反向代理需要放行该公开接口
+
+---
+
+**统计数据**：
+- 206 files changed, 16,525 insertions(+), 4,013 deletions(-)
+- 28 commits
+
 ## [v0.0.1-alpha.23] - 2026-04-22
 
 ### Release Highlights
@@ -2047,7 +2171,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.23...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.24...HEAD
+[v0.0.1-alpha.24]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.23...v0.0.1-alpha.24
 [v0.0.1-alpha.23]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.22...v0.0.1-alpha.23
 [v0.0.1-alpha.22]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.21...v0.0.1-alpha.22
 [v0.0.1-alpha.21]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.20...v0.0.1-alpha.21
