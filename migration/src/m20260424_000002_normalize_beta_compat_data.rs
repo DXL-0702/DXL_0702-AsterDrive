@@ -278,7 +278,7 @@ fn normalize_preview_app_labels(app: &mut JsonValue) -> bool {
     true
 }
 
-fn legacy_preview_app_labels<'a>(
+fn legacy_preview_app_labels(
     app_key: Option<&str>,
     legacy_label_key: Option<&str>,
 ) -> Option<[(&'static str, &'static str); 2]> {
@@ -339,7 +339,7 @@ fn is_legacy_wopi_seed_app(app: &JsonValue) -> bool {
     let extensions_empty = object
         .get("extensions")
         .and_then(JsonValue::as_array)
-        .map_or(true, Vec::is_empty);
+        .is_none_or(Vec::is_empty);
     let Some(config) = object.get("config").and_then(JsonValue::as_object) else {
         return false;
     };
@@ -352,18 +352,18 @@ fn is_legacy_wopi_seed_app(app: &JsonValue) -> bool {
             .get("discovery_url")
             .and_then(JsonValue::as_str)
             .is_some_and(|value| !value.trim().is_empty())
-        && !config
+        && config
             .get("action")
             .and_then(JsonValue::as_str)
-            .is_some_and(|value| !value.trim().is_empty())
-        && !config
+            .is_none_or(|value| value.trim().is_empty())
+        && config
             .get("action_url")
             .and_then(JsonValue::as_str)
-            .is_some_and(|value| !value.trim().is_empty())
-        && !config
+            .is_none_or(|value| value.trim().is_empty())
+        && config
             .get("action_url_template")
             .and_then(JsonValue::as_str)
-            .is_some_and(|value| !value.trim().is_empty())
+            .is_none_or(|value| value.trim().is_empty())
 }
 
 fn quote_ident(backend: DbBackend, ident: &str) -> String {
