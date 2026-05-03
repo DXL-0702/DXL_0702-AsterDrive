@@ -32,9 +32,9 @@ import type { StoragePolicyGroup, StoragePolicyGroupItem } from "@/types/api";
 const INTERACTIVE_TABLE_ROW_CLASS =
 	"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50";
 const GROUP_TEXT_CELL_CONTENT_CLASS =
-	"flex min-w-0 items-center rounded-lg bg-muted/10 px-3 py-3 text-left transition-colors duration-200";
+	"flex min-w-0 items-center rounded-lg bg-card/55 px-3 py-3 text-left ring-1 ring-border/35 transition-colors duration-200 dark:bg-background/20";
 const GROUP_BADGE_CELL_CONTENT_CLASS =
-	"flex flex-wrap items-center gap-2 rounded-lg bg-muted/20 px-3 py-3 text-left transition-colors duration-200";
+	"flex flex-wrap items-center gap-2 rounded-lg bg-muted/30 px-3 py-3 text-left ring-1 ring-border/35 transition-colors duration-200 dark:bg-muted/20";
 
 function getRuleRangeLabel(
 	t: ReturnType<typeof useTranslation>["t"],
@@ -144,7 +144,7 @@ export function PolicyGroupsTable({
 							</div>
 						</TableCell>
 						<TableCell>
-							<div className="flex min-w-0 flex-col gap-2 rounded-lg bg-muted/10 px-3 py-3 text-left">
+							<div className="flex min-w-0 flex-col gap-2 rounded-lg bg-card/55 px-3 py-3 text-left ring-1 ring-border/35 dark:bg-background/20">
 								<div className="truncate font-medium text-foreground">
 									{group.name}
 								</div>
@@ -160,7 +160,7 @@ export function PolicyGroupsTable({
 							</div>
 						</TableCell>
 						<TableCell>
-							<div className="flex min-w-0 flex-col gap-2 rounded-lg bg-muted/10 px-3 py-3 text-left">
+							<div className="flex min-w-0 flex-col gap-2 rounded-lg bg-card/55 px-3 py-3 text-left ring-1 ring-border/35 dark:bg-background/20">
 								{group.items.slice(0, 2).map((item) => (
 									<div
 										key={item.id}

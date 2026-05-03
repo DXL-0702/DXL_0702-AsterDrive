@@ -89,9 +89,15 @@ export const createClipboardSlice: FileStoreSlice<ClipboardSlice> = (
 				foldersTotalCount: contents.folders_total,
 				filesTotalCount: contents.files_total,
 				nextFileCursor: contents.next_file_cursor ?? null,
+				loading: false,
+				loadingMore: false,
 			});
 		} catch (error) {
 			if (!isRequestCanceled(error)) {
+				applyWorkspaceRequestState(set, get, request, {
+					loading: false,
+					loadingMore: false,
+				});
 				throw error;
 			}
 		}

@@ -56,7 +56,7 @@ describe("UploadTaskItem", () => {
 		expect(screen.getByText("Uploading")).toBeInTheDocument();
 		expect(screen.getByText("45%")).toBeInTheDocument();
 		expect(screen.getByTestId("progress")).toHaveAttribute("data-value", "45");
-		expect(container.firstChild).toHaveClass("bg-background/60");
+		expect(container.firstChild).toHaveClass("bg-card/75");
 	});
 
 	it("renders completed styling, custom detail text, and action callbacks", () => {
@@ -78,7 +78,7 @@ describe("UploadTaskItem", () => {
 		);
 
 		expect(screen.getByText("Retry required")).toBeInTheDocument();
-		expect(container.firstChild).toHaveClass("bg-muted/30", "opacity-80");
+		expect(container.firstChild).toHaveClass("bg-muted/35", "opacity-80");
 		expect(screen.getAllByTestId("icon")[0]).toHaveAttribute(
 			"data-name",
 			"ArrowsClockwise",

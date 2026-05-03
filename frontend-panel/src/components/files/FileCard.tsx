@@ -107,9 +107,10 @@ export function FileCard({
 			data-drag-preview-root
 			data-folder-drop-target={isFolder ? "true" : undefined}
 			className={cn(
-				"group relative flex flex-col items-center rounded-lg border p-3 transition-[background-color,border-color,box-shadow,opacity] duration-150 ease-out hover:bg-accent/50",
-				selected && "border-primary bg-accent",
-				draggable && dragOver && "bg-accent/30 ring-2 ring-primary",
+				"group relative flex flex-col items-center rounded-xl border border-border/65 bg-card/80 p-3 shadow-xs transition-[background-color,border-color,box-shadow,opacity] duration-150 ease-out hover:border-border hover:bg-card hover:shadow-sm dark:bg-card/70 dark:shadow-none dark:hover:bg-card dark:hover:shadow-none",
+				selected &&
+					"border-primary bg-accent text-accent-foreground shadow-sm dark:shadow-none",
+				draggable && dragOver && "bg-accent/35 ring-2 ring-primary",
 				fading && "opacity-0",
 			)}
 			draggable={draggable}
@@ -146,7 +147,7 @@ export function FileCard({
 
 			<div
 				data-drag-preview-media
-				className="mb-2 flex h-20 w-full items-center justify-center overflow-hidden rounded-lg bg-muted/40"
+				className="mb-2 flex h-20 w-full items-center justify-center overflow-hidden rounded-lg border border-border/50 bg-muted/30 dark:border-border/60 dark:bg-muted/25"
 			>
 				{isFolder ? (
 					<Icon name="Folder" className="h-12 w-12 text-amber-500" />

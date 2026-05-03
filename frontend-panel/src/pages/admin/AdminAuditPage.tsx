@@ -53,9 +53,9 @@ const AUDIT_MANAGED_QUERY_KEYS = [
 	"pageSize",
 ] as const;
 const AUDIT_TEXT_CELL_CONTENT_CLASS =
-	"flex min-w-0 items-center rounded-lg bg-muted/10 px-3 py-3 text-left transition-colors duration-200";
+	"flex min-w-0 items-center rounded-lg bg-card/55 px-3 py-3 text-left ring-1 ring-border/35 transition-colors duration-200 dark:bg-background/20";
 const AUDIT_BADGE_CELL_CONTENT_CLASS =
-	"flex items-center rounded-lg bg-muted/20 px-3 py-3 text-left transition-colors duration-200";
+	"flex items-center rounded-lg bg-muted/30 px-3 py-3 text-left ring-1 ring-border/35 transition-colors duration-200 dark:bg-muted/20";
 
 type AuditEntityTypeFilter = "__all__" | "file" | "folder" | "team";
 

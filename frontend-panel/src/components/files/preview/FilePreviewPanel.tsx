@@ -49,7 +49,7 @@ export function FilePreviewPanel({
 		<>
 			<DialogHeader className="gap-0 border-b px-4 py-3">
 				<div className="flex items-center gap-3">
-					<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+					<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted/60 text-muted-foreground dark:bg-muted/35">
 						<FileTypeIcon
 							mimeType={file.mime_type}
 							fileName={file.name}
@@ -105,7 +105,7 @@ export function FilePreviewPanel({
 			{usesInnerScroll ? (
 				<div
 					className={cn(
-						"w-full bg-muted/20 p-3",
+						"w-full bg-background/70 p-3 dark:bg-background/25",
 						(fillsViewportHeight || isExpanded) && "min-h-0 flex-1",
 					)}
 				>
@@ -114,7 +114,7 @@ export function FilePreviewPanel({
 			) : (
 				<ScrollArea
 					className={cn(
-						"w-full bg-muted/20",
+						"w-full bg-background/70 dark:bg-background/25",
 						(fillsViewportHeight || isExpanded) && "min-h-0 flex-1",
 					)}
 				>

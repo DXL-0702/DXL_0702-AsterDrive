@@ -123,7 +123,7 @@ export function BatchActionBar({
 
 	return (
 		<>
-			<div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-background border rounded-lg shadow-lg px-4 py-2">
+			<div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-border/70 bg-card/95 px-4 py-2 shadow-lg shadow-black/8 backdrop-blur supports-[backdrop-filter]:bg-card/85 dark:shadow-none">
 				<span className="text-sm font-medium">
 					{t("core:selected_count", { count })}
 				</span>

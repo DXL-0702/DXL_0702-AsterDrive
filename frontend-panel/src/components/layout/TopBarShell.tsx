@@ -32,7 +32,7 @@ export function TopBarShell({
 	return (
 		<div
 			data-theme-surface="chrome"
-			className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+			className="border-b border-border/60 bg-card/82 shadow-xs dark:shadow-none backdrop-blur supports-[backdrop-filter]:bg-card/72"
 		>
 			<div
 				className={`flex items-center gap-3 px-4 shrink-0 ${heightClassName}`}

@@ -113,8 +113,8 @@ export function TextCodePreview({
 	const language = getEditorLanguage(file);
 
 	return (
-		<div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
-			<div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-2">
+		<div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs dark:shadow-none">
+			<div className="flex items-center gap-2 border-b border-border/60 bg-muted/25 px-4 py-2 dark:bg-muted/15">
 				<div className="flex items-center gap-2">
 					<Icon name="FileCode" className="h-4 w-4 text-muted-foreground" />
 					<span className="text-sm font-medium">{file.name}</span>
@@ -146,7 +146,7 @@ export function TextCodePreview({
 					)}
 				</div>
 			</div>
-			<div className="flex items-center gap-3 border-b bg-background px-4 py-2 text-xs text-muted-foreground">
+			<div className="flex items-center gap-3 border-b border-border/50 bg-background/70 px-4 py-2 text-xs text-muted-foreground dark:bg-background/25">
 				<span>{language}</span>
 				<span>·</span>
 				<span>
@@ -163,7 +163,7 @@ export function TextCodePreview({
 					</>
 				) : null}
 			</div>
-			<div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden bg-background">
+			<div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden bg-background/80 dark:bg-background/25">
 				<CodePreviewEditor
 					key={path}
 					language={language}

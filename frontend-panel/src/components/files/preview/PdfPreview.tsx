@@ -333,26 +333,31 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 	}
 
 	return (
-		<div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
-			<div className="border-b bg-muted/30 px-2.5 py-2">
-				<div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-					<Icon name="FileText" className="h-3.5 w-3.5" />
-					<span>{t("pdf_label")}</span>
-					{numPages !== null && (
-						<>
-							<span>·</span>
-							<span className="tabular-nums">
-								{t("pdf_page_count", { count: numPages })}
-							</span>
-							<span>·</span>
-							<span className="tabular-nums">
-								{t("pdf_page_of_total", { page: currentPage, count: numPages })}
-							</span>
-						</>
-					)}
+		<div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs dark:shadow-none">
+			<div className="border-b border-border/60 bg-muted/20 px-2.5 py-2 dark:bg-muted/15">
+				<div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+					<div className="flex items-center gap-1.5">
+						<Icon name="FileText" className="h-3.5 w-3.5" />
+						<span>{t("pdf_label")}</span>
+						{numPages !== null && (
+							<>
+								<span>·</span>
+								<span className="tabular-nums">
+									{t("pdf_page_count", { count: numPages })}
+								</span>
+								<span>·</span>
+								<span className="tabular-nums">
+									{t("pdf_page_of_total", {
+										page: currentPage,
+										count: numPages,
+									})}
+								</span>
+							</>
+						)}
+					</div>
 				</div>
-				<div className="mt-2 flex flex-wrap items-center gap-1.5">
-					<div className="flex items-center gap-1 rounded-lg border bg-background/80 p-0.5">
+				<div className="mt-2 flex flex-wrap items-center gap-2">
+					<div className="flex items-center gap-1.5 rounded-lg bg-background/70 p-0.5 ring-1 ring-border/50 dark:bg-background/20 dark:ring-border/60">
 						<Button
 							variant="ghost"
 							size="icon-xs"
@@ -393,7 +398,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 						</Button>
 					</div>
 
-					<div className="flex items-center gap-1 rounded-lg border bg-background/80 p-0.5">
+					<div className="flex items-center gap-1.5 rounded-lg bg-background/70 p-0.5 ring-1 ring-border/50 dark:bg-background/20 dark:ring-border/60">
 						<Button
 							variant="ghost"
 							size="icon-xs"
@@ -433,7 +438,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 						</Button>
 					</div>
 
-					<div className="flex items-center gap-1 rounded-lg border bg-background/80 p-0.5">
+					<div className="flex items-center gap-1.5 rounded-lg bg-background/70 p-0.5 ring-1 ring-border/50 dark:bg-background/20 dark:ring-border/60">
 						<Button
 							variant="ghost"
 							size="icon-xs"
@@ -454,7 +459,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 						</Button>
 					</div>
 
-					<div className="ml-auto flex items-center gap-1 rounded-lg border bg-background/80 p-0.5">
+					<div className="ml-auto flex items-center gap-1.5 rounded-lg bg-background/70 p-0.5 ring-1 ring-border/50 dark:bg-background/20 dark:ring-border/60">
 						<Button
 							variant="ghost"
 							size="icon-xs"
@@ -479,7 +484,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 			<div
 				ref={scrollContainerRef}
 				onScroll={schedulePageSync}
-				className="min-h-0 flex-1 overflow-auto bg-muted/20 px-3 py-3"
+				className="min-h-0 flex-1 overflow-auto bg-background/80 px-3 py-3 dark:bg-background/25"
 			>
 				<Document
 					file={blob}
@@ -504,7 +509,7 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 										}}
 										className="mx-auto flex justify-center"
 									>
-										<div className="overflow-hidden rounded-lg bg-white shadow-sm ring-1 ring-black/5">
+										<div className="overflow-hidden rounded-lg bg-white ring-1 ring-black/5">
 											<Page
 												pageNumber={pageNumber}
 												width={renderedPageWidth}

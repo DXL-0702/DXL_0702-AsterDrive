@@ -424,6 +424,9 @@ describe("useFileStore actions", () => {
 		const { useFileStore } = await loadStore();
 		useFileStore.setState({
 			currentFolderId: 5,
+			loading: true,
+			loadingMore: true,
+			error: "stale error",
 			selectedFileIds: new Set([1]),
 			selectedFolderIds: new Set([2]),
 		});
@@ -451,5 +454,8 @@ describe("useFileStore actions", () => {
 		expect(useFileStore.getState().folders).toEqual([
 			expect.objectContaining({ id: 88, name: "Archived" }),
 		]);
+		expect(useFileStore.getState().loading).toBe(false);
+		expect(useFileStore.getState().loadingMore).toBe(false);
+		expect(useFileStore.getState().error).toBeNull();
 	});
 });

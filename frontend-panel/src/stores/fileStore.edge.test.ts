@@ -242,6 +242,8 @@ describe("useFileStore edge cases", () => {
 				folderIds: [2],
 				mode: "cut",
 			},
+			loading: true,
+			loadingMore: true,
 			selectedFileIds: new Set([1]),
 			selectedFolderIds: new Set([2]),
 		});
@@ -259,5 +261,7 @@ describe("useFileStore edge cases", () => {
 		expect(useFileStore.getState().clipboard).toBeNull();
 		expect(useFileStore.getState().selectedFileIds.size).toBe(0);
 		expect(useFileStore.getState().selectedFolderIds.size).toBe(0);
+		expect(useFileStore.getState().loading).toBe(false);
+		expect(useFileStore.getState().loadingMore).toBe(false);
 	});
 });

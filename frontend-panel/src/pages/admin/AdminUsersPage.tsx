@@ -85,9 +85,9 @@ const USER_MANAGED_QUERY_KEYS = [
 const INTERACTIVE_TABLE_ROW_CLASS =
 	"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50";
 const USER_TEXT_CELL_CONTENT_CLASS =
-	"flex min-w-0 items-center rounded-lg bg-muted/10 px-3 py-3 text-left transition-colors duration-200";
+	"flex min-w-0 items-center rounded-lg bg-card/55 px-3 py-3 text-left ring-1 ring-border/35 transition-colors duration-200 dark:bg-background/20";
 const USER_BADGE_CELL_CONTENT_CLASS =
-	"flex items-center rounded-lg bg-muted/20 px-3 py-3 text-left transition-colors duration-200";
+	"flex items-center rounded-lg bg-muted/30 px-3 py-3 text-left ring-1 ring-border/35 transition-colors duration-200 dark:bg-muted/20";
 
 function normalizeOffset(offset: number) {
 	return Math.max(0, Math.floor(offset));
@@ -161,7 +161,7 @@ function QuotaCell({ user }: { user: UserInfo }) {
 	const pct = quota > 0 ? Math.min((used / quota) * 100, 100) : 0;
 
 	return (
-		<div className="flex w-full flex-col gap-2 rounded-lg border border-transparent bg-muted/20 px-3 py-2 text-left">
+		<div className="flex w-full flex-col gap-2 rounded-lg bg-muted/30 px-3 py-2 text-left ring-1 ring-border/35 dark:bg-muted/20">
 			<div className="flex items-center justify-between gap-3 text-xs">
 				<span className="font-medium text-foreground">
 					{formatBytes(used)}

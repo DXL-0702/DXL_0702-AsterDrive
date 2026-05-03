@@ -49,12 +49,12 @@ export function XmlPreview({ path }: XmlPreviewProps) {
 	}
 
 	return (
-		<div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
-			<div className="border-b bg-muted/30 px-4 py-2 text-xs text-muted-foreground">
+		<div className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs dark:shadow-none">
+			<div className="border-b border-border/60 bg-muted/20 px-4 py-2 text-xs text-muted-foreground dark:bg-muted/15">
 				XML · formatted
 			</div>
 			<div className="min-h-0 flex-1">
-				<ScrollArea className="h-full bg-background">
+				<ScrollArea className="h-full bg-background/80 dark:bg-background/25">
 					<pre className="min-h-full p-4 font-mono text-sm whitespace-pre-wrap break-words">
 						{formatted}
 					</pre>

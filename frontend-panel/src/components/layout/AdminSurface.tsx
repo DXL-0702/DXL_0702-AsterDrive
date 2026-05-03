@@ -16,7 +16,7 @@ export function AdminSurface({
 	return (
 		<div
 			className={cn(
-				"flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border bg-background",
+				"flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs dark:shadow-none",
 				padded && PAGE_SECTION_PADDING_CLASS,
 				className,
 			)}

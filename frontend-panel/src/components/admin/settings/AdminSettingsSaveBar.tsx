@@ -53,7 +53,7 @@ export function AdminSettingsSaveBar({
 			>
 				<div
 					className={cn(
-						"rounded-2xl border bg-background/95 shadow-xl shadow-black/5 ring-1 backdrop-blur supports-[backdrop-filter]:bg-background/80",
+						"rounded-2xl border bg-card/95 shadow-xl shadow-black/8 ring-1 backdrop-blur supports-[backdrop-filter]:bg-card/85 dark:shadow-none",
 						hasValidationError
 							? "border-destructive/40 ring-destructive/10"
 							: "border-border/70 ring-border/50",

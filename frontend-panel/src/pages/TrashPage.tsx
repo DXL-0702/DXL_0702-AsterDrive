@@ -324,7 +324,7 @@ export default function TrashPage() {
 					</div>
 				) : null}
 
-				<div className="min-h-0 flex flex-1 flex-col overflow-hidden rounded-xl border bg-background shadow-sm">
+				<div className="min-h-0 flex flex-1 flex-col overflow-hidden rounded-xl border border-border/70 bg-card shadow-sm dark:shadow-none">
 					{loading ? (
 						viewMode === "grid" ? (
 							<SkeletonFileGrid />

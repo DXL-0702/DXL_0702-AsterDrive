@@ -73,9 +73,16 @@ export const createCrudSlice: FileStoreSlice<CrudSlice> = (set, get) => ({
 				filesTotalCount: contents.files_total,
 				nextFileCursor: contents.next_file_cursor ?? null,
 				breadcrumb,
+				loading: false,
+				loadingMore: false,
+				error: null,
 			});
 		} catch (error) {
 			if (!isRequestCanceled(error)) {
+				applyWorkspaceRequestState(set, get, request, {
+					loading: false,
+					loadingMore: false,
+				});
 				throw error;
 			}
 		}

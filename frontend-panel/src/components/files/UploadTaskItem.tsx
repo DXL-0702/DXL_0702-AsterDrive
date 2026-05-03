@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
+import { cn } from "@/lib/utils";
 
 interface UploadTaskAction {
 	label: string;
@@ -31,9 +32,10 @@ export function UploadTaskItem({
 }: UploadTaskItemProps) {
 	return (
 		<div
-			className={`space-y-2 rounded-lg border p-3 ${
-				completed ? "bg-muted/30 opacity-80" : "bg-background/60"
-			}`}
+			className={cn(
+				"space-y-2 rounded-xl border border-border/65 p-3 shadow-xs transition-[background-color,border-color,box-shadow,opacity] dark:shadow-none",
+				completed ? "bg-muted/35 opacity-80" : "bg-card/75 dark:bg-card/65",
+			)}
 		>
 			<div className="flex items-start gap-2">
 				<div className="min-w-0 flex-1">

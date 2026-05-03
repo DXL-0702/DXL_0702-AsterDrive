@@ -127,7 +127,7 @@ export function FileBrowserWorkspace({
 			>
 				{contentDragOver && (
 					<div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-background/35 backdrop-blur-[2px]">
-						<div className="flex items-center gap-3 rounded-2xl bg-background/80 px-4 py-3 shadow-lg shadow-black/5 ring-1 ring-border/50 backdrop-blur-md">
+						<div className="flex items-center gap-3 rounded-2xl bg-card/90 px-4 py-3 shadow-lg shadow-black/8 ring-1 ring-border/60 backdrop-blur-md dark:shadow-none">
 							<div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
 								<Icon name="FolderOpen" className="h-5 w-5" />
 							</div>

@@ -143,7 +143,7 @@ export function UploadPanel({
 		<div className="absolute right-4 bottom-4 z-40 w-[28rem] max-w-[calc(100vw-2rem)]">
 			<Card
 				size="sm"
-				className={`flex flex-col overflow-hidden shadow-xl backdrop-blur-sm ${
+				className={`flex flex-col overflow-hidden shadow-lg shadow-black/8 backdrop-blur-sm dark:shadow-none ${
 					open ? "h-[min(42rem,calc(100vh-6rem))]" : ""
 				}`}
 			>
@@ -165,13 +165,13 @@ export function UploadPanel({
 					<>
 						<div className="space-y-3 border-b px-4 py-3">
 							<div className="grid grid-cols-4 gap-2 text-center text-xs">
-								<div className="rounded-md bg-muted/50 px-2 py-1">
+								<div className="rounded-lg bg-muted/40 px-2 py-1 ring-1 ring-border/45">
 									<div className="text-[10px] text-muted-foreground">
 										{t("upload_stat_total")}
 									</div>
 									<div className="font-medium">{totalCount}</div>
 								</div>
-								<div className="rounded-md bg-emerald-500/10 px-2 py-1">
+								<div className="rounded-lg bg-emerald-500/10 px-2 py-1 ring-1 ring-emerald-500/20">
 									<div className="text-[10px] text-muted-foreground">
 										{t("upload_stat_success")}
 									</div>
@@ -179,13 +179,13 @@ export function UploadPanel({
 										{successCount}
 									</div>
 								</div>
-								<div className="rounded-md bg-rose-500/10 px-2 py-1">
+								<div className="rounded-lg bg-rose-500/10 px-2 py-1 ring-1 ring-rose-500/20">
 									<div className="text-[10px] text-muted-foreground">
 										{t("upload_stat_failed")}
 									</div>
 									<div className="font-medium text-rose-600">{failedCount}</div>
 								</div>
-								<div className="rounded-md bg-primary/10 px-2 py-1">
+								<div className="rounded-lg bg-primary/10 px-2 py-1 ring-1 ring-primary/20">
 									<div className="text-[10px] text-muted-foreground">
 										{t("upload_stat_active")}
 									</div>

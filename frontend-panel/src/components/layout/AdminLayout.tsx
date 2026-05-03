@@ -50,7 +50,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 	];
 
 	const sidebarContent = (
-		<div className="flex h-full flex-col bg-background">
+		<div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
 			<ScrollArea className="min-h-0 flex-1 pt-2">
 				<nav className={cn("space-y-1 py-2", SIDEBAR_SECTION_PADDING_CLASS)}>
 					{primaryNavItems.map((item) => (
@@ -85,7 +85,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 	);
 
 	return (
-		<div className="flex h-screen flex-col bg-muted/20">
+		<div className="flex h-screen flex-col bg-background">
 			<AdminTopBar
 				onSidebarToggle={handleMobileToggle}
 				mobileOpen={mobileOpen}
@@ -105,12 +105,12 @@ export function AdminLayout({ children }: { children: ReactNode }) {
 				/>
 				<aside
 					className={cn(
-						"border-r bg-background transition-transform duration-200 ease-out motion-reduce:transition-none",
+						"border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-transform duration-200 ease-out motion-reduce:transition-none",
 						ADMIN_SIDEBAR_WIDTH_CLASS,
 						"fixed left-0 z-50 flex flex-col md:relative md:left-auto md:top-auto md:bottom-auto md:z-auto md:translate-x-0",
 						ADMIN_TOPBAR_OFFSET_CLASS,
 						mobileOpen
-							? "translate-x-0 shadow-lg md:shadow-none"
+							? "translate-x-0 shadow-lg dark:shadow-none md:shadow-none"
 							: "-translate-x-full pointer-events-none shadow-none md:pointer-events-auto",
 					)}
 				>

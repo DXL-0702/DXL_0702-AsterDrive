@@ -14,11 +14,15 @@ export function EmptyState({
 	action,
 }: EmptyStateProps) {
 	return (
-		<div className="flex flex-col items-center justify-center py-16 px-4 text-center">
-			{icon && <div className="mb-4 text-muted-foreground">{icon}</div>}
-			<h3 className="text-lg font-medium">{title}</h3>
+		<div className="flex flex-col items-center justify-center px-4 py-16 text-center">
+			{icon && (
+				<div className="mb-4 flex h-14 w-14 items-center justify-center rounded-xl border border-border/60 bg-card text-muted-foreground shadow-xs dark:bg-muted/25 dark:shadow-none [&_svg]:h-7 [&_svg]:w-7">
+					{icon}
+				</div>
+			)}
+			<h3 className="text-base font-semibold">{title}</h3>
 			{description && (
-				<p className="mt-1 text-sm text-muted-foreground max-w-sm">
+				<p className="mt-1.5 max-w-sm text-sm text-muted-foreground">
 					{description}
 				</p>
 			)}

@@ -47,7 +47,7 @@ export function EmbeddedWebAppPreview({
 					) : null}
 				</div>
 			) : null}
-			<div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border bg-background">
+			<div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border border-border/70 bg-card shadow-xs dark:shadow-none">
 				{src ? (
 					<iframe
 						key={src}
@@ -55,7 +55,7 @@ export function EmbeddedWebAppPreview({
 						src={src}
 						name={iframeName}
 						className={cn(
-							"h-full w-full bg-background",
+							"h-full w-full bg-background/80",
 							iframeHidden && "pointer-events-none opacity-0",
 							iframeClassName,
 						)}
@@ -68,7 +68,7 @@ export function EmbeddedWebAppPreview({
 					<div className="absolute inset-0">{loadingOverlay}</div>
 				) : null}
 				{errorOverlay ? (
-					<div className="absolute inset-0 flex items-center justify-center bg-background p-6">
+					<div className="absolute inset-0 flex items-center justify-center bg-card/90 p-6">
 						{errorOverlay}
 					</div>
 				) : null}

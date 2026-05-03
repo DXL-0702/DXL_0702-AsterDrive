@@ -261,7 +261,7 @@ export default function MySharesPage() {
 											<ContextMenuTrigger className="w-full">
 												<Card
 													className={cn(
-														"cursor-pointer border bg-background px-4 py-3 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:bg-muted/5 hover:shadow-md",
+														"cursor-pointer border bg-card/80 px-4 py-3 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:bg-card hover:shadow-md dark:shadow-none dark:hover:shadow-none",
 														selected && "border-primary bg-accent/35",
 													)}
 													onClick={() => openShareLink(share)}
@@ -394,7 +394,7 @@ export default function MySharesPage() {
 			</div>
 
 			{selectedCount > 0 && (
-				<div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-lg border bg-background px-4 py-2 shadow-lg">
+				<div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-border/70 bg-card/95 px-4 py-2 shadow-lg shadow-black/8 backdrop-blur supports-[backdrop-filter]:bg-card/85 dark:shadow-none">
 					<span className="text-sm font-medium">
 						{t("core:selected_count", { count: selectedCount })}
 					</span>

@@ -72,7 +72,7 @@ export function FileThumbnail({
 		return (
 			<div
 				ref={ref}
-				className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md bg-muted/40"
+				className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border/50 bg-muted/35 shadow-xs dark:bg-muted/25 dark:shadow-none"
 			>
 				{canRequestThumbnail && loading && !error && !blobUrl ? (
 					<Icon

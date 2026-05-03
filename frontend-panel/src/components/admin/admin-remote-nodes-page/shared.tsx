@@ -10,9 +10,9 @@ import type { RemoteNodeEnrollmentStatus, RemoteNodeInfo } from "@/types/api";
 export const INTERACTIVE_TABLE_ROW_CLASS =
 	"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50";
 export const REMOTE_NODE_TEXT_CELL_CONTENT_CLASS =
-	"flex min-w-0 items-center rounded-lg bg-muted/10 px-3 py-3 text-left transition-colors duration-200";
+	"flex min-w-0 items-center rounded-lg bg-card/55 px-3 py-3 text-left ring-1 ring-border/35 transition-colors duration-200 dark:bg-background/20";
 export const REMOTE_NODE_BADGE_CELL_CONTENT_CLASS =
-	"flex items-center rounded-lg bg-muted/20 px-3 py-3 text-left transition-colors duration-200";
+	"flex items-center rounded-lg bg-muted/30 px-3 py-3 text-left ring-1 ring-border/35 transition-colors duration-200 dark:bg-muted/20";
 
 export function TestConnectionButton({
 	disabled = false,

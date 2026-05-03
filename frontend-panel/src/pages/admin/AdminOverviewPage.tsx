@@ -210,7 +210,7 @@ function TrendTooltipCard({ active, payload, series }: TrendTooltipCardProps) {
 	const point = payload[0]?.payload as TrendPoint | undefined;
 
 	return (
-		<div className="rounded-xl border bg-background/95 px-3 py-2 shadow-lg backdrop-blur">
+		<div className="rounded-xl border border-border/70 bg-card/95 px-3 py-2 shadow-lg shadow-black/8 backdrop-blur dark:shadow-none">
 			<p className="text-xs text-muted-foreground">{point?.date ?? "---"}</p>
 			<div className="mt-2 space-y-1.5">
 				{series.map((seriesItem) => {

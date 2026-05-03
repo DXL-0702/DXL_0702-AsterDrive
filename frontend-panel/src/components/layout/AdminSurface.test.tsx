@@ -13,7 +13,7 @@ describe("AdminSurface", () => {
 			"overflow-hidden",
 			"rounded-xl",
 			"border",
-			"bg-background",
+			"bg-card",
 		);
 	});
 

@@ -120,7 +120,7 @@ function stepConnectorClass(status: TaskStepStatus) {
 function stepCircleClass(status: TaskStepStatus) {
 	switch (status) {
 		case "active":
-			return "border-primary bg-primary text-primary-foreground shadow-[0_0_0_4px_rgba(249,115,22,0.16)]";
+			return "border-primary bg-primary text-primary-foreground ring-4 ring-primary/15";
 		case "succeeded":
 			return "border-primary/40 bg-primary/12 text-foreground";
 		case "failed":

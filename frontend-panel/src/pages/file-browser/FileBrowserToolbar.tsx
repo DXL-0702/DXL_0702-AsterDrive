@@ -111,7 +111,7 @@ export function FileBrowserToolbar({
 		<ToolbarBar
 			left={
 				<>
-					<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background/40 text-muted-foreground/70 sm:h-8 sm:w-8">
+					<span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-accent/55 text-accent-foreground sm:h-8 sm:w-8">
 						<Icon
 							name={isRootFolder ? "House" : "FolderOpen"}
 							className="h-4 w-4"
@@ -143,7 +143,7 @@ export function FileBrowserToolbar({
 															render={
 																<button
 																	type="button"
-																	className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:h-7 sm:w-7"
+																	className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground sm:h-7 sm:w-7"
 																	aria-label={t("core:more")}
 																>
 																	<BreadcrumbEllipsis />
@@ -187,7 +187,7 @@ export function FileBrowserToolbar({
 													{entry.sourceIndex < breadcrumb.length - 1 ? (
 														<BreadcrumbLink
 															className={[
-																"cursor-pointer rounded-md px-1 py-0.5 text-[13px] text-muted-foreground sm:px-1.5 sm:text-sm",
+																"cursor-pointer rounded-md px-1 py-0.5 text-[13px] text-muted-foreground transition-colors hover:bg-accent/45 hover:text-foreground sm:px-1.5 sm:text-sm",
 																dragOverBreadcrumbIndex === entry.sourceIndex &&
 																	"ring-2 ring-primary bg-accent/30 text-foreground",
 															]
@@ -228,7 +228,7 @@ export function FileBrowserToolbar({
 					</div>
 					<button
 						type="button"
-						className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background/40 text-muted-foreground transition-colors hover:bg-background/70 hover:text-foreground sm:h-8 sm:w-8"
+						className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent/55 hover:text-accent-foreground sm:h-8 sm:w-8"
 						onClick={() => void onRefresh()}
 						aria-label={t("core:refresh")}
 						title={t("core:refresh")}

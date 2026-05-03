@@ -119,7 +119,7 @@ function Section({
 	return (
 		<section
 			className={cn(
-				"space-y-3 rounded-2xl border bg-background/80 p-4 shadow-xs",
+				"space-y-3 rounded-2xl border border-border/60 bg-card/55 p-4 dark:bg-background/18",
 				className,
 			)}
 		>
@@ -139,7 +139,7 @@ function DetailList({ rows }: { rows: DetailRow[] }) {
 			{rows.map((row) => (
 				<div
 					key={row.label}
-					className="flex items-start justify-between gap-4 border-b border-border/60 pb-3 last:border-b-0 last:pb-0"
+					className="flex items-start justify-between gap-4 border-b border-border/40 pb-3 last:border-b-0 last:pb-0"
 				>
 					<dt className="text-sm text-muted-foreground">{row.label}</dt>
 					<dd
@@ -629,9 +629,9 @@ export function FileInfoDialog({
 
 	const content = (
 		<div className="space-y-4 p-4">
-			<Section className="gap-0 space-y-4 bg-gradient-to-br from-background via-background to-muted/30">
+			<Section className="gap-0 space-y-4 bg-card/55 dark:bg-background/18">
 				<div className="flex items-start gap-3">
-					<div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-muted/50 text-muted-foreground">
+					<div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-muted/35 text-muted-foreground dark:bg-muted/20">
 						{renderedFile ? (
 							<FileTypeIcon
 								mimeType={(activeFile ?? renderedFile).mime_type}
