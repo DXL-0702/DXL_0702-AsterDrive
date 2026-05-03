@@ -66,6 +66,16 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 			[],
 		);
 
+		const uploadSummary =
+			totalCount > 0 && successCount === totalCount
+				? t("files:upload_summary_done", { total: totalCount })
+				: t("files:upload_summary", {
+						total: totalCount,
+						success: successCount,
+						failed: failedCount,
+						active: activeCount,
+					});
+
 		return (
 			<>
 				<input
@@ -110,12 +120,7 @@ export const UploadArea = forwardRef<UploadAreaHandle, UploadAreaProps>(
 							open={uploadPanelOpen}
 							onToggle={() => setUploadPanelOpen((prev) => !prev)}
 							title={t("files:upload")}
-							summary={t("files:upload_summary", {
-								total: totalCount,
-								success: successCount,
-								failed: failedCount,
-								active: activeCount,
-							})}
+							summary={uploadSummary}
 							tasks={uploadTasks}
 							emptyText={t("no_data")}
 							totalCount={totalCount}

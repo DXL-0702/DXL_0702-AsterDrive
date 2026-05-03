@@ -2,16 +2,6 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { UploadTaskItem } from "@/components/files/UploadTaskItem";
 
-vi.mock("@/components/ui/badge", () => ({
-	Badge: ({
-		children,
-		className,
-	}: {
-		children: React.ReactNode;
-		className?: string;
-	}) => <span className={className}>{children}</span>,
-}));
-
 vi.mock("@/components/ui/button", () => ({
 	Button: ({
 		children,
@@ -56,7 +46,8 @@ describe("UploadTaskItem", () => {
 		expect(screen.getByText("Uploading")).toBeInTheDocument();
 		expect(screen.getByText("45%")).toBeInTheDocument();
 		expect(screen.getByTestId("progress")).toHaveAttribute("data-value", "45");
-		expect(container.firstChild).toHaveClass("bg-card/75");
+		expect(container.firstChild).toHaveClass("bg-card/55");
+		expect(screen.getByTestId("icon")).toHaveAttribute("data-name", "Spinner");
 	});
 
 	it("renders completed styling, custom detail text, and action callbacks", () => {
@@ -78,12 +69,18 @@ describe("UploadTaskItem", () => {
 		);
 
 		expect(screen.getByText("Retry required")).toBeInTheDocument();
-		expect(container.firstChild).toHaveClass("bg-muted/35", "opacity-80");
+		expect(screen.queryByText("100%")).not.toBeInTheDocument();
+		expect(screen.queryByTestId("progress")).not.toBeInTheDocument();
+		expect(container.firstChild).toHaveClass("bg-card/35", "border-b");
 		expect(screen.getAllByTestId("icon")[0]).toHaveAttribute(
+			"data-name",
+			"Check",
+		);
+		expect(screen.getAllByTestId("icon")[1]).toHaveAttribute(
 			"data-name",
 			"ArrowsClockwise",
 		);
-		expect(screen.getAllByTestId("icon")[1]).toHaveAttribute("data-name", "X");
+		expect(screen.getAllByTestId("icon")[2]).toHaveAttribute("data-name", "X");
 
 		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 		fireEvent.click(screen.getByRole("button", { name: "Cancel" }));

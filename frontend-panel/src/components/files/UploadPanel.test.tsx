@@ -32,10 +32,8 @@ vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
 		t: (key: string, opts?: Record<string, unknown>) => {
 			if (key === "root") return "Root";
-			if (key === "upload_target_location") return "Target";
-			if (key === "upload_target_current") return "Current";
-			if (key === "upload_group_stats") {
-				return `total:${opts?.total} success:${opts?.success} failed:${opts?.failed} active:${opts?.active}`;
+			if (key === "upload_group_item_count") {
+				return `${opts?.count} item(s)`;
 			}
 			return key;
 		},
@@ -126,8 +124,7 @@ describe("UploadPanel", () => {
 
 		const { onClearCompleted, onRetryFailed, onToggle } = renderPanel(tasks);
 
-		expect(screen.getByText("upload_stat_total")).toBeInTheDocument();
-		expect(screen.getByText("3")).toBeInTheDocument();
+		expect(screen.getByText("3 tasks")).toBeInTheDocument();
 		expect(screen.getByText("67%")).toBeInTheDocument();
 
 		expect(screen.getByText("Root")).toBeInTheDocument();
@@ -136,15 +133,7 @@ describe("UploadPanel", () => {
 		expect(screen.getByText("upload_batch_active")).toBeInTheDocument();
 		expect(screen.getByText("Folder B")).toBeInTheDocument();
 		expect(screen.getByText("upload_batch_partial_failed")).toBeInTheDocument();
-		expect(
-			screen.getByText("total:1 success:1 failed:0 active:0"),
-		).toBeInTheDocument();
-		expect(
-			screen.getByText("total:1 success:0 failed:0 active:1"),
-		).toBeInTheDocument();
-		expect(
-			screen.getByText("total:1 success:0 failed:1 active:0"),
-		).toBeInTheDocument();
+		expect(screen.getAllByText("1 item(s)")).toHaveLength(3);
 
 		fireEvent.click(screen.getByText("Retry failed"));
 		fireEvent.click(screen.getByText("Clear completed"));
@@ -153,5 +142,43 @@ describe("UploadPanel", () => {
 		expect(onRetryFailed).toHaveBeenCalledTimes(1);
 		expect(onClearCompleted).toHaveBeenCalledTimes(1);
 		expect(onToggle).toHaveBeenCalledTimes(1);
+	});
+
+	it("hides progress chrome when all uploads are completed", () => {
+		render(
+			<UploadPanel
+				open
+				onToggle={vi.fn()}
+				title="Uploads"
+				summary="2 tasks · all complete"
+				tasks={[
+					{
+						id: "done-a",
+						title: "done-a.txt",
+						status: "Done",
+						mode: "Direct",
+						progress: 100,
+						completed: true,
+					},
+					{
+						id: "done-b",
+						title: "done-b.txt",
+						status: "Done",
+						mode: "Direct",
+						progress: 100,
+						completed: true,
+					},
+				]}
+				emptyText="No tasks"
+				totalCount={2}
+				successCount={2}
+				failedCount={0}
+				activeCount={0}
+				overallProgress={100}
+			/>,
+		);
+
+		expect(screen.getByText("2 tasks · all complete")).toBeInTheDocument();
+		expect(screen.queryByText("100%")).not.toBeInTheDocument();
 	});
 });

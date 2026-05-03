@@ -233,6 +233,12 @@ describe("UploadArea", () => {
 			"/files/upload?folder_id=42&declared_size=5",
 		);
 		expect(apiClientPost.mock.calls[0]?.[1]).toBeInstanceOf(FormData);
+		expect(apiClientPost.mock.calls[0]?.[2]).toEqual(
+			expect.objectContaining({
+				headers: { "Content-Type": "multipart/form-data" },
+				timeout: 0,
+			}),
+		);
 		expect(completeUpload).not.toHaveBeenCalled();
 		expect(saveSession).not.toHaveBeenCalled();
 	});

@@ -13,6 +13,7 @@ import {
 import { Icon } from "@/components/ui/icon";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 export interface UploadTaskView {
 	id: string;
@@ -56,7 +57,6 @@ type FlatRow =
 			type: "group-header";
 			key: string;
 			group: string;
-			targetLabel?: string;
 			batchStatus: string;
 			total: number;
 			success: number;
@@ -65,8 +65,20 @@ type FlatRow =
 	  }
 	| { type: "task"; key: string; task: UploadTaskView };
 
-const ROW_HEIGHT_TASK = 92;
-const ROW_HEIGHT_GROUP = 52;
+const ROW_HEIGHT_TASK_COMPACT = 56;
+const ROW_HEIGHT_TASK_PROGRESS = 74;
+const ROW_HEIGHT_GROUP = 38;
+const PANEL_EXPANDED_BODY_CLASS = "h-[min(28rem,calc(100vh-11rem))]";
+
+function taskShowsProgress(task: UploadTaskView) {
+	const failed = task.actions?.some(
+		(action) => action.icon === "ArrowsClockwise",
+	);
+	const waitingForFile = task.actions?.some(
+		(action) => action.icon === "Upload",
+	);
+	return !task.completed && !failed && !waitingForFile && task.progress < 100;
+}
 
 export function UploadPanel({
 	open,
@@ -75,7 +87,6 @@ export function UploadPanel({
 	summary,
 	tasks,
 	emptyText,
-	totalCount = 0,
 	successCount = 0,
 	failedCount = 0,
 	activeCount = 0,
@@ -115,7 +126,6 @@ export function UploadPanel({
 				type: "group-header",
 				key: `gh-${group || "root"}`,
 				group,
-				targetLabel: groupTasks[0]?.targetLabel,
 				batchStatus,
 				total: groupTasks.length,
 				success,
@@ -132,24 +142,34 @@ export function UploadPanel({
 	const virtualizer = useVirtualizer({
 		count: flatRows.length,
 		getScrollElement: () => scrollRef.current,
-		estimateSize: (index) =>
-			flatRows[index].type === "group-header"
-				? ROW_HEIGHT_GROUP
-				: ROW_HEIGHT_TASK,
+		estimateSize: (index) => {
+			const row = flatRows[index];
+			if (row.type === "group-header") return ROW_HEIGHT_GROUP;
+			return taskShowsProgress(row.task)
+				? ROW_HEIGHT_TASK_PROGRESS
+				: ROW_HEIGHT_TASK_COMPACT;
+		},
 		overscan: 5,
 	});
+	const canRetryFailed = Boolean(
+		onRetryFailed && retryFailedLabel && failedCount > 0,
+	);
+	const canClearCompleted = Boolean(
+		onClearCompleted && clearCompletedLabel && successCount > 0,
+	);
+	const showOverallProgress = activeCount > 0;
 
 	return (
 		<div className="absolute right-4 bottom-4 z-40 w-[28rem] max-w-[calc(100vw-2rem)]">
 			<Card
 				size="sm"
-				className={`flex flex-col overflow-hidden shadow-lg shadow-black/8 backdrop-blur-sm dark:shadow-none ${
-					open ? "h-[min(42rem,calc(100vh-6rem))]" : ""
-				}`}
+				className="gap-0 overflow-hidden bg-card/95 py-0 shadow-none ring-1 ring-border/60 backdrop-blur-sm transition-[border-color,box-shadow] data-[size=sm]:gap-0 data-[size=sm]:py-0 dark:bg-card/80 dark:ring-border/70"
 			>
-				<CardHeader className="border-b">
-					<div className="flex items-center gap-2">
-						<Icon name="Upload" className="h-4 w-4 text-muted-foreground" />
+				<CardHeader className="border-b border-border/60 bg-card/80 px-4 py-3 dark:bg-card/65">
+					<div className="flex items-start gap-3">
+						<div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/45 text-muted-foreground dark:bg-muted/25">
+							<Icon name="Upload" className="h-4 w-4" />
+						</div>
 						<div className="min-w-0 flex-1">
 							<CardTitle>{title}</CardTitle>
 							<div className="truncate text-xs text-muted-foreground">
@@ -160,55 +180,34 @@ export function UploadPanel({
 							<Icon name={open ? "CaretDown" : "CaretUp"} className="h-3 w-3" />
 						</Button>
 					</div>
-				</CardHeader>
-				{open && (
-					<>
-						<div className="space-y-3 border-b px-4 py-3">
-							<div className="grid grid-cols-4 gap-2 text-center text-xs">
-								<div className="rounded-lg bg-muted/40 px-2 py-1 ring-1 ring-border/45">
-									<div className="text-[10px] text-muted-foreground">
-										{t("upload_stat_total")}
-									</div>
-									<div className="font-medium">{totalCount}</div>
-								</div>
-								<div className="rounded-lg bg-emerald-500/10 px-2 py-1 ring-1 ring-emerald-500/20">
-									<div className="text-[10px] text-muted-foreground">
-										{t("upload_stat_success")}
-									</div>
-									<div className="font-medium text-emerald-600">
-										{successCount}
-									</div>
-								</div>
-								<div className="rounded-lg bg-rose-500/10 px-2 py-1 ring-1 ring-rose-500/20">
-									<div className="text-[10px] text-muted-foreground">
-										{t("upload_stat_failed")}
-									</div>
-									<div className="font-medium text-rose-600">{failedCount}</div>
-								</div>
-								<div className="rounded-lg bg-primary/10 px-2 py-1 ring-1 ring-primary/20">
-									<div className="text-[10px] text-muted-foreground">
-										{t("upload_stat_active")}
-									</div>
-									<div className="font-medium text-primary">{activeCount}</div>
-								</div>
-							</div>
-							<div className="space-y-1">
-								<div className="flex items-center justify-between text-[11px] text-muted-foreground">
-									<span>{t("upload_overall_progress")}</span>
-									<span>{overallProgress}%</span>
-								</div>
-								<Progress value={overallProgress} className="h-2" />
-							</div>
+					{showOverallProgress ? (
+						<div className="mt-3 flex items-center gap-2">
+							<Progress value={overallProgress} className="h-1.5 flex-1" />
+							<span className="w-9 text-right text-[11px] text-muted-foreground tabular-nums">
+								{overallProgress}%
+							</span>
 						</div>
-						<CardContent className="min-h-0 flex-1 overflow-hidden p-0">
+					) : null}
+				</CardHeader>
+				<div
+					aria-hidden={!open}
+					data-state={open ? "open" : "closed"}
+					inert={open ? undefined : true}
+					className={cn(
+						"min-h-0 overflow-hidden transition-[height,opacity] duration-200 ease-out motion-reduce:transition-none",
+						open ? `${PANEL_EXPANDED_BODY_CLASS} opacity-100` : "h-0 opacity-0",
+					)}
+				>
+					<div className="flex h-full min-h-0 flex-col">
+						<CardContent className="min-h-0 flex-1 overflow-hidden bg-background/70 px-0 py-0 group-data-[size=sm]/card:px-0 dark:bg-background/20">
 							{tasks.length === 0 ? (
-								<div className="py-8 text-center text-sm text-muted-foreground">
+								<div className="flex h-full min-h-[10rem] items-center justify-center px-6 py-8 text-center text-sm text-muted-foreground">
 									{emptyText}
 								</div>
 							) : (
-								<ScrollArea ref={scrollRef} className="h-full">
+								<ScrollArea ref={scrollRef} className="h-full w-full">
 									<div
-										className="relative px-3"
+										className="relative w-full"
 										style={{
 											height: virtualizer.getTotalSize(),
 										}}
@@ -218,7 +217,7 @@ export function UploadPanel({
 											return (
 												<div
 													key={row.key}
-													className="absolute left-3 right-3"
+													className="absolute inset-x-0 w-full overflow-hidden"
 													style={{
 														height: virtualRow.size,
 														transform: `translateY(${virtualRow.start}px)`,
@@ -227,9 +226,7 @@ export function UploadPanel({
 													{row.type === "group-header" ? (
 														<GroupHeader row={row} t={t} />
 													) : (
-														<div className="pt-2">
-															<UploadTaskItem {...row.task} />
-														</div>
+														<UploadTaskItem {...row.task} />
 													)}
 												</div>
 											);
@@ -238,20 +235,28 @@ export function UploadPanel({
 								</ScrollArea>
 							)}
 						</CardContent>
-						<CardFooter className="shrink-0 justify-end gap-2 border-t">
-							{onRetryFailed && retryFailedLabel && failedCount > 0 && (
-								<Button variant="outline" size="sm" onClick={onRetryFailed}>
-									{retryFailedLabel}
-								</Button>
-							)}
-							{onClearCompleted && clearCompletedLabel && (
-								<Button variant="outline" size="sm" onClick={onClearCompleted}>
-									{clearCompletedLabel}
-								</Button>
-							)}
-						</CardFooter>
-					</>
-				)}
+						{canRetryFailed || canClearCompleted ? (
+							<CardFooter className="shrink-0 justify-end gap-2 border-t border-border/60 bg-card/80 px-4 py-3 dark:bg-card/65">
+								{canRetryFailed ? (
+									<Button variant="outline" size="sm" onClick={onRetryFailed}>
+										<Icon name="ArrowsClockwise" className="h-3.5 w-3.5" />
+										{retryFailedLabel}
+									</Button>
+								) : null}
+								{canClearCompleted ? (
+									<Button
+										variant="outline"
+										size="sm"
+										onClick={onClearCompleted}
+									>
+										<Icon name="X" className="h-3.5 w-3.5" />
+										{clearCompletedLabel}
+									</Button>
+								) : null}
+							</CardFooter>
+						) : null}
+					</div>
+				</div>
 			</Card>
 		</div>
 	);
@@ -265,33 +270,30 @@ function GroupHeader({
 	t: (key: string, opts?: Record<string, unknown>) => string;
 }) {
 	return (
-		<div className="space-y-1 px-1 pt-3 text-[11px] text-muted-foreground">
-			<div className="flex items-center justify-between gap-2">
-				<div className="min-w-0 truncate font-medium">
-					{row.group || t("root")}
-				</div>
-				<div className="shrink-0">
-					{row.batchStatus === "active"
-						? t("upload_batch_active")
-						: row.batchStatus === "partial_failed"
-							? t("upload_batch_partial_failed")
-							: t("upload_batch_done")}
-				</div>
+		<div className="flex h-full w-full items-center gap-2 border-b border-border/70 bg-muted/35 px-4 py-2 text-[11px] text-muted-foreground dark:border-border/55 dark:bg-muted/20">
+			<div className="min-w-0 flex-1 truncate font-medium text-foreground/75">
+				{row.group || t("root")}
 			</div>
-			<div className="flex items-center justify-between gap-2">
-				<div className="min-w-0 truncate">
-					{t("upload_target_location")}：
-					{row.targetLabel ?? t("upload_target_current")}
-				</div>
-				<div className="shrink-0">
-					{t("upload_group_stats", {
-						total: row.total,
-						success: row.success,
-						failed: row.failed,
-						active: row.active,
-					})}
-				</div>
-			</div>
+			<span className="shrink-0 tabular-nums">
+				{t("upload_group_item_count", { count: row.total })}
+			</span>
+			<span
+				className={cn(
+					"shrink-0 rounded-full px-1.5 py-0.5 font-medium",
+					row.batchStatus === "active" &&
+						"bg-primary/10 text-primary dark:bg-primary/15",
+					row.batchStatus === "partial_failed" &&
+						"bg-destructive/10 text-destructive dark:bg-destructive/15",
+					row.batchStatus === "done" &&
+						"bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+				)}
+			>
+				{row.batchStatus === "active"
+					? t("upload_batch_active")
+					: row.batchStatus === "partial_failed"
+						? t("upload_batch_partial_failed")
+						: t("upload_batch_done")}
+			</span>
 		</div>
 	);
 }

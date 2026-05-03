@@ -1,9 +1,10 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PdfPreview } from "@/components/files/preview/PdfPreview";
 
 const mockState = vi.hoisted(() => ({
 	documentProps: null as Record<string, unknown> | null,
+	pageProps: [] as Record<string, unknown>[],
 	retry: vi.fn(),
 	blob: new Blob(["pdf"]),
 	useBlobUrlResult: {
@@ -28,11 +29,17 @@ vi.mock("react-pdf", () => {
 	};
 
 	return {
-		Document: (props: Record<string, unknown>) => {
+		Document: ({
+			children,
+			...props
+		}: Record<string, unknown> & { children?: React.ReactNode }) => {
 			mockState.documentProps = props;
-			return <div data-testid="pdf-document" />;
+			return <div data-testid="pdf-document">{children}</div>;
 		},
-		Page: () => <div />,
+		Page: (props: Record<string, unknown>) => {
+			mockState.pageProps.push(props);
+			return <div data-testid={`pdf-page-${props.pageNumber}`} />;
+		},
 		pdfjs,
 	};
 });
@@ -70,6 +77,7 @@ vi.mock("@/components/files/preview/PreviewError", () => ({
 describe("PdfPreview", () => {
 	beforeEach(() => {
 		mockState.documentProps = null;
+		mockState.pageProps = [];
 		mockState.blob = new Blob(["pdf"]);
 		mockState.useBlobUrlResult = {
 			blob: mockState.blob,
@@ -90,6 +98,29 @@ describe("PdfPreview", () => {
 				cMapPacked: true,
 				cMapUrl: "/pdfjs/5.4.296/cmaps/",
 			},
+		});
+	});
+
+	it("keeps enlarged pages in the horizontal scroll range", () => {
+		render(<PdfPreview path="/api/files/1/download" fileName="manual.pdf" />);
+
+		const onDocumentLoadSuccess = mockState.documentProps?.onLoadSuccess;
+		if (typeof onDocumentLoadSuccess !== "function") {
+			throw new Error("document load handler was not registered");
+		}
+		act(() => {
+			onDocumentLoadSuccess({ numPages: 1 });
+		});
+
+		expect(screen.getByTestId("pdf-page-1")).toBeInTheDocument();
+		expect(mockState.pageProps[0]).toMatchObject({
+			pageNumber: 1,
+			width: 800,
+		});
+		expect(
+			screen.getByTestId("pdf-page-1").parentElement?.parentElement,
+		).toHaveStyle({
+			minWidth: "800px",
 		});
 	});
 });

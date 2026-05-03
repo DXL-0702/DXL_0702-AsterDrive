@@ -507,7 +507,8 @@ export function PdfPreview({ path, fileName }: PdfPreviewProps) {
 										ref={(node) => {
 											pageRefs.current[pageNumber] = node;
 										}}
-										className="mx-auto flex justify-center"
+										className="flex justify-center"
+										style={{ minWidth: renderedPageWidth }}
 									>
 										<div className="overflow-hidden rounded-lg bg-white ring-1 ring-black/5">
 											<Page

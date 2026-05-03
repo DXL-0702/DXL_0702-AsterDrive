@@ -60,6 +60,7 @@ export function createSimpleUploadRunners({
 			await api.client.post(buildDirectUploadPath(task, workspace), formData, {
 				headers: { "Content-Type": "multipart/form-data" },
 				signal: controller.signal,
+				timeout: 0,
 				onUploadProgress: (event) => {
 					if (!event.total) return;
 					patchTaskThrottled(task.id, {
