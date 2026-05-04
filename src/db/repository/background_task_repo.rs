@@ -614,7 +614,7 @@ fn terminal_cleanup_condition(filters: &TerminalTaskCleanupFilters) -> Condition
     )
 }
 
-fn claimable_condition(now: DateTime<Utc>, stale_before: DateTime<Utc>) -> Condition {
+fn claimable_condition(now: DateTime<Utc>, _stale_before: DateTime<Utc>) -> Condition {
     // 可认领任务有两类：
     // 1. Pending / Retry 且 next_run_at 已到；
     // 2. 仍显示 Processing，但已经 stale，可被新 worker 硬接管。
@@ -627,33 +627,14 @@ fn claimable_condition(now: DateTime<Utc>, stale_before: DateTime<Utc>) -> Condi
                 )
                 .add(background_task::Column::NextRunAt.lte(now)),
         )
-        .add(processing_stale_condition(now, stale_before))
+        .add(processing_stale_condition(now))
 }
 
-fn processing_stale_condition(now: DateTime<Utc>, stale_before: DateTime<Utc>) -> Condition {
-    // 新记录优先使用显式 lease_expires_at 判定是否可接管；
-    // 只有旧数据或迁移过渡期没有 lease_expires_at 时，才回退到 heartbeat/started_at 逻辑。
-    Condition::any()
-        .add(
-            Condition::all()
-                .add(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
-                .add(background_task::Column::LeaseExpiresAt.is_not_null())
-                .add(background_task::Column::LeaseExpiresAt.lte(now)),
-        )
-        .add(
-            Condition::all()
-                .add(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
-                .add(background_task::Column::LeaseExpiresAt.is_null())
-                .add(background_task::Column::LastHeartbeatAt.is_not_null())
-                .add(background_task::Column::LastHeartbeatAt.lte(stale_before)),
-        )
-        .add(
-            Condition::all()
-                .add(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
-                .add(background_task::Column::LeaseExpiresAt.is_null())
-                .add(background_task::Column::LastHeartbeatAt.is_null())
-                .add(background_task::Column::ProcessingStartedAt.lte(stale_before)),
-        )
+fn processing_stale_condition(now: DateTime<Utc>) -> Condition {
+    Condition::all()
+        .add(background_task::Column::Status.eq(BackgroundTaskStatus::Processing))
+        .add(background_task::Column::LeaseExpiresAt.is_not_null())
+        .add(background_task::Column::LeaseExpiresAt.lte(now))
 }
 
 #[cfg(test)]

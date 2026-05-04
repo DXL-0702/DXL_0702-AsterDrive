@@ -292,20 +292,21 @@ async fn assert_response_status(
 }
 
 #[actix_web::test]
-async fn test_processing_task_claimability_prefers_last_heartbeat_at() {
+async fn test_processing_task_claimability_requires_explicit_lease_expiry() {
     let state = common::setup().await;
     let now = Utc::now();
     let stale_before = now - Duration::seconds(60);
     let processing_started_at = now - Duration::seconds(180);
 
-    let fresh_heartbeat_task = insert_processing_task(
+    let fresh_heartbeat_without_lease = insert_processing_task(
         &state,
         processing_started_at,
         Some(now - Duration::seconds(5)),
     )
     .await;
-    let legacy_stale_task = insert_processing_task(&state, processing_started_at, None).await;
-    let stale_heartbeat_task = insert_processing_task(
+    let no_heartbeat_without_lease =
+        insert_processing_task(&state, processing_started_at, None).await;
+    let stale_heartbeat_without_lease = insert_processing_task(
         &state,
         processing_started_at,
         Some(now - Duration::seconds(120)),
@@ -317,9 +318,9 @@ async fn test_processing_task_claimability_prefers_last_heartbeat_at() {
         .expect("claimable task list should load");
     let ids = claimable.iter().map(|task| task.id).collect::<Vec<_>>();
 
-    assert!(!ids.contains(&fresh_heartbeat_task));
-    assert!(ids.contains(&legacy_stale_task));
-    assert!(ids.contains(&stale_heartbeat_task));
+    assert!(!ids.contains(&fresh_heartbeat_without_lease));
+    assert!(!ids.contains(&no_heartbeat_without_lease));
+    assert!(!ids.contains(&stale_heartbeat_without_lease));
 }
 
 #[actix_web::test]

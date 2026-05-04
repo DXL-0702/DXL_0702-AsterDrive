@@ -63,13 +63,7 @@ pub(super) fn resolve_stored_avatar_prefix_path(
     let normalized_root = normalized_avatar_root(root_dir)?;
     let stored_path = Path::new(stored_prefix);
 
-    if stored_path.is_absolute() {
-        let normalized_stored = normalize_absolute_path(stored_path)?;
-        let stored_relative = normalized_stored.strip_prefix(&normalized_root).ok()?;
-        if stored_relative != expected_relative {
-            return None;
-        }
-    } else if stored_path != expected_relative {
+    if stored_path.is_absolute() || stored_path != expected_relative {
         return None;
     }
 
@@ -212,15 +206,12 @@ mod tests {
     }
 
     #[test]
-    fn resolve_stored_avatar_prefix_accepts_legacy_absolute_key_under_root() {
+    fn resolve_stored_avatar_prefix_rejects_absolute_key_under_root() {
         let root = avatar_test_root();
         let avatar_prefix = root.join("user/42/v3");
         let profile = profile_with_key(42, 3, &avatar_prefix.to_string_lossy());
 
-        assert_eq!(
-            resolve_stored_avatar_prefix_path(&root, &profile),
-            Some(avatar_prefix)
-        );
+        assert!(resolve_stored_avatar_prefix_path(&root, &profile).is_none());
     }
 
     #[test]
