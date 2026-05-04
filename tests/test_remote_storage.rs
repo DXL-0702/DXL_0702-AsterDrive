@@ -2430,6 +2430,17 @@ async fn test_remote_presigned_upload_writes_directly_to_provider() {
     let created_blob = file_repo::find_blob_by_id(&consumer_state.db, created_file.blob_id)
         .await
         .expect("uploaded blob should be queryable");
+    assert_ne!(
+        created_blob.storage_path, temp_key,
+        "completed remote presigned uploads must be copied away from the still-valid PUT key"
+    );
+    assert!(
+        !remote_driver
+            .exists(&temp_key)
+            .await
+            .expect("remote temp key existence should be queryable"),
+        "remote presigned temp key should be removed after final copy"
+    );
 
     let stored_path = managed_ingress_object_path(
         &provider_state,

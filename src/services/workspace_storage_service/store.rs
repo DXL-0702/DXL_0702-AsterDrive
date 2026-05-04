@@ -7,7 +7,7 @@ use sea_orm::{ActiveModelTrait, Set};
 
 use crate::db::repository::file_repo;
 use crate::entities::file;
-use crate::errors::{AsterError, MapAsterErr, Result};
+use crate::errors::{AsterError, MapAsterErr, Result, precondition_failed_with_subcode};
 use crate::runtime::PrimaryAppState;
 use crate::services::storage_change_service;
 
@@ -274,8 +274,11 @@ pub(crate) async fn store_preuploaded_nondedup(
         let blob = persist_preuploaded_blob(&txn, &preuploaded_blob).await?;
 
         let result = if let Some((old_file, old_blob)) = overwrite_ctx {
-            let existing_id = old_file.id;
-            let mut active: file::ActiveModel = old_file.into();
+            let current_file =
+                revalidate_preuploaded_overwrite_target(&txn, scope, &old_file, skip_lock_check)
+                    .await?;
+            let existing_id = current_file.id;
+            let mut active: file::ActiveModel = current_file.into();
             active.blob_id = Set(blob.id);
             active.size = Set(blob.size);
             active.mime_type = Set(mime);
@@ -362,4 +365,43 @@ pub(crate) async fn store_preuploaded_nondedup(
     );
 
     Ok(result)
+}
+
+async fn revalidate_preuploaded_overwrite_target<C: sea_orm::ConnectionTrait>(
+    txn: &C,
+    scope: WorkspaceStorageScope,
+    old_file: &file::Model,
+    skip_lock_check: bool,
+) -> Result<file::Model> {
+    let current_file = file_repo::lock_by_id(txn, old_file.id).await?;
+    super::ensure_active_file_scope(&current_file, scope)?;
+
+    if current_file.blob_id != old_file.blob_id {
+        return Err(precondition_failed_with_subcode(
+            "file.modified_during_write",
+            "file changed while upload body was being received",
+        ));
+    }
+
+    if current_file.is_locked {
+        if !skip_lock_check {
+            return Err(AsterError::resource_locked("file is locked"));
+        }
+
+        let lock = crate::db::repository::lock_repo::find_by_entity(
+            txn,
+            crate::types::EntityType::File,
+            current_file.id,
+        )
+        .await?;
+        if let Some(lock) = lock
+            && lock.owner_id != Some(scope.actor_user_id())
+        {
+            return Err(AsterError::resource_locked(
+                "file is locked by another user",
+            ));
+        }
+    }
+
+    Ok(current_file)
 }

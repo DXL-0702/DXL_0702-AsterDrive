@@ -355,6 +355,19 @@ pub async fn find_blob_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file
         .ok_or_else(|| AsterError::record_not_found(format!("file_blob #{id}")))
 }
 
+pub async fn lock_blob_by_id<C: ConnectionTrait>(db: &C, id: i64) -> Result<file_blob::Model> {
+    match db.get_database_backend() {
+        DbBackend::Postgres | DbBackend::MySql => FileBlob::find_by_id(id)
+            .lock_exclusive()
+            .one(db)
+            .await
+            .map_err(AsterError::from)?
+            .ok_or_else(|| AsterError::record_not_found(format!("file_blob #{id}"))),
+        DbBackend::Sqlite => find_blob_by_id(db, id).await,
+        _ => find_blob_by_id(db, id).await,
+    }
+}
+
 /// 批量查询 blob，返回 id → Model 的映射
 pub async fn find_blobs_by_ids<C: ConnectionTrait>(
     db: &C,
@@ -500,6 +513,23 @@ pub async fn count_blob_refs_from_files<C: ConnectionTrait>(
         .await
         .map_err(AsterError::from)?;
     Ok(rows.into_iter().collect())
+}
+
+/// 统计单个 blob 当前被文件记录引用的次数。
+pub async fn count_blob_refs_from_files_for_blob<C: ConnectionTrait>(
+    db: &C,
+    blob_id: i64,
+) -> Result<i64> {
+    use crate::entities::file::{self, Entity as File};
+    Ok(File::find()
+        .select_only()
+        .column_as(Expr::col(file::Column::Id).count(), "ref_count")
+        .filter(file::Column::BlobId.eq(blob_id))
+        .into_tuple::<i64>()
+        .one(db)
+        .await
+        .map_err(AsterError::from)?
+        .unwrap_or(0))
 }
 
 /// 查询存储路径在给定候选集中的所有 blob 路径（用于孤儿检测）

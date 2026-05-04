@@ -2106,12 +2106,33 @@ async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
     )
     .await;
 
+    let assembling_id = new_test_upload_id();
+    create_upload_session(
+        &state,
+        user.id,
+        UploadSessionSpec::new(
+            &assembling_id,
+            aster_drive::types::UploadSessionStatus::Assembling,
+            chrono::Utc::now() - chrono::Duration::minutes(5),
+        )
+        .chunks(2, 2),
+    )
+    .await;
+
     let expired_dir = aster_drive::utils::paths::upload_temp_dir(
         &state.config.server.upload_temp_dir,
         &expired_id,
     );
     tokio::fs::create_dir_all(&expired_dir).await.unwrap();
     tokio::fs::write(format!("{expired_dir}/chunk_0"), b"temp")
+        .await
+        .unwrap();
+    let assembling_dir = aster_drive::utils::paths::upload_temp_dir(
+        &state.config.server.upload_temp_dir,
+        &assembling_id,
+    );
+    tokio::fs::create_dir_all(&assembling_dir).await.unwrap();
+    tokio::fs::write(format!("{assembling_dir}/chunk_0"), b"temp")
         .await
         .unwrap();
 
@@ -2128,9 +2149,19 @@ async fn test_upload_service_cleanup_expired_removes_local_sessions_only() {
             .is_ok()
     );
     assert!(
+        upload_session_repo::find_by_id(&state.db, &assembling_id)
+            .await
+            .is_ok()
+    );
+    assert!(
         !std::path::Path::new(&expired_dir).exists(),
         "expired temp dir should be removed"
     );
+    assert!(
+        std::path::Path::new(&assembling_dir).exists(),
+        "assembling temp dir must not be removed while completion is in progress"
+    );
+    aster_drive::utils::cleanup_temp_dir(&assembling_dir).await;
 }
 
 #[actix_web::test]
@@ -2435,11 +2466,24 @@ async fn test_presigned_upload_s3_e2e() {
         .await
         .unwrap();
     let driver = state.driver_registry.get_driver(&policy).unwrap();
+    let completed_session =
+        aster_drive::db::repository::upload_session_repo::find_by_id(&state.db, &upload_id)
+            .await
+            .unwrap();
+    let temp_key = completed_session.s3_temp_key.unwrap();
     let blob = aster_drive::db::repository::file_repo::find_blob_by_id(&state.db, file.blob_id)
         .await
         .unwrap();
+    assert_ne!(
+        blob.storage_path, temp_key,
+        "completed presigned uploads must be copied away from the still-valid PUT key"
+    );
     let got = driver.get(&blob.storage_path).await.unwrap();
     assert_eq!(got, data);
+    assert!(
+        !driver.exists(&temp_key).await.unwrap(),
+        "presigned temp key should be removed after final copy"
+    );
 
     // 5. 上传相同内容 → S3 presigned 不做 blob 去重（避免回拉 SHA256 抵消直传优势）
     //    每次上传产生独立 blob，各自 ref_count=1

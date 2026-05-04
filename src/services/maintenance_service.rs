@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use chrono::Utc;
 
 use crate::db::repository::{file_repo, upload_session_repo, version_repo};
-use crate::entities::upload_session;
+use crate::entities::{file_blob, upload_session};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 
@@ -117,31 +117,87 @@ pub async fn reconcile_blob_state(state: &PrimaryAppState) -> Result<BlobMainten
                 None => 0,
             };
 
-            if actual_refs == 0 {
-                if blob.ref_count > 0 {
-                    file_repo::decrement_blob_ref_count_by(&state.db, blob.id, blob.ref_count)
-                        .await?;
-                    stats.ref_count_fixed += 1;
-                } else if blob.ref_count < 0 {
-                    file_repo::reset_blob_ref_count_to_zero(&state.db, blob.id).await?;
-                    stats.ref_count_fixed += 1;
-                }
-                if crate::services::file_service::cleanup_unreferenced_blob(state, &blob).await {
-                    stats.orphan_blobs_deleted += 1;
-                }
+            if blob.ref_count == actual_refs && actual_refs > 0 {
                 continue;
             }
 
-            if blob.ref_count == actual_refs {
+            let Some(reconciled) = reconcile_single_blob_ref_count(state, blob.id).await? else {
                 continue;
+            };
+            if reconciled.ref_count_fixed {
+                stats.ref_count_fixed += 1;
             }
-
-            file_repo::set_blob_ref_count(&state.db, blob.id, actual_refs).await?;
-            stats.ref_count_fixed += 1;
+            if reconciled.actual_refs == 0
+                && crate::services::file_service::cleanup_unreferenced_blob(state, &reconciled.blob)
+                    .await
+            {
+                stats.orphan_blobs_deleted += 1;
+            }
         }
     }
 
     Ok(stats)
+}
+
+struct ReconciledBlob {
+    blob: file_blob::Model,
+    actual_refs: i32,
+    ref_count_fixed: bool,
+}
+
+async fn reconcile_single_blob_ref_count(
+    state: &PrimaryAppState,
+    blob_id: i64,
+) -> Result<Option<ReconciledBlob>> {
+    let txn = crate::db::transaction::begin(&state.db).await?;
+    let result = async {
+        let mut blob = match file_repo::lock_blob_by_id(&txn, blob_id).await {
+            Ok(blob) => blob,
+            Err(AsterError::RecordNotFound(_)) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let actual_refs = current_blob_ref_count(&txn, blob_id).await?;
+        let ref_count_fixed = blob.ref_count != actual_refs;
+        if ref_count_fixed {
+            file_repo::set_blob_ref_count(&txn, blob_id, actual_refs).await?;
+            blob = file_repo::find_blob_by_id(&txn, blob_id).await?;
+        }
+        Ok(Some(ReconciledBlob {
+            blob,
+            actual_refs,
+            ref_count_fixed,
+        }))
+    }
+    .await;
+
+    match result {
+        Ok(reconciled) => {
+            crate::db::transaction::commit(txn).await?;
+            Ok(reconciled)
+        }
+        Err(error) => {
+            if let Err(rollback_error) = crate::db::transaction::rollback(txn).await {
+                tracing::error!(
+                    blob_id,
+                    original_error = %error,
+                    rollback_error = %rollback_error,
+                    "failed to rollback blob reconcile transaction"
+                );
+            }
+            Err(error)
+        }
+    }
+}
+
+async fn current_blob_ref_count<C: sea_orm::ConnectionTrait>(db: &C, blob_id: i64) -> Result<i32> {
+    let file_refs = file_repo::count_blob_refs_from_files_for_blob(db, blob_id).await?;
+    let version_refs = version_repo::count_blob_refs_from_versions_for_blob(db, blob_id).await?;
+    let total_refs = file_refs
+        .checked_add(version_refs)
+        .ok_or_else(|| AsterError::internal_error("blob ref count overflow during reconcile"))?;
+    i32::try_from(total_refs).map_err(|_| {
+        AsterError::internal_error(format!("actual ref count overflow for blob {blob_id}"))
+    })
 }
 
 async fn load_actual_blob_ref_counts(

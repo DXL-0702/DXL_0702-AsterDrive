@@ -6,7 +6,10 @@ use sha2::{Digest, Sha256};
 
 use crate::db::repository::file_repo;
 use crate::entities::{file, file_blob, storage_policy};
-use crate::errors::{AsterError, MapAsterErr, Result, file_upload_error_with_subcode};
+use crate::errors::{
+    AsterError, MapAsterErr, Result, file_upload_error_with_subcode,
+    precondition_failed_with_subcode,
+};
 use crate::runtime::PrimaryAppState;
 use crate::services::storage_change_service;
 use crate::storage::driver::StorageDriver;
@@ -28,6 +31,7 @@ struct DedupTarget {
 struct OverwriteContext {
     old_file: file::Model,
     old_blob: file_blob::Model,
+    skip_lock_check: bool,
 }
 
 #[derive(Clone)]
@@ -280,7 +284,11 @@ async fn load_overwrite_context(
         tracing::warn!("failed to delete thumbnail for blob {}: {err}", old_blob.id);
     }
 
-    Ok(Some(OverwriteContext { old_file, old_blob }))
+    Ok(Some(OverwriteContext {
+        old_file,
+        old_blob,
+        skip_lock_check,
+    }))
 }
 
 async fn persist_temp_store(
@@ -406,9 +414,16 @@ async fn write_file_record_from_temp<C: ConnectionTrait>(
         storage_delta,
         new_file_mode,
     } = params;
-    let result = if let Some(OverwriteContext { old_file, old_blob }) = overwrite_ctx {
-        let existing_id = old_file.id;
-        let mut active: file::ActiveModel = old_file.into();
+    let result = if let Some(OverwriteContext {
+        old_file,
+        old_blob,
+        skip_lock_check,
+    }) = overwrite_ctx
+    {
+        let current_file =
+            revalidate_overwrite_target(txn, scope, &old_file, skip_lock_check).await?;
+        let existing_id = current_file.id;
+        let mut active: file::ActiveModel = current_file.into();
         active.blob_id = Set(blob.id);
         active.size = Set(blob.size);
         active.mime_type = Set(mime.to_string());
@@ -448,4 +463,43 @@ async fn write_file_record_from_temp<C: ConnectionTrait>(
     }
 
     Ok(result)
+}
+
+async fn revalidate_overwrite_target<C: ConnectionTrait>(
+    txn: &C,
+    scope: WorkspaceStorageScope,
+    old_file: &file::Model,
+    skip_lock_check: bool,
+) -> Result<file::Model> {
+    let current_file = file_repo::lock_by_id(txn, old_file.id).await?;
+    crate::services::workspace_storage_service::ensure_active_file_scope(&current_file, scope)?;
+
+    if current_file.blob_id != old_file.blob_id {
+        return Err(precondition_failed_with_subcode(
+            "file.modified_during_write",
+            "file changed while upload body was being received",
+        ));
+    }
+
+    if current_file.is_locked {
+        if !skip_lock_check {
+            return Err(AsterError::resource_locked("file is locked"));
+        }
+
+        let lock = crate::db::repository::lock_repo::find_by_entity(
+            txn,
+            crate::types::EntityType::File,
+            current_file.id,
+        )
+        .await?;
+        if let Some(lock) = lock
+            && lock.owner_id != Some(scope.actor_user_id())
+        {
+            return Err(AsterError::resource_locked(
+                "file is locked by another user",
+            ));
+        }
+    }
+
+    Ok(current_file)
 }

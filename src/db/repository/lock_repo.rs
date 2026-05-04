@@ -240,6 +240,13 @@ pub async fn clear_file_locked_flags_without_locks<C: ConnectionTrait>(
     Ok(result.rows_affected)
 }
 
+pub async fn clear_file_locked_flag_without_lock<C: ConnectionTrait>(
+    db: &C,
+    file_id: i64,
+) -> Result<bool> {
+    Ok(clear_file_locked_flags_without_locks(db, &[file_id]).await? == 1)
+}
+
 pub async fn clear_folder_locked_flags_without_locks<C: ConnectionTrait>(
     db: &C,
     folder_ids: &[i64],
@@ -258,6 +265,13 @@ pub async fn clear_folder_locked_flags_without_locks<C: ConnectionTrait>(
         .await
         .map_err(AsterError::from)?;
     Ok(result.rows_affected)
+}
+
+pub async fn clear_folder_locked_flag_without_lock<C: ConnectionTrait>(
+    db: &C,
+    folder_id: i64,
+) -> Result<bool> {
+    Ok(clear_folder_locked_flags_without_locks(db, &[folder_id]).await? == 1)
 }
 
 fn lock_exists_for_file_query() -> SelectStatement {

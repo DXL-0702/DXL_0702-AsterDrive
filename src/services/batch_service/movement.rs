@@ -1,10 +1,12 @@
 //! 批量操作服务子模块：`movement`。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use chrono::Utc;
+use sea_orm::ConnectionTrait;
 
 use crate::db::repository::{file_repo, folder_repo};
+use crate::entities::folder;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
@@ -184,6 +186,7 @@ pub(crate) async fn batch_move_in_scope(
             .collect();
 
         let txn = crate::db::transaction::begin(&state.db).await?;
+        revalidate_batch_folder_move(&txn, scope, &folder_ids_to_move, target_folder_id).await?;
         file_repo::move_many_to_folder(&txn, &file_ids_to_move, target_folder_id, now).await?;
         folder_repo::move_many_to_parent(&txn, &folder_ids_to_move, target_folder_id, now).await?;
         crate::db::transaction::commit(txn).await?;
@@ -215,6 +218,66 @@ pub(crate) async fn batch_move_in_scope(
     }
 
     Ok(result)
+}
+
+async fn revalidate_batch_folder_move<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    folder_ids_to_move: &[i64],
+    target_folder_id: Option<i64>,
+) -> Result<()> {
+    let initial_target_chain = load_folder_chain_in_scope(db, scope, target_folder_id).await?;
+    let mut lock_ids: Vec<i64> = folder_ids_to_move.to_vec();
+    lock_ids.extend(initial_target_chain.iter().map(|folder| folder.id));
+    lock_folder_ids_in_order(db, &lock_ids).await?;
+
+    let target_chain = load_folder_chain_in_scope(db, scope, target_folder_id).await?;
+    for &folder_id in folder_ids_to_move {
+        let folder = folder_repo::lock_by_id(db, folder_id).await?;
+        workspace_storage_service::ensure_active_folder_scope(&folder, scope)?;
+        if folder.is_locked {
+            return Err(AsterError::resource_locked("folder is locked"));
+        }
+        if target_chain.iter().any(|ancestor| ancestor.id == folder_id) {
+            return Err(AsterError::validation_error(
+                "cannot move folder into its own subfolder",
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+async fn load_folder_chain_in_scope<C: ConnectionTrait>(
+    db: &C,
+    scope: WorkspaceStorageScope,
+    start_id: Option<i64>,
+) -> Result<Vec<folder::Model>> {
+    let mut chain = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut cursor = start_id;
+    while let Some(folder_id) = cursor {
+        if !seen.insert(folder_id) {
+            return Err(AsterError::validation_error(
+                "folder hierarchy contains a cycle",
+            ));
+        }
+        let folder = folder_repo::find_by_id(db, folder_id).await?;
+        workspace_storage_service::ensure_active_folder_scope(&folder, scope)?;
+        cursor = folder.parent_id;
+        chain.push(folder);
+    }
+    Ok(chain)
+}
+
+async fn lock_folder_ids_in_order<C: ConnectionTrait>(db: &C, ids: &[i64]) -> Result<()> {
+    let mut ids: Vec<i64> = ids.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+    for id in ids {
+        folder_repo::lock_by_id(db, id).await?;
+    }
+    Ok(())
 }
 
 /// 批量移动（target_folder_id = None 表示移到根目录）

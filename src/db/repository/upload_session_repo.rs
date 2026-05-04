@@ -110,12 +110,43 @@ pub async fn try_transition_status<C: ConnectionTrait>(
     Ok(result.rows_affected > 0)
 }
 
+/// 原子状态转换：只有状态匹配且 session 尚未过期时才更新。
+pub async fn try_transition_status_before_expiry<C: ConnectionTrait>(
+    db: &C,
+    id: &str,
+    expected: UploadSessionStatus,
+    new_status: UploadSessionStatus,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<bool> {
+    use sea_orm::ActiveEnum;
+    let result = UploadSession::update_many()
+        .col_expr(
+            upload_session::Column::Status,
+            sea_orm::sea_query::Expr::value(new_status.to_value()),
+        )
+        .col_expr(
+            upload_session::Column::UpdatedAt,
+            sea_orm::sea_query::Expr::value(now),
+        )
+        .filter(upload_session::Column::Id.eq(id))
+        .filter(upload_session::Column::Status.eq(expected))
+        .filter(upload_session::Column::ExpiresAt.gt(now))
+        .exec(db)
+        .await
+        .map_err(AsterError::from)?;
+    Ok(result.rows_affected > 0)
+}
+
 /// 查找所有过期且未完成的 session
 pub async fn find_expired<C: ConnectionTrait>(db: &C) -> Result<Vec<upload_session::Model>> {
     let now = chrono::Utc::now();
     UploadSession::find()
         .filter(upload_session::Column::ExpiresAt.lt(now))
-        .filter(upload_session::Column::Status.ne("completed"))
+        .filter(upload_session::Column::Status.is_in([
+            UploadSessionStatus::Uploading,
+            UploadSessionStatus::Presigned,
+            UploadSessionStatus::Failed,
+        ]))
         .all(db)
         .await
         .map_err(AsterError::from)

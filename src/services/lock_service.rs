@@ -309,11 +309,13 @@ async fn clear_entity_locked_if_unlocked(
     entity_type: EntityType,
     entity_id: i64,
 ) -> Result<()> {
-    if lock_repo::find_by_entity(db, entity_type, entity_id)
-        .await?
-        .is_none()
-    {
-        set_entity_locked(db, entity_type, entity_id, false).await?;
+    match entity_type {
+        EntityType::File => {
+            lock_repo::clear_file_locked_flag_without_lock(db, entity_id).await?;
+        }
+        EntityType::Folder => {
+            lock_repo::clear_folder_locked_flag_without_lock(db, entity_id).await?;
+        }
     }
     Ok(())
 }

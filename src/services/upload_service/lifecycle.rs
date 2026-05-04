@@ -229,6 +229,13 @@ pub async fn cleanup_expired(state: &PrimaryAppState) -> Result<u32> {
     let expired = upload_session_repo::find_expired(&state.db).await?;
     let mut cleaned = 0usize;
     for session in expired {
+        if session.status == UploadSessionStatus::Assembling {
+            tracing::debug!(
+                session_id = %session.id,
+                "skipping expired upload session because assembly is in progress"
+            );
+            continue;
+        }
         let cleanup_outcome = cleanup_remote_upload_state(state, &session).await;
         cleanup_upload_temp_dir(state, &session.id).await;
         if !cleanup_outcome.is_complete() {

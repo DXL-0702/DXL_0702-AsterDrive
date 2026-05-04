@@ -104,14 +104,29 @@ pub(super) async fn transition_upload_session_to_assembling<C: ConnectionTrait>(
     actual_status: UploadSessionStatus,
     expected_status: UploadSessionStatus,
 ) -> Result<()> {
-    let transitioned = upload_session_repo::try_transition_status(
+    let now = Utc::now();
+    let transitioned = upload_session_repo::try_transition_status_before_expiry(
         db,
         upload_id,
         expected_status,
         UploadSessionStatus::Assembling,
+        now,
     )
     .await?;
     if !transitioned {
+        if let Ok(session) = upload_session_repo::find_by_id(db, upload_id).await {
+            if session.status == expected_status && session.expires_at <= now {
+                return Err(AsterError::upload_session_expired("session expired"));
+            }
+            return Err(upload_assembly_error_with_subcode(
+                "upload.status_conflict",
+                format!(
+                    "session status is '{:?}', expected '{}'",
+                    session.status,
+                    upload_session_status_label(expected_status)
+                ),
+            ));
+        }
         return Err(upload_assembly_error_with_subcode(
             "upload.status_conflict",
             format!(

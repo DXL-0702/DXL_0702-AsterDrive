@@ -82,6 +82,10 @@ fn determine_completion_plan(
         ));
     }
 
+    if session.expires_at <= Utc::now() {
+        return Err(AsterError::upload_session_expired("session expired"));
+    }
+
     if session.status == UploadSessionStatus::Failed {
         return Err(upload_assembly_error_with_subcode(
             "upload.previous_failure",
@@ -264,6 +268,35 @@ async fn finalize_s3_upload_session(
     .await
 }
 
+fn presigned_final_storage_path() -> String {
+    format!("files/{}", uuid::Uuid::new_v4())
+}
+
+async fn copy_presigned_object_to_final_key(
+    driver: &dyn StorageDriver,
+    temp_key: &str,
+    declared_size: i64,
+) -> Result<(String, i64)> {
+    ensure_uploaded_s3_object_size(
+        driver,
+        temp_key,
+        declared_size,
+        "uploaded object not found - upload may not have completed",
+    )
+    .await?;
+
+    let requested_final_key = presigned_final_storage_path();
+    let final_key = driver.copy_object(temp_key, &requested_final_key).await?;
+    let final_size = ensure_uploaded_s3_object_size(
+        driver,
+        &final_key,
+        declared_size,
+        "final uploaded object not found after presigned copy",
+    )
+    .await?;
+    Ok((final_key, final_size))
+}
+
 async fn complete_s3_multipart_upload_session(
     state: &PrimaryAppState,
     session: upload_session::Model,
@@ -372,8 +405,7 @@ async fn complete_presigned_upload(
 
     let policy = state.policy_snapshot.get_policy_or_err(session.policy_id)?;
     let driver = state.driver_registry.get_driver(&policy)?;
-
-    let actual_size = ensure_uploaded_s3_object_size(
+    ensure_uploaded_s3_object_size(
         driver.as_ref(),
         &temp_key,
         session.total_size,
@@ -394,7 +426,41 @@ async fn complete_presigned_upload(
         UploadSessionStatus::Presigned,
         "completed presigned upload session",
         async {
-            finalize_s3_upload_session(state, &session, policy.id, &temp_key, actual_size).await
+            let (final_key, actual_size) =
+                copy_presigned_object_to_final_key(driver.as_ref(), &temp_key, session.total_size)
+                    .await?;
+            let file = match finalize_s3_upload_session(
+                state,
+                &session,
+                policy.id,
+                &final_key,
+                actual_size,
+            )
+            .await
+            {
+                Ok(file) => file,
+                Err(error) => {
+                    if let Err(cleanup_error) = driver.delete(&final_key).await {
+                        tracing::warn!(
+                            upload_id = %session.id,
+                            final_key = %final_key,
+                            "failed to delete copied presigned object after DB finalize error: {cleanup_error}"
+                        );
+                    }
+                    return Err(error);
+                }
+            };
+            if final_key != temp_key
+                && let Err(error) = driver.delete(&temp_key).await
+            {
+                tracing::warn!(
+                    upload_id = %session.id,
+                    temp_key = %temp_key,
+                    final_key = %final_key,
+                    "failed to delete presigned temp object after final copy: {error}"
+                );
+            }
+            Ok(file)
         },
     )
     .await
@@ -497,6 +563,17 @@ mod tests {
 
         assert_eq!(err.code(), "E057");
         assert_eq!(err.api_error_subcode(), Some("upload.previous_failure"));
+    }
+
+    #[test]
+    fn determine_completion_plan_rejects_expired_active_session() {
+        let mut session = mock_session(UploadSessionStatus::Presigned);
+        session.expires_at = chrono::Utc::now() - chrono::Duration::seconds(1);
+
+        let err =
+            determine_completion_plan(&session, None).expect_err("expired session should fail");
+
+        assert_eq!(err.code(), "E055");
     }
 
     #[test]

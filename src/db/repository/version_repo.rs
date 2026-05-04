@@ -176,6 +176,22 @@ pub async fn count_blob_refs_from_versions<C: ConnectionTrait>(
     Ok(rows.into_iter().collect())
 }
 
+/// 统计单个 blob 当前被版本记录引用的次数。
+pub async fn count_blob_refs_from_versions_for_blob<C: ConnectionTrait>(
+    db: &C,
+    blob_id: i64,
+) -> Result<i64> {
+    Ok(FileVersion::find()
+        .select_only()
+        .column_as(Expr::col(file_version::Column::Id).count(), "ref_count")
+        .filter(file_version::Column::BlobId.eq(blob_id))
+        .into_tuple::<i64>()
+        .one(db)
+        .await
+        .map_err(AsterError::from)?
+        .unwrap_or(0))
+}
+
 /// 获取下一个版本号
 pub async fn next_version<C: ConnectionTrait>(db: &C, file_id: i64) -> Result<i32> {
     let latest = FileVersion::find()

@@ -5,6 +5,8 @@
 
 use std::collections::HashSet;
 
+use sea_orm::ConnectionTrait;
+
 use crate::db::repository::{file_repo, folder_repo};
 use crate::entities::{file, folder};
 use crate::errors::Result;
@@ -28,8 +30,8 @@ fn folder_matches_scope(folder: &folder::Model, scope: WorkspaceStorageScope) ->
     }
 }
 
-pub(crate) async fn collect_folder_forest_in_scope(
-    db: &sea_orm::DatabaseConnection,
+pub(crate) async fn collect_folder_forest_in_scope<C: ConnectionTrait>(
+    db: &C,
     scope: WorkspaceStorageScope,
     root_folder_ids: &[i64],
     include_deleted: bool,
@@ -96,8 +98,8 @@ pub(crate) async fn collect_folder_forest_in_scope(
     Ok((files, folder_ids))
 }
 
-pub(crate) async fn collect_folder_tree_in_scope(
-    db: &sea_orm::DatabaseConnection,
+pub(crate) async fn collect_folder_tree_in_scope<C: ConnectionTrait>(
+    db: &C,
     scope: WorkspaceStorageScope,
     folder_id: i64,
     include_deleted: bool,
