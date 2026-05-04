@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { cn, folderTreeRowClass, sidebarNavItemClass } from "@/lib/utils";
 
+const expectClassTokens = (className: string, expectedTokens: string[]) => {
+	expect(className.split(" ")).toEqual(expect.arrayContaining(expectedTokens));
+};
+
 describe("utils", () => {
 	it("merges class names with tailwind conflict resolution", () => {
 		expect(cn("px-2", false, undefined, "px-4", "text-sm")).toBe(
@@ -9,20 +13,36 @@ describe("utils", () => {
 	});
 
 	it("builds active and inactive sidebar nav item classes", () => {
-		expect(sidebarNavItemClass(true, "custom")).toContain("select-none");
-		expect(sidebarNavItemClass(true, "custom")).toContain(
-			"bg-accent text-accent-foreground font-medium custom",
-		);
-		expect(sidebarNavItemClass(false)).toContain("select-none");
-		expect(sidebarNavItemClass(false)).toContain(
-			"text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-		);
+		expectClassTokens(sidebarNavItemClass(true, "custom"), [
+			"select-none",
+			"bg-accent",
+			"text-accent-foreground",
+			"font-medium",
+			"shadow-xs",
+			"ring-1",
+			"ring-primary/10",
+			"dark:shadow-none",
+			"custom",
+		]);
+		expectClassTokens(sidebarNavItemClass(false), [
+			"select-none",
+			"text-muted-foreground",
+			"hover:bg-accent/45",
+			"hover:text-foreground",
+		]);
 	});
 
 	it("builds active and inactive folder tree row classes", () => {
-		expect(folderTreeRowClass(true, "custom")).toContain(
-			"bg-accent text-accent-foreground font-medium custom",
-		);
-		expect(folderTreeRowClass(false)).toContain("text-foreground");
+		expectClassTokens(folderTreeRowClass(true, "custom"), [
+			"bg-accent",
+			"text-accent-foreground",
+			"font-medium",
+			"shadow-xs",
+			"ring-1",
+			"ring-primary/10",
+			"dark:shadow-none",
+			"custom",
+		]);
+		expectClassTokens(folderTreeRowClass(false), ["text-foreground"]);
 	});
 });
