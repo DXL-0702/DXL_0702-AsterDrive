@@ -187,12 +187,14 @@ export default function AdminRemoteNodesPage() {
 		setForm(getRemoteNodeForm(node));
 		resetDialogState();
 		resetManagedIngressState();
-		if (node.base_url.trim()) {
-			void loadManagedIngressProfiles(node.id);
-		} else {
+		if (!node.base_url.trim()) {
 			setManagedIngressProfilesError(
 				t("remote_node_ingress_profiles_base_url_required"),
 			);
+		} else if (hasCompletedRemoteNodeEnrollment(node)) {
+			void loadManagedIngressProfiles(node.id);
+		} else {
+			setManagedIngressProfilesError(null);
 		}
 		setDialogOpen(true);
 	};
@@ -579,7 +581,11 @@ export default function AdminRemoteNodesPage() {
 					submitting={submitting}
 					createStep={createStep}
 					createStepTouched={createStepTouched}
-					managedIngressProfilesEnabled={editingId !== null}
+					managedIngressProfilesEnabled={
+						editingId !== null &&
+						editingNode !== null &&
+						hasCompletedRemoteNodeEnrollment(editingNode)
+					}
 					managedIngressProfiles={managedIngressProfiles}
 					managedIngressProfilesLoading={managedIngressProfilesLoading}
 					managedIngressProfilesError={managedIngressProfilesError}

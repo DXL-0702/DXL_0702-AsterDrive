@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { RemoteNodeDialog } from "@/components/admin/admin-remote-nodes-page/RemoteNodeDialog";
+import type { RemoteNodeInfo } from "@/types/api";
 
 vi.mock("react-i18next", () => ({
 	useTranslation: () => ({
@@ -165,6 +166,25 @@ const baseProps = {
 	submitting: false,
 } as const;
 
+const remoteNode = (overrides: Partial<RemoteNodeInfo> = {}): RemoteNodeInfo => ({
+	id: 7,
+	name: "Edge Alpha",
+	base_url: "https://edge.example.com",
+	is_enabled: true,
+	enrollment_status: "not_started",
+	last_error: "",
+	last_checked_at: null,
+	capabilities: {
+		protocol_version: "v1",
+		supports_list: true,
+		supports_range_read: true,
+		supports_stream_upload: true,
+	},
+	created_at: "",
+	updated_at: "",
+	...overrides,
+});
+
 describe("RemoteNodeDialog", () => {
 	it("shows the docker follower docs link in create mode", () => {
 		render(<RemoteNodeDialog {...baseProps} mode="create" />);
@@ -183,5 +203,55 @@ describe("RemoteNodeDialog", () => {
 		expect(
 			screen.queryByRole("link", { name: "remote_node_wizard_docs_link" }),
 		).not.toBeInTheDocument();
+	});
+
+	it("disables connection tests before remote node enrollment completes", () => {
+		const onRunConnectionTest = vi.fn(async () => true);
+
+		render(
+			<RemoteNodeDialog
+				{...baseProps}
+				mode="edit"
+				editingNode={remoteNode({ enrollment_status: "pending" })}
+				form={{
+					name: "Edge Alpha",
+					base_url: "https://edge.example.com",
+					is_enabled: true,
+				}}
+				onRunConnectionTest={onRunConnectionTest}
+			/>,
+		);
+
+		const button = screen.getByRole("button", { name: "test_connection" });
+		expect(button).toBeDisabled();
+
+		fireEvent.click(button);
+
+		expect(onRunConnectionTest).not.toHaveBeenCalled();
+	});
+
+	it("allows connection tests after remote node enrollment completes", () => {
+		const onRunConnectionTest = vi.fn(async () => true);
+
+		render(
+			<RemoteNodeDialog
+				{...baseProps}
+				mode="edit"
+				editingNode={remoteNode({ enrollment_status: "completed" })}
+				form={{
+					name: "Edge Alpha",
+					base_url: "https://edge.example.com",
+					is_enabled: true,
+				}}
+				onRunConnectionTest={onRunConnectionTest}
+			/>,
+		);
+
+		const button = screen.getByRole("button", { name: "test_connection" });
+		expect(button).not.toBeDisabled();
+
+		fireEvent.click(button);
+
+		expect(onRunConnectionTest).toHaveBeenCalledTimes(1);
 	});
 });

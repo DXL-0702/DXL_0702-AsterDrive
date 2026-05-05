@@ -13,10 +13,10 @@ use actix_web::dev::Service;
 use actix_web::{App, HttpServer, test, web};
 use aster_drive::api::error_code::ErrorCode;
 use aster_drive::db::repository::{
-    file_repo, managed_follower_repo, master_binding_repo, policy_repo, upload_session_part_repo,
-    upload_session_repo, user_repo,
+    file_repo, follower_enrollment_session_repo, managed_follower_repo, master_binding_repo,
+    policy_repo, upload_session_part_repo, upload_session_repo, user_repo,
 };
-use aster_drive::entities::storage_policy;
+use aster_drive::entities::{follower_enrollment_session, storage_policy};
 use aster_drive::services::{
     auth_service, file_service, folder_service, managed_follower_service,
     managed_ingress_profile_service, master_binding_service, policy_service, upload_service,
@@ -29,7 +29,7 @@ use aster_drive::types::{
     DriverType, NullablePatch, RemoteDownloadStrategy, RemoteUploadStrategy, StoragePolicyOptions,
     StoredStoragePolicyAllowedTypes, serialize_storage_policy_options,
 };
-use chrono::Utc;
+use chrono::{Duration as ChronoDuration, Utc};
 use futures::TryStreamExt;
 use futures::future::join_all;
 use sea_orm::{ActiveModelTrait, Set};
@@ -209,6 +209,7 @@ async fn wait_for_remote_probe(
     state: &aster_drive::runtime::PrimaryAppState,
     node_id: i64,
 ) -> managed_follower_service::RemoteNodeInfo {
+    mark_remote_node_enrollment_completed(state, node_id).await;
     for attempt in 0..20 {
         match managed_follower_service::test_connection(state, node_id).await {
             Ok(info) => return info,
@@ -221,6 +222,36 @@ async fn wait_for_remote_probe(
     }
 
     unreachable!("remote probe retry loop should return or panic")
+}
+
+async fn mark_remote_node_enrollment_completed(
+    state: &aster_drive::runtime::PrimaryAppState,
+    node_id: i64,
+) {
+    if follower_enrollment_session_repo::has_completed_for_managed_follower(&state.db, node_id)
+        .await
+        .expect("remote node enrollment completion check should succeed")
+    {
+        return;
+    }
+
+    let now = Utc::now();
+    follower_enrollment_session_repo::create(
+        &state.db,
+        follower_enrollment_session::ActiveModel {
+            managed_follower_id: Set(node_id),
+            token_hash: Set(format!("test-token-{node_id}-{}", uuid::Uuid::new_v4())),
+            ack_token_hash: Set(format!("test-ack-token-{node_id}-{}", uuid::Uuid::new_v4())),
+            expires_at: Set(now + ChronoDuration::minutes(30)),
+            redeemed_at: Set(Some(now)),
+            acked_at: Set(Some(now)),
+            invalidated_at: Set(None),
+            created_at: Set(now),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("remote node enrollment should be marked completed");
 }
 
 async fn create_managed_local_ingress_for_binding(
@@ -1088,6 +1119,7 @@ async fn test_remote_node_connection_failure_returns_error_and_persists_last_err
     )
     .await
     .expect("broken remote node should be created");
+    mark_remote_node_enrollment_completed(&state, node.id).await;
 
     let error = managed_follower_service::test_connection(&state, node.id)
         .await
@@ -2045,6 +2077,134 @@ async fn test_disabled_remote_nodes_skip_network_during_health_checks() {
 }
 
 #[actix_web::test]
+async fn test_pending_remote_nodes_skip_network_during_health_checks() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let (provider_server, request_count) =
+        spawn_counting_internal_storage_server(provider_state.follower_view()).await;
+
+    let remote_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "pending-health-check-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("pending remote node should be created");
+
+    let stats = managed_follower_service::run_health_tests(&consumer_state)
+        .await
+        .expect("health checks should finish");
+
+    assert_eq!(stats.checked, 0);
+    assert_eq!(stats.healthy, 0);
+    assert_eq!(stats.failed, 0);
+    assert_eq!(stats.skipped, 1);
+    assert_eq!(
+        request_count.load(Ordering::Relaxed),
+        0,
+        "pending remote nodes should not send health-check traffic",
+    );
+
+    let remote_node_model = managed_follower_repo::find_by_id(&consumer_state.db, remote_node.id)
+        .await
+        .expect("pending remote node should remain queryable");
+    assert_eq!(remote_node_model.last_checked_at, None);
+    assert_eq!(
+        remote_node_model.last_error, "",
+        "pending remote nodes should not record probe failures",
+    );
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_pending_remote_node_connection_test_requires_completed_enrollment_before_network() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let (provider_server, request_count) =
+        spawn_counting_internal_storage_server(provider_state.follower_view()).await;
+
+    let remote_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "pending-connection-test-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("pending remote node should be created");
+
+    let error = managed_follower_service::test_connection(&consumer_state, remote_node.id)
+        .await
+        .expect_err("pending remote node should reject connection tests");
+
+    assert_eq!(
+        error.message(),
+        managed_follower_service::REMOTE_NODE_ENROLLMENT_REQUIRED_MESSAGE,
+    );
+    assert_eq!(
+        error.http_status(),
+        actix_web::http::StatusCode::PRECONDITION_FAILED,
+    );
+    assert_eq!(
+        request_count.load(Ordering::Relaxed),
+        0,
+        "pending remote node connection tests should not send network traffic",
+    );
+
+    let remote_node_model = managed_follower_repo::find_by_id(&consumer_state.db, remote_node.id)
+        .await
+        .expect("pending remote node should remain queryable");
+    assert_eq!(remote_node_model.last_checked_at, None);
+    assert_eq!(remote_node_model.last_error, "");
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
+async fn test_remote_ingress_profiles_require_completed_enrollment_before_network() {
+    let provider_state = common::setup().await;
+    let consumer_state = common::setup().await;
+    let (provider_server, request_count) =
+        spawn_counting_internal_storage_server(provider_state.follower_view()).await;
+
+    let remote_node = managed_follower_service::create(
+        &consumer_state,
+        managed_follower_service::CreateRemoteNodeInput {
+            name: "pending-ingress-profile-target".to_string(),
+            base_url: provider_server.base_url.clone(),
+            is_enabled: true,
+        },
+    )
+    .await
+    .expect("pending remote node should be created");
+
+    let error = managed_ingress_profile_service::list_remote(&consumer_state, remote_node.id)
+        .await
+        .expect_err("pending remote node should reject remote ingress profile reads");
+
+    assert_eq!(
+        error.message(),
+        managed_follower_service::REMOTE_NODE_ENROLLMENT_REQUIRED_MESSAGE,
+    );
+    assert_eq!(
+        error.http_status(),
+        actix_web::http::StatusCode::PRECONDITION_FAILED,
+    );
+    assert_eq!(
+        request_count.load(Ordering::Relaxed),
+        0,
+        "pending remote ingress profile reads should not send network traffic",
+    );
+
+    provider_server.stop().await;
+}
+
+#[actix_web::test]
 async fn test_health_checks_only_touch_enabled_remote_nodes_in_mixed_sets() {
     let provider_state = common::setup().await;
     let consumer_state = common::setup().await;
@@ -2090,6 +2250,7 @@ async fn test_health_checks_only_touch_enabled_remote_nodes_in_mixed_sets() {
         &enabled_node_model.access_key,
     )
     .await;
+    mark_remote_node_enrollment_completed(&consumer_state, enabled_node.id).await;
 
     let disabled_node = managed_follower_service::create(
         &consumer_state,

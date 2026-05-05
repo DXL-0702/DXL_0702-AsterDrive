@@ -1,12 +1,13 @@
 //! 服务模块：`managed_ingress_profile_service`。
 
-use crate::db::repository::{managed_follower_repo, managed_ingress_profile_repo};
+use crate::db::repository::managed_ingress_profile_repo;
 use crate::entities::{managed_ingress_profile, master_binding, storage_policy};
 use crate::errors::{
     AsterError, MapAsterErr, Result, precondition_failed_with_subcode,
     validation_error_with_subcode,
 };
 use crate::runtime::{FollowerRuntimeState, PrimaryRuntimeState};
+use crate::services::managed_follower_service;
 use crate::storage::driver::StorageDriver;
 use crate::storage::drivers::{
     local::LocalDriver, s3::S3Driver, s3_config::normalize_s3_endpoint_and_bucket,
@@ -659,7 +660,8 @@ async fn remote_client_for_node<S: PrimaryRuntimeState>(
     state: &S,
     remote_node_id: i64,
 ) -> Result<RemoteStorageClient> {
-    let node = managed_follower_repo::find_by_id(state.db(), remote_node_id).await?;
+    let node =
+        managed_follower_service::require_completed_enrollment(state, remote_node_id).await?;
     RemoteStorageClient::new(&node.base_url, &node.access_key, &node.secret_key)
 }
 

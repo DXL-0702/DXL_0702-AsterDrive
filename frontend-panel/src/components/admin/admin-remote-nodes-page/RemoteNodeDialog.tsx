@@ -31,6 +31,7 @@ import {
 	formatLastChecked,
 	getRemoteNodeEnrollmentStatusLabel,
 	getRemoteNodeEnrollmentStatusTone,
+	hasCompletedRemoteNodeEnrollment,
 	TestConnectionButton,
 } from "./shared";
 
@@ -145,6 +146,7 @@ export function RemoteNodeDialog({
 		editingNode == null ? true : form.base_url !== editingNode.base_url;
 	const canRunConnectionTest =
 		editingNode !== null &&
+		hasCompletedRemoteNodeEnrollment(editingNode) &&
 		!hasConnectionFieldChanges &&
 		Boolean(form.base_url.trim()) &&
 		!baseUrlValidationMessage;

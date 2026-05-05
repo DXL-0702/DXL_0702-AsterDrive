@@ -3,7 +3,9 @@
 use crate::api::pagination::{OffsetPage, load_offset_page};
 use crate::db::repository::{follower_enrollment_session_repo, managed_follower_repo, policy_repo};
 use crate::entities::{follower_enrollment_session, managed_follower};
-use crate::errors::{AsterError, Result, validation_error_with_subcode};
+use crate::errors::{
+    AsterError, Result, precondition_failed_with_subcode, validation_error_with_subcode,
+};
 use crate::runtime::PrimaryRuntimeState;
 use crate::storage::error::{StorageErrorKind, storage_driver_error};
 use crate::storage::remote_protocol::{
@@ -21,6 +23,8 @@ use utoipa::ToSchema;
 
 const REMOTE_BINDING_SYNC_TIMEOUT: Duration = Duration::from_secs(5);
 const REMOTE_NODE_HEALTH_TEST_CONCURRENCY: usize = 4;
+pub const REMOTE_NODE_ENROLLMENT_REQUIRED_MESSAGE: &str =
+    "remote node enrollment must be completed before accessing the remote follower";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
@@ -196,13 +200,16 @@ pub async fn update<S: PrimaryRuntimeState>(
         .await
         .map_err(map_remote_node_db_err)?;
     refresh_registry(state).await?;
-    if let Err(error) =
-        sync_remote_binding_config_with_timeout(&updated, REMOTE_BINDING_SYNC_TIMEOUT).await
+    if enrollment_status_for_node(state, updated.id).await? == RemoteNodeEnrollmentStatus::Completed
     {
-        tracing::warn!(
-            remote_node_id = updated.id,
-            "failed to sync remote binding config to follower: {error}"
-        );
+        if let Err(error) =
+            sync_remote_binding_config_with_timeout(&updated, REMOTE_BINDING_SYNC_TIMEOUT).await
+        {
+            tracing::warn!(
+                remote_node_id = updated.id,
+                "failed to sync remote binding config to follower: {error}"
+            );
+        }
     }
     remote_node_info(state, updated).await
 }
@@ -220,12 +227,26 @@ pub async fn delete<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<()> {
 }
 
 pub async fn test_connection<S: PrimaryRuntimeState>(state: &S, id: i64) -> Result<RemoteNodeInfo> {
-    let node = managed_follower_repo::find_by_id(state.db(), id).await?;
+    let node = require_completed_enrollment(state, id).await?;
     let probed = probe_and_persist_node(state, &node).await?;
     if let Some(error) = probed.probe_error {
         return Err(error);
     }
     remote_node_info(state, probed.model).await
+}
+
+pub async fn require_completed_enrollment<S: PrimaryRuntimeState>(
+    state: &S,
+    remote_node_id: i64,
+) -> Result<managed_follower::Model> {
+    let node = managed_follower_repo::find_by_id(state.db(), remote_node_id).await?;
+    if enrollment_status_for_node(state, node.id).await? != RemoteNodeEnrollmentStatus::Completed {
+        return Err(precondition_failed_with_subcode(
+            "remote_node.enrollment_required",
+            REMOTE_NODE_ENROLLMENT_REQUIRED_MESSAGE,
+        ));
+    }
+    Ok(node)
 }
 
 pub async fn test_connection_params(
@@ -326,11 +347,15 @@ pub async fn run_health_tests<S: PrimaryRuntimeState>(
     state: &S,
 ) -> Result<RemoteNodeHealthTestStats> {
     let nodes = managed_follower_repo::find_all(state.db()).await?;
-    let outcomes = stream::iter(
-        nodes
-            .into_iter()
-            .map(|node| async move { run_health_test_for_node(state, node).await }),
-    )
+    let node_ids = nodes.iter().map(|node| node.id).collect::<Vec<_>>();
+    let enrollment_statuses = enrollment_statuses_for_nodes(state, &node_ids).await?;
+    let outcomes = stream::iter(nodes.into_iter().map(|node| {
+        let enrollment_status = enrollment_statuses
+            .get(&node.id)
+            .copied()
+            .unwrap_or(RemoteNodeEnrollmentStatus::NotStarted);
+        async move { run_health_test_for_node(state, node, enrollment_status).await }
+    }))
     .buffer_unordered(REMOTE_NODE_HEALTH_TEST_CONCURRENCY)
     .collect::<Vec<_>>()
     .await;
@@ -396,12 +421,17 @@ async fn probe_and_persist_node<S: PrimaryRuntimeState>(
 async fn run_health_test_for_node<S: PrimaryRuntimeState>(
     state: &S,
     node: managed_follower::Model,
+    enrollment_status: RemoteNodeEnrollmentStatus,
 ) -> Result<RemoteNodeHealthTestOutcome> {
     if node.base_url.trim().is_empty() {
         return Ok(RemoteNodeHealthTestOutcome::Skipped);
     }
 
     if !node.is_enabled {
+        return Ok(RemoteNodeHealthTestOutcome::Skipped);
+    }
+
+    if enrollment_status != RemoteNodeEnrollmentStatus::Completed {
         return Ok(RemoteNodeHealthTestOutcome::Skipped);
     }
 
