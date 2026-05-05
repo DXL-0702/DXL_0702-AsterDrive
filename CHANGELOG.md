@@ -5,6 +5,91 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.1.0-beta.2] - 2026-05-05
+
+### Release Highlights
+
+- **空文件上传** — 支持上传零字节文件，自动走 direct 模式，跳过实际存储操作
+- **字节级上传进度** — 上传进度改为按文件大小加权计算，chunked 和 presigned 分块上传支持逐 chunk 实时回调
+- **IME 输入法兼容** — 全面修复中文/日文等输入法组字过程中误触快捷键的问题，统一 IME 检测工具模块
+- **永久删除级联清理分享** — 永久删除文件/文件夹时自动清理关联分享记录，消除孤儿分享
+- **Panic 崩溃报告优化** — 用户看到简短友好提示，诊断详情写入 crash.log，不再泄露源码信息到 stderr
+- **管理端分享分页** — 管理后台分享列表改为偏移分页，支持 URL 参数驱动
+- **剪贴板兼容性** — 统一剪贴板复制工具，自动降级到 legacy API，提升浏览器兼容性
+
+### Added
+
+- **空文件上传**
+  - 放宽 `total_size` 验证为 `min = 0`，空文件自动走 direct 模式
+  - 新增负数大小校验，`total_size < 0` 返回 400 错误
+  - 前端 multipart 上传区分"缺少 file 字段"和"空文件"两种情况
+  - 新增集成测试：个人空间和团队空间空文件上传完整流程
+- **字节级上传进度**
+  - 新增 `totalBytes` 字段和 `calculateByteProgress` 加权进度计算
+  - chunked 和 presigned 分块上传支持逐 chunk 实时进度回调
+  - 任务恢复时正确计算已完成分片累计字节数
+  - S3 presigned 上传进度上限从 90% 统一为 95%
+- **IME 输入法兼容**
+  - 新增 `lib/keyboard.ts` 工具模块：IME 组合状态检测、Safari 32ms 宽限期
+  - 所有键盘快捷键和带输入框的组件新增 IME 检测
+  - 涉及：全局快捷键、全选、搜索、代码编辑器、PDF 页码输入、新建文件夹、管理后台 Ctrl+S
+  - 新增单元测试覆盖 IME 信号检测和浏览器兼容边界
+- **剪贴板复制工具**
+  - 新增 `lib/clipboard.ts`：优先 `navigator.clipboard.writeText`，自动降级到 `execCommand("copy")`
+  - 分享链接、我的分享、WebDAV 凭据、远程节点等复制操作统一迁移
+  - 新增单元测试覆盖四种场景
+- **管理端分享分页**
+  - `AdminSharesPage` 改为基于 URL 参数的偏移分页（offset + pageSize）
+  - 页大小选项 10/20/50，删除最后一项时自动回退上一页
+  - 新增测试覆盖分页加载、删除翻页回退、URL 参数联动
+- **容器资源监控**
+  - 新增 `scripts/monitor.sh`：容器内资源监控，支持 cgroup v1/v2，控制台表格和 CSV 输出
+  - 新增 `scripts/test.sh`：运行时内存监控辅助脚本
+
+### Changed
+
+- **版本号**
+  - Rust crate 版本升级到 `0.1.0-beta.2`
+- **Panic 崩溃报告**
+  - 用户 stderr 只显示简短友好提示，不再包含源码位置和堆栈
+  - 完整诊断信息（版本、平台、backtrace）写入 crash.log
+  - crash.log 打开失败时优雅降级而非再次 panic
+- **i18n 文案**
+  - 分享模块："分享链接已创建" → "链接已创建"、"创建分享链接" → "创建链接"
+  - 任务模块："打包下载" → "下载为 ZIP"
+  - WebDAV 和 WOPI 相关术语统一
+  - 移除 `registration_closed_desc` key
+- **管理员强制删除用户**
+  - 分享删除提前到文件/文件夹删除之前，避免遗留孤儿记录
+- **CI Rust 工具链**
+  - 新增 `rust-toolchain.toml` 固定 stable channel
+  - Clippy 扩展为 `--workspace --all-targets --all-features`
+
+### Fixed
+
+- **分享级联清理**
+  - 修复永久删除文件/文件夹时关联分享记录未被清理的问题
+  - 新增 `share_repo::delete_by_file_ids` / `delete_by_folder_ids` 批量删除方法
+  - 覆盖垃圾桶清除、WebDAV 递归删除、管理员强制删除用户三条路径
+- **IME 误触快捷键**
+  - 修复中文/日文等输入法组字过程中按确认键同时触发快捷键操作的问题
+- **剪贴板复制失败**
+  - 修复 `navigator.clipboard.writeText` 在非 HTTPS 或页面未聚焦时静默失败的问题
+
+### Notes
+
+- 本版本为 `0.1.0-beta` 系列第二个预发布版本，无 API 层面的 breaking changes
+- 不涉及数据库 schema 变更
+- i18n 新增 `share_direct_link_action` key，移除 `registration_closed_desc` key；如有自定义翻译覆盖需同步更新
+- crash.log 路径基于 `current_dir`，部署时注意运行目录
+- S3 presigned 上传进度上限从 90% 调整为 95%，仅影响前端进度显示
+
+---
+
+**统计数据**：
+- 65 files changed, 1,812 insertions(+), 177 deletions(-)
+- 7 commits
+
 ## [v0.1.0-beta.1] - 2026-05-04
 
 ### Release Highlights
