@@ -55,6 +55,8 @@ struct PreviewTokenPayload {
     subject: PreviewSubject,
     exp: i64,
     max_uses: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    nonce: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -199,6 +201,7 @@ fn build_payload(subject: PreviewSubject) -> PreviewTokenPayload {
         subject,
         exp: (Utc::now() + Duration::seconds(PREVIEW_LINK_TTL_SECS)).timestamp(),
         max_uses: PREVIEW_LINK_MAX_USES,
+        nonce: Some(crate::utils::id::new_short_token()),
     }
 }
 
@@ -510,9 +513,13 @@ fn preview_cache_key(token: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{RequestOrigin, decode_payload, preview_path, split_token};
+    use super::{
+        PreviewSubject, RequestOrigin, build_payload, decode_payload, encode_payload, preview_path,
+        split_token,
+    };
     use crate::config::RuntimeConfig;
     use crate::entities::system_config;
+    use base64::Engine;
     use chrono::Utc;
 
     fn config_model(key: &str, value: &str) -> system_config::Model {
@@ -599,5 +606,37 @@ mod tests {
     #[test]
     fn decode_payload_rejects_garbage() {
         assert!(decode_payload("%%%").is_err());
+    }
+
+    #[test]
+    fn preview_payload_nonce_makes_each_token_unique() {
+        let payload_a = build_payload(PreviewSubject::File { file_id: 1 });
+        let payload_b = build_payload(PreviewSubject::File { file_id: 1 });
+
+        let encoded_a = encode_payload(&payload_a).expect("preview payload should encode");
+        let encoded_b = encode_payload(&payload_b).expect("preview payload should encode");
+
+        assert_ne!(encoded_a, encoded_b);
+        assert!(payload_a.nonce.is_some());
+        assert!(payload_b.nonce.is_some());
+    }
+
+    #[test]
+    fn decode_payload_accepts_legacy_payload_without_nonce() {
+        let legacy_payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+            serde_json::json!({
+                "subject": {
+                    "kind": "file",
+                    "file_id": 1
+                },
+                "exp": Utc::now().timestamp() + 60,
+                "max_uses": 5
+            })
+            .to_string(),
+        );
+
+        let decoded = decode_payload(&legacy_payload).expect("legacy payload should decode");
+
+        assert!(decoded.nonce.is_none());
     }
 }

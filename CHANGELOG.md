@@ -5,6 +5,112 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.1.0-beta.3] - 2026-05-06
+
+### Release Highlights
+
+- **系统健康监控** — 新增数据库、缓存与远程节点综合健康检查，管理后台首页展示 healthy / degraded / unhealthy 状态与问题组件
+- **Redis 缓存降级与熔断** — Redis 操作增加超时保护、短时熔断和本地 reservation fallback，避免缓存故障拖慢主链路
+- **审计覆盖扩展** — 大幅扩展用户、文件、文件夹、分享、批量操作、WebDAV、WOPI、后台任务和远程节点管理的审计日志
+- **远程节点注册保护** — 远程节点 enrollment 完成前禁止连接测试、健康检测和网络同步，创建入口新增主站点 URL 前置校验
+- **管理后台总览升级** — 首页新增系统健康横幅、最近后台任务、近期审计事件和趋势图，支持查看系统运行任务历史
+- **回收站过期时间语义化** — 回收站列表 API / 前端展示从 `deleted_at` 改为 `expires_at`，直接显示清理时间
+- **分享页视觉重构** — 公开分享页重做布局、加载骨架、所有者信息、密码页和文件列表视觉层级，移动端表现更稳
+
+### Added
+
+- **系统健康检查**
+  - 新增 `health_service`，周期性检查数据库 ping、缓存后端健康状态和远程节点探测结果
+  - 新增 `system-health-check` 系统运行任务，每 5 分钟记录一次健康检查结果
+  - 后台任务结果支持携带 `system_health` 元数据，包含整体状态和组件明细
+  - `/health/ready` 在主节点和 follower 节点都会先验证数据库可用性，再验证存储 / follower readiness
+  - 远程节点健康检测并发限制为 4，并跳过未启用、未配置 URL 或 enrollment 未完成的节点
+- **管理后台系统健康面板**
+  - `GET /api/v1/admin/overview` 响应新增 `system_health` 和 `recent_background_tasks`
+  - 后台首页展示系统健康横幅，异常时列出 degraded / unhealthy 组件并可跳转系统运行任务历史
+  - 后台首页新增最近后台任务列表，展示状态、耗时、错误信息和完成时间
+  - 趋势图接入 `recharts`，展示新用户、上传和分享创建趋势
+- **Redis 缓存熔断**
+  - Redis backend 增加 250ms 操作超时、500ms 连接超时和有限重连策略
+  - Redis 操作失败或超时后打开 5 秒 fallback circuit，期间跳过 Redis 请求
+  - `health_check()` 会报告 Redis fallback 状态，系统健康面板可直接暴露缓存降级
+  - `set_bytes_if_absent` 使用本地 reservation fallback，Redis 不可用时仍能避免重复生成任务
+- **审计日志覆盖**
+  - 新增大量 `AuditAction` 枚举值，覆盖管理端用户/策略/配置/锁/任务/远程节点操作
+  - 文件、文件夹、版本、属性、批量复制/移动/删除、归档下载、回收站恢复/永久删除等路径写入审计
+  - WebDAV 文件写入、移动、删除、锁定/解锁和 WOPI 打开/编辑/重命名/UserInfo 更新写入审计
+  - 用户登录、登出、注册、密码重置、邮箱变更、偏好设置、头像和 session 撤销写入审计
+  - 前端新增 `lib/audit.ts`，管理端审计页面可本地格式化 action 和 entity type
+- **远程节点 enrollment 状态**
+  - 远程节点列表和详情响应新增 `enrollment_status`
+  - enrollment 状态区分 `not_started`、`pending`、`redeemed`、`completed`、`expired`
+  - 连接测试、健康检测和绑定同步只允许在 `completed` 后执行
+  - 未完成 enrollment 时返回 `remote_node.enrollment_required` 子错误码
+- **上传面板空状态**
+  - 上传面板在有上传活动但任务列表为空时继续展示
+  - 新增空任务文案，避免恢复 / 清空完成任务后的面板状态突兀
+
+### Changed
+
+- **版本号**
+  - Rust crate 版本升级到 `0.1.0-beta.3`
+- **运行时健康配置**
+  - 原远程节点健康检测配置说明调整为系统健康检测，覆盖数据库、缓存和远程节点
+  - `system_health_check_interval_secs` 语义从单一远程节点探测扩展为综合系统健康检查间隔
+- **后台任务运行记录**
+  - 周期性任务统一记录非 quiet 的 SystemRuntime 事件，包括清理任务、邮件派发、blob reconcile 和系统健康检查
+  - SystemRuntime 任务带耗时、摘要、错误和可选健康检查详情，管理端可直接展示运行历史
+- **回收站 API**
+  - 回收站文件 / 文件夹列表项字段从 `deleted_at` 改为 `expires_at`
+  - 文件 cursor 查询参数改为 `file_after_expires_at`，后端按保留期换算回内部 deleted cursor
+  - 前端回收站表格、网格、分页 cursor 和文案统一展示"过期/清理时间"
+- **分享页 UI**
+  - 分享页面拆分所有者信息、元信息行、居中状态面板、加载骨架和文件夹内容区域
+  - 文件夹分享支持更清晰的 breadcrumb、视图切换、下载操作和空状态
+  - 密码输入、错误页、过期页和顶部栏视觉层级重新整理
+  - 公开分享页的最大宽度、卡片边框、阴影和暗色模式表现统一
+- **远程节点管理**
+  - 创建远程节点前要求主站点 URL 已配置，否则前端直接提示并阻止创建流程
+  - 远程节点更新后仅在 enrollment completed 时同步 follower 绑定配置
+  - 远程节点健康检测会同步绑定配置并持久化 capability / last_error / last_checked_at
+- **WOPI 服务接口整理**
+  - 将 WOPI 写入、另存、重命名等服务入口参数收口为请求结构体，减少长参数列表并通过 clippy 检查
+- **依赖升级**
+  - `utoipa` 升级到 `5.5.0`
+  - `react-router-dom` 升级到 `7.15.0`
+  - `vite-plugin-pwa` 升级到 `1.3.0`
+  - 若干 Rust transitive dependency 同步更新
+
+### Fixed
+
+- **Redis 故障拖慢请求**
+  - 修复 Redis backend 操作无短超时 / 熔断时可能持续阻塞缓存调用的问题
+  - 修复 Redis 不可用时缓存健康状态无法在管理后台明确体现的问题
+- **远程节点未注册完成误触网络**
+  - 修复远程节点 enrollment 未完成时仍可能执行连接测试、健康检测或绑定同步的问题
+  - 修复创建远程节点流程在主站点 URL 缺失时继续进入 enrollment 的问题
+- **审计缺口**
+  - 修复大量关键写操作无审计留痕的问题，尤其是 WebDAV、WOPI、批量操作和管理员维护操作
+  - 审计日志写入统一截断 IP / User-Agent，避免异常请求头污染审计记录
+- **回收站展示语义**
+  - 修复回收站界面把删除时间当成清理时间展示的问题
+  - 修复回收站 cursor 以删除时间暴露给前端导致语义不清的问题
+
+### Notes
+
+- 本版本为 `0.1.0-beta` 系列第三个预发布版本，无数据库 schema 迁移
+- 回收站列表响应字段 `deleted_at` 已改为 `expires_at`，依赖该接口的自定义前端或客户端需要同步字段名
+- 回收站文件 cursor 查询参数从 `file_after_deleted_at` 改为 `file_after_expires_at`
+- `system_health_check_interval_secs` 不再只表示远程节点健康检测间隔，而是系统健康检查间隔
+- 健康检查会访问默认存储策略和已完成 enrollment 的远程节点；远程存储异常会在系统运行任务中记录为 unhealthy
+- Redis fallback 熔断窗口为 5 秒，期间缓存请求会走本地降级逻辑并在健康检查中报告异常
+
+---
+
+**统计数据**：
+- 118 files changed, 5,597 insertions(+), 752 deletions(-)
+- 11 commits
+
 ## [v0.1.0-beta.2] - 2026-05-05
 
 ### Release Highlights
@@ -2519,7 +2625,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 66 commits
 - Rust Edition 2024, MSRV 1.91.1
 
-[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-beta.1...HEAD
+[Unreleased]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-beta.3...HEAD
+[v0.1.0-beta.3]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-beta.2...v0.1.0-beta.3
+[v0.1.0-beta.2]: https://github.com/AptS-1547/AsterDrive/compare/v0.1.0-beta.1...v0.1.0-beta.2
 [v0.1.0-beta.1]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.26...v0.1.0-beta.1
 [v0.0.1-alpha.26]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.25...v0.0.1-alpha.26
 [v0.0.1-alpha.25]: https://github.com/AptS-1547/AsterDrive/compare/v0.0.1-alpha.24...v0.0.1-alpha.25
