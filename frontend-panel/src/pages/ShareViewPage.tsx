@@ -1,3 +1,4 @@
+import type { FormEvent, ReactNode } from "react";
 import {
 	Fragment,
 	lazy,
@@ -10,8 +11,6 @@ import {
 import { useTranslation } from "react-i18next";
 import { useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { SkeletonCard } from "@/components/common/SkeletonCard";
-import { ToolbarBar } from "@/components/common/ToolbarBar";
 import { UserAvatarImage } from "@/components/common/UserAvatarImage";
 import { ViewToggle } from "@/components/common/ViewToggle";
 import { FileThumbnail } from "@/components/files/FileThumbnail";
@@ -26,20 +25,14 @@ import {
 	BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
 import { Button } from "@/components/ui/button";
-import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "@/components/ui/card";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { handleApiError } from "@/hooks/useApiError";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import { FOLDER_LIMIT, PAGE_SECTION_PADDING_CLASS } from "@/lib/constants";
-import { formatDateShort } from "@/lib/format";
+import { formatBytes, formatDateShort } from "@/lib/format";
 import { ApiError } from "@/services/http";
 import { shareService } from "@/services/shareService";
 import { usePreviewAppStore } from "@/stores/previewAppStore";
@@ -61,6 +54,39 @@ const sharePageParams = {
 	folder_limit: FOLDER_LIMIT,
 	file_limit: SHARE_PAGE_SIZE,
 };
+const SHARE_GRID_SKELETON_ITEMS = [
+	{ key: "alpha", width: "72%" },
+	{ key: "bravo", width: "54%" },
+	{ key: "charlie", width: "64%" },
+	{ key: "delta", width: "48%" },
+	{ key: "echo", width: "68%" },
+	{ key: "foxtrot", width: "52%" },
+	{ key: "golf", width: "58%" },
+	{ key: "hotel", width: "46%" },
+	{ key: "india", width: "62%" },
+	{ key: "juliet", width: "50%" },
+	{ key: "kilo", width: "66%" },
+	{ key: "lima", width: "56%" },
+];
+const SHARE_TABLE_SKELETON_WIDTHS = [
+	"68%",
+	"52%",
+	"60%",
+	"48%",
+	"64%",
+	"56%",
+	"50%",
+	"62%",
+];
+
+function SharePageShell({ children }: { children: ReactNode }) {
+	return (
+		<div className="flex h-screen flex-col bg-background text-foreground">
+			<ShareTopBar />
+			{children}
+		</div>
+	);
+}
 
 function ShareOwnerBanner({
 	owner,
@@ -70,14 +96,188 @@ function ShareOwnerBanner({
 	text: string;
 }) {
 	return (
-		<div className="flex max-w-full items-center gap-3 rounded-xl border border-border/70 bg-muted/20 px-3 py-3 text-sm text-muted-foreground">
+		<div className="flex max-w-full items-center gap-3 rounded-lg border border-border/70 bg-card/70 px-3 py-3 shadow-xs dark:bg-card/45 dark:shadow-none">
 			<UserAvatarImage
 				avatar={owner.avatar}
 				name={owner.name}
 				size="sm"
-				className="rounded-xl"
+				className="rounded-lg"
 			/>
-			<span className="min-w-0 truncate">{text}</span>
+			<div className="min-w-0">
+				<div className="truncate text-sm font-medium text-foreground">
+					{text}
+				</div>
+			</div>
+		</div>
+	);
+}
+
+function getDownloadSummary(
+	info: SharePublicInfo,
+	t: (key: string, options?: Record<string, unknown>) => string,
+) {
+	const downloadCount = info.download_count ?? 0;
+	const maxDownloads = info.max_downloads ?? 0;
+	return maxDownloads > 0
+		? t("share:n_of_m_downloads", {
+				count: downloadCount,
+				max: maxDownloads,
+			})
+		: t("share:n_downloads", { count: downloadCount });
+}
+
+function getExpirySummary(
+	info: SharePublicInfo,
+	t: (key: string, options?: Record<string, unknown>) => string,
+) {
+	return info.expires_at
+		? t("share:expires_date", { date: formatDateShort(info.expires_at) })
+		: t("share:never_expires");
+}
+
+function getAccessSummary(
+	info: SharePublicInfo,
+	t: (key: string, options?: Record<string, unknown>) => string,
+) {
+	return info.has_password
+		? t("share:password_required")
+		: t("share:public_access");
+}
+
+function ShareMetaLine({
+	items,
+	className = "",
+}: {
+	items: Array<string | null | undefined | false>;
+	className?: string;
+}) {
+	const visibleItems = items.filter(Boolean);
+	return (
+		<div
+			className={`flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground ${className}`}
+		>
+			{visibleItems.map((item, index) => (
+				<Fragment key={String(item)}>
+					{index > 0 ? (
+						<span className="text-muted-foreground/45">·</span>
+					) : null}
+					<span className="min-w-0">{item}</span>
+				</Fragment>
+			))}
+		</div>
+	);
+}
+
+function ShareCenteredPanel({
+	icon,
+	title,
+	description,
+	children,
+}: {
+	icon: "Lock" | "Warning";
+	title: string;
+	description: string;
+	children?: ReactNode;
+}) {
+	return (
+		<SharePageShell>
+			<main className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4 sm:p-6">
+				<section className="w-full max-w-md rounded-lg border border-border/70 bg-card/85 p-5 shadow-lg shadow-black/5 dark:bg-card/65 dark:shadow-none">
+					<div className="text-center">
+						<div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg bg-muted/45 text-muted-foreground">
+							<Icon
+								name={icon}
+								className={
+									icon === "Warning" ? "h-6 w-6 text-destructive" : "h-6 w-6"
+								}
+							/>
+						</div>
+						<h1 className="mt-4 text-lg font-semibold leading-snug">{title}</h1>
+						<p className="mt-2 text-sm leading-6 text-muted-foreground">
+							{description}
+						</p>
+					</div>
+					{children ? <div className="mt-5">{children}</div> : null}
+				</section>
+			</main>
+		</SharePageShell>
+	);
+}
+
+function ShareLoadingSkeleton() {
+	return (
+		<SharePageShell>
+			<main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+				<div
+					className={`border-b border-border/65 bg-card/55 ${PAGE_SECTION_PADDING_CLASS}`}
+				>
+					<div className="mx-auto flex w-full max-w-7xl items-center gap-3 py-3">
+						<Skeleton className="h-10 w-10 rounded-lg" />
+						<div className="min-w-0 flex-1 space-y-2">
+							<Skeleton className="h-5 w-3/5 max-w-lg" />
+							<Skeleton className="h-3 w-72 max-w-full" />
+						</div>
+						<Skeleton className="hidden h-8 w-20 rounded-lg sm:block" />
+					</div>
+				</div>
+				<div className={`min-h-0 flex-1 py-4 ${PAGE_SECTION_PADDING_CLASS}`}>
+					<section className="mx-auto flex h-full w-full max-w-7xl flex-col overflow-hidden rounded-lg border border-border/70 bg-card/65 shadow-xs dark:bg-card/35 dark:shadow-none">
+						<div className="flex items-center justify-between gap-3 border-b border-border/65 px-4 py-3">
+							<Skeleton className="h-5 w-44" />
+							<Skeleton className="h-8 w-20 rounded-lg" />
+						</div>
+						<ShareFolderContentSkeleton viewMode="grid" />
+					</section>
+				</div>
+			</main>
+		</SharePageShell>
+	);
+}
+
+function ShareFolderContentSkeleton({
+	viewMode,
+}: {
+	viewMode: "grid" | "list";
+}) {
+	if (viewMode === "list") {
+		return (
+			<div className="divide-y divide-border/60">
+				<div className="grid grid-cols-[minmax(0,1fr)_6rem_8rem_2rem] gap-3 px-4 py-3">
+					<Skeleton className="h-4 w-24" />
+					<Skeleton className="h-4 w-14" />
+					<Skeleton className="h-4 w-20" />
+					<Skeleton className="h-4 w-4" />
+				</div>
+				{SHARE_TABLE_SKELETON_WIDTHS.map((width) => (
+					<div
+						key={`share-row-${width}`}
+						className="grid grid-cols-[minmax(0,1fr)_6rem_8rem_2rem] items-center gap-3 px-4 py-3"
+					>
+						<div className="flex min-w-0 items-center gap-2">
+							<Skeleton className="h-8 w-8 rounded-lg" />
+							<Skeleton className="h-4" style={{ width }} />
+						</div>
+						<Skeleton className="h-4 w-14" />
+						<Skeleton className="h-4 w-20" />
+						<Skeleton className="h-7 w-7 rounded-lg" />
+					</div>
+				))}
+			</div>
+		);
+	}
+
+	return (
+		<div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+			{SHARE_GRID_SKELETON_ITEMS.map((item) => (
+				<div
+					key={`share-grid-${item.key}`}
+					className="rounded-lg border border-border/65 bg-card/70 p-3 shadow-xs dark:bg-card/40 dark:shadow-none"
+				>
+					<Skeleton className="mb-3 aspect-[4/3] w-full rounded-lg" />
+					<Skeleton className="mb-2 h-4" style={{ width: item.width }} />
+					<Skeleton className="h-3 w-1/2" />
+				</div>
+			))}
 		</div>
 	);
 }
@@ -88,7 +288,7 @@ const FilePreview = lazy(async () => {
 });
 
 export default function ShareViewPage() {
-	const { t } = useTranslation(["core", "share", "errors"]);
+	const { t } = useTranslation(["core", "share", "files", "errors"]);
 	const { token } = useParams<{ token: string }>();
 	const previewAppsLoaded = usePreviewAppStore((state) => state.isLoaded);
 	const loadPreviewApps = usePreviewAppStore((state) => state.load);
@@ -249,7 +449,7 @@ export default function ShareViewPage() {
 		return () => observer.disconnect();
 	}, [hasMoreFiles, loadingMore, loadMoreShareFiles]);
 
-	const handleVerifyPassword = async (e: React.FormEvent) => {
+	const handleVerifyPassword = async (e: FormEvent) => {
 		e.preventDefault();
 		if (!token) return;
 		try {
@@ -337,83 +537,53 @@ export default function ShareViewPage() {
 		</Suspense>
 	) : null;
 
-	// ── Centered states (loading, error, password) ──
 	if (loading) {
-		return (
-			<div className="h-screen flex flex-col">
-				<ShareTopBar />
-				<main className="flex min-h-0 flex-1 items-center justify-center p-6">
-					<div className="w-full max-w-6xl">
-						<SkeletonCard />
-					</div>
-				</main>
-			</div>
-		);
+		return <ShareLoadingSkeleton />;
 	}
 
 	if (error) {
 		return (
-			<div className="h-screen flex flex-col">
-				<ShareTopBar />
-				<main className="flex min-h-0 flex-1 items-center justify-center p-6">
-					<Card className="w-full max-w-md">
-						<CardHeader className="text-center">
-							<Icon
-								name="Warning"
-								className="mx-auto mb-2 h-10 w-10 text-destructive"
-							/>
-							<CardTitle>{t("unavailable")}</CardTitle>
-							<CardDescription>{error}</CardDescription>
-						</CardHeader>
-					</Card>
-				</main>
-			</div>
+			<ShareCenteredPanel
+				icon="Warning"
+				title={t("unavailable")}
+				description={error}
+			/>
 		);
 	}
 
 	if (!info) return null;
 	if (!token) return null;
 
-	const shareOwnerText = t("share:shared_with_you", {
+	const shareOwnerText = t("share:shared_by", {
 		name: info.shared_by.name,
-		resource: info.name,
 	});
 
 	if (needsPassword && !passwordVerified) {
 		return (
-			<div className="h-screen flex flex-col">
-				<ShareTopBar />
-				<main className="flex min-h-0 flex-1 items-center justify-center p-6">
-					<Card className="w-full max-w-md shadow-sm">
-						<CardHeader className="text-center">
-							<Icon
-								name="Lock"
-								className="mx-auto mb-2 h-10 w-10 text-muted-foreground"
-							/>
-							<CardTitle>{info.name}</CardTitle>
-							<CardDescription>{t("share:password_protected")}</CardDescription>
-						</CardHeader>
-						<CardContent>
-							<form onSubmit={handleVerifyPassword} className="space-y-4">
-								<Input
-									type="password"
-									placeholder={t("core:password")}
-									value={password}
-									onChange={(e) => setPassword(e.target.value)}
-									autoFocus
-								/>
-								<Button type="submit" className="w-full">
-									{t("verify")}
-								</Button>
-							</form>
-						</CardContent>
-					</Card>
-				</main>
-			</div>
+			<ShareCenteredPanel
+				icon="Lock"
+				title={info.name}
+				description={t("share:password_protected")}
+			>
+				<div className="space-y-4">
+					<ShareOwnerBanner owner={info.shared_by} text={shareOwnerText} />
+					<form onSubmit={handleVerifyPassword} className="space-y-3">
+						<Input
+							type="password"
+							placeholder={t("core:password")}
+							value={password}
+							onChange={(e) => setPassword(e.target.value)}
+							autoFocus
+						/>
+						<Button type="submit" className="w-full">
+							{t("verify")}
+						</Button>
+					</form>
+				</div>
+			</ShareCenteredPanel>
 		);
 	}
 
-	// ── File share ──
 	if (info.share_type === "file") {
 		const singleShareFile =
 			info.mime_type && typeof info.size === "number"
@@ -431,140 +601,183 @@ export default function ShareViewPage() {
 						is_locked: false,
 					} satisfies FileInfo)
 				: null;
+		const downloadSummary = getDownloadSummary(info, t);
+		const expirySummary = getExpirySummary(info, t);
+		const fileMeta = [
+			typeof info.size === "number" ? formatBytes(info.size) : null,
+			info.mime_type,
+			downloadSummary,
+			expirySummary,
+			getAccessSummary(info, t),
+		].filter(Boolean);
 
 		return (
-			<div className="h-screen flex flex-col">
-				<ShareTopBar />
-				<main className="flex min-h-0 flex-1 items-center justify-center p-6">
-					<Card className="w-full max-w-4xl shadow-sm">
-						<CardHeader>
-							<div className="space-y-4">
-								<div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-									<div className="flex min-w-0 flex-1 items-start gap-3">
-										<div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted/40">
-											{singleShareFile ? (
-												<div className="flex h-full w-full items-center justify-center">
-													<FileThumbnail
-														file={singleShareFile}
-														size="lg"
-														thumbnailPath={shareService.thumbnailPath(token)}
-													/>
-												</div>
-											) : (
-												<Icon
-													name="File"
-													className="h-6 w-6 text-muted-foreground"
-												/>
-											)}
-										</div>
-										<div className="min-w-0 flex-1">
-											<CardTitle className="truncate">{info.name}</CardTitle>
-											<CardDescription className="mt-1">
-												{info.max_downloads > 0
-													? t("share:n_of_m_downloads", {
-															count: info.download_count,
-															max: info.max_downloads,
-														})
-													: t("share:n_downloads", {
-															count: info.download_count,
-														})}
-												{info.expires_at &&
-													` · ${t("share:expires_date", {
-														date: formatDateShort(info.expires_at),
-													})}`}
-											</CardDescription>
-										</div>
+			<SharePageShell>
+				<main className="min-h-0 flex-1 overflow-auto">
+					<div className="mx-auto w-full max-w-5xl px-4 py-4 sm:py-6 md:px-6">
+						<article className="overflow-hidden rounded-lg border border-border/70 bg-card/80 shadow-lg shadow-black/5 dark:bg-card/55 dark:shadow-none">
+							<div className="flex min-w-0 items-center gap-3 border-b border-border/65 px-4 py-3 sm:px-5">
+								<UserAvatarImage
+									avatar={info.shared_by.avatar}
+									name={info.shared_by.name}
+									size="sm"
+									className="rounded-lg"
+								/>
+								<div className="min-w-0">
+									<div className="truncate text-sm font-medium text-foreground">
+										{shareOwnerText}
 									</div>
-									<div className="flex shrink-0 items-center gap-2">
+								</div>
+							</div>
+							<div className="grid gap-5 p-4 sm:p-5 md:grid-cols-[12rem_minmax(0,1fr)]">
+								<div className="flex h-44 w-full items-center justify-center overflow-hidden rounded-lg border border-border/65 bg-muted/25 sm:h-56 md:aspect-square md:h-auto">
+									{singleShareFile ? (
+										<FileThumbnail
+											file={singleShareFile}
+											size="lg"
+											thumbnailPath={shareService.thumbnailPath(token)}
+										/>
+									) : (
+										<Icon
+											name="File"
+											className="h-14 w-14 text-muted-foreground"
+										/>
+									)}
+								</div>
+								<div className="flex min-w-0 flex-col justify-center gap-5">
+									<div className="min-w-0">
+										<div className="mb-2 inline-flex items-center gap-1.5 rounded-md border border-border/65 bg-muted/25 px-2 py-1 text-xs font-medium text-muted-foreground">
+											<Icon name="File" className="h-3.5 w-3.5" />
+											{t("share:file_share")}
+										</div>
+										<h1 className="break-words text-2xl font-semibold leading-tight sm:text-3xl">
+											{info.name}
+										</h1>
+										<ShareMetaLine items={fileMeta} className="mt-2" />
+									</div>
+									<div className="flex flex-col gap-2 sm:flex-row">
 										{singleShareFile ? (
 											<Button
 												variant="outline"
+												size="lg"
 												onClick={() => setPreviewFile(singleShareFile)}
+												className="w-full sm:w-auto"
 											>
 												<Icon name="Eye" className="mr-2 h-4 w-4" />
 												{t("files:preview")}
 											</Button>
 										) : null}
-										<Button onClick={handleDownload}>
+										<Button
+											size="lg"
+											onClick={handleDownload}
+											className="w-full sm:w-auto"
+										>
 											<Icon name="Download" className="mr-2 h-4 w-4" />
 											{t("files:download")}
 										</Button>
 									</div>
 								</div>
-								<ShareOwnerBanner
-									owner={info.shared_by}
-									text={shareOwnerText}
-								/>
 							</div>
-						</CardHeader>
-					</Card>
+						</article>
+					</div>
 				</main>
 				{previewElement}
-			</div>
+			</SharePageShell>
 		);
 	}
 
-	// ── Folder share ──
 	return (
-		<div className="h-screen flex flex-col">
-			<ShareTopBar />
-			<ToolbarBar
-				left={
-					<>
-						<Icon name="Folder" className="h-4 w-4 shrink-0 text-amber-500" />
-						<div className="min-w-0 flex-1">
-							{breadcrumbElement ?? (
-								<span className="text-base font-semibold text-foreground">
+		<SharePageShell>
+			<main className="flex min-h-0 flex-1 flex-col overflow-hidden">
+				<div
+					className={`border-b border-border/65 bg-card/55 ${PAGE_SECTION_PADDING_CLASS}`}
+				>
+					<div className="mx-auto flex w-full max-w-7xl flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+						<div className="flex min-w-0 items-center gap-3">
+							<div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-500/12 text-amber-600 dark:text-amber-300">
+								<Icon name="Folder" className="h-5 w-5" />
+							</div>
+							<div className="min-w-0">
+								<h1 className="truncate text-lg font-semibold leading-tight sm:text-xl">
 									{info.name}
-								</span>
+								</h1>
+								<div className="mt-1 flex min-w-0 items-center gap-2">
+									<UserAvatarImage
+										avatar={info.shared_by.avatar}
+										name={info.shared_by.name}
+										size="sm"
+										className="h-5 w-5 rounded-md text-[10px]"
+									/>
+									<ShareMetaLine
+										items={[
+											shareOwnerText,
+											getDownloadSummary(info, t),
+											getExpirySummary(info, t),
+											getAccessSummary(info, t),
+										]}
+										className="min-w-0 text-xs"
+									/>
+								</div>
+							</div>
+						</div>
+						<ViewToggle value={viewMode} onChange={setViewMode} />
+					</div>
+				</div>
+				<div className={`min-h-0 flex-1 py-4 ${PAGE_SECTION_PADDING_CLASS}`}>
+					<section className="mx-auto flex h-full w-full max-w-7xl flex-col overflow-hidden rounded-lg border border-border/70 bg-card/70 shadow-xs dark:bg-card/40 dark:shadow-none">
+						<div className="flex flex-col gap-3 border-b border-border/65 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+							<div className="flex min-w-0 items-center gap-2">
+								<Icon
+									name="FolderOpen"
+									className="h-4 w-4 shrink-0 text-amber-500"
+								/>
+								<div className="min-w-0 flex-1">
+									{breadcrumbElement ?? (
+										<span className="block truncate text-base font-semibold text-foreground">
+											{t("share:share_content")}
+										</span>
+									)}
+								</div>
+							</div>
+						</div>
+						<div className="min-h-0 flex-1 overflow-auto">
+							{navigating ? (
+								<ShareFolderContentSkeleton viewMode={viewMode} />
+							) : folderContents ? (
+								<>
+									<ReadOnlyFileCollection
+										folders={folderContents.folders}
+										files={folderContents.files}
+										viewMode={viewMode}
+										onFileClick={setPreviewFile}
+										onFileDownload={handleFolderFileDownload}
+										onFolderClick={(folder) =>
+											navigateToFolder(folder.id, folder.name)
+										}
+										getThumbnailPath={(file) =>
+											`/s/${token}/files/${file.id}/thumbnail`
+										}
+										emptyTitle={t("empty_folder")}
+										emptyDescription={t("files:folder_empty_desc")}
+									/>
+									{hasMoreFiles && (
+										<div ref={sentinelRef} className="flex justify-center py-4">
+											{loadingMore && (
+												<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
+											)}
+										</div>
+									)}
+								</>
+							) : (
+								<div className="p-6 text-sm text-muted-foreground">
+									{t("loading_contents")}
+								</div>
 							)}
 						</div>
-					</>
-				}
-				right={<ViewToggle value={viewMode} onChange={setViewMode} />}
-			/>
-			<div className="border-b border-border/70 bg-background/80">
-				<div className={`${PAGE_SECTION_PADDING_CLASS} py-3`}>
-					<ShareOwnerBanner owner={info.shared_by} text={shareOwnerText} />
+					</section>
 				</div>
-			</div>
-			<div className="flex min-h-0 flex-1 flex-col overflow-auto">
-				{navigating ? (
-					<div className="p-6">
-						<SkeletonCard />
-					</div>
-				) : folderContents ? (
-					<>
-						<ReadOnlyFileCollection
-							folders={folderContents.folders}
-							files={folderContents.files}
-							viewMode={viewMode}
-							onFileClick={setPreviewFile}
-							onFileDownload={handleFolderFileDownload}
-							onFolderClick={(folder) =>
-								navigateToFolder(folder.id, folder.name)
-							}
-							getThumbnailPath={(file) =>
-								`/s/${token}/files/${file.id}/thumbnail`
-							}
-							emptyTitle={t("empty_folder")}
-							emptyDescription={t("files:folder_empty_desc")}
-						/>
-						{hasMoreFiles && (
-							<div ref={sentinelRef} className="flex justify-center py-4">
-								{loadingMore && (
-									<div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
-								)}
-							</div>
-						)}
-					</>
-				) : (
-					<div className="p-6 text-sm text-muted-foreground">
-						{t("loading_contents")}
-					</div>
-				)}
-			</div>
+			</main>
 			{previewElement}
-		</div>
+		</SharePageShell>
 	);
 }

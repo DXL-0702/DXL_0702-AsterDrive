@@ -31,9 +31,13 @@ const mockState = vi.hoisted(() => ({
 			return `downloads:${opts?.count}/${opts?.max}`;
 		}
 		if (key === "share:n_downloads") return `downloads:${opts?.count}`;
+		if (key === "share:shared_by") {
+			return `shared-by:${opts?.name}`;
+		}
 		if (key === "share:shared_with_you") {
 			return `shared-with-you:${opts?.name}:${opts?.resource}`;
 		}
+		if (key === "share:share_content") return "share-content";
 		if (key === "share:password_verified") return "password-verified";
 		return key.replace(/^core:/, "");
 	},
@@ -314,7 +318,9 @@ vi.mock("@/hooks/useApiError", () => ({
 }));
 
 vi.mock("@/lib/format", () => ({
+	formatBytes: (value: number) => `${value} B`,
 	formatDateShort: (value: string) => `fmt:${value}`,
+	formatNumber: (value: number) => `${value}`,
 }));
 
 vi.mock("@/services/shareService", () => ({
@@ -414,9 +420,9 @@ describe("ShareViewPage", () => {
 		expect(
 			await screen.findByRole("button", { name: "folder:Docs" }),
 		).toBeInTheDocument();
-		expect(
-			screen.getByText("shared-with-you:Alice Example:Secret Folder"),
-		).toBeInTheDocument();
+		expect(screen.getByText("Secret Folder")).toBeInTheDocument();
+		expect(screen.getByText("shared-by:Alice Example")).toBeInTheDocument();
+		expect(screen.getByText("share-content")).toBeInTheDocument();
 	});
 
 	it("renders file shares with preview and download actions", async () => {
@@ -446,9 +452,7 @@ describe("ShareViewPage", () => {
 		const metadata = screen.getByText("Manual.pdf").parentElement;
 		expect(metadata).toHaveTextContent("downloads:3/5");
 		expect(metadata).toHaveTextContent("expires:fmt:2026-04-01T00:00:00Z");
-		expect(
-			screen.getByText("shared-with-you:Alice Example:Manual.pdf"),
-		).toBeInTheDocument();
+		expect(screen.getByText("shared-by:Alice Example")).toBeInTheDocument();
 		expect(
 			screen.getByText("avatar:Alice Example:/s/share-token/avatar/512?v=1"),
 		).toBeInTheDocument();
@@ -514,9 +518,9 @@ describe("ShareViewPage", () => {
 
 		render(<ShareViewPage />);
 
-		expect(
-			await screen.findByText("shared-with-you:Alice Example:Shared Root"),
-		).toBeInTheDocument();
+		expect(await screen.findByText("Shared Root")).toBeInTheDocument();
+		expect(screen.getByText("shared-by:Alice Example")).toBeInTheDocument();
+		expect(screen.getByText("share-content")).toBeInTheDocument();
 		expect(
 			screen.getByText(
 				"avatar:Alice Example:https://www.gravatar.com/avatar/hash?s=512",
