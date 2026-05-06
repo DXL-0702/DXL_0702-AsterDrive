@@ -35,6 +35,7 @@ import {
 	parsePageSizeSearchParam,
 } from "@/lib/pagination";
 import { adminRemoteNodeService } from "@/services/adminService";
+import { useBrandingStore } from "@/stores/brandingStore";
 import type {
 	RemoteCreateIngressProfileRequest,
 	RemoteEnrollmentCommandInfo,
@@ -50,6 +51,7 @@ const REMOTE_NODE_CREATE_LAST_STEP = 2 as const;
 export default function AdminRemoteNodesPage() {
 	const { t } = useTranslation("admin");
 	usePageTitle(t("remote_nodes"));
+	const primarySiteUrl = useBrandingStore((state) => state.siteUrl);
 	const [searchParams, setSearchParams] = useSearchParams();
 	const [offset, setOffset] = useState(
 		parseOffsetSearchParam(searchParams.get("offset")),
@@ -172,6 +174,11 @@ export default function AdminRemoteNodesPage() {
 	};
 
 	const openCreate = () => {
+		if (!primarySiteUrl) {
+			toast.error(t("remote_node_primary_site_url_required"));
+			return;
+		}
+
 		setEditingId(null);
 		setEditingNode(null);
 		setForm({ ...emptyRemoteNodeForm });
@@ -521,6 +528,11 @@ export default function AdminRemoteNodesPage() {
 								size="sm"
 								className={ADMIN_CONTROL_HEIGHT_CLASS}
 								onClick={openCreate}
+								title={
+									primarySiteUrl
+										? undefined
+										: t("remote_node_primary_site_url_required")
+								}
 							>
 								<Icon name="Plus" className="mr-1 h-4 w-4" />
 								{t("new_remote_node")}

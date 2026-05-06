@@ -990,6 +990,7 @@
 	"remote_node_wizard_docs_title": "Docker 从节点部署",
 	"remote_node_wizard_docs_desc": "如果这台从节点准备用 Docker 部署，可以直接按文档里的 bootstrap ENV 方案走，不再手动进入容器执行 enroll。",
 	"remote_node_wizard_docs_link": "打开部署文档",
+	"remote_node_primary_site_url_required": "创建远程节点前必须先在系统设置的公开站点地址里设置主域名。接入命令需要写入稳定的主控地址。",
 	"remote_node_generate_enrollment_command": "生成接入命令",
 	"remote_node_save_and_generate_enrollment_command": "保存并生成接入命令",
 	"remote_node_enrollment_dialog_title": "从节点接入命令",

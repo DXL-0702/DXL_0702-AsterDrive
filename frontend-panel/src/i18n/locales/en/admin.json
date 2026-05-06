@@ -990,6 +990,7 @@
 	"remote_node_wizard_docs_title": "Docker follower deployment",
 	"remote_node_wizard_docs_desc": "If this follower will run in Docker, follow the bootstrap-ENV guide directly instead of manually entering the container to run enroll.",
 	"remote_node_wizard_docs_link": "Open deployment docs",
+	"remote_node_primary_site_url_required": "Set the primary public site URL in system settings before creating a remote node. The enrollment command needs a stable primary URL.",
 	"remote_node_generate_enrollment_command": "Generate Enroll Command",
 	"remote_node_save_and_generate_enrollment_command": "Save and Generate Enroll Command",
 	"remote_node_enrollment_dialog_title": "Follower Enrollment Command",
