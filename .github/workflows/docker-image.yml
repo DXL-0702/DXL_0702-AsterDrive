@@ -72,8 +72,12 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=gha,scope=docker-image
+            type=registry,ref=${{ env.REGISTRY_IMAGE_GHCR }}:buildcache
+          cache-to: |
+            type=gha,mode=max,scope=docker-image
+            type=registry,ref=${{ env.REGISTRY_IMAGE_GHCR }}:buildcache,mode=max
           build-args: |
             CARGO_FEATURES=server
           provenance: true
