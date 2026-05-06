@@ -42,9 +42,15 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             name: linux_x86_64
             packages: gcc
+          - target: i686-unknown-linux-gnu
+            name: linux_i686
+            packages: gcc-multilib g++-multilib
           - target: x86_64-pc-windows-gnu
             name: windows_x86_64.exe
             packages: gcc-mingw-w64-x86-64
+          - target: i686-pc-windows-gnu
+            name: windows_i686.exe
+            packages: gcc-mingw-w64-i686
 
     steps:
       - uses: actions/checkout@v6
@@ -68,6 +74,9 @@ jobs:
       - name: Configure linker
         run: |
           case "${{ matrix.target }}" in
+            i686-pc-windows-gnu)
+              echo "CARGO_TARGET_I686_PC_WINDOWS_GNU_LINKER=i686-w64-mingw32-gcc" >> $GITHUB_ENV
+              ;;
             x86_64-pc-windows-gnu)
               echo "CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=x86_64-w64-mingw32-gcc" >> $GITHUB_ENV
               ;;
@@ -90,9 +99,21 @@ jobs:
           name: binary-${{ matrix.name }}
           path: aster_drive_*
 
-  build-arm64:
+  build-linux-arm:
     needs: build-frontend
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            name: linux_aarch64
+            packages: gcc-aarch64-linux-gnu
+            linker: aarch64-linux-gnu-gcc
+          - target: armv7-unknown-linux-gnueabihf
+            name: linux_armv7
+            packages: gcc-arm-linux-gnueabihf
+            linker: arm-linux-gnueabihf-gcc
+
     steps:
       - uses: actions/checkout@v6
 
@@ -103,29 +124,39 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-unknown-linux-gnu
+          targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: aarch64-unknown-linux-gnu
+          key: ${{ matrix.target }}
 
-      - name: Install ARM64 toolchain
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Install ARM toolchain
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.packages }}
+
+      - name: Configure linker
+        run: |
+          case "${{ matrix.target }}" in
+            aarch64-unknown-linux-gnu)
+              echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=${{ matrix.linker }}" >> $GITHUB_ENV
+              ;;
+            armv7-unknown-linux-gnueabihf)
+              echo "CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABIHF_LINKER=${{ matrix.linker }}" >> $GITHUB_ENV
+              ;;
+          esac
 
       - name: Build
         env:
-          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
           RUSTFLAGS: "-C link-arg=-s"
-        run: cargo build --release --target aarch64-unknown-linux-gnu
+        run: cargo build --release --target ${{ matrix.target }}
 
       - name: Rename binary
         run: |
           VERSION="${GITHUB_REF#refs/tags/}"
-          mv target/aarch64-unknown-linux-gnu/release/aster_drive "aster_drive_${VERSION}_linux_aarch64"
+          mv "target/${{ matrix.target }}/release/aster_drive" "aster_drive_${VERSION}_${{ matrix.name }}"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: binary-linux_aarch64
+          name: binary-${{ matrix.name }}
           path: aster_drive_*
 
   build-macos:
@@ -169,8 +200,42 @@ jobs:
           name: binary-${{ matrix.name }}
           path: aster_drive_*
 
+  build-windows-arm64:
+    needs: build-frontend
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: frontend-dist
+          path: frontend-panel/dist
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: aarch64-pc-windows-msvc
+
+      - name: Build
+        run: cargo build --release --target aarch64-pc-windows-msvc
+
+      - name: Rename binary
+        shell: pwsh
+        run: |
+          Move-Item `
+            -Path "target/aarch64-pc-windows-msvc/release/aster_drive.exe" `
+            -Destination "aster_drive_$($env:GITHUB_REF_NAME)_windows_arm64.exe"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: binary-windows_arm64.exe
+          path: aster_drive_*
+
   release:
-    needs: [build-linux-windows, build-arm64, build-macos]
+    needs: [build-linux-windows, build-linux-arm, build-macos, build-windows-arm64]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -230,8 +295,12 @@ jobs:
             echo "| Platform | Architecture | Download |"
             echo "|----------|--------------|----------|"
             echo "| Linux | x86_64 | [aster_drive_${{ github.ref_name }}_linux_x86_64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_x86_64) |"
+            echo "| Linux | x86 | [aster_drive_${{ github.ref_name }}_linux_i686](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_i686) |"
             echo "| Linux | ARM64 | [aster_drive_${{ github.ref_name }}_linux_aarch64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_aarch64) |"
+            echo "| Linux | ARMv7 | [aster_drive_${{ github.ref_name }}_linux_armv7](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_linux_armv7) |"
             echo "| Windows | x86_64 | [aster_drive_${{ github.ref_name }}_windows_x86_64.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_windows_x86_64.exe) |"
+            echo "| Windows | x86 | [aster_drive_${{ github.ref_name }}_windows_i686.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_windows_i686.exe) |"
+            echo "| Windows | ARM64 | [aster_drive_${{ github.ref_name }}_windows_arm64.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_windows_arm64.exe) |"
             echo "| macOS | x86_64 | [aster_drive_${{ github.ref_name }}_macos_x86_64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_macos_x86_64) |"
             echo "| macOS | ARM64 | [aster_drive_${{ github.ref_name }}_macos_aarch64](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/aster_drive_${{ github.ref_name }}_macos_aarch64) |"
             echo ""
