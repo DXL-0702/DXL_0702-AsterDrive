@@ -10,7 +10,7 @@
 		"prebuild": "bun run extract:pdfjs-cmaps",
 		"build": "tsgo -b && vite build",
 		"generate-api": "openapi-typescript ./generated/openapi.json -o ./src/services/api.generated.ts",
-		"check": "bunx @biomejs/biome check .",
+		"check": "tsgo -b && bunx @biomejs/biome check .",
 		"check:fix": "bunx @biomejs/biome check --write .",
 		"format": "bunx @biomejs/biome format --write .",
 		"preview": "vite preview",

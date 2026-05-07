@@ -1,0 +1,201 @@
+import { useTranslation } from "react-i18next";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { ADMIN_ICON_BUTTON_CLASS } from "@/lib/constants";
+import { formatBytes, formatDateTime } from "@/lib/format";
+import type { RemoteIngressProfileInfo } from "@/types/api";
+import {
+	getRemoteNodeManagedIngressDriverBadgeTone,
+	getRemoteNodeManagedIngressProfileStatus,
+} from "./remoteNodeManagedIngressPresentation";
+
+interface RemoteNodeManagedIngressProfilesListProps {
+	errorMessage: string | null;
+	loading: boolean;
+	onDeleteProfile: (profile: RemoteIngressProfileInfo) => void;
+	onEditProfile: (profile: RemoteIngressProfileInfo) => void;
+	profiles: RemoteIngressProfileInfo[];
+}
+
+export function RemoteNodeManagedIngressProfilesList({
+	errorMessage,
+	loading,
+	onDeleteProfile,
+	onEditProfile,
+	profiles,
+}: RemoteNodeManagedIngressProfilesListProps) {
+	const { t } = useTranslation("admin");
+
+	return (
+		<div className="mt-4 space-y-3">
+			{errorMessage ? null : loading ? (
+				<div className="rounded-2xl border border-border/70 bg-muted/10 p-4 text-sm text-muted-foreground">
+					<span className="inline-flex items-center gap-2">
+						<Icon name="Spinner" className="h-4 w-4 animate-spin" />
+						{t("core:loading")}
+					</span>
+				</div>
+			) : profiles.length === 0 ? (
+				<div className="rounded-2xl border border-dashed border-border/70 bg-muted/10 p-4">
+					<p className="text-sm font-medium text-foreground">
+						{t("remote_node_ingress_profiles_empty")}
+					</p>
+					<p className="mt-1 text-sm text-muted-foreground">
+						{t("remote_node_ingress_profiles_empty_desc")}
+					</p>
+				</div>
+			) : (
+				profiles.map((profile) => (
+					<RemoteNodeManagedIngressProfileCard
+						key={profile.profile_key}
+						onDelete={() => onDeleteProfile(profile)}
+						onEdit={() => onEditProfile(profile)}
+						profile={profile}
+					/>
+				))
+			)}
+		</div>
+	);
+}
+
+interface RemoteNodeManagedIngressProfileCardProps {
+	onDelete: () => void;
+	onEdit: () => void;
+	profile: RemoteIngressProfileInfo;
+}
+
+function RemoteNodeManagedIngressProfileCard({
+	onDelete,
+	onEdit,
+	profile,
+}: RemoteNodeManagedIngressProfileCardProps) {
+	const { t } = useTranslation("admin");
+	const status = getRemoteNodeManagedIngressProfileStatus(profile);
+
+	return (
+		<article className="rounded-2xl border border-border/70 bg-muted/10 p-4">
+			<div className="flex flex-wrap items-start justify-between gap-3">
+				<div className="min-w-0">
+					<div className="flex flex-wrap items-center gap-2">
+						<h4 className="truncate text-sm font-semibold text-foreground">
+							{profile.name}
+						</h4>
+						<Badge
+							variant="outline"
+							className={getRemoteNodeManagedIngressDriverBadgeTone(
+								profile.driver_type,
+							)}
+						>
+							{profile.driver_type === "s3"
+								? t("remote_node_ingress_profile_driver_s3")
+								: t("remote_node_ingress_profile_driver_local")}
+						</Badge>
+						{profile.is_default ? (
+							<Badge
+								variant="outline"
+								className="border-blue-500/60 bg-blue-500/10 text-blue-700 dark:text-blue-300"
+							>
+								{t("remote_node_ingress_profile_default")}
+							</Badge>
+						) : null}
+						<Badge variant="outline" className={status.toneClass}>
+							{t(status.labelKey)}
+						</Badge>
+					</div>
+					<p className="mt-1 break-all font-mono text-xs text-muted-foreground">
+						{profile.profile_key}
+					</p>
+				</div>
+
+				<div className="flex shrink-0 gap-1">
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon"
+						className={ADMIN_ICON_BUTTON_CLASS}
+						onClick={onEdit}
+						aria-label={t("core:edit")}
+						title={t("core:edit")}
+					>
+						<Icon name="PencilSimple" className="h-3.5 w-3.5" />
+					</Button>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon"
+						className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
+						onClick={onDelete}
+						aria-label={t("core:delete")}
+						title={t("core:delete")}
+					>
+						<Icon name="Trash" className="h-3.5 w-3.5" />
+					</Button>
+				</div>
+			</div>
+
+			<dl className="mt-4 grid gap-3 text-sm md:grid-cols-2">
+				<div>
+					<dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+						{t("base_path")}
+					</dt>
+					<dd className="mt-1 break-all font-medium">
+						{profile.base_path || "."}
+					</dd>
+				</div>
+				<div>
+					<dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+						{t("max_file_size")}
+					</dt>
+					<dd className="mt-1 font-medium">
+						{profile.max_file_size > 0
+							? formatBytes(profile.max_file_size)
+							: t("core:unlimited")}
+					</dd>
+				</div>
+				{profile.driver_type === "s3" ? (
+					<>
+						<div>
+							<dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+								{t("endpoint")}
+							</dt>
+							<dd className="mt-1 break-all font-medium">{profile.endpoint}</dd>
+						</div>
+						<div>
+							<dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+								{t("bucket")}
+							</dt>
+							<dd className="mt-1 break-all font-medium">{profile.bucket}</dd>
+						</div>
+					</>
+				) : null}
+				<div>
+					<dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+						{t("remote_node_ingress_profile_revision")}
+					</dt>
+					<dd className="mt-1 font-medium">
+						{profile.applied_revision} / {profile.desired_revision}
+					</dd>
+				</div>
+				<div>
+					<dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+						{t("core:updated_at")}
+					</dt>
+					<dd className="mt-1 font-medium">
+						{formatDateTime(profile.updated_at)}
+					</dd>
+				</div>
+			</dl>
+
+			<div className="mt-4 rounded-2xl border border-border/70 bg-background/70 p-3">
+				<div className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+					{t("remote_node_ingress_profile_last_error")}
+				</div>
+				<div className="mt-1 break-all text-sm">
+					{profile.last_error ||
+						t("remote_node_ingress_profile_last_error_empty")}
+				</div>
+			</div>
+		</article>
+	);
+}

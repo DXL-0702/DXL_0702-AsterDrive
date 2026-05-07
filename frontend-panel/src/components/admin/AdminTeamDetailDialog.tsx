@@ -1,11 +1,4 @@
-import {
-	type FormEvent,
-	useEffect,
-	useEffectEvent,
-	useLayoutEffect,
-	useRef,
-	useState,
-} from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
@@ -13,19 +6,25 @@ import {
 	AdminTeamDetailDangerSection,
 	AdminTeamDetailMembersSection,
 	AdminTeamDetailOverviewSection,
-	type PolicyGroupOption,
 } from "@/components/admin/admin-team-detail/AdminTeamDetailSections";
 import { AdminTeamDetailShell } from "@/components/admin/admin-team-detail/AdminTeamDetailShell";
+import {
+	ADMIN_TEAM_DETAIL_AUDIT_PAGE_SIZE,
+	ADMIN_TEAM_DETAIL_MEMBER_PAGE_SIZE,
+	adminTeamDetailContentScrollPositions,
+	adminTeamDetailSidebarScrollPositions,
+	buildPolicyGroupOptions,
+} from "@/components/admin/admin-team-detail/adminTeamDetailDialogState";
 import type { AdminTeamDetailTab } from "@/components/admin/admin-team-detail/types";
+import { useAdminTeamDetailData } from "@/components/admin/admin-team-detail/useAdminTeamDetailData";
+import { useAdminTeamDetailScrollRestoration } from "@/components/admin/admin-team-detail/useAdminTeamDetailScrollRestoration";
+import { useAdminTeamDetailTabs } from "@/components/admin/admin-team-detail/useAdminTeamDetailTabs";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { handleApiError } from "@/hooks/useApiError";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { adminTeamService } from "@/services/adminService";
 import type {
-	AdminTeamInfo,
 	StoragePolicyGroup,
-	TeamAuditEntryInfo,
-	TeamMemberInfo,
 	TeamMemberRole,
 	UserStatus,
 } from "@/types/api";
@@ -48,45 +47,6 @@ interface AdminTeamDetailDialogProps {
 	pageTab?: AdminTeamDetailTab;
 }
 
-const MEMBER_PAGE_SIZE = 10;
-const AUDIT_PAGE_SIZE = 10;
-const ADMIN_TEAM_DETAIL_TAB_INDEX: Record<AdminTeamDetailTab, number> = {
-	overview: 0,
-	members: 1,
-	audit: 2,
-	danger: 3,
-};
-const adminTeamDetailContentScrollPositions = new Map<number, number>();
-const adminTeamDetailSidebarScrollPositions = new Map<number, number>();
-
-function buildPolicyGroupOptions(
-	policyGroups: StoragePolicyGroup[],
-	selectedPolicyGroupId: number | null,
-): PolicyGroupOption[] {
-	const options: PolicyGroupOption[] = policyGroups
-		.filter((group) => group.is_enabled && group.items.length > 0)
-		.map((group) => ({
-			label: group.name,
-			value: String(group.id),
-		}));
-
-	if (
-		selectedPolicyGroupId != null &&
-		!options.some((option) => option.value === String(selectedPolicyGroupId))
-	) {
-		const selectedGroup = policyGroups.find(
-			(group) => group.id === selectedPolicyGroupId,
-		);
-		options.unshift({
-			label: selectedGroup?.name ?? `#${selectedPolicyGroupId}`,
-			value: String(selectedPolicyGroupId),
-			disabled: true,
-		});
-	}
-
-	return options;
-}
-
 export function AdminTeamDetailDialog({
 	layout = "dialog",
 	open,
@@ -101,27 +61,18 @@ export function AdminTeamDetailDialog({
 }: AdminTeamDetailDialogProps) {
 	const { t } = useTranslation(["admin", "core", "settings"]);
 	const isPageLayout = layout === "page";
-	const [dialogTab, setDialogTab] = useState<AdminTeamDetailTab>("overview");
-	const [pageLayoutTab, setPageLayoutTab] = useState<AdminTeamDetailTab>(
-		pageTab ?? "overview",
-	);
-	const [tabDirection, setTabDirection] = useState<"forward" | "backward">(
-		"forward",
-	);
+	const { currentTab, handleTabChange, panelAnimationClass, resetDialogTab } =
+		useAdminTeamDetailTabs({
+			isPageLayout,
+			onPageTabChange,
+			pageTab,
+		});
 	const [archiveConfirmValue, setArchiveConfirmValue] = useState("");
 	const [archiving, setArchiving] = useState(false);
-	const [auditEntries, setAuditEntries] = useState<TeamAuditEntryInfo[]>([]);
-	const [auditLoading, setAuditLoading] = useState(false);
 	const [auditOffset, setAuditOffset] = useState(0);
-	const [auditTotal, setAuditTotal] = useState(0);
-	const [detailLoading, setDetailLoading] = useState(false);
 	const [memberIdentifier, setMemberIdentifier] = useState("");
-	const [memberLoading, setMemberLoading] = useState(false);
 	const [memberMutating, setMemberMutating] = useState(false);
 	const [memberOffset, setMemberOffset] = useState(0);
-	const [memberTotal, setMemberTotal] = useState(0);
-	const [members, setMembers] = useState<TeamMemberInfo[]>([]);
-	const [managerCount, setManagerCount] = useState(0);
 	const [memberQuery, setMemberQuery] = useState("");
 	const [memberRole, setMemberRole] = useState<TeamMemberRole>("member");
 	const [memberRoleFilter, setMemberRoleFilter] = useState<
@@ -131,16 +82,11 @@ export function AdminTeamDetailDialog({
 		"__all__" | UserStatus
 	>("__all__");
 	const [name, setName] = useState("");
-	const [ownerCount, setOwnerCount] = useState(0);
 	const [description, setDescription] = useState("");
 	const [policyGroupId, setPolicyGroupId] = useState("");
 	const [restoring, setRestoring] = useState(false);
 	const [saving, setSaving] = useState(false);
-	const [team, setTeam] = useState<AdminTeamInfo | null>(null);
-	const auditRequestIdRef = useRef(0);
 	const contentRef = useRef<HTMLDivElement | null>(null);
-	const detailRequestIdRef = useRef(0);
-	const memberRequestIdRef = useRef(0);
 	const overviewSyncAllowedRef = useRef(true);
 	const sidebarRef = useRef<HTMLElement | null>(null);
 	const roleOptions: TeamMemberRole[] = ["owner", "admin", "member"];
@@ -170,182 +116,43 @@ export function AdminTeamDetailDialog({
 		memberRoleFilter === "__all__" ? undefined : memberRoleFilter;
 	const memberStatusValue =
 		memberStatusFilter === "__all__" ? undefined : memberStatusFilter;
-
-	const loadTeamDetail = useEffectEvent(async (nextTeamId: number) => {
-		const requestId = ++detailRequestIdRef.current;
-		setDetailLoading(true);
-		try {
-			const detail = await adminTeamService.get(nextTeamId);
-			if (requestId !== detailRequestIdRef.current) {
-				return;
-			}
-			setTeam(detail);
-		} catch (error) {
-			if (requestId !== detailRequestIdRef.current) {
-				return;
-			}
-			setTeam(null);
-			handleApiError(error);
-		} finally {
-			if (requestId === detailRequestIdRef.current) {
-				setDetailLoading(false);
-			}
-		}
-	});
-
-	const loadMembers = useEffectEvent(
-		async (
-			nextTeamId: number,
-			nextOffset = memberOffset,
-			nextFilters: {
-				keyword?: string;
-				role?: TeamMemberRole;
-				status?: UserStatus;
-			} = {
-				keyword: memberKeyword || undefined,
-				role: memberRoleValue,
-				status: memberStatusValue,
-			},
-		) => {
-			const requestId = ++memberRequestIdRef.current;
-			setMemberLoading(true);
-			try {
-				const page = await adminTeamService.listMembers(nextTeamId, {
-					keyword: nextFilters.keyword,
-					role: nextFilters.role,
-					status: nextFilters.status,
-					limit: MEMBER_PAGE_SIZE,
-					offset: nextOffset,
-				});
-				if (requestId !== memberRequestIdRef.current) {
-					return;
-				}
-				setMembers(page.items);
-				setMemberTotal(page.total);
-				setOwnerCount(page.owner_count);
-				setManagerCount(page.manager_count);
-			} catch (error) {
-				if (requestId !== memberRequestIdRef.current) {
-					return;
-				}
-				setMembers([]);
-				setMemberTotal(0);
-				setOwnerCount(0);
-				setManagerCount(0);
-				handleApiError(error);
-			} finally {
-				if (requestId === memberRequestIdRef.current) {
-					setMemberLoading(false);
-				}
-			}
-		},
-	);
-
-	const loadAuditEntries = useEffectEvent(
-		async (nextTeamId: number, nextOffset = auditOffset) => {
-			const requestId = ++auditRequestIdRef.current;
-			setAuditLoading(true);
-			try {
-				const page = await adminTeamService.listAuditLogs(nextTeamId, {
-					limit: AUDIT_PAGE_SIZE,
-					offset: nextOffset,
-				});
-				if (requestId !== auditRequestIdRef.current) {
-					return;
-				}
-				setAuditEntries(page.items);
-				setAuditTotal(page.total);
-			} catch (error) {
-				if (requestId !== auditRequestIdRef.current) {
-					return;
-				}
-				setAuditEntries([]);
-				setAuditTotal(0);
-				handleApiError(error);
-			} finally {
-				if (requestId === auditRequestIdRef.current) {
-					setAuditLoading(false);
-				}
-			}
-		},
-	);
-
-	useLayoutEffect(() => {
-		if (!isPageLayout || teamId == null || pageTab == null) {
-			return;
-		}
-
-		const content = contentRef.current;
-		if (content != null) {
-			content.scrollTop =
-				adminTeamDetailContentScrollPositions.get(teamId) ?? 0;
-		}
-
-		const sidebar = sidebarRef.current;
-		if (sidebar == null) {
-			return () => {
-				if (contentRef.current == null) {
-					return;
-				}
-
-				adminTeamDetailContentScrollPositions.set(
-					teamId,
-					contentRef.current.scrollTop,
-				);
-			};
-		}
-
-		sidebar.scrollTop = adminTeamDetailSidebarScrollPositions.get(teamId) ?? 0;
-
-		return () => {
-			if (contentRef.current != null) {
-				adminTeamDetailContentScrollPositions.set(
-					teamId,
-					contentRef.current.scrollTop,
-				);
-			}
-
-			if (sidebarRef.current == null) {
-				return;
-			}
-
-			adminTeamDetailSidebarScrollPositions.set(
-				teamId,
-				sidebarRef.current.scrollTop,
-			);
-		};
-	}, [isPageLayout, pageTab, teamId]);
-
-	useEffect(() => {
-		if (!open || teamId == null) {
-			auditRequestIdRef.current += 1;
-			setAuditLoading(false);
-			return;
-		}
-
-		void loadAuditEntries(teamId, auditOffset);
-	}, [auditOffset, open, teamId]);
-
-	useEffect(() => {
-		if (!open || teamId == null) {
-			memberRequestIdRef.current += 1;
-			setMemberLoading(false);
-			return;
-		}
-
-		void loadMembers(teamId, memberOffset, {
+	const memberFilters = useMemo(
+		() => ({
 			keyword: memberKeyword || undefined,
 			role: memberRoleValue,
 			status: memberStatusValue,
-		});
-	}, [
-		memberKeyword,
+		}),
+		[memberKeyword, memberRoleValue, memberStatusValue],
+	);
+	const {
+		auditEntries,
+		auditLoading,
+		auditTotal,
+		detailLoading,
+		loadAuditEntries,
+		loadMembers,
+		loadTeamDetail,
+		managerCount,
+		memberLoading,
+		memberTotal,
+		members,
+		ownerCount,
+		team,
+	} = useAdminTeamDetailData({
+		auditOffset,
+		memberFilters,
 		memberOffset,
-		memberRoleValue,
-		memberStatusValue,
 		open,
 		teamId,
-	]);
+	});
+
+	useAdminTeamDetailScrollRestoration({
+		contentRef,
+		isPageLayout,
+		pageTab,
+		sidebarRef,
+		teamId,
+	});
 
 	useEffect(() => {
 		setArchiveConfirmValue("");
@@ -413,37 +220,32 @@ export function AdminTeamDetailDialog({
 		memberStatusFilter !== "__all__";
 	const memberTotalPages = Math.max(
 		1,
-		Math.ceil(memberTotal / MEMBER_PAGE_SIZE),
+		Math.ceil(memberTotal / ADMIN_TEAM_DETAIL_MEMBER_PAGE_SIZE),
 	);
-	const memberCurrentPage = Math.floor(memberOffset / MEMBER_PAGE_SIZE) + 1;
+	const memberCurrentPage =
+		Math.floor(memberOffset / ADMIN_TEAM_DETAIL_MEMBER_PAGE_SIZE) + 1;
 	const prevMemberPageDisabled = memberOffset === 0;
-	const nextMemberPageDisabled = memberOffset + MEMBER_PAGE_SIZE >= memberTotal;
-	const auditTotalPages = Math.max(1, Math.ceil(auditTotal / AUDIT_PAGE_SIZE));
-	const auditCurrentPage = Math.floor(auditOffset / AUDIT_PAGE_SIZE) + 1;
+	const nextMemberPageDisabled =
+		memberOffset + ADMIN_TEAM_DETAIL_MEMBER_PAGE_SIZE >= memberTotal;
+	const auditTotalPages = Math.max(
+		1,
+		Math.ceil(auditTotal / ADMIN_TEAM_DETAIL_AUDIT_PAGE_SIZE),
+	);
+	const auditCurrentPage =
+		Math.floor(auditOffset / ADMIN_TEAM_DETAIL_AUDIT_PAGE_SIZE) + 1;
 	const prevAuditPageDisabled = auditOffset === 0;
-	const nextAuditPageDisabled = auditOffset + AUDIT_PAGE_SIZE >= auditTotal;
+	const nextAuditPageDisabled =
+		auditOffset + ADMIN_TEAM_DETAIL_AUDIT_PAGE_SIZE >= auditTotal;
 
 	useEffect(() => {
 		if (memberOffset < memberTotal || memberTotal === 0) {
 			return;
 		}
 
-		setMemberOffset(Math.max(0, (memberTotalPages - 1) * MEMBER_PAGE_SIZE));
-	}, [memberOffset, memberTotal, memberTotalPages]);
-
-	useEffect(() => {
-		if (!isPageLayout || pageTab == null || pageLayoutTab === pageTab) {
-			return;
-		}
-
-		setTabDirection(
-			ADMIN_TEAM_DETAIL_TAB_INDEX[pageTab] >=
-				ADMIN_TEAM_DETAIL_TAB_INDEX[pageLayoutTab]
-				? "forward"
-				: "backward",
+		setMemberOffset(
+			Math.max(0, (memberTotalPages - 1) * ADMIN_TEAM_DETAIL_MEMBER_PAGE_SIZE),
 		);
-		setPageLayoutTab(pageTab);
-	}, [isPageLayout, pageLayoutTab, pageTab]);
+	}, [memberOffset, memberTotal, memberTotalPages]);
 
 	const handleSave = async () => {
 		if (!team || !canMutateTeam) {
@@ -615,46 +417,32 @@ export function AdminTeamDetailDialog({
 
 	useEffect(() => {
 		if (!open || teamId == null) {
-			auditRequestIdRef.current += 1;
-			detailRequestIdRef.current += 1;
-			memberRequestIdRef.current += 1;
 			overviewSyncAllowedRef.current = true;
 			setArchiveConfirmValue("");
 			archiveDialogProps.onOpenChange(false);
 			setArchiving(false);
-			setAuditEntries([]);
-			setAuditLoading(false);
 			setAuditOffset(0);
-			setAuditTotal(0);
 			setDescription("");
-			setDetailLoading(false);
 			setMemberIdentifier("");
-			setMemberLoading(false);
 			setMemberMutating(false);
 			setMemberOffset(0);
-			setMemberTotal(0);
-			setMembers([]);
-			setManagerCount(0);
 			setMemberQuery("");
 			setMemberRole("member");
 			setMemberRoleFilter("__all__");
 			setMemberStatusFilter("__all__");
 			setName("");
-			setOwnerCount(0);
 			setPolicyGroupId("");
 			setRestoring(false);
 			setSaving(false);
-			setTeam(null);
-			setDialogTab("overview");
+			resetDialogTab();
 			return;
 		}
 
 		overviewSyncAllowedRef.current = true;
 		setAuditOffset(0);
 		setMemberOffset(0);
-		setDialogTab("overview");
-		void loadTeamDetail(teamId);
-	}, [archiveDialogProps.onOpenChange, open, teamId]);
+		resetDialogTab();
+	}, [archiveDialogProps.onOpenChange, open, resetDialogTab, teamId]);
 
 	const removeMember =
 		members.find((member) => member.user_id === removeMemberId) ?? null;
@@ -662,38 +450,6 @@ export function AdminTeamDetailDialog({
 	if (teamId == null) {
 		return null;
 	}
-
-	const currentTab = isPageLayout ? pageLayoutTab : dialogTab;
-	const panelAnimationClass =
-		tabDirection === "forward"
-			? "animate-in fade-in duration-300 slide-in-from-right-4 motion-reduce:animate-none"
-			: "animate-in fade-in duration-300 slide-in-from-left-4 motion-reduce:animate-none";
-
-	const handleTabChange = (value: string) => {
-		if (
-			value === "overview" ||
-			value === "members" ||
-			value === "audit" ||
-			value === "danger"
-		) {
-			if (isPageLayout) {
-				if (value === currentTab) {
-					return;
-				}
-
-				setTabDirection(
-					ADMIN_TEAM_DETAIL_TAB_INDEX[value] >=
-						ADMIN_TEAM_DETAIL_TAB_INDEX[currentTab]
-						? "forward"
-						: "backward",
-				);
-				setPageLayoutTab(value);
-				onPageTabChange?.(value);
-			} else {
-				setDialogTab(value);
-			}
-		}
-	};
 
 	const handleDialogOpenChange = (nextOpen: boolean) => {
 		if (!nextOpen) {

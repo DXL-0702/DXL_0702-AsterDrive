@@ -1,15 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FileItemStatusIndicators } from "@/components/files/FileItemStatusIndicators";
-import { FileTypeIcon } from "@/components/files/FileTypeIcon";
-import { Button } from "@/components/ui/button";
 import {
 	Dialog,
 	DialogContent,
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import { Icon, type IconName } from "@/components/ui/icon";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useRetainedDialogValue } from "@/hooks/useRetainedDialogValue";
 import { formatBytes, formatDateAbsolute } from "@/lib/format";
@@ -21,6 +17,14 @@ import type {
 	FolderInfo,
 	FolderListItem,
 } from "@/types/api";
+import { FileInfoDialogContent } from "./file-info-dialog/FileInfoDialogContent";
+import {
+	formatValueOrFallback,
+	hasFileDetails,
+	hasFolderDetails,
+} from "./file-info-dialog/fileInfoDialogUtils";
+import type { DetailRow, QuickAction } from "./file-info-dialog/types";
+import { useMediaQuery } from "./file-info-dialog/useMediaQuery";
 
 interface FileInfoDialogProps {
 	open: boolean;
@@ -45,151 +49,11 @@ interface FileInfoDialogProps {
 	) => Promise<boolean> | boolean | undefined;
 }
 
-interface DetailRow {
-	label: string;
-	value: React.ReactNode;
-	monospace?: boolean;
-}
-
-interface QuickAction {
-	icon: IconName;
-	label: string;
-	onClick: () => void;
-}
-
 const DESKTOP_PANEL_EXIT_MS = 220;
 type FileInfoDialogTarget = {
 	file?: FileInfo | FileListItem;
 	folder?: FolderInfo | FolderListItem;
 };
-
-function hasFileDetails(file: FileInfo | FileListItem): file is FileInfo {
-	return "blob_id" in file && "created_at" in file;
-}
-
-function hasFolderDetails(
-	folder: FolderInfo | FolderListItem,
-): folder is FolderInfo {
-	return "created_at" in folder;
-}
-
-function useMediaQuery(query: string) {
-	const getMatches = () =>
-		typeof window !== "undefined" &&
-		typeof window.matchMedia === "function" &&
-		window.matchMedia(query).matches;
-
-	const [matches, setMatches] = useState(getMatches);
-
-	useEffect(() => {
-		if (
-			typeof window === "undefined" ||
-			typeof window.matchMedia !== "function"
-		) {
-			return;
-		}
-
-		const mediaQuery = window.matchMedia(query);
-		setMatches(mediaQuery.matches);
-		const handleChange = (event: MediaQueryListEvent) => {
-			setMatches(event.matches);
-		};
-
-		if (typeof mediaQuery.addEventListener === "function") {
-			mediaQuery.addEventListener("change", handleChange);
-			return () => mediaQuery.removeEventListener("change", handleChange);
-		}
-
-		mediaQuery.addListener(handleChange);
-		return () => mediaQuery.removeListener(handleChange);
-	}, [query]);
-
-	return matches;
-}
-
-function Section({
-	title,
-	children,
-	className,
-}: {
-	title?: string;
-	children: React.ReactNode;
-	className?: string;
-}) {
-	return (
-		<section
-			className={cn(
-				"space-y-3 rounded-2xl border border-border/60 bg-card/55 p-4 dark:bg-background/18",
-				className,
-			)}
-		>
-			{title ? (
-				<h3 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-					{title}
-				</h3>
-			) : null}
-			{children}
-		</section>
-	);
-}
-
-function DetailList({ rows }: { rows: DetailRow[] }) {
-	return (
-		<dl className="space-y-3">
-			{rows.map((row) => (
-				<div
-					key={row.label}
-					className="flex items-start justify-between gap-4 border-b border-border/40 pb-3 last:border-b-0 last:pb-0"
-				>
-					<dt className="text-sm text-muted-foreground">{row.label}</dt>
-					<dd
-						className={cn(
-							"max-w-[14rem] text-right text-sm text-foreground",
-							row.monospace && "font-mono text-[13px]",
-						)}
-					>
-						{row.value}
-					</dd>
-				</div>
-			))}
-		</dl>
-	);
-}
-
-function ActionGrid({ actions }: { actions: QuickAction[] }) {
-	if (actions.length === 0) {
-		return null;
-	}
-
-	return (
-		<div className="grid grid-cols-2 gap-2">
-			{actions.map((action) => (
-				<Button
-					key={action.label}
-					type="button"
-					variant="outline"
-					size="sm"
-					className="justify-start"
-					onClick={action.onClick}
-				>
-					<Icon name={action.icon} className="h-4 w-4" />
-					<span className="truncate">{action.label}</span>
-				</Button>
-			))}
-		</div>
-	);
-}
-
-function formatValueOrFallback(
-	value: string | null | undefined,
-	loading: boolean,
-	loadingText: string,
-) {
-	if (value != null) {
-		return value;
-	}
-	return loading ? loadingText : "—";
-}
 
 export function FileInfoDialog({
 	open,
@@ -628,69 +492,31 @@ export function FileInfoDialog({
 	}
 
 	const content = (
-		<div className="space-y-4 p-4">
-			<Section className="gap-0 space-y-4 bg-card/55 dark:bg-background/18">
-				<div className="flex items-start gap-3">
-					<div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-muted/35 text-muted-foreground dark:bg-muted/20">
-						{renderedFile ? (
-							<FileTypeIcon
-								mimeType={(activeFile ?? renderedFile).mime_type}
-								fileName={(activeFile ?? renderedFile).name}
-								className="h-8 w-8"
-							/>
-						) : (
-							<Icon name="Folder" className="h-8 w-8 text-amber-500" />
-						)}
-					</div>
-					<div className="min-w-0 flex-1 space-y-2">
-						<div className="space-y-1">
-							<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-								{summaryLabel}
-							</p>
-							{isDesktop ? (
-								<h2 className="line-clamp-2 text-lg font-semibold text-foreground">
-									{title}
-								</h2>
-							) : (
-								<p className="line-clamp-2 text-lg font-semibold text-foreground">
-									{title}
-								</p>
-							)}
-							<p className="text-sm text-muted-foreground">{summarySubtitle}</p>
-						</div>
-						<FileItemStatusIndicators
-							isLocked={currentLocked}
-							isShared={isShared ?? false}
-						/>
-					</div>
-					{isDesktop ? (
-						<Button
-							type="button"
-							variant="ghost"
-							size="icon-sm"
-							onClick={() => onOpenChange(false)}
-							aria-label={t("close")}
-						>
-							<Icon name="X" className="h-4 w-4" />
-						</Button>
-					) : null}
-				</div>
-			</Section>
-
-			{quickActions.length > 0 ? (
-				<Section title={t("info_actions")}>
-					<ActionGrid actions={quickActions} />
-				</Section>
-			) : null}
-
-			<Section title={t("info_overview")}>
-				<DetailList rows={overviewRows} />
-			</Section>
-
-			<Section title={t("info_status")}>
-				<DetailList rows={statusRows} />
-			</Section>
-		</div>
+		<FileInfoDialogContent
+			actionsTitle={t("info_actions")}
+			closeLabel={t("close")}
+			currentLocked={currentLocked}
+			isDesktop={isDesktop}
+			isShared={isShared}
+			overviewRows={overviewRows}
+			overviewTitle={t("info_overview")}
+			quickActions={quickActions}
+			statusRows={statusRows}
+			statusTitle={t("info_status")}
+			summaryLabel={summaryLabel}
+			summarySubtitle={summarySubtitle}
+			targetIcon={
+				renderedFile
+					? {
+							type: "file",
+							mimeType: (activeFile ?? renderedFile).mime_type,
+							fileName: (activeFile ?? renderedFile).name,
+						}
+					: { type: "folder" }
+			}
+			title={title}
+			onClose={() => onOpenChange(false)}
+		/>
 	);
 
 	if (isDesktop) {

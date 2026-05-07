@@ -1,13 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import type {
-	PolicyFormData,
-	RemoteDownloadStrategy,
-	RemoteUploadStrategy,
-	S3DownloadStrategy,
-	S3UploadStrategy,
-} from "@/components/admin/storagePolicyDialogShared";
-import { Badge } from "@/components/ui/badge";
+import type { StoragePolicyDriverOption } from "@/components/admin/StoragePolicyDialogFields";
+import type { PolicyFormData } from "@/components/admin/storagePolicyDialogShared";
 import { Button } from "@/components/ui/button";
 import {
 	Dialog,
@@ -17,20 +11,12 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from "@/components/ui/dialog";
-import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
-import { cn } from "@/lib/utils";
 import type { DriverType, RemoteNodeInfo } from "@/types/api";
+import { StoragePolicyCreateWizard } from "./storage-policy-dialog/StoragePolicyCreateWizard";
+import type { StoragePolicyDialogStep } from "./storage-policy-dialog/StoragePolicyDialogTypes";
+import { StoragePolicyEditForm } from "./storage-policy-dialog/StoragePolicyEditForm";
+import { StoragePolicyTestConnectionButton } from "./storage-policy-dialog/StoragePolicyTestConnectionButton";
 
 interface StoragePolicyDialogProps {
 	open: boolean;
@@ -55,48 +41,6 @@ interface StoragePolicyDialogProps {
 	onSyncNormalizedS3Form: () => void;
 }
 
-function TestConnectionButton({
-	onTest,
-	disabled = false,
-}: {
-	onTest: () => Promise<boolean>;
-	disabled?: boolean;
-}) {
-	const { t } = useTranslation("admin");
-	const [testing, setTesting] = useState(false);
-	const [result, setResult] = useState<boolean | null>(null);
-
-	const handleTest = async () => {
-		setTesting(true);
-		setResult(null);
-		const passed = await onTest();
-		setResult(passed);
-		setTesting(false);
-	};
-
-	return (
-		<Button
-			type="button"
-			variant="outline"
-			className={ADMIN_CONTROL_HEIGHT_CLASS}
-			disabled={testing || disabled}
-			onClick={handleTest}
-		>
-			{testing ? (
-				<Icon name="Spinner" className="h-4 w-4 mr-1 animate-spin" />
-			) : result === true ? (
-				<Icon
-					name="Check"
-					className="h-4 w-4 mr-1 text-green-600 dark:text-green-400"
-				/>
-			) : (
-				<Icon name="WifiHigh" className="h-4 w-4 mr-1" />
-			)}
-			{t("test_connection")}
-		</Button>
-	);
-}
-
 export function StoragePolicyDialog({
 	open,
 	mode,
@@ -118,13 +62,7 @@ export function StoragePolicyDialog({
 }: StoragePolicyDialogProps) {
 	const { t } = useTranslation("admin");
 	const isCreateMode = mode === "create";
-	const storageOptions: Array<{
-		description: string;
-		iconName?: "Globe";
-		iconSrc?: string;
-		type: DriverType;
-		title: string;
-	}> = [
+	const storageOptions: StoragePolicyDriverOption[] = [
 		{
 			type: "local",
 			title: t("driver_type_local"),
@@ -144,7 +82,7 @@ export function StoragePolicyDialog({
 			iconSrc: "/static/storage/asterdrive-node.svg",
 		},
 	];
-	const createSteps = [
+	const createSteps: StoragePolicyDialogStep[] = [
 		{
 			title: t("policy_wizard_step_storage_title"),
 			description: t("policy_wizard_step_storage_desc"),
@@ -169,7 +107,6 @@ export function StoragePolicyDialog({
 		},
 	];
 	const createLastStep = createSteps.length - 1;
-	const currentCreateStep = createSteps[Math.min(createStep, createLastStep)];
 	const previousCreateStepRef = useRef(createStep);
 	const stepAnimationRef = useRef<{
 		direction: "idle" | "forward" | "backward";
@@ -186,6 +123,7 @@ export function StoragePolicyDialog({
 		};
 	}
 	const createStepDirection = stepAnimationRef.current.direction;
+	const stepAnimationKey = `${stepAnimationRef.current.step}-${stepAnimationRef.current.direction}`;
 	const currentStorageOption =
 		storageOptions.find((option) => option.type === form.driver_type) ??
 		storageOptions[0];
@@ -305,478 +243,6 @@ export function StoragePolicyDialog({
 				]
 			: []),
 	];
-	const remoteDownloadStrategyOptions = [
-		{
-			label: t("remote_download_strategy_relay_stream"),
-			value: "relay_stream",
-		},
-		{
-			label: t("remote_download_strategy_presigned"),
-			value: "presigned",
-		},
-	] satisfies ReadonlyArray<{
-		label: string;
-		value: RemoteDownloadStrategy;
-	}>;
-	const remoteUploadStrategyOptions = [
-		{
-			label: t("remote_upload_strategy_relay_stream"),
-			value: "relay_stream",
-		},
-		{
-			label: t("remote_upload_strategy_presigned"),
-			value: "presigned",
-		},
-	] satisfies ReadonlyArray<{
-		label: string;
-		value: RemoteUploadStrategy;
-	}>;
-	const s3UploadStrategyOptions = [
-		{
-			label: t("s3_upload_strategy_relay_stream"),
-			value: "relay_stream",
-		},
-		{
-			label: t("s3_upload_strategy_presigned"),
-			value: "presigned",
-		},
-	] satisfies ReadonlyArray<{
-		label: string;
-		value: S3UploadStrategy;
-	}>;
-	const s3DownloadStrategyOptions = [
-		{
-			label: t("s3_download_strategy_relay_stream"),
-			value: "relay_stream",
-		},
-		{
-			label: t("s3_download_strategy_presigned"),
-			value: "presigned",
-		},
-	] satisfies ReadonlyArray<{
-		label: string;
-		value: S3DownloadStrategy;
-	}>;
-
-	const renderNameField = (showCreateValidation = false) => (
-		<div className="space-y-2">
-			<Label htmlFor="name">{t("core:name")}</Label>
-			<Input
-				id="name"
-				value={form.name}
-				onChange={(e) => onFieldChange("name", e.target.value)}
-				aria-invalid={
-					showCreateValidation && createNameError ? true : undefined
-				}
-				className={ADMIN_CONTROL_HEIGHT_CLASS}
-				required
-			/>
-			{showCreateValidation && createNameError ? (
-				<p className="text-xs text-destructive">{createNameError}</p>
-			) : null}
-		</div>
-	);
-
-	const renderBasePathField = () => (
-		<div className="space-y-2">
-			<Label htmlFor="base_path">{t("base_path")}</Label>
-			<Input
-				id="base_path"
-				value={form.base_path}
-				onChange={(e) => onFieldChange("base_path", e.target.value)}
-				className={ADMIN_CONTROL_HEIGHT_CLASS}
-				placeholder={form.driver_type === "local" ? "./data" : "tenant/prefix"}
-			/>
-		</div>
-	);
-
-	const renderDriverVisual = (
-		option: (typeof storageOptions)[number],
-		className?: string,
-	) =>
-		option.iconSrc ? (
-			<img
-				src={option.iconSrc}
-				alt=""
-				className={cn(
-					"w-auto object-contain",
-					option.type === "local" ? "max-h-7" : "max-h-9",
-					className,
-				)}
-			/>
-		) : (
-			<Icon
-				name={option.iconName ?? "Globe"}
-				className={cn("h-8 w-8 text-amber-600 dark:text-amber-300", className)}
-			/>
-		);
-
-	const remoteNodeOptions = remoteNodes.map((node) => ({
-		label: node.name,
-		value: String(node.id),
-	}));
-
-	const renderRemoteNodeField = (showCreateValidation = false) => (
-		<div className="space-y-2">
-			<Label htmlFor="remote_node_id">{t("remote_node")}</Label>
-			<Select
-				items={remoteNodeOptions}
-				value={form.remote_node_id || "__none__"}
-				onValueChange={(value) =>
-					onFieldChange(
-						"remote_node_id",
-						value == null || value === "__none__" ? "" : value,
-					)
-				}
-			>
-				<SelectTrigger id="remote_node_id">
-					<SelectValue />
-				</SelectTrigger>
-				<SelectContent>
-					<SelectItem value="__none__">
-						{t("select_remote_node_placeholder")}
-					</SelectItem>
-					{remoteNodeOptions.map((option) => (
-						<SelectItem key={option.value} value={option.value}>
-							{option.label}
-						</SelectItem>
-					))}
-				</SelectContent>
-			</Select>
-			{showCreateValidation && createRemoteNodeError ? (
-				<p className="text-xs text-destructive">{createRemoteNodeError}</p>
-			) : null}
-			{selectedRemoteNode ? (
-				<p className="text-xs text-muted-foreground">
-					{t("policy_wizard_remote_node_hint", {
-						base_url:
-							selectedRemoteNode.base_url ||
-							t("policy_wizard_remote_base_url_empty"),
-					})}
-				</p>
-			) : remoteNodes.length === 0 ? (
-				<p className="text-xs text-muted-foreground">
-					{t("policy_wizard_remote_nodes_empty")}
-				</p>
-			) : null}
-		</div>
-	);
-
-	const renderS3ConnectionFields = (showCreateValidation = false) => (
-		<>
-			<div className="space-y-2">
-				<Label htmlFor="endpoint">{t("endpoint")}</Label>
-				<Input
-					id="endpoint"
-					value={form.endpoint}
-					onChange={(e) => onFieldChange("endpoint", e.target.value)}
-					onBlur={onSyncNormalizedS3Form}
-					aria-invalid={endpointValidationMessage ? true : undefined}
-					className={ADMIN_CONTROL_HEIGHT_CLASS}
-					placeholder="https://s3.amazonaws.com"
-				/>
-				{endpointValidationMessage ? (
-					<p className="text-xs text-destructive">
-						{endpointValidationMessage}
-					</p>
-				) : null}
-				<p className="text-xs text-muted-foreground">{t("s3_endpoint_hint")}</p>
-			</div>
-			<div className="space-y-2">
-				<Label htmlFor="bucket">{t("bucket")}</Label>
-				<Input
-					id="bucket"
-					value={form.bucket}
-					onChange={(e) => onFieldChange("bucket", e.target.value)}
-					aria-invalid={
-						showCreateValidation && createBucketError ? true : undefined
-					}
-					className={ADMIN_CONTROL_HEIGHT_CLASS}
-					required
-				/>
-				{showCreateValidation && createBucketError ? (
-					<p className="text-xs text-destructive">{createBucketError}</p>
-				) : null}
-			</div>
-			<div className="grid grid-cols-2 gap-4">
-				<div className="space-y-2">
-					<Label htmlFor="access_key">{t("access_key")}</Label>
-					<Input
-						id="access_key"
-						name="storage-policy-access-key"
-						value={form.access_key}
-						onChange={(e) => onFieldChange("access_key", e.target.value)}
-						autoComplete="off"
-						className={ADMIN_CONTROL_HEIGHT_CLASS}
-						placeholder={
-							isCreateMode
-								? undefined
-								: t("policy_editor_credentials_keep_placeholder")
-						}
-					/>
-				</div>
-				<div className="space-y-2">
-					<Label htmlFor="secret_key">{t("secret_key")}</Label>
-					<Input
-						id="secret_key"
-						name="storage-policy-secret-key"
-						type="password"
-						value={form.secret_key}
-						onChange={(e) => onFieldChange("secret_key", e.target.value)}
-						autoComplete="new-password"
-						className={ADMIN_CONTROL_HEIGHT_CLASS}
-						placeholder={
-							isCreateMode
-								? undefined
-								: t("policy_editor_credentials_keep_placeholder")
-						}
-					/>
-				</div>
-			</div>
-		</>
-	);
-
-	const renderS3UploadStrategyField = () => (
-		<div className="space-y-2 pt-1">
-			<Label htmlFor="s3_upload_strategy">{t("s3_upload_strategy")}</Label>
-			<Select
-				items={s3UploadStrategyOptions}
-				value={form.s3_upload_strategy}
-				onValueChange={(value) =>
-					onFieldChange("s3_upload_strategy", value as S3UploadStrategy)
-				}
-			>
-				<SelectTrigger id="s3_upload_strategy">
-					<SelectValue />
-				</SelectTrigger>
-				<SelectContent>
-					{s3UploadStrategyOptions.map((option) => (
-						<SelectItem key={option.value} value={option.value}>
-							{option.label}
-						</SelectItem>
-					))}
-				</SelectContent>
-			</Select>
-			<p className="text-xs text-muted-foreground">
-				{t(
-					form.s3_upload_strategy === "relay_stream"
-						? "s3_upload_strategy_relay_stream_desc"
-						: "s3_upload_strategy_presigned_desc",
-				)}
-			</p>
-		</div>
-	);
-
-	const renderS3DownloadStrategyField = () => (
-		<div className="space-y-2 pt-1">
-			<Label htmlFor="s3_download_strategy">{t("s3_download_strategy")}</Label>
-			<Select
-				items={s3DownloadStrategyOptions}
-				value={form.s3_download_strategy}
-				onValueChange={(value) =>
-					onFieldChange("s3_download_strategy", value as S3DownloadStrategy)
-				}
-			>
-				<SelectTrigger id="s3_download_strategy">
-					<SelectValue />
-				</SelectTrigger>
-				<SelectContent>
-					{s3DownloadStrategyOptions.map((option) => (
-						<SelectItem key={option.value} value={option.value}>
-							{option.label}
-						</SelectItem>
-					))}
-				</SelectContent>
-			</Select>
-			<p className="text-xs text-muted-foreground">
-				{t(
-					form.s3_download_strategy === "relay_stream"
-						? "s3_download_strategy_relay_stream_desc"
-						: "s3_download_strategy_presigned_desc",
-				)}
-			</p>
-		</div>
-	);
-
-	const renderLocalContentDedupField = () => (
-		<div className="space-y-2 pt-1">
-			<div className="flex items-center gap-2">
-				<Switch
-					id="content_dedup"
-					checked={form.content_dedup}
-					onCheckedChange={(value) => onFieldChange("content_dedup", value)}
-				/>
-				<Label htmlFor="content_dedup">{t("content_dedup")}</Label>
-			</div>
-			<p className="text-xs text-muted-foreground">
-				{t("local_content_dedup_desc")}
-			</p>
-		</div>
-	);
-
-	const renderRemoteRulesHelper = () => (
-		<div className="rounded-2xl border border-dashed border-border/80 bg-muted/20 p-4 text-sm text-muted-foreground">
-			{t("policy_wizard_remote_rules_helper")}
-		</div>
-	);
-
-	const renderRemoteDownloadStrategyField = () => (
-		<div className="space-y-2 pt-1">
-			<Label htmlFor="remote_download_strategy">
-				{t("remote_download_strategy")}
-			</Label>
-			<Select
-				items={remoteDownloadStrategyOptions}
-				value={form.remote_download_strategy}
-				onValueChange={(value) =>
-					onFieldChange(
-						"remote_download_strategy",
-						value as RemoteDownloadStrategy,
-					)
-				}
-			>
-				<SelectTrigger id="remote_download_strategy">
-					<SelectValue />
-				</SelectTrigger>
-				<SelectContent>
-					{remoteDownloadStrategyOptions.map((option) => (
-						<SelectItem key={option.value} value={option.value}>
-							{option.label}
-						</SelectItem>
-					))}
-				</SelectContent>
-			</Select>
-			<p className="text-xs text-muted-foreground">
-				{t(
-					form.remote_download_strategy === "relay_stream"
-						? "remote_download_strategy_relay_stream_desc"
-						: "remote_download_strategy_presigned_desc",
-				)}
-			</p>
-		</div>
-	);
-
-	const renderRemoteUploadStrategyField = () => (
-		<div className="space-y-2 pt-1">
-			<Label htmlFor="remote_upload_strategy">
-				{t("remote_upload_strategy")}
-			</Label>
-			<Select
-				items={remoteUploadStrategyOptions}
-				value={form.remote_upload_strategy}
-				onValueChange={(value) =>
-					onFieldChange("remote_upload_strategy", value as RemoteUploadStrategy)
-				}
-			>
-				<SelectTrigger id="remote_upload_strategy">
-					<SelectValue />
-				</SelectTrigger>
-				<SelectContent>
-					{remoteUploadStrategyOptions.map((option) => (
-						<SelectItem key={option.value} value={option.value}>
-							{option.label}
-						</SelectItem>
-					))}
-				</SelectContent>
-			</Select>
-			<p className="text-xs text-muted-foreground">
-				{t(
-					form.remote_upload_strategy === "relay_stream"
-						? "remote_upload_strategy_relay_stream_desc"
-						: "remote_upload_strategy_presigned_desc",
-				)}
-			</p>
-		</div>
-	);
-
-	const renderLimitsFields = () => (
-		<>
-			<div className="space-y-2">
-				<Label htmlFor="max_file_size">{t("max_file_size")} (bytes)</Label>
-				<Input
-					id="max_file_size"
-					type="number"
-					value={form.max_file_size}
-					onChange={(e) => onFieldChange("max_file_size", e.target.value)}
-					className={ADMIN_CONTROL_HEIGHT_CLASS}
-					placeholder={`0 = ${t("core:unlimited").toLowerCase()}`}
-				/>
-			</div>
-
-			<div className="space-y-2">
-				<Label htmlFor="chunk_size">{t("chunk_size")}</Label>
-				<Input
-					id="chunk_size"
-					type="number"
-					value={form.chunk_size}
-					onChange={(e) => onFieldChange("chunk_size", e.target.value)}
-					className={ADMIN_CONTROL_HEIGHT_CLASS}
-					placeholder="5 = 5MB, 0 = single upload only"
-				/>
-				<p className="text-xs text-muted-foreground">{t("chunk_size_desc")}</p>
-			</div>
-		</>
-	);
-
-	const renderDefaultToggle = () => (
-		<div className="flex items-center gap-2">
-			<Switch
-				id="is_default"
-				checked={form.is_default}
-				onCheckedChange={(value) => onFieldChange("is_default", value)}
-			/>
-			<Label htmlFor="is_default">{t("set_as_default")}</Label>
-		</div>
-	);
-
-	const renderSectionIntro = (title: string, description: string) => (
-		<div className="mb-5">
-			<h3 className="text-base font-semibold text-foreground">{title}</h3>
-			<p className="mt-1 text-sm text-muted-foreground">{description}</p>
-		</div>
-	);
-
-	const renderPolicySummaryCard = (description: string) => (
-		<div
-			data-testid="policy-summary-card"
-			className="rounded-3xl border border-border/70 bg-muted/20 p-5"
-		>
-			<div className="flex items-center gap-3">
-				<div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-					{renderDriverVisual(currentStorageOption)}
-				</div>
-				<div>
-					<p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-						{t("policy_wizard_summary_title")}
-					</p>
-					<h3 className="mt-1 text-base font-semibold">
-						{form.name || t("new_policy")}
-					</h3>
-				</div>
-			</div>
-			<p className="mt-4 text-sm leading-6 text-muted-foreground">
-				{description}
-			</p>
-			<div className="mt-4 overflow-hidden rounded-2xl border border-border/70 bg-background/85">
-				<dl className="divide-y divide-border/70">
-					{createSummaryItems.map((item) => (
-						<div
-							key={item.label}
-							className="grid grid-cols-[96px_minmax(0,1fr)] items-start gap-3 px-4 py-3"
-						>
-							<dt className="pt-0.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-								{item.label}
-							</dt>
-							<dd className="min-w-0 break-all text-sm font-medium leading-5 text-foreground">
-								{item.value}
-							</dd>
-						</div>
-					))}
-				</dl>
-			</div>
-		</div>
-	);
-
 	useEffect(() => {
 		if (!open || !isCreateMode) {
 			previousCreateStepRef.current = 0;
@@ -792,14 +258,7 @@ export function StoragePolicyDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent
-				className={cn(
-					"flex max-h-[min(90vh,calc(100vh-2rem))] flex-col gap-0 overflow-hidden p-0",
-					isCreateMode
-						? "sm:max-w-[calc(100%-2rem)] lg:max-w-4xl"
-						: "sm:max-w-[calc(100%-2rem)] lg:max-w-4xl",
-				)}
-			>
+			<DialogContent className="flex max-h-[min(90vh,calc(100vh-2rem))] flex-col gap-0 overflow-hidden p-0 sm:max-w-[calc(100%-2rem)] lg:max-w-4xl">
 				<DialogHeader className="shrink-0 px-6 pt-5 pb-0 pr-14">
 					<DialogTitle>
 						{isCreateMode ? t("create_policy") : t("edit_policy")}
@@ -814,299 +273,41 @@ export function StoragePolicyDialog({
 					className="flex min-h-0 flex-1 flex-col overflow-hidden"
 				>
 					<div className="min-h-0 flex-1 overflow-y-auto px-6 pt-6 pb-5">
-						<div className="space-y-6">
-							{isCreateMode ? (
-								<>
-									<div className="space-y-3">
-										<div className="rounded-2xl border border-border/70 bg-muted/20 p-3 sm:p-4">
-											<div className="flex items-start justify-between gap-3">
-												<div className="space-y-1">
-													<p className="text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
-														{t("policy_wizard_progress", {
-															current: createStep + 1,
-															total: createSteps.length,
-														})}
-													</p>
-													<h3 className="text-sm font-semibold sm:text-base">
-														{currentCreateStep.title}
-													</h3>
-													<p className="hidden text-sm text-muted-foreground sm:block">
-														{currentCreateStep.description}
-													</p>
-												</div>
-												<div className="hidden text-3xl leading-none font-semibold text-foreground/15 md:block">
-													{String(createStep + 1).padStart(2, "0")}
-												</div>
-											</div>
-											<div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
-												<div
-													className="h-full rounded-full bg-primary transition-all"
-													style={{
-														width: `${((createStep + 1) / createSteps.length) * 100}%`,
-													}}
-												/>
-											</div>
-										</div>
-
-										<div className="hidden gap-2 md:grid md:grid-cols-3">
-											{createSteps.map((step, index) => (
-												<button
-													type="button"
-													key={step.title}
-													disabled={index > createStep}
-													onClick={() => onCreateStepChange(index)}
-													className={cn(
-														"rounded-xl border px-3 py-2.5 text-left transition",
-														index === createStep
-															? "border-primary bg-primary/5 shadow-sm"
-															: index < createStep
-																? "border-border bg-background hover:border-primary/40"
-																: "border-border/60 bg-muted/20 text-muted-foreground",
-													)}
-												>
-													<div className="flex items-center gap-2">
-														<span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background/80 text-[10px] font-semibold tracking-[0.16em] text-muted-foreground">
-															{index + 1}
-														</span>
-														<span className="text-sm font-medium leading-5">
-															{step.title}
-														</span>
-													</div>
-												</button>
-											))}
-										</div>
-									</div>
-
-									<div className="rounded-2xl border border-border/70 bg-background/70 p-5">
-										<div className="relative overflow-hidden">
-											<div
-												key={`${stepAnimationRef.current.step}-${stepAnimationRef.current.direction}`}
-												data-testid="policy-step-panel"
-												className={cn(
-													createStepDirection === "idle"
-														? undefined
-														: "animate-in fade-in duration-[360ms] motion-reduce:animate-none",
-													createStepDirection === "forward"
-														? "slide-in-from-right-6"
-														: createStepDirection === "backward"
-															? "slide-in-from-left-6"
-															: undefined,
-												)}
-											>
-												{createStep === 0 ? (
-													<div className="space-y-4">
-														<div className="max-w-2xl">
-															<h3 className="text-base font-semibold">
-																{t("policy_wizard_choose_driver_title")}
-															</h3>
-															<p className="mt-1 text-sm text-muted-foreground">
-																{t("policy_wizard_choose_driver_desc")}
-															</p>
-														</div>
-														<div className="grid gap-4 md:grid-cols-2">
-															{storageOptions.map((option) => (
-																<button
-																	type="button"
-																	key={option.type}
-																	aria-pressed={
-																		form.driver_type === option.type
-																	}
-																	onClick={() =>
-																		onDriverTypeChange(option.type)
-																	}
-																	className={cn(
-																		"rounded-3xl border p-5 text-left transition",
-																		form.driver_type === option.type
-																			? "border-primary bg-primary/5 shadow-sm"
-																			: "border-border bg-background hover:border-primary/40 hover:bg-muted/20",
-																	)}
-																>
-																	<div className="flex items-start gap-4">
-																		<div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-																			{renderDriverVisual(
-																				option,
-																				option.type === "local"
-																					? "max-h-8"
-																					: "max-h-10",
-																			)}
-																		</div>
-																		<div className="min-w-0 flex-1">
-																			<div className="flex flex-wrap items-center gap-2">
-																				<p className="text-base font-semibold">
-																					{option.title}
-																				</p>
-																				{form.driver_type === option.type ? (
-																					<span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-																						{t("policy_wizard_selected")}
-																					</span>
-																				) : null}
-																			</div>
-																			<p className="mt-2 text-sm leading-6 text-muted-foreground">
-																				{option.description}
-																			</p>
-																		</div>
-																	</div>
-																</button>
-															))}
-														</div>
-													</div>
-												) : createStep === 1 ? (
-													<div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
-														<div className="space-y-4">
-															{renderNameField(true)}
-															{renderBasePathField()}
-															{form.driver_type === "s3"
-																? renderS3ConnectionFields(true)
-																: form.driver_type === "remote"
-																	? renderRemoteNodeField(true)
-																	: null}
-														</div>
-														<div className="rounded-3xl border border-border/70 bg-muted/20 p-5">
-															<div className="flex items-center gap-3">
-																<div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/5">
-																	{renderDriverVisual(currentStorageOption)}
-																</div>
-																<div>
-																	<p className="text-sm font-medium">
-																		{currentStorageOption.title}
-																	</p>
-																	<p className="text-xs text-muted-foreground">
-																		{t("policy_wizard_driver_panel_title")}
-																	</p>
-																</div>
-															</div>
-															<p className="mt-4 text-sm leading-6 text-muted-foreground">
-																{currentStorageOption.description}
-															</p>
-															<p className="mt-4 text-xs leading-5 text-muted-foreground">
-																{form.driver_type === "s3"
-																	? t("policy_wizard_s3_helper")
-																	: form.driver_type === "remote"
-																		? t("policy_wizard_remote_helper")
-																		: t("policy_wizard_local_helper")}
-															</p>
-														</div>
-													</div>
-												) : (
-													<div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-														<div className="space-y-4">
-															{form.driver_type === "s3" ? (
-																<>
-																	{renderS3UploadStrategyField()}
-																	{renderS3DownloadStrategyField()}
-																</>
-															) : form.driver_type === "remote" ? (
-																<>
-																	{renderRemoteRulesHelper()}
-																	{renderRemoteDownloadStrategyField()}
-																	{renderRemoteUploadStrategyField()}
-																	{renderRemoteNodeField()}
-																</>
-															) : (
-																renderLocalContentDedupField()
-															)}
-															{renderLimitsFields()}
-															{renderDefaultToggle()}
-														</div>
-														<div className="space-y-4 lg:sticky lg:top-0 lg:self-start">
-															{renderPolicySummaryCard(
-																t("policy_wizard_summary_desc"),
-															)}
-														</div>
-													</div>
-												)}
-											</div>
-										</div>
-									</div>
-								</>
-							) : (
-								<div
-									data-testid="policy-edit-shell"
-									className="grid gap-6 lg:grid-cols-[300px_minmax(0,1fr)]"
-								>
-									<div className="order-2 space-y-4 lg:sticky lg:top-0 lg:order-1 lg:self-start">
-										{renderPolicySummaryCard(t("policy_editor_summary_desc"))}
-									</div>
-
-									<div className="order-1 space-y-4 lg:order-2">
-										<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
-											{renderSectionIntro(
-												t("policy_editor_overview_title"),
-												t("policy_editor_overview_desc"),
-											)}
-											<div className="grid gap-5 md:grid-cols-2">
-												<div className="space-y-2">
-													<Label>{t("driver_type")}</Label>
-													<div className="flex h-8 items-center">
-														<Badge
-															variant="outline"
-															data-testid="policy-driver-badge"
-															className={cn(
-																"shadow-sm",
-																currentDriverBadgeClass,
-															)}
-														>
-															{currentStorageOption.title}
-														</Badge>
-													</div>
-												</div>
-												{renderNameField()}
-												<div className="md:col-span-2">
-													{renderBasePathField()}
-												</div>
-											</div>
-										</section>
-
-										{form.driver_type === "s3" ? (
-											<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
-												{renderSectionIntro(
-													t("policy_editor_connection_title"),
-													t("policy_editor_connection_desc"),
-												)}
-												<div className="space-y-4">
-													{renderS3ConnectionFields()}
-												</div>
-											</section>
-										) : form.driver_type === "remote" ? (
-											<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
-												{renderSectionIntro(
-													t("policy_editor_remote_title"),
-													t("policy_editor_remote_desc"),
-												)}
-												<div className="space-y-4">
-													{renderRemoteNodeField()}
-													{renderRemoteRulesHelper()}
-												</div>
-											</section>
-										) : null}
-
-										<section className="rounded-2xl border border-border/70 bg-background/70 p-5">
-											{renderSectionIntro(
-												t("policy_editor_rules_title"),
-												t("policy_editor_rules_desc"),
-											)}
-											<div className="space-y-4">
-												{form.driver_type === "s3" ? (
-													<>
-														{renderS3UploadStrategyField()}
-														{renderS3DownloadStrategyField()}
-													</>
-												) : form.driver_type === "remote" ? (
-													<>
-														{renderRemoteDownloadStrategyField()}
-														{renderRemoteUploadStrategyField()}
-													</>
-												) : (
-													renderLocalContentDedupField()
-												)}
-												{renderLimitsFields()}
-												{renderDefaultToggle()}
-											</div>
-										</section>
-									</div>
-								</div>
-							)}
-						</div>
+						{isCreateMode ? (
+							<StoragePolicyCreateWizard
+								createBucketError={createBucketError}
+								createNameError={createNameError}
+								createRemoteNodeError={createRemoteNodeError}
+								createStep={createStep}
+								createStepDirection={createStepDirection}
+								createSteps={createSteps}
+								currentStorageOption={currentStorageOption}
+								endpointValidationMessage={endpointValidationMessage}
+								form={form}
+								onCreateStepChange={onCreateStepChange}
+								onDriverTypeChange={onDriverTypeChange}
+								onFieldChange={onFieldChange}
+								onSyncNormalizedS3Form={onSyncNormalizedS3Form}
+								remoteNodes={remoteNodes}
+								stepAnimationKey={stepAnimationKey}
+								storageOptions={storageOptions}
+								summaryItems={createSummaryItems}
+							/>
+						) : (
+							<StoragePolicyEditForm
+								createBucketError={createBucketError}
+								createNameError={createNameError}
+								createRemoteNodeError={createRemoteNodeError}
+								currentDriverBadgeClass={currentDriverBadgeClass}
+								currentStorageOption={currentStorageOption}
+								endpointValidationMessage={endpointValidationMessage}
+								form={form}
+								onFieldChange={onFieldChange}
+								onSyncNormalizedS3Form={onSyncNormalizedS3Form}
+								remoteNodes={remoteNodes}
+								summaryItems={createSummaryItems}
+							/>
+						)}
 					</div>
 					<DialogFooter className="mx-0 mb-0 w-full shrink-0 flex-row items-center gap-2 rounded-b-xl px-6 py-3">
 						<div className="mr-auto flex shrink-0 gap-2">
@@ -1127,7 +328,7 @@ export function StoragePolicyDialog({
 							{isCreateMode ? (
 								createStep === createLastStep ? (
 									<>
-										<TestConnectionButton
+										<StoragePolicyTestConnectionButton
 											onTest={onRunConnectionTest}
 											disabled={submitting}
 										/>
@@ -1145,7 +346,7 @@ export function StoragePolicyDialog({
 										{createStep === 1 &&
 										(form.driver_type === "s3" ||
 											form.driver_type === "remote") ? (
-											<TestConnectionButton
+											<StoragePolicyTestConnectionButton
 												onTest={onRunConnectionTest}
 												disabled={submitting}
 											/>
@@ -1164,7 +365,7 @@ export function StoragePolicyDialog({
 								)
 							) : (
 								<>
-									<TestConnectionButton
+									<StoragePolicyTestConnectionButton
 										onTest={onRunConnectionTest}
 										disabled={submitting}
 									/>

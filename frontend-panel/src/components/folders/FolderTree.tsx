@@ -1,4 +1,4 @@
-import type React from "react";
+import type { DragEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -6,19 +6,13 @@ import { SkeletonTree } from "@/components/common/SkeletonTree";
 import { Icon } from "@/components/ui/icon";
 import { handleApiError } from "@/hooks/useApiError";
 import {
-	DRAG_SOURCE_MIME,
-	FOLDER_LIMIT,
 	FOLDER_TREE_DRAG_EXPAND_DELAY_MS,
-	FOLDER_TREE_INDENT_PX,
-	FOLDER_TREE_ROW_OFFSET_PX,
 	SIDEBAR_SECTION_PADDING_CLASS,
 } from "@/lib/constants";
 import {
 	getInvalidInternalDropReason,
 	hasInternalDragData,
 	readInternalDragData,
-	setInternalDragPreview,
-	writeInternalDragData,
 } from "@/lib/dragDrop";
 import { folderTreeRowClass } from "@/lib/utils";
 import {
@@ -26,273 +20,24 @@ import {
 	workspaceKey,
 	workspaceRootPath,
 } from "@/lib/workspace";
-import { type FolderListParams, fileService } from "@/services/fileService";
+import { fileService } from "@/services/fileService";
 import { useAuthStore } from "@/stores/authStore";
-import type { SortBy, SortOrder } from "@/stores/fileStore";
 import { useFileStore } from "@/stores/fileStore";
 import { useWorkspaceStore } from "@/stores/workspaceStore";
 import type { FolderListItem } from "@/types/api";
-
-interface FolderTreeNode {
-	folder: FolderListItem;
-	parentId: number | null;
-	childIds: number[];
-}
-
-interface FolderTreeSnapshot {
-	expandedIds: number[];
-	loadedIds: number[];
-	nodeEntries: Array<[number, FolderTreeNode]>;
-	rootIds: number[];
-	sortBy: SortBy;
-	sortOrder: SortOrder;
-	userId: number | null;
-	workspaceKey: string;
-}
-
-interface TreeNodeProps {
-	currentFolderId: number | null;
-	depth: number;
-	expandedIds: Set<number>;
-	loadedIds: Set<number>;
-	loadingIds: Set<number>;
-	nodeId: number;
-	nodeMap: Map<number, FolderTreeNode>;
-	onDragHoverEnd: (id: number) => void;
-	onDragHoverStart: (id: number) => void;
-	onDrop: (
-		fileIds: number[],
-		folderIds: number[],
-		targetFolderId: number,
-		targetPathIds: number[],
-	) => void;
-	onNavigate: (id: number, name: string) => void;
-	onToggle: (id: number) => void;
-	renderChildren: (ids: number[], depth: number) => React.ReactNode;
-}
+import { FolderTreeNodeRow } from "./folder-tree/FolderTreeNode";
+import {
+	cloneNodeEntries,
+	getFolderTreeListParams,
+	upsertChildren,
+} from "./folder-tree/folderTreeState";
+import type {
+	FolderTreeNode,
+	FolderTreeProps,
+	FolderTreeSnapshot,
+} from "./folder-tree/types";
 
 let folderTreeSnapshot: FolderTreeSnapshot | null = null;
-
-function getFolderTreeListParams(
-	sortBy: SortBy,
-	sortOrder: SortOrder,
-): FolderListParams {
-	return {
-		file_limit: 0,
-		folder_limit: FOLDER_LIMIT,
-		sort_by: sortBy,
-		sort_order: sortOrder,
-	};
-}
-
-function cloneNodeEntries(
-	nodeMap: Map<number, FolderTreeNode>,
-): Array<[number, FolderTreeNode]> {
-	return Array.from(nodeMap.entries()).map(([id, node]) => [
-		id,
-		{
-			folder: node.folder,
-			parentId: node.parentId,
-			childIds: [...node.childIds],
-		},
-	]);
-}
-
-function upsertChildren(
-	nodeMap: Map<number, FolderTreeNode>,
-	parentId: number | null,
-	folders: FolderListItem[],
-	getCachedChildIds?: (id: number) => number[] | undefined,
-): { nodeMap: Map<number, FolderTreeNode>; rootIds: number[] } {
-	const nextNodeMap = new Map(nodeMap);
-	const childIds = folders.map((folder) => folder.id);
-
-	for (const folder of folders) {
-		const existing = nextNodeMap.get(folder.id);
-		nextNodeMap.set(folder.id, {
-			childIds: existing?.childIds ?? getCachedChildIds?.(folder.id) ?? [],
-			folder,
-			parentId,
-		});
-	}
-
-	if (parentId === null) {
-		return { nodeMap: nextNodeMap, rootIds: childIds };
-	}
-
-	const parentNode = nextNodeMap.get(parentId);
-	if (parentNode) {
-		nextNodeMap.set(parentId, {
-			...parentNode,
-			childIds,
-		});
-	}
-
-	return { nodeMap: nextNodeMap, rootIds: [] };
-}
-
-function TreeNode({
-	currentFolderId,
-	depth,
-	expandedIds,
-	loadedIds,
-	loadingIds,
-	nodeId,
-	nodeMap,
-	onDragHoverEnd,
-	onDragHoverStart,
-	onDrop,
-	onNavigate,
-	onToggle,
-	renderChildren,
-}: TreeNodeProps) {
-	const node = nodeMap.get(nodeId);
-	const [dragOver, setDragOver] = useState(false);
-	const rowRef = useRef<HTMLDivElement | null>(null);
-
-	if (!node) return null;
-
-	const isActive = currentFolderId === node.folder.id;
-	const isExpanded = expandedIds.has(node.folder.id);
-	const isLoading = loadingIds.has(node.folder.id);
-	const isLoaded = loadedIds.has(node.folder.id);
-	const showToggle = isLoading || !isLoaded || node.childIds.length > 0;
-
-	const handleDragStart = (e: React.DragEvent) => {
-		writeInternalDragData(e.dataTransfer, {
-			fileIds: [],
-			folderIds: [node.folder.id],
-		});
-		e.dataTransfer.setData(DRAG_SOURCE_MIME, "tree");
-		setInternalDragPreview(e, { itemCount: 1 });
-	};
-
-	const handleDragOver = (e: React.DragEvent) => {
-		if (!hasInternalDragData(e.dataTransfer)) return;
-		e.preventDefault();
-		e.dataTransfer.dropEffect = "move";
-		setDragOver(true);
-		onDragHoverStart(node.folder.id);
-	};
-
-	const handleDragLeave = (e: React.DragEvent) => {
-		const nextTarget = e.relatedTarget;
-		if (nextTarget instanceof Node && rowRef.current?.contains(nextTarget)) {
-			return;
-		}
-		setDragOver(false);
-		onDragHoverEnd(node.folder.id);
-	};
-
-	const handleDrop = (e: React.DragEvent) => {
-		setDragOver(false);
-		onDragHoverEnd(node.folder.id);
-		e.preventDefault();
-		const data = readInternalDragData(e.dataTransfer);
-		if (!data) return;
-		const targetPathIds = (() => {
-			const pathIds: number[] = [];
-			let cursor: number | null = node.folder.id;
-
-			while (cursor !== null) {
-				pathIds.unshift(cursor);
-				cursor = nodeMap.get(cursor)?.parentId ?? null;
-			}
-
-			return pathIds;
-		})();
-		if (
-			getInvalidInternalDropReason(data, node.folder.id, targetPathIds) !== null
-		) {
-			return;
-		}
-		onDrop(data.fileIds, data.folderIds, node.folder.id, targetPathIds);
-	};
-
-	return (
-		<div>
-			{/* biome-ignore lint/a11y/useSemanticElements: outer row needs drag-drop target and contains a nested toggle button */}
-			<div
-				ref={rowRef}
-				role="button"
-				tabIndex={0}
-				draggable
-				className={folderTreeRowClass(
-					isActive,
-					dragOver && "ring-2 ring-primary bg-accent/30",
-				)}
-				style={{
-					paddingLeft: `${depth * FOLDER_TREE_INDENT_PX + FOLDER_TREE_ROW_OFFSET_PX}px`,
-				}}
-				onClick={() => onNavigate(node.folder.id, node.folder.name)}
-				onKeyDown={(e) => {
-					if (e.key === "Enter" || e.key === " ") {
-						e.preventDefault();
-						onNavigate(node.folder.id, node.folder.name);
-					}
-				}}
-				onDragStart={handleDragStart}
-				onDragOver={handleDragOver}
-				onDragLeave={handleDragLeave}
-				onDrop={handleDrop}
-			>
-				{showToggle ? (
-					<button
-						type="button"
-						onDragEnter={(e) => e.preventDefault()}
-						className="shrink-0 rounded p-0.5 text-muted-foreground hover:bg-accent-foreground/10 hover:text-foreground disabled:cursor-default disabled:hover:bg-transparent"
-						onClick={(e) => {
-							e.stopPropagation();
-							onToggle(node.folder.id);
-						}}
-						disabled={isLoading}
-					>
-						{isLoading ? (
-							<div className="h-3 w-3 border-2 border-muted-foreground/30 border-t-muted-foreground rounded-full animate-spin" />
-						) : isExpanded ? (
-							<Icon
-								name="CaretDown"
-								className="h-3 w-3 text-muted-foreground"
-							/>
-						) : (
-							<Icon
-								name="CaretRight"
-								className="h-3 w-3 text-muted-foreground"
-							/>
-						)}
-					</button>
-				) : (
-					<span className="h-4 w-4 shrink-0" aria-hidden="true" />
-				)}
-				<div className="flex min-w-0 flex-1 items-center gap-2 px-1">
-					{isExpanded ? (
-						<Icon
-							name="FolderOpen"
-							className="h-4 w-4 shrink-0 text-muted-foreground"
-						/>
-					) : (
-						<Icon
-							name="Folder"
-							className="h-4 w-4 shrink-0 text-muted-foreground"
-						/>
-					)}
-					<span className="truncate">{node.folder.name}</span>
-				</div>
-			</div>
-			{isExpanded &&
-				node.childIds.length > 0 &&
-				renderChildren(node.childIds, depth + 1)}
-		</div>
-	);
-}
-
-interface FolderTreeProps {
-	onMoveToFolder?: (
-		fileIds: number[],
-		folderIds: number[],
-		targetFolderId: number | null,
-	) => Promise<void> | void;
-}
 
 export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 	const { t } = useTranslation("files");
@@ -691,7 +436,7 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 		],
 	);
 
-	const handleRootDragOver = (e: React.DragEvent) => {
+	const handleRootDragOver = (e: DragEvent) => {
 		if (!hasInternalDragData(e.dataTransfer)) return;
 		e.preventDefault();
 		e.dataTransfer.dropEffect = "move";
@@ -699,7 +444,7 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 		setRootDragOver(true);
 	};
 
-	const handleRootDrop = (e: React.DragEvent) => {
+	const handleRootDrop = (e: DragEvent) => {
 		clearHoverExpandTimer();
 		setRootDragOver(false);
 		e.preventDefault();
@@ -730,9 +475,9 @@ export function FolderTree({ onMoveToFolder }: FolderTreeProps = {}) {
 		[clearHoverExpandTimer],
 	);
 
-	function renderChildren(ids: number[], depth: number): React.ReactNode {
+	function renderChildren(ids: number[], depth: number): ReactNode {
 		return ids.map((id) => (
-			<TreeNode
+			<FolderTreeNodeRow
 				key={id}
 				currentFolderId={currentFolderId}
 				depth={depth}

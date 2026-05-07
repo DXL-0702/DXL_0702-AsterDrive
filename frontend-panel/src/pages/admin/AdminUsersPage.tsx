@@ -5,56 +5,23 @@ import { useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { AdminOffsetPagination } from "@/components/admin/AdminOffsetPagination";
 import { CreateUserDialog } from "@/components/admin/admin-users-page/CreateUserDialog";
+import { UsersTable } from "@/components/admin/admin-users-page/UsersTable";
+import { UsersToolbar } from "@/components/admin/admin-users-page/UsersToolbar";
 import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { EmptyState } from "@/components/common/EmptyState";
 import { SkeletonTable } from "@/components/common/SkeletonTable";
-import { UserAvatarImage } from "@/components/common/UserAvatarImage";
-import {
-	getRoleBadgeClass,
-	getStatusBadgeClass,
-} from "@/components/common/UserStatusBadge";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { AdminPageHeader } from "@/components/layout/AdminPageHeader";
 import { AdminPageShell } from "@/components/layout/AdminPageShell";
-import { AdminSurface } from "@/components/layout/AdminSurface";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
-import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
-import {
-	Table,
-	TableBody,
-	TableCell,
-	TableHead,
-	TableHeader,
-	TableRow,
-} from "@/components/ui/table";
-import {
-	Tooltip,
-	TooltipContent,
-	TooltipProvider,
-	TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { handleApiError } from "@/hooks/useApiError";
 import { useApiList } from "@/hooks/useApiList";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import { loadAdminPolicyGroupLookup } from "@/lib/adminPolicyGroupLookup";
-import {
-	ADMIN_CONTROL_HEIGHT_CLASS,
-	ADMIN_ICON_BUTTON_CLASS,
-} from "@/lib/constants";
-import { formatBytes } from "@/lib/format";
+import { ADMIN_CONTROL_HEIGHT_CLASS } from "@/lib/constants";
 import { runWhenIdle } from "@/lib/idleTask";
 import {
 	buildOffsetPaginationSearchParams,
@@ -62,13 +29,11 @@ import {
 	parsePageSizeOption,
 	parsePageSizeSearchParam,
 } from "@/lib/pagination";
-import { getNormalizedDisplayName, getUserDisplayName } from "@/lib/user";
 import { emailSchema, passwordSchema, usernameSchema } from "@/lib/validation";
 import { adminUserService } from "@/services/adminService";
 import type {
 	CreateUserReq,
 	UpdateUserRequest,
-	UserInfo,
 	UserRole,
 	UserStatus,
 } from "@/types/api";
@@ -82,13 +47,6 @@ const USER_MANAGED_QUERY_KEYS = [
 	"role",
 	"status",
 ] as const;
-const INTERACTIVE_TABLE_ROW_CLASS =
-	"cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50";
-const USER_TEXT_CELL_CONTENT_CLASS =
-	"flex min-w-0 items-center rounded-lg bg-card/55 px-3 py-3 text-left ring-1 ring-border/35 transition-colors duration-200 dark:bg-background/20";
-const USER_BADGE_CELL_CONTENT_CLASS =
-	"flex items-center rounded-lg bg-muted/30 px-3 py-3 text-left ring-1 ring-border/35 transition-colors duration-200 dark:bg-muted/20";
-
 function normalizeOffset(offset: number) {
 	return Math.max(0, Math.floor(offset));
 }
@@ -152,25 +110,6 @@ function mergeManagedUserSearchParams(
 		merged.set(key, value);
 	}
 	return merged;
-}
-
-function QuotaCell({ user }: { user: UserInfo }) {
-	const { t } = useTranslation("admin");
-	const quota = user.storage_quota ?? 0;
-	const used = user.storage_used ?? 0;
-	const pct = quota > 0 ? Math.min((used / quota) * 100, 100) : 0;
-
-	return (
-		<div className="flex w-full flex-col gap-2 rounded-lg bg-muted/30 px-3 py-2 text-left ring-1 ring-border/35 dark:bg-muted/20">
-			<div className="flex items-center justify-between gap-3 text-xs">
-				<span className="font-medium text-foreground">
-					{formatBytes(used)}
-					{quota > 0 ? ` / ${formatBytes(quota)}` : ` / ${t("core:unlimited")}`}
-				</span>
-			</div>
-			{quota > 0 ? <Progress value={pct} className="h-1.5" /> : null}
-		</div>
-	);
 }
 
 export default function AdminUsersPage() {
@@ -517,65 +456,19 @@ export default function AdminUsersPage() {
 						</>
 					}
 					toolbar={
-						<>
-							<div className="relative min-w-[240px] flex-1 md:max-w-sm">
-								<Icon
-									name="MagnifyingGlass"
-									className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
-								/>
-								<Input
-									value={keyword}
-									onChange={(e) => handleKeywordChange(e.target.value)}
-									placeholder={t("user_search_placeholder")}
-									className={`${ADMIN_CONTROL_HEIGHT_CLASS} pl-9`}
-								/>
-							</div>
-							<Select
-								items={roleFilterOptions}
-								value={roleFilter}
-								onValueChange={handleRoleFilterChange}
-							>
-								<SelectTrigger width="compact">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{roleFilterOptions.map((option) => (
-										<SelectItem key={option.value} value={option.value}>
-											{option.label}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-							<Select
-								items={statusFilterOptions}
-								value={statusFilter}
-								onValueChange={handleStatusFilterChange}
-							>
-								<SelectTrigger width="compact">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent>
-									{statusFilterOptions.map((option) => (
-										<SelectItem key={option.value} value={option.value}>
-											{option.label}
-										</SelectItem>
-									))}
-								</SelectContent>
-							</Select>
-							<div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-								{hasServerFilters ? <span>{t("filters_active")}</span> : null}
-								{activeFilterCount > 0 ? (
-									<Button
-										variant="ghost"
-										size="sm"
-										className={ADMIN_CONTROL_HEIGHT_CLASS}
-										onClick={resetFilters}
-									>
-										{t("clear_filters")}
-									</Button>
-								) : null}
-							</div>
-						</>
+						<UsersToolbar
+							activeFilterCount={activeFilterCount}
+							hasServerFilters={hasServerFilters}
+							keyword={keyword}
+							roleFilter={roleFilter}
+							roleFilterOptions={roleFilterOptions}
+							statusFilter={statusFilter}
+							statusFilterOptions={statusFilterOptions}
+							onKeywordChange={handleKeywordChange}
+							onResetFilters={resetFilters}
+							onRoleFilterChange={handleRoleFilterChange}
+							onStatusFilterChange={handleStatusFilterChange}
+						/>
 					}
 				/>
 				{loading ? (
@@ -596,136 +489,11 @@ export default function AdminUsersPage() {
 						<EmptyState title={t("no_users")} />
 					)
 				) : (
-					<AdminSurface padded={false}>
-						<ScrollArea className="min-h-0 flex-1">
-							<Table>
-								<TableHeader>
-									<TableRow>
-										<TableHead className="w-16">{t("id")}</TableHead>
-										<TableHead>{t("core:username")}</TableHead>
-										<TableHead>{t("core:email")}</TableHead>
-										<TableHead className="w-32">{t("role")}</TableHead>
-										<TableHead className="w-32">{t("core:status")}</TableHead>
-										<TableHead className="w-[220px]">{t("storage")}</TableHead>
-										<TableHead className="w-20">{t("core:actions")}</TableHead>
-									</TableRow>
-								</TableHeader>
-								<TableBody>
-									{users.map((user) => (
-										<TableRow
-											key={user.id}
-											className={INTERACTIVE_TABLE_ROW_CLASS}
-											onClick={() => setDetailDialogUserId(user.id)}
-											onKeyDown={(event) => {
-												if (event.key === "Enter" || event.key === " ") {
-													event.preventDefault();
-													setDetailDialogUserId(user.id);
-												}
-											}}
-											tabIndex={0}
-										>
-											<TableCell className="font-mono text-xs text-muted-foreground">
-												{user.id}
-											</TableCell>
-											<TableCell>
-												<div className={USER_TEXT_CELL_CONTENT_CLASS}>
-													<UserAvatarImage
-														avatar={user.profile.avatar}
-														name={getUserDisplayName(user)}
-														alt=""
-														size="sm"
-														className="mr-3 h-7 w-7 rounded-lg text-[11px]"
-													/>
-													<div className="min-w-0">
-														<div className="truncate font-medium text-foreground">
-															{getUserDisplayName(user)}
-														</div>
-														{getNormalizedDisplayName(
-															user.profile.display_name,
-														) && getUserDisplayName(user) !== user.username ? (
-															<div className="truncate text-xs text-muted-foreground">
-																@{user.username}
-															</div>
-														) : null}
-													</div>
-												</div>
-											</TableCell>
-											<TableCell>
-												<div className={USER_TEXT_CELL_CONTENT_CLASS}>
-													<div className="truncate text-sm text-muted-foreground">
-														{user.email}
-													</div>
-												</div>
-											</TableCell>
-											<TableCell>
-												<div className={USER_BADGE_CELL_CONTENT_CLASS}>
-													<Badge
-														variant="outline"
-														className={getRoleBadgeClass(user.role)}
-													>
-														{user.role === "admin" ? "Admin" : "User"}
-													</Badge>
-												</div>
-											</TableCell>
-											<TableCell>
-												<div className={USER_BADGE_CELL_CONTENT_CLASS}>
-													<Badge
-														variant="outline"
-														className={getStatusBadgeClass(user.status)}
-													>
-														{user.status === "active"
-															? t("core:active")
-															: t("core:disabled_status")}
-													</Badge>
-												</div>
-											</TableCell>
-											<TableCell>
-												<div className="w-full text-left">
-													<QuotaCell user={user} />
-												</div>
-											</TableCell>
-											<TableCell
-												onClick={(event) => event.stopPropagation()}
-												onKeyDown={(event) => event.stopPropagation()}
-											>
-												<div className="flex justify-end">
-													<TooltipProvider>
-														<Tooltip>
-															<TooltipTrigger>
-																<div>
-																	<Button
-																		variant="ghost"
-																		size="icon"
-																		className={`${ADMIN_ICON_BUTTON_CLASS} text-destructive`}
-																		onClick={() =>
-																			requestDeleteUserConfirm(user.id)
-																		}
-																		aria-label={t("delete_user")}
-																		title={t("delete_user")}
-																		disabled={user.id === 1}
-																	>
-																		<Icon
-																			name="Trash"
-																			className="h-3.5 w-3.5"
-																		/>
-																	</Button>
-																</div>
-															</TooltipTrigger>
-															{user.id === 1 ? (
-																<TooltipContent>
-																	{t("initial_admin_delete_blocked")}
-																</TooltipContent>
-															) : null}
-														</Tooltip>
-													</TooltipProvider>
-												</div>
-											</TableCell>
-										</TableRow>
-									))}
-								</TableBody>
-							</Table>
-						</ScrollArea>
-					</AdminSurface>
+					<UsersTable
+						users={users}
+						onDeleteUser={requestDeleteUserConfirm}
+						onOpenUserDetail={setDetailDialogUserId}
+					/>
 				)}
 
 				<AdminOffsetPagination

@@ -1,0 +1,84 @@
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+
+type Translate = (
+	key: string,
+	values?: Record<string, number | string>,
+) => string;
+
+export interface PendingActivationState {
+	email?: string;
+	identifier: string;
+	username?: string;
+}
+
+interface PendingActivationPanelProps {
+	pendingActivation: PendingActivationState;
+	resendingActivation: boolean;
+	t: Translate;
+	onResendActivation: () => void;
+	onReset: () => void;
+}
+
+export function PendingActivationPanel({
+	pendingActivation,
+	resendingActivation,
+	t,
+	onResendActivation,
+	onReset,
+}: PendingActivationPanelProps) {
+	return (
+		<div className="space-y-4 rounded-2xl border bg-muted/20 p-4">
+			<div className="flex items-start gap-3">
+				<div className="rounded-xl bg-primary/10 p-2 text-primary">
+					<Icon name="Clock" className="h-5 w-5" />
+				</div>
+				<div className="space-y-1">
+					<p className="text-sm font-medium">
+						{t("activation_pending_notice")}
+					</p>
+					<p className="text-sm text-muted-foreground">
+						{t("activation_pending_hint")}
+					</p>
+					{pendingActivation.username ? (
+						<p className="text-xs text-muted-foreground">
+							{t("core:username")}: {pendingActivation.username}
+						</p>
+					) : null}
+					{pendingActivation.email ? (
+						<p className="text-xs text-muted-foreground">
+							{t("core:email")}: {pendingActivation.email}
+						</p>
+					) : null}
+				</div>
+			</div>
+
+			<div className="grid gap-2 sm:grid-cols-2">
+				<Button
+					type="button"
+					className="h-10"
+					disabled={resendingActivation}
+					onClick={onResendActivation}
+				>
+					{resendingActivation ? (
+						<Icon name="Spinner" className="mr-2 h-4 w-4 animate-spin" />
+					) : (
+						<Icon name="ArrowClockwise" className="mr-2 h-4 w-4" />
+					)}
+					{resendingActivation
+						? t("resending_activation")
+						: t("resend_activation")}
+				</Button>
+				<Button
+					type="button"
+					variant="outline"
+					className="h-10"
+					onClick={onReset}
+				>
+					<Icon name="ArrowLeft" className="mr-2 h-4 w-4" />
+					{t("not_you")}
+				</Button>
+			</div>
+		</div>
+	);
+}

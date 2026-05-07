@@ -1,0 +1,131 @@
+import { useTranslation } from "react-i18next";
+import { EmptyState } from "@/components/common/EmptyState";
+import { SkeletonTable } from "@/components/common/SkeletonTable";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import { formatAuditAction } from "@/lib/audit";
+import { formatDateAbsolute } from "@/lib/format";
+import { formatTeamAuditSummary } from "@/lib/team";
+import type { TeamAuditEntryInfo, TeamMemberRole } from "@/types/api";
+
+interface AuditSectionProps {
+	auditCurrentPage: number;
+	auditEntries: TeamAuditEntryInfo[];
+	auditLoading: boolean;
+	auditOffset: number;
+	auditPageSize: number;
+	auditTotal: number;
+	auditTotalPages: number;
+	nextAuditPageDisabled: boolean;
+	prevAuditPageDisabled: boolean;
+	roleLabel: (role: TeamMemberRole) => string;
+	setAuditOffset: (offset: number) => void;
+}
+
+export function TeamManageAuditSection({
+	auditCurrentPage,
+	auditEntries,
+	auditLoading,
+	auditOffset,
+	auditPageSize,
+	auditTotal,
+	auditTotalPages,
+	nextAuditPageDisabled,
+	prevAuditPageDisabled,
+	roleLabel,
+	setAuditOffset,
+}: AuditSectionProps) {
+	const { t } = useTranslation(["core", "settings", "admin"]);
+
+	return (
+		<section className="rounded-2xl border bg-background/60 p-6">
+			<div className="mb-5">
+				<h4 className="text-base font-semibold text-foreground">
+					{t("settings:settings_team_audit_title")}
+				</h4>
+				<p className="mt-1 text-sm text-muted-foreground">
+					{t("settings:settings_team_audit_desc")}
+				</p>
+			</div>
+			{auditLoading && auditEntries.length === 0 ? (
+				<SkeletonTable columns={4} rows={4} />
+			) : auditTotal === 0 ? (
+				<EmptyState
+					icon={<Icon name="Scroll" className="h-10 w-10" />}
+					title={t("settings:settings_team_audit_empty")}
+					description={t("settings:settings_team_audit_empty_desc")}
+				/>
+			) : (
+				<>
+					<div className="space-y-3">
+						{auditEntries.map((entry) => {
+							const summary = formatTeamAuditSummary(entry, roleLabel);
+
+							return (
+								<div
+									key={entry.id}
+									className="rounded-xl border bg-muted/10 p-4"
+								>
+									<div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+										<div className="space-y-2">
+											<div className="flex flex-wrap items-center gap-2">
+												<Badge variant="outline">
+													{formatAuditAction(t, entry.action)}
+												</Badge>
+												<span className="text-sm text-foreground">
+													@{entry.actor_username}
+												</span>
+											</div>
+											<p className="text-sm text-muted-foreground">
+												{formatDateAbsolute(entry.created_at)}
+											</p>
+											{summary ? (
+												<p className="text-sm text-muted-foreground">
+													{summary}
+												</p>
+											) : null}
+										</div>
+									</div>
+								</div>
+							);
+						})}
+					</div>
+					{auditTotal > auditPageSize ? (
+						<div className="mt-4 flex items-center justify-between gap-3 text-sm text-muted-foreground">
+							<span>
+								{t("settings:settings_team_entries_page", {
+									total: auditTotal,
+									current: auditCurrentPage,
+									pages: auditTotalPages,
+								})}
+							</span>
+							<div className="flex items-center gap-2">
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									disabled={prevAuditPageDisabled || auditLoading}
+									onClick={() =>
+										setAuditOffset(Math.max(0, auditOffset - auditPageSize))
+									}
+								>
+									<Icon name="CaretLeft" className="h-4 w-4" />
+								</Button>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									disabled={nextAuditPageDisabled || auditLoading}
+									onClick={() => setAuditOffset(auditOffset + auditPageSize)}
+								>
+									<Icon name="CaretRight" className="h-4 w-4" />
+								</Button>
+							</div>
+						</div>
+					) : null}
+				</>
+			)}
+		</section>
+	);
+}
