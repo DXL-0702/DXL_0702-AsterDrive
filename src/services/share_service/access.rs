@@ -9,6 +9,7 @@ use crate::runtime::PrimaryAppState;
 use crate::services::profile_service;
 use crate::utils::hash;
 
+use super::cache::invalidate_share_token_record_cache_for_share;
 use super::models::{SharePublicInfo, SharePublicOwnerInfo};
 use super::shared::{load_valid_share, resolve_share_name};
 
@@ -17,11 +18,14 @@ pub async fn get_share_info(state: &PrimaryAppState, token: &str) -> Result<Shar
     let share = load_valid_share(state, token).await?;
     tracing::debug!(share_id = share.id, "loading public share info");
 
-    if let Err(error) = share_repo::increment_view_count(db, share.id).await {
-        tracing::warn!(
-            share_id = share.id,
-            "failed to increment view count: {error}"
-        );
+    match share_repo::increment_view_count(db, share.id).await {
+        Ok(()) => invalidate_share_token_record_cache_for_share(state, &share).await,
+        Err(error) => {
+            tracing::warn!(
+                share_id = share.id,
+                "failed to increment view count: {error}"
+            );
+        }
     }
 
     let (name, share_type, mime_type, size) = resolve_share_name(db, &share).await?;

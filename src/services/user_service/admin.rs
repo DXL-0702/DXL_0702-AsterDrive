@@ -190,6 +190,14 @@ pub async fn update(
     if role_changed || status_changed || email_verified_changed {
         auth_service::invalidate_auth_snapshot_cache(state, id).await;
     }
+    if status_changed
+        && let Err(error) = crate::webdav::auth::invalidate_webdav_auth_for_user(state, id).await
+    {
+        tracing::warn!(
+            user_id = id,
+            "failed to invalidate WebDAV auth cache after user status update: {error}"
+        );
+    }
     to_user_info(state, &updated, profile_service::AvatarAudience::AdminUser).await
 }
 
@@ -256,6 +264,16 @@ pub async fn force_delete(
     );
 
     let share_count = share_repo::delete_all_by_user(db, target_user_id).await?;
+    if share_count > 0 {
+        crate::services::share_service::invalidate_active_share_target_cache_for_scope(
+            state,
+            crate::services::workspace_storage_service::WorkspaceStorageScope::Personal {
+                user_id: target_user_id,
+            },
+        )
+        .await;
+        crate::services::share_service::invalidate_all_share_token_record_cache(state).await;
+    }
 
     let all_files = file_repo::find_all_by_user(db, target_user_id).await?;
     let file_count = all_files.len();
@@ -275,7 +293,9 @@ pub async fn force_delete(
     )
     .await?;
     folder_repo::delete_many(db, &folder_ids).await?;
+    crate::services::folder_service::invalidate_folder_path_cache(state).await;
 
+    crate::webdav::auth::invalidate_webdav_auth_for_user(state, target_user_id).await?;
     let webdav_account_count = webdav_account_repo::delete_all_by_user(db, target_user_id).await?;
 
     if let Err(error) = profile_service::cleanup_avatar_upload(state, target_user_id).await {

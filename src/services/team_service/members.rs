@@ -12,6 +12,7 @@ use crate::db::repository::{team_member_repo, team_repo, user_repo};
 use crate::entities::team_member;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
+use crate::services::workspace_storage_service;
 use crate::types::TeamMemberRole;
 
 use super::shared::{
@@ -84,6 +85,12 @@ pub async fn add_admin_member(
     .await
     .map_err(map_member_create_error)?;
     crate::db::transaction::commit(txn).await?;
+    workspace_storage_service::invalidate_team_access_cache_for_member(
+        state,
+        team_id,
+        target_user.id,
+    )
+    .await;
 
     Ok(build_team_member_info(membership, target_user))
 }
@@ -116,6 +123,12 @@ pub async fn update_admin_member_role(
     let updated = team_member_repo::update(&txn, active).await?;
     let target_user = user_repo::find_by_id(&txn, member_user_id).await?;
     crate::db::transaction::commit(txn).await?;
+    workspace_storage_service::invalidate_team_access_cache_for_member(
+        state,
+        team_id,
+        member_user_id,
+    )
+    .await;
     Ok(build_team_member_info(updated, target_user))
 }
 
@@ -142,6 +155,12 @@ pub async fn remove_admin_member(
 
     team_member_repo::delete(&txn, target_membership.id).await?;
     crate::db::transaction::commit(txn).await?;
+    workspace_storage_service::invalidate_team_access_cache_for_member(
+        state,
+        team_id,
+        member_user_id,
+    )
+    .await;
     Ok(())
 }
 
@@ -221,6 +240,12 @@ pub async fn add_member(
     .await
     .map_err(map_member_create_error)?;
     crate::db::transaction::commit(txn).await?;
+    workspace_storage_service::invalidate_team_access_cache_for_member(
+        state,
+        team_id,
+        target_user.id,
+    )
+    .await;
 
     Ok(build_team_member_info(membership, target_user))
 }
@@ -267,6 +292,12 @@ pub async fn update_member_role(
     let updated = team_member_repo::update(&txn, active).await?;
     let target_user = user_repo::find_by_id(&txn, member_user_id).await?;
     crate::db::transaction::commit(txn).await?;
+    workspace_storage_service::invalidate_team_access_cache_for_member(
+        state,
+        team_id,
+        member_user_id,
+    )
+    .await;
     Ok(build_team_member_info(updated, target_user))
 }
 
@@ -307,5 +338,11 @@ pub async fn remove_member(
 
     team_member_repo::delete(&txn, target_membership.id).await?;
     crate::db::transaction::commit(txn).await?;
+    workspace_storage_service::invalidate_team_access_cache_for_member(
+        state,
+        team_id,
+        member_user_id,
+    )
+    .await;
     Ok(())
 }

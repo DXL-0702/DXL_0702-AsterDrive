@@ -226,7 +226,8 @@ pub(super) async fn collect_archive_entries_from_selection_in_scope(
         let (tree_files, tree_folder_ids) =
             folder_service::collect_folder_tree_in_scope(&state.db, scope, folder_id, false)
                 .await?;
-        let folder_paths = folder_service::build_folder_paths(&state.db, &tree_folder_ids).await?;
+        let folder_paths =
+            folder_service::build_folder_paths_cached(state, &tree_folder_ids).await?;
         let root_path = folder_paths
             .get(&folder_id)
             .cloned()

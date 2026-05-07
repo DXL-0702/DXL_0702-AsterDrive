@@ -161,11 +161,23 @@ async fn force_delete_archived_team(state: &PrimaryAppState, team: team::Model) 
     team_repo::lock_archived_by_id(&txn, team_id).await?;
     upload_session_repo::delete_all_by_team(&txn, team_id).await?;
     clear_team_locks(&txn, team_id).await?;
-    share_repo::delete_all_by_team(&txn, team_id).await?;
+    let deleted_shares = share_repo::delete_all_by_team(&txn, team_id).await?;
 
     delete_archived_team_folders(&txn, team_id).await?;
     team_repo::delete(&txn, team_id).await?;
     crate::db::transaction::commit(txn).await?;
+    if deleted_shares > 0 {
+        crate::services::share_service::invalidate_active_share_target_cache_for_scope(
+            state,
+            crate::services::workspace_storage_service::WorkspaceStorageScope::Team {
+                team_id,
+                actor_user_id: team.created_by,
+            },
+        )
+        .await;
+        crate::services::share_service::invalidate_all_share_token_record_cache(state).await;
+    }
+    crate::services::folder_service::invalidate_folder_path_cache(state).await;
 
     Ok(())
 }

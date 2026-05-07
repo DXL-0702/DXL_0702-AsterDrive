@@ -6,7 +6,10 @@ use crate::db::repository::{file_repo, share_repo};
 use crate::entities::file;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
-use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
+use crate::services::{
+    share_service,
+    workspace_storage_service::{self, WorkspaceStorageScope},
+};
 use crate::utils::numbers::{i64_to_i32, usize_to_u32};
 
 use super::blob_cleanup::ensure_blob_cleanup_if_unreferenced;
@@ -71,7 +74,7 @@ pub(crate) async fn batch_purge_in_scope(
     )
     .await?;
 
-    share_repo::delete_by_file_ids(&txn, &file_ids).await?;
+    let deleted_shares = share_repo::delete_by_file_ids(&txn, &file_ids).await?;
     file_repo::delete_many(&txn, &file_ids).await?;
 
     let mut blob_decrements = BTreeMap::<i64, i64>::new();
@@ -108,6 +111,10 @@ pub(crate) async fn batch_purge_in_scope(
     workspace_storage_service::update_storage_used(&txn, scope, -total_freed_bytes).await?;
 
     crate::db::transaction::commit(txn).await?;
+    if deleted_shares > 0 {
+        share_service::invalidate_active_share_target_cache_for_scope(state, scope).await;
+        share_service::invalidate_all_share_token_record_cache(state).await;
+    }
 
     stream::iter(blob_ids.iter().copied())
         .for_each_concurrent(BLOB_CLEANUP_CONCURRENCY, |blob_id| async move {

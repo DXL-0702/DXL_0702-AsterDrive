@@ -4,26 +4,56 @@ use super::{CacheBackend, reservation::ReservationSet};
 use async_trait::async_trait;
 use moka::future::Cache;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const MEMORY_CACHE_MAX_BYTES: u64 = 64 * 1024 * 1024;
 
 pub struct MemoryCache {
-    cache: Cache<String, Vec<u8>>,
+    cache: Cache<String, MemoryCacheValue>,
+    default_ttl: u64,
     reservations: ReservationSet,
+}
+
+#[derive(Clone)]
+struct MemoryCacheValue {
+    bytes: Vec<u8>,
+    expires_at: Instant,
+}
+
+impl MemoryCacheValue {
+    fn new(bytes: Vec<u8>, ttl_secs: u64) -> Self {
+        let now = Instant::now();
+        Self {
+            bytes,
+            expires_at: now
+                .checked_add(Duration::from_secs(ttl_secs))
+                .unwrap_or(now),
+        }
+    }
+
+    fn is_expired(&self) -> bool {
+        self.expires_at <= Instant::now()
+    }
 }
 
 impl MemoryCache {
     pub fn new(default_ttl: u64) -> Self {
         let cache = Cache::builder()
             .max_capacity(MEMORY_CACHE_MAX_BYTES)
-            .weigher(|key: &String, value: &Vec<u8>| entry_weight(key.len(), value.len()))
+            .weigher(|key: &String, value: &MemoryCacheValue| {
+                entry_weight(key.len(), value.bytes.len())
+            })
             .time_to_live(Duration::from_secs(default_ttl))
             .build();
         Self {
             cache,
+            default_ttl,
             reservations: ReservationSet::new(default_ttl),
         }
+    }
+
+    fn cache_value(&self, value: Vec<u8>, ttl_secs: Option<u64>) -> MemoryCacheValue {
+        MemoryCacheValue::new(value, ttl_secs.unwrap_or(self.default_ttl))
     }
 }
 
@@ -43,26 +73,35 @@ impl CacheBackend for MemoryCache {
     }
 
     async fn get_bytes(&self, key: &str) -> Option<Vec<u8>> {
-        self.cache.get(key).await
+        let value = self.cache.get(key).await?;
+        if value.is_expired() {
+            self.reservations.remove(key);
+            self.cache.remove(key).await;
+            return None;
+        }
+        Some(value.bytes)
     }
 
-    async fn set_bytes(&self, key: &str, value: Vec<u8>, _ttl_secs: Option<u64>) {
-        // moka 用全局 TTL，per-entry TTL 需要 Expiry trait（后续可加）
-        self.cache.insert(key.to_string(), value).await;
+    async fn set_bytes(&self, key: &str, value: Vec<u8>, ttl_secs: Option<u64>) {
+        self.cache
+            .insert(key.to_string(), self.cache_value(value, ttl_secs))
+            .await;
     }
 
     async fn set_bytes_if_absent(&self, key: &str, value: Vec<u8>, ttl_secs: Option<u64>) -> bool {
-        if self.cache.get(key).await.is_some() {
+        if self.get_bytes(key).await.is_some() {
             return false;
         }
         if !self.reservations.reserve(key, ttl_secs) {
             return false;
         }
-        if self.cache.get(key).await.is_some() {
+        if self.get_bytes(key).await.is_some() {
             return false;
         }
 
-        self.cache.insert(key.to_string(), value).await;
+        self.cache
+            .insert(key.to_string(), self.cache_value(value, ttl_secs))
+            .await;
         true
     }
 
@@ -135,5 +174,28 @@ mod tests {
                 .await
         );
         assert_eq!(cache.get_bytes("nonce").await, Some(b"first".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn set_bytes_respects_entry_ttl() {
+        let cache = MemoryCache::new(60);
+
+        cache.set_bytes("short", b"value".to_vec(), Some(0)).await;
+
+        assert_eq!(cache.get_bytes("short").await, None);
+    }
+
+    #[tokio::test]
+    async fn set_bytes_if_absent_can_replace_expired_entry() {
+        let cache = MemoryCache::new(60);
+
+        cache.set_bytes("nonce", b"expired".to_vec(), Some(0)).await;
+
+        assert!(
+            cache
+                .set_bytes_if_absent("nonce", b"fresh".to_vec(), Some(60))
+                .await
+        );
+        assert_eq!(cache.get_bytes("nonce").await, Some(b"fresh".to_vec()));
     }
 }

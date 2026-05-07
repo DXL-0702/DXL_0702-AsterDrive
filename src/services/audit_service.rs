@@ -77,7 +77,7 @@ impl AuditLogFilters {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AuditLogEntry {
     pub id: i64,

@@ -20,7 +20,10 @@ use crate::services::{
 };
 use crate::types::EntityType;
 
-use super::models::{ShareStatus, ShareTarget, share_target_for_share};
+use super::{
+    cache::load_share_record_by_token,
+    models::{ShareStatus, ShareTarget, share_target_for_share},
+};
 
 pub(super) fn validate_max_downloads(max_downloads: i64) -> Result<()> {
     if max_downloads < 0 {
@@ -95,9 +98,7 @@ pub(super) async fn load_share_record(
     state: &PrimaryAppState,
     token: &str,
 ) -> Result<share::Model> {
-    let share = share_repo::find_by_token(&state.db, token)
-        .await?
-        .ok_or_else(|| AsterError::share_not_found(format!("token={token}")))?;
+    let share = load_share_record_by_token(state, token).await?;
     // 团队分享如果指向的团队已被归档 / 删除，对外表现应当像 share 不存在，
     // 不再向匿名访问者暴露“token 有效但团队没了”这种内部状态。
     if let Some(team_id) = share.team_id {

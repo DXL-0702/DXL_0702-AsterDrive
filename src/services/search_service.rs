@@ -6,11 +6,12 @@ use std::collections::HashSet;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
-use crate::db::repository::{search_repo, share_repo};
+use crate::db::repository::search_repo;
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
 use crate::services::{
     folder_service::{FileListItem, FolderListItem, build_folder_list_items},
+    share_service,
     workspace_storage_service::{self, WorkspaceStorageScope},
 };
 
@@ -208,9 +209,10 @@ pub(crate) async fn search_in_scope(
 
                 let file_ids: Vec<i64> = files.iter().map(|file| file.id).collect();
                 let folder_ids: Vec<i64> = folders.iter().map(|folder| folder.id).collect();
+                let scope = WorkspaceStorageScope::Personal { user_id };
                 let (shared_file_ids, shared_folder_ids) = tokio::try_join!(
-                    share_repo::find_active_file_ids(&state.db, user_id, &file_ids),
-                    share_repo::find_active_folder_ids(&state.db, user_id, &folder_ids),
+                    share_service::find_active_file_ids_in_scope(state, scope, &file_ids),
+                    share_service::find_active_folder_ids_in_scope(state, scope, &folder_ids),
                 )?;
 
                 (
@@ -222,7 +224,10 @@ pub(crate) async fn search_in_scope(
                     shared_folder_ids,
                 )
             }
-            WorkspaceStorageScope::Team { team_id, .. } => {
+            WorkspaceStorageScope::Team {
+                team_id,
+                actor_user_id,
+            } => {
                 let file_search = async {
                     if search_type == "folder" {
                         Ok((vec![], 0))
@@ -269,9 +274,13 @@ pub(crate) async fn search_in_scope(
 
                 let file_ids: Vec<i64> = files.iter().map(|file| file.id).collect();
                 let folder_ids: Vec<i64> = folders.iter().map(|folder| folder.id).collect();
+                let scope = WorkspaceStorageScope::Team {
+                    team_id,
+                    actor_user_id,
+                };
                 let (shared_file_ids, shared_folder_ids) = tokio::try_join!(
-                    share_repo::find_active_team_file_ids(&state.db, team_id, &file_ids),
-                    share_repo::find_active_team_folder_ids(&state.db, team_id, &folder_ids),
+                    share_service::find_active_file_ids_in_scope(state, scope, &file_ids),
+                    share_service::find_active_folder_ids_in_scope(state, scope, &folder_ids),
                 )?;
 
                 (

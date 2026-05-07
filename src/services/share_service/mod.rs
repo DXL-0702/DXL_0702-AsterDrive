@@ -5,6 +5,7 @@
 //! 的状态与范围，不复用内部登录态。
 
 mod access;
+mod cache;
 mod content;
 mod management;
 mod models;
@@ -35,6 +36,10 @@ pub use models::{
     MyShareInfo, ShareInfo, SharePublicInfo, SharePublicOwnerInfo, ShareStatus, ShareTarget,
 };
 
+pub(crate) use cache::{
+    find_active_file_ids_in_scope, find_active_folder_ids_in_scope,
+    invalidate_active_share_target_cache_for_scope, invalidate_all_share_token_record_cache,
+};
 pub(crate) use content::{load_preview_shared_file, load_preview_shared_folder_file};
 pub(crate) use management::{
     batch_delete_shares_in_scope, create_share_in_scope, delete_share_in_scope,

@@ -5,9 +5,13 @@
 //! `user_id` / `team_id` / `actor_user_id` 判断。
 
 use crate::db::repository::{file_repo, folder_repo, team_member_repo, team_repo};
-use crate::entities::{file, folder, team};
+use crate::entities::{file, folder};
 use crate::errors::{AsterError, Result};
 use crate::runtime::PrimaryAppState;
+use crate::{cache::CacheExt, types::TeamMemberRole};
+use serde::{Deserialize, Serialize};
+
+const TEAM_ACCESS_CACHE_TTL: u64 = 60;
 
 /// scope 同时表达“资源属于哪个空间”和“是谁在操作”。
 ///
@@ -17,6 +21,49 @@ use crate::runtime::PrimaryAppState;
 pub(crate) enum WorkspaceStorageScope {
     Personal { user_id: i64 },
     Team { team_id: i64, actor_user_id: i64 },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct CachedTeamAccess {
+    team_id: i64,
+    policy_group_id: Option<i64>,
+    role: TeamMemberRole,
+}
+
+impl From<team_member_repo::ActiveTeamAccessSnapshot> for CachedTeamAccess {
+    fn from(snapshot: team_member_repo::ActiveTeamAccessSnapshot) -> Self {
+        Self {
+            team_id: snapshot.team_id,
+            policy_group_id: snapshot.policy_group_id,
+            role: snapshot.role,
+        }
+    }
+}
+
+fn team_access_cache_prefix(team_id: i64) -> String {
+    format!("team_access:{team_id}:")
+}
+
+fn team_access_cache_key(team_id: i64, user_id: i64) -> String {
+    format!("{}{}", team_access_cache_prefix(team_id), user_id)
+}
+
+pub(crate) async fn invalidate_team_access_cache_for_team(state: &PrimaryAppState, team_id: i64) {
+    state
+        .cache
+        .invalidate_prefix(&team_access_cache_prefix(team_id))
+        .await;
+}
+
+pub(crate) async fn invalidate_team_access_cache_for_member(
+    state: &PrimaryAppState,
+    team_id: i64,
+    user_id: i64,
+) {
+    state
+        .cache
+        .delete(&team_access_cache_key(team_id, user_id))
+        .await;
 }
 
 impl WorkspaceStorageScope {
@@ -33,6 +80,62 @@ impl WorkspaceStorageScope {
             Self::Team { team_id, .. } => Some(team_id),
         }
     }
+}
+
+async fn load_team_access(
+    state: &PrimaryAppState,
+    team_id: i64,
+    user_id: i64,
+) -> Result<CachedTeamAccess> {
+    let cache_key = team_access_cache_key(team_id, user_id);
+    if let Some(cached) = state.cache.get::<CachedTeamAccess>(&cache_key).await {
+        let access = match load_team_access_from_database(state, team_id, user_id).await {
+            Ok(access) => access,
+            Err(error @ (AsterError::RecordNotFound(_) | AsterError::AuthForbidden(_))) => {
+                state.cache.delete(&cache_key).await;
+                return Err(error);
+            }
+            Err(error) => return Err(error),
+        };
+        if access == cached {
+            tracing::debug!(team_id, user_id, "team access cache hit");
+        } else {
+            state
+                .cache
+                .set(&cache_key, &access, Some(TEAM_ACCESS_CACHE_TTL))
+                .await;
+            tracing::debug!(
+                team_id,
+                user_id,
+                "team access cache stale; refreshed from database"
+            );
+        }
+        return Ok(access);
+    }
+
+    let access = load_team_access_from_database(state, team_id, user_id).await?;
+    state
+        .cache
+        .set(&cache_key, &access, Some(TEAM_ACCESS_CACHE_TTL))
+        .await;
+    tracing::debug!(team_id, user_id, "team access cache miss");
+    Ok(access)
+}
+
+async fn load_team_access_from_database(
+    state: &PrimaryAppState,
+    team_id: i64,
+    user_id: i64,
+) -> Result<CachedTeamAccess> {
+    if let Some(snapshot) =
+        team_member_repo::find_active_team_access(&state.db, team_id, user_id).await?
+    {
+        return Ok(snapshot.into());
+    }
+
+    // 保持旧语义：团队不存在或已归档时返回 not found；团队仍活跃但用户不是成员时返回 forbidden。
+    team_repo::find_active_by_id(&state.db, team_id).await?;
+    Err(AsterError::auth_forbidden("not a member of this team"))
 }
 
 pub(crate) async fn require_scope_access(
@@ -143,32 +246,370 @@ pub(crate) async fn require_team_access(
     state: &PrimaryAppState,
     team_id: i64,
     user_id: i64,
-) -> Result<team::Model> {
-    let team = team_repo::find_active_by_id(&state.db, team_id).await?;
-    if team_member_repo::find_by_team_and_user(&state.db, team_id, user_id)
-        .await?
-        .is_none()
-    {
-        return Err(AsterError::auth_forbidden("not a member of this team"));
-    }
-    Ok(team)
+) -> Result<()> {
+    load_team_access(state, team_id, user_id).await.map(|_| ())
+}
+
+pub(crate) async fn require_team_policy_group_id(
+    state: &PrimaryAppState,
+    team_id: i64,
+    user_id: i64,
+) -> Result<i64> {
+    let access = load_team_access(state, team_id, user_id).await?;
+    access.policy_group_id.ok_or_else(|| {
+        AsterError::storage_policy_not_found(format!(
+            "no storage policy group assigned to team #{}",
+            access.team_id
+        ))
+    })
 }
 
 pub(crate) async fn require_team_management_access(
     state: &PrimaryAppState,
     team_id: i64,
     user_id: i64,
-) -> Result<team::Model> {
-    let team = team_repo::find_active_by_id(&state.db, team_id).await?;
-    let membership = team_member_repo::find_by_team_and_user(&state.db, team_id, user_id)
-        .await?
-        .ok_or_else(|| AsterError::auth_forbidden("not a member of this team"))?;
-    if !membership.role.can_manage_team() {
+) -> Result<()> {
+    let access = load_team_access(state, team_id, user_id).await?;
+    if !access.role.can_manage_team() {
         return Err(AsterError::auth_forbidden(
             "team owner or admin role is required",
         ));
     }
-    Ok(team)
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{WorkspaceStorageScope, require_team_access, require_team_policy_group_id};
+    use crate::cache;
+    use crate::config::{CacheConfig, Config, RuntimeConfig};
+    use crate::db::repository::{policy_group_repo, policy_repo, team_member_repo, team_repo};
+    use crate::entities::{
+        storage_policy, storage_policy_group, storage_policy_group_item, team, team_member, user,
+    };
+    use crate::runtime::PrimaryAppState;
+    use crate::services::{folder_service, mail_service};
+    use crate::storage::{DriverRegistry, PolicySnapshot};
+    use crate::types::{
+        DriverType, StoredStoragePolicyAllowedTypes, StoredStoragePolicyOptions, TeamMemberRole,
+        UserRole, UserStatus,
+    };
+    use chrono::Utc;
+    use migration::Migrator;
+    use sea_orm::{ActiveModelTrait, IntoActiveModel, Set};
+    use std::sync::Arc;
+
+    async fn build_cached_state() -> PrimaryAppState {
+        let db = crate::db::connect(&crate::config::DatabaseConfig {
+            url: "sqlite::memory:".to_string(),
+            pool_size: 1,
+            retry_count: 0,
+        })
+        .await
+        .expect("test database should connect");
+        Migrator::up(&db, None)
+            .await
+            .expect("test database should migrate");
+
+        let cache = cache::create_cache(&CacheConfig {
+            enabled: true,
+            backend: "memory".to_string(),
+            ..Default::default()
+        })
+        .await;
+        let runtime_config = Arc::new(RuntimeConfig::new());
+        let (storage_change_tx, _) = tokio::sync::broadcast::channel(
+            crate::services::storage_change_service::STORAGE_CHANGE_CHANNEL_CAPACITY,
+        );
+        let share_download_rollback =
+            crate::services::share_service::spawn_detached_share_download_rollback_queue(
+                db.clone(),
+                crate::config::operations::share_download_rollback_queue_capacity(&runtime_config),
+            );
+
+        PrimaryAppState {
+            db,
+            driver_registry: Arc::new(DriverRegistry::new()),
+            runtime_config: runtime_config.clone(),
+            policy_snapshot: Arc::new(PolicySnapshot::new()),
+            config: Arc::new(Config::default()),
+            cache,
+            mail_sender: mail_service::runtime_sender(runtime_config),
+            storage_change_tx,
+            share_download_rollback,
+        }
+    }
+
+    async fn create_user(state: &PrimaryAppState, username: &str) -> user::Model {
+        let now = Utc::now();
+        user::ActiveModel {
+            username: Set(username.to_string()),
+            email: Set(format!("{username}@example.test")),
+            password_hash: Set("not-used".to_string()),
+            role: Set(UserRole::User),
+            status: Set(UserStatus::Active),
+            session_version: Set(0),
+            email_verified_at: Set(Some(now)),
+            pending_email: Set(None),
+            storage_used: Set(0),
+            storage_quota: Set(0),
+            policy_group_id: Set(None),
+            created_at: Set(now),
+            updated_at: Set(now),
+            config: Set(None),
+            ..Default::default()
+        }
+        .insert(&state.db)
+        .await
+        .expect("test user should insert")
+    }
+
+    async fn create_policy_group_with_policy(
+        state: &PrimaryAppState,
+        name: &str,
+    ) -> storage_policy_group::Model {
+        let now = Utc::now();
+        let policy = policy_repo::create(
+            &state.db,
+            storage_policy::ActiveModel {
+                name: Set(format!("{name} Policy")),
+                driver_type: Set(DriverType::Local),
+                endpoint: Set(String::new()),
+                bucket: Set(String::new()),
+                access_key: Set(String::new()),
+                secret_key: Set(String::new()),
+                base_path: Set(format!("/tmp/asterdrive-{name}")),
+                remote_node_id: Set(None),
+                max_file_size: Set(0),
+                allowed_types: Set(StoredStoragePolicyAllowedTypes::empty()),
+                options: Set(StoredStoragePolicyOptions::empty()),
+                is_default: Set(false),
+                chunk_size: Set(5_242_880),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("test policy should insert");
+        let group = policy_group_repo::create_group(
+            &state.db,
+            storage_policy_group::ActiveModel {
+                name: Set(format!("{name} Group")),
+                description: Set(String::new()),
+                is_enabled: Set(true),
+                is_default: Set(false),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("test policy group should insert");
+        policy_group_repo::create_group_item(
+            &state.db,
+            storage_policy_group_item::ActiveModel {
+                group_id: Set(group.id),
+                policy_id: Set(policy.id),
+                priority: Set(0),
+                min_file_size: Set(0),
+                max_file_size: Set(0),
+                created_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("test policy group item should insert");
+        state
+            .policy_snapshot
+            .reload(&state.db)
+            .await
+            .expect("policy snapshot should reload");
+        group
+    }
+
+    async fn create_team_with_member(
+        state: &PrimaryAppState,
+        owner: &user::Model,
+        member: &user::Model,
+        policy_group_id: i64,
+    ) -> (team::Model, team_member::Model) {
+        let now = Utc::now();
+        let team = team_repo::create(
+            &state.db,
+            team::ActiveModel {
+                name: Set("Cache Test Team".to_string()),
+                description: Set(String::new()),
+                created_by: Set(owner.id),
+                storage_used: Set(0),
+                storage_quota: Set(0),
+                policy_group_id: Set(Some(policy_group_id)),
+                created_at: Set(now),
+                updated_at: Set(now),
+                archived_at: Set(None),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("test team should insert");
+        team_member_repo::create(
+            &state.db,
+            team_member::ActiveModel {
+                team_id: Set(team.id),
+                user_id: Set(owner.id),
+                role: Set(TeamMemberRole::Owner),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("test owner membership should insert");
+        let membership = team_member_repo::create(
+            &state.db,
+            team_member::ActiveModel {
+                team_id: Set(team.id),
+                user_id: Set(member.id),
+                role: Set(TeamMemberRole::Member),
+                created_at: Set(now),
+                updated_at: Set(now),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("test member membership should insert");
+        (team, membership)
+    }
+
+    #[tokio::test]
+    async fn team_access_cache_hit_rechecks_membership_and_policy_group() {
+        let state = build_cached_state().await;
+        let owner = create_user(&state, "owner").await;
+        let member = create_user(&state, "member").await;
+        let first_group = create_policy_group_with_policy(&state, "first").await;
+        let second_group = create_policy_group_with_policy(&state, "second").await;
+        let (team, membership) =
+            create_team_with_member(&state, &owner, &member, first_group.id).await;
+
+        require_team_access(&state, team.id, member.id)
+            .await
+            .expect("first access should populate cache");
+
+        let mut active = team.clone().into_active_model();
+        active.policy_group_id = Set(Some(second_group.id));
+        team_repo::update(&state.db, active)
+            .await
+            .expect("team policy group should update");
+        let policy_group_id = require_team_policy_group_id(&state, team.id, member.id)
+            .await
+            .expect("cached access should refresh policy group from database");
+        assert_eq!(policy_group_id, second_group.id);
+
+        team_member_repo::delete(&state.db, membership.id)
+            .await
+            .expect("membership should delete");
+        let error = require_team_access(&state, team.id, member.id)
+            .await
+            .expect_err("cached access must not authorize removed members");
+        assert!(matches!(error, crate::errors::AsterError::AuthForbidden(_)));
+    }
+
+    #[tokio::test]
+    async fn folder_path_cache_hit_rebuilds_path_from_database_names() {
+        let state = build_cached_state().await;
+        let user = create_user(&state, "folder-owner").await;
+        let now = Utc::now();
+        let parent = crate::db::repository::folder_repo::create(
+            &state.db,
+            crate::entities::folder::ActiveModel {
+                name: Set("Parent".to_string()),
+                parent_id: Set(None),
+                team_id: Set(None),
+                user_id: Set(user.id),
+                policy_id: Set(None),
+                created_at: Set(now),
+                updated_at: Set(now),
+                deleted_at: Set(None),
+                is_locked: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("parent folder should insert");
+        let child = crate::db::repository::folder_repo::create(
+            &state.db,
+            crate::entities::folder::ActiveModel {
+                name: Set("Child".to_string()),
+                parent_id: Set(Some(parent.id)),
+                team_id: Set(None),
+                user_id: Set(user.id),
+                policy_id: Set(None),
+                created_at: Set(now),
+                updated_at: Set(now),
+                deleted_at: Set(None),
+                is_locked: Set(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("child folder should insert");
+
+        let first = folder_service::build_folder_paths_cached(&state, &[child.id])
+            .await
+            .expect("first path build should succeed");
+        assert_eq!(
+            first.get(&child.id).map(String::as_str),
+            Some("/Parent/Child")
+        );
+
+        let mut active = parent.into_active_model();
+        active.name = Set("Renamed".to_string());
+        active.updated_at = Set(Utc::now());
+        active
+            .update(&state.db)
+            .await
+            .expect("parent should rename");
+
+        let second = folder_service::build_folder_paths_cached(&state, &[child.id])
+            .await
+            .expect("cached path build should use current database names");
+        assert_eq!(
+            second.get(&child.id).map(String::as_str),
+            Some("/Renamed/Child")
+        );
+    }
+
+    #[tokio::test]
+    async fn team_scope_access_cache_hit_rejects_archived_team() {
+        let state = build_cached_state().await;
+        let owner = create_user(&state, "archived-owner").await;
+        let member = create_user(&state, "archived-member").await;
+        let group = create_policy_group_with_policy(&state, "archived").await;
+        let (team, _) = create_team_with_member(&state, &owner, &member, group.id).await;
+
+        require_team_access(&state, team.id, member.id)
+            .await
+            .expect("first access should populate cache");
+
+        let team_id = team.id;
+        let mut active = team.into_active_model();
+        active.archived_at = Set(Some(Utc::now()));
+        team_repo::update(&state.db, active)
+            .await
+            .expect("team should archive");
+
+        let scope = WorkspaceStorageScope::Team {
+            team_id,
+            actor_user_id: member.id,
+        };
+        let error = super::require_scope_access(&state, scope)
+            .await
+            .expect_err("cached access must not authorize archived teams");
+        assert!(matches!(
+            error,
+            crate::errors::AsterError::RecordNotFound(_)
+        ));
+    }
 }
 
 pub(crate) async fn verify_folder_access(

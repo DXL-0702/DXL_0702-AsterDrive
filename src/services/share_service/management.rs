@@ -19,6 +19,10 @@ use crate::services::{
 };
 use crate::utils::{hash, id};
 
+use super::cache::{
+    invalidate_active_share_target_cache_for_scope, invalidate_active_share_target_cache_for_share,
+    invalidate_share_token_record_cache, invalidate_share_token_record_cache_for_share,
+};
 use super::models::{
     MyShareInfo, ShareInfo, ShareTarget, ShareUpdateOutcome, share_info_from_model,
     share_target_for_share,
@@ -97,6 +101,7 @@ pub(crate) async fn create_share_in_scope(
     };
     let created = share_repo::create(&txn, model).await?;
     crate::db::transaction::commit(txn).await?;
+    invalidate_active_share_target_cache_for_scope(state, scope).await;
     tracing::debug!(
         scope = ?scope,
         share_id = created.id,
@@ -168,8 +173,10 @@ pub(crate) async fn delete_share_in_scope(
     share_id: i64,
 ) -> Result<()> {
     tracing::debug!(scope = ?scope, share_id, "deleting share");
-    load_share_in_scope(state, scope, share_id).await?;
+    let share = load_share_in_scope(state, scope, share_id).await?;
     share_repo::delete(&state.db, share_id).await?;
+    invalidate_active_share_target_cache_for_scope(state, scope).await;
+    invalidate_share_token_record_cache_for_share(state, &share).await;
     tracing::debug!(scope = ?scope, share_id, "deleted share");
     Ok(())
 }
@@ -193,6 +200,7 @@ pub(crate) async fn update_share_in_scope(
     validate_max_downloads(max_downloads)?;
 
     let existing = load_share_in_scope(state, scope, share_id).await?;
+    let existing_token = existing.token.clone();
     let has_password = match password.as_deref() {
         Some(value) => !value.is_empty(),
         None => existing.password.is_some(),
@@ -214,6 +222,8 @@ pub(crate) async fn update_share_in_scope(
     let updated: ShareInfo = share_repo::update(&state.db, active)
         .await
         .and_then(share_info_from_model)?;
+    invalidate_active_share_target_cache_for_scope(state, scope).await;
+    invalidate_share_token_record_cache(state, &existing_token).await;
     tracing::debug!(
         scope = ?scope,
         share_id = updated.id,
@@ -277,6 +287,12 @@ pub(crate) async fn batch_delete_shares_in_scope(
         let txn = crate::db::transaction::begin(&state.db).await?;
         share_repo::delete_many(&txn, &ids_to_delete).await?;
         crate::db::transaction::commit(txn).await?;
+        invalidate_active_share_target_cache_for_scope(state, scope).await;
+        for share_id in &ids_to_delete {
+            if let Some(share) = share_map.get(share_id) {
+                invalidate_share_token_record_cache_for_share(state, share).await;
+            }
+        }
     }
 
     tracing::debug!(
@@ -451,8 +467,11 @@ pub async fn list_paginated(
 }
 
 pub async fn admin_delete_share(state: &PrimaryAppState, share_id: i64) -> Result<()> {
-    share_repo::find_by_id(&state.db, share_id).await?;
-    share_repo::delete(&state.db, share_id).await
+    let share = share_repo::find_by_id(&state.db, share_id).await?;
+    share_repo::delete(&state.db, share_id).await?;
+    invalidate_active_share_target_cache_for_share(state, &share).await;
+    invalidate_share_token_record_cache_for_share(state, &share).await;
+    Ok(())
 }
 
 async fn build_my_share_infos(

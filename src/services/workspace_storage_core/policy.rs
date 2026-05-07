@@ -1,9 +1,8 @@
 use crate::db::repository::{team_repo, user_repo};
-use crate::entities::team;
-use crate::errors::{AsterError, Result};
+use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
 use crate::services::workspace_scope_service::{
-    WorkspaceStorageScope, require_team_access, verify_folder_access,
+    WorkspaceStorageScope, require_team_policy_group_id, verify_folder_access,
 };
 use crate::types::{DriverType, parse_storage_policy_options};
 
@@ -30,15 +29,6 @@ pub(crate) fn local_content_dedup_enabled(policy: &crate::entities::storage_poli
             .unwrap_or(false)
 }
 
-fn resolve_team_policy_group_id(team: &team::Model) -> Result<i64> {
-    team.policy_group_id.ok_or_else(|| {
-        AsterError::storage_policy_not_found(format!(
-            "no storage policy group assigned to team #{}",
-            team.id
-        ))
-    })
-}
-
 pub(crate) async fn resolve_policy_for_size(
     state: &PrimaryAppState,
     scope: WorkspaceStorageScope,
@@ -63,10 +53,11 @@ pub(crate) async fn resolve_policy_for_size(
             team_id,
             actor_user_id,
         } => {
-            let team = require_team_access(state, team_id, actor_user_id).await?;
+            let policy_group_id =
+                require_team_policy_group_id(state, team_id, actor_user_id).await?;
             state
                 .policy_snapshot
-                .resolve_policy_in_group(resolve_team_policy_group_id(&team)?, file_size)
+                .resolve_policy_in_group(policy_group_id, file_size)
         }
     }
 }

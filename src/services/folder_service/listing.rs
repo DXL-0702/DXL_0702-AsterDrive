@@ -4,10 +4,13 @@
 //! 文件夹用 offset，文件用 cursor，这样目录页可以稳定展示大量文件而不要求
 //! 文件夹列表也跟着使用 cursor。
 
-use crate::db::repository::{file_repo, folder_repo, share_repo};
+use crate::db::repository::{file_repo, folder_repo};
 use crate::errors::Result;
 use crate::runtime::PrimaryAppState;
-use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
+use crate::services::{
+    share_service,
+    workspace_storage_service::{self, WorkspaceStorageScope},
+};
 use crate::utils::numbers::usize_to_u64;
 
 use super::{
@@ -71,16 +74,10 @@ async fn build_folder_contents(
 
     let file_ids: Vec<i64> = files.iter().map(|file| file.id).collect();
     let folder_ids: Vec<i64> = folders.iter().map(|folder| folder.id).collect();
-    let (shared_file_ids, shared_folder_ids) = match scope {
-        WorkspaceStorageScope::Personal { user_id } => tokio::try_join!(
-            share_repo::find_active_file_ids(&state.db, user_id, &file_ids),
-            share_repo::find_active_folder_ids(&state.db, user_id, &folder_ids),
-        )?,
-        WorkspaceStorageScope::Team { team_id, .. } => tokio::try_join!(
-            share_repo::find_active_team_file_ids(&state.db, team_id, &file_ids),
-            share_repo::find_active_team_folder_ids(&state.db, team_id, &folder_ids),
-        )?,
-    };
+    let (shared_file_ids, shared_folder_ids) = tokio::try_join!(
+        share_service::find_active_file_ids_in_scope(state, scope, &file_ids),
+        share_service::find_active_folder_ids_in_scope(state, scope, &folder_ids),
+    )?;
 
     Ok(FolderContents {
         folders: build_folder_list_items(folders, &shared_folder_ids),

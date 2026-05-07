@@ -24,7 +24,7 @@ use crate::types::NullablePatch;
 
 pub use access::verify_folder_access;
 pub use copy::copy_folder;
-pub use hierarchy::{build_folder_paths, get_ancestors};
+pub use hierarchy::{build_folder_paths, build_folder_paths_cached, get_ancestors};
 pub use listing::{FolderListParams, list, list_shared};
 pub use models::{
     FileCursor, FileListItem, FolderAncestorItem, FolderContents, FolderListItem,
@@ -36,7 +36,9 @@ pub(crate) use access::{
     ensure_folder_model_in_scope, ensure_personal_folder_scope, verify_folder_in_scope,
 };
 pub(crate) use copy::{copy_folder_in_scope, recursive_copy_folder_in_scope};
-pub(crate) use hierarchy::get_ancestors_in_scope;
+pub(crate) use hierarchy::{
+    FOLDER_PATH_CACHE_PREFIX, get_ancestors_in_scope, invalidate_folder_path_cache,
+};
 pub(crate) use listing::list_in_scope;
 pub(crate) use mutation::{
     create_in_scope, delete_in_scope, get_info_in_scope, set_lock_in_scope, update_in_scope,

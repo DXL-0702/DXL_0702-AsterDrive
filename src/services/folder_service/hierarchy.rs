@@ -3,7 +3,9 @@
 use std::collections::{HashMap, HashSet};
 
 use sea_orm::ConnectionTrait;
+use serde::{Deserialize, Serialize};
 
+use crate::cache::CacheExt;
 use crate::db::repository::folder_repo;
 use crate::entities::folder;
 use crate::errors::{AsterError, Result};
@@ -11,6 +13,30 @@ use crate::runtime::PrimaryAppState;
 use crate::services::workspace_storage_service::{self, WorkspaceStorageScope};
 
 use super::{FolderAncestorItem, ensure_folder_model_in_scope};
+
+const FOLDER_PATH_CACHE_TTL: u64 = 300;
+pub(crate) const FOLDER_PATH_CACHE_PREFIX: &str = "folder_path:";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedFolderPathChain {
+    chain_ids: Vec<i64>,
+}
+
+struct FolderPathEntry {
+    path: String,
+    chain_ids: Vec<i64>,
+}
+
+fn folder_path_cache_key(folder_id: i64) -> String {
+    format!("{FOLDER_PATH_CACHE_PREFIX}{folder_id}")
+}
+
+pub(crate) async fn invalidate_folder_path_cache(state: &PrimaryAppState) {
+    state
+        .cache
+        .invalidate_prefix(FOLDER_PATH_CACHE_PREFIX)
+        .await;
+}
 
 pub(super) async fn load_folder_chain_map<C: ConnectionTrait>(
     db: &C,
@@ -55,23 +81,145 @@ pub async fn build_folder_paths<C: ConnectionTrait>(
     db: &C,
     folder_ids: &[i64],
 ) -> Result<HashMap<i64, String>> {
+    let entries = build_folder_path_entries(db, folder_ids).await?;
+    Ok(entries
+        .into_iter()
+        .map(|(folder_id, entry)| (folder_id, entry.path))
+        .collect())
+}
+
+async fn build_folder_path_entries<C: ConnectionTrait>(
+    db: &C,
+    folder_ids: &[i64],
+) -> Result<HashMap<i64, FolderPathEntry>> {
     let chain_map = load_folder_chain_map(db, folder_ids).await?;
+    build_folder_path_entries_from_chain_map(folder_ids, &chain_map)
+}
+
+fn build_folder_path_entries_from_chain_map(
+    folder_ids: &[i64],
+    chain_map: &HashMap<i64, folder::Model>,
+) -> Result<HashMap<i64, FolderPathEntry>> {
     let mut paths = HashMap::with_capacity(folder_ids.len());
 
     for &folder_id in folder_ids {
         let mut parts = Vec::new();
+        let mut chain_ids = Vec::new();
         let mut current_id = Some(folder_id);
         while let Some(id) = current_id {
             let folder = chain_map
                 .get(&id)
                 .ok_or_else(|| AsterError::record_not_found(format!("folder #{id}")))?;
+            chain_ids.push(id);
             parts.push(folder.name.clone());
             current_id = folder.parent_id;
         }
         parts.reverse();
-        paths.insert(folder_id, format!("/{}", parts.join("/")));
+        paths.insert(
+            folder_id,
+            FolderPathEntry {
+                path: format!("/{}", parts.join("/")),
+                chain_ids,
+            },
+        );
     }
 
+    Ok(paths)
+}
+
+pub async fn build_folder_paths_cached(
+    state: &PrimaryAppState,
+    folder_ids: &[i64],
+) -> Result<HashMap<i64, String>> {
+    let mut ids = folder_ids.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+
+    let mut paths = HashMap::with_capacity(ids.len());
+    let mut cached_entries = HashMap::new();
+    let mut misses = Vec::new();
+
+    for &id in &ids {
+        let cache_key = folder_path_cache_key(id);
+        if let Some(cached) = state.cache.get::<CachedFolderPathChain>(&cache_key).await {
+            if cached.chain_ids.is_empty() {
+                misses.push(id);
+            } else {
+                cached_entries.insert(id, cached);
+            }
+        } else {
+            misses.push(id);
+        }
+    }
+
+    if !cached_entries.is_empty() {
+        let mut chain_ids: Vec<i64> = cached_entries
+            .values()
+            .flat_map(|entry| entry.chain_ids.iter().copied())
+            .collect();
+        chain_ids.sort_unstable();
+        chain_ids.dedup();
+        let chain_map = folder_repo::find_by_ids(&state.db, &chain_ids)
+            .await?
+            .into_iter()
+            .map(|folder| (folder.id, folder))
+            .collect::<HashMap<_, _>>();
+
+        for (&id, cached) in &cached_entries {
+            match build_folder_path_entries_from_chain_map(&[id], &chain_map).and_then(
+                |mut rebuilt| {
+                    rebuilt
+                        .remove(&id)
+                        .ok_or_else(|| AsterError::record_not_found(format!("folder #{id} path")))
+                },
+            ) {
+                Ok(entry) => {
+                    if entry.chain_ids != cached.chain_ids {
+                        state
+                            .cache
+                            .set(
+                                &folder_path_cache_key(id),
+                                &CachedFolderPathChain {
+                                    chain_ids: entry.chain_ids,
+                                },
+                                Some(FOLDER_PATH_CACHE_TTL),
+                            )
+                            .await;
+                    }
+                    paths.insert(id, entry.path);
+                }
+                Err(_) => {
+                    state.cache.delete(&folder_path_cache_key(id)).await;
+                    misses.push(id);
+                }
+            }
+        }
+    }
+
+    if misses.is_empty() {
+        return Ok(paths);
+    }
+
+    misses.sort_unstable();
+    misses.dedup();
+    let loaded = build_folder_path_entries(&state.db, &misses).await?;
+    for (&id, entry) in &loaded {
+        state
+            .cache
+            .set(
+                &folder_path_cache_key(id),
+                &CachedFolderPathChain {
+                    chain_ids: entry.chain_ids.clone(),
+                },
+                Some(FOLDER_PATH_CACHE_TTL),
+            )
+            .await;
+    }
+    paths.extend(
+        loaded
+            .into_iter()
+            .map(|(folder_id, entry)| (folder_id, entry.path)),
+    );
     Ok(paths)
 }
 

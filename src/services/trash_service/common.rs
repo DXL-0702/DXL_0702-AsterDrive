@@ -159,7 +159,15 @@ pub(super) async fn recursive_purge_folder_in_scope(
         folder_service::collect_folder_tree_in_scope(&state.db, scope, folder_id, true).await?;
     file_service::batch_purge_in_scope(state, scope, all_files).await?;
     property_repo::delete_all_for_entities(&state.db, EntityType::Folder, &all_folder_ids).await?;
-    share_repo::delete_by_folder_ids(&state.db, &all_folder_ids).await?;
+    let deleted_shares = share_repo::delete_by_folder_ids(&state.db, &all_folder_ids).await?;
+    if deleted_shares > 0 {
+        crate::services::share_service::invalidate_active_share_target_cache_for_scope(
+            state, scope,
+        )
+        .await;
+        crate::services::share_service::invalidate_all_share_token_record_cache(state).await;
+    }
+    crate::services::folder_service::invalidate_folder_path_cache(state).await;
     folder_repo::delete_many(&state.db, &all_folder_ids).await?;
     Ok(())
 }

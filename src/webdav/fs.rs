@@ -3,7 +3,6 @@
 use std::pin::Pin;
 
 use futures::stream;
-use sea_orm::DatabaseConnection;
 use tokio::io::AsyncRead;
 
 use crate::db::repository::{file_repo, folder_repo, property_repo, user_repo};
@@ -85,9 +84,13 @@ impl AsterDavFs {
         &self,
         path: &DavPath,
     ) -> Result<Box<dyn AsyncRead + Unpin + Send>, FsError> {
-        let node =
-            path_resolver::resolve_path(&self.state.db, self.user_id, path, self.root_folder_id)
-                .await?;
+        let node = path_resolver::resolve_path_cached(
+            &self.state,
+            self.user_id,
+            path,
+            self.root_folder_id,
+        )
+        .await?;
 
         let file = match node {
             ResolvedNode::File(file) => file,
@@ -135,8 +138,8 @@ impl DavFileSystem for AsterDavFs {
         Box::pin(async move {
             if options.write {
                 // 写模式
-                let (parent_id, filename) = path_resolver::resolve_parent(
-                    &self.state.db,
+                let (parent_id, filename) = path_resolver::resolve_parent_cached(
+                    &self.state,
                     self.user_id,
                     path,
                     self.root_folder_id,
@@ -187,8 +190,8 @@ impl DavFileSystem for AsterDavFs {
         _meta: ReadDirMeta,
     ) -> FsFuture<'a, FsStream<Box<dyn DavDirEntry>>> {
         Box::pin(async move {
-            let folder_id = match path_resolver::resolve_path(
-                &self.state.db,
+            let folder_id = match path_resolver::resolve_path_cached(
+                &self.state,
                 self.user_id,
                 path,
                 self.root_folder_id,
@@ -236,8 +239,8 @@ impl DavFileSystem for AsterDavFs {
 
     fn metadata<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, Box<dyn DavMetaData>> {
         Box::pin(async move {
-            let node = path_resolver::resolve_path(
-                &self.state.db,
+            let node = path_resolver::resolve_path_cached(
+                &self.state,
                 self.user_id,
                 path,
                 self.root_folder_id,
@@ -261,8 +264,8 @@ impl DavFileSystem for AsterDavFs {
 
     fn create_dir<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let (parent_id, name) = path_resolver::resolve_parent(
-                &self.state.db,
+            let (parent_id, name) = path_resolver::resolve_parent_cached(
+                &self.state,
                 self.user_id,
                 path,
                 self.root_folder_id,
@@ -286,8 +289,8 @@ impl DavFileSystem for AsterDavFs {
 
     fn remove_dir<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let node = path_resolver::resolve_path(
-                &self.state.db,
+            let node = path_resolver::resolve_path_cached(
+                &self.state,
                 self.user_id,
                 path,
                 self.root_folder_id,
@@ -319,8 +322,8 @@ impl DavFileSystem for AsterDavFs {
 
     fn remove_file<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let node = path_resolver::resolve_path(
-                &self.state.db,
+            let node = path_resolver::resolve_path_cached(
+                &self.state,
                 self.user_id,
                 path,
                 self.root_folder_id,
@@ -347,16 +350,16 @@ impl DavFileSystem for AsterDavFs {
 
     fn rename<'a>(&'a self, from: &'a DavPath, to: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let node = path_resolver::resolve_path(
-                &self.state.db,
+            let node = path_resolver::resolve_path_cached(
+                &self.state,
                 self.user_id,
                 from,
                 self.root_folder_id,
             )
             .await?;
 
-            let (dest_parent_id, dest_name) = path_resolver::resolve_parent(
-                &self.state.db,
+            let (dest_parent_id, dest_name) = path_resolver::resolve_parent_cached(
+                &self.state,
                 self.user_id,
                 to,
                 self.root_folder_id,
@@ -420,15 +423,15 @@ impl DavFileSystem for AsterDavFs {
 
     fn copy<'a>(&'a self, from: &'a DavPath, to: &'a DavPath) -> FsFuture<'a, ()> {
         Box::pin(async move {
-            let node = path_resolver::resolve_path(
-                &self.state.db,
+            let node = path_resolver::resolve_path_cached(
+                &self.state,
                 self.user_id,
                 from,
                 self.root_folder_id,
             )
             .await?;
-            let (dest_parent_id, dest_name) = path_resolver::resolve_parent(
-                &self.state.db,
+            let (dest_parent_id, dest_name) = path_resolver::resolve_parent_cached(
+                &self.state,
                 self.user_id,
                 to,
                 self.root_folder_id,
@@ -529,8 +532,7 @@ impl DavFileSystem for AsterDavFs {
     ) -> Pin<Box<dyn std::future::Future<Output = bool> + Send + 'a>> {
         Box::pin(async move {
             let (entity_type, entity_id) =
-                match resolve_entity(&self.state.db, self.user_id, path, self.root_folder_id).await
-                {
+                match resolve_entity(&self.state, self.user_id, path, self.root_folder_id).await {
                     Some(v) => v,
                     None => return false,
                 };
@@ -543,7 +545,7 @@ impl DavFileSystem for AsterDavFs {
     fn get_props<'a>(&'a self, path: &'a DavPath, do_content: bool) -> FsFuture<'a, Vec<DavProp>> {
         Box::pin(async move {
             let (entity_type, entity_id) =
-                resolve_entity(&self.state.db, self.user_id, path, self.root_folder_id)
+                resolve_entity(&self.state, self.user_id, path, self.root_folder_id)
                     .await
                     .ok_or(FsError::NotFound)?;
 
@@ -578,7 +580,7 @@ impl DavFileSystem for AsterDavFs {
     ) -> FsFuture<'a, Vec<(http::StatusCode, DavProp)>> {
         Box::pin(async move {
             let (entity_type, entity_id) =
-                resolve_entity(&self.state.db, self.user_id, path, self.root_folder_id)
+                resolve_entity(&self.state, self.user_id, path, self.root_folder_id)
                     .await
                     .ok_or(FsError::NotFound)?;
 
@@ -655,12 +657,12 @@ impl DavFileSystem for AsterDavFs {
 
 /// 从 DavPath 解析出 (entity_type, entity_id)
 async fn resolve_entity(
-    db: &DatabaseConnection,
+    state: &PrimaryAppState,
     user_id: i64,
     path: &DavPath,
     root_folder_id: Option<i64>,
 ) -> Option<(EntityType, i64)> {
-    match path_resolver::resolve_path(db, user_id, path, root_folder_id).await {
+    match path_resolver::resolve_path_cached(state, user_id, path, root_folder_id).await {
         Ok(ResolvedNode::File(f)) => Some((EntityType::File, f.id)),
         Ok(ResolvedNode::Folder(f)) => Some((EntityType::Folder, f.id)),
         _ => None,

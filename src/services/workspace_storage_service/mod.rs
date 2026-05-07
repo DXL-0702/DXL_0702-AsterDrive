@@ -15,9 +15,10 @@ mod upload_policy;
 // 和底层核心实现分别散落在哪个文件里。
 pub(crate) use crate::services::workspace_scope_service::{
     WorkspaceStorageScope, ensure_active_file_scope, ensure_active_folder_scope, ensure_file_scope,
-    ensure_folder_scope, ensure_personal_file_scope, list_files_in_folder, list_folders_in_parent,
-    require_scope_access, require_team_access, require_team_management_access, verify_file_access,
-    verify_folder_access,
+    ensure_folder_scope, ensure_personal_file_scope, invalidate_team_access_cache_for_member,
+    invalidate_team_access_cache_for_team, list_files_in_folder, list_folders_in_parent,
+    require_scope_access, require_team_access, require_team_management_access,
+    require_team_policy_group_id, verify_file_access, verify_folder_access,
 };
 pub(crate) use crate::services::workspace_storage_core::{
     FinalizeUploadSessionFileParams, check_quota, create_exact_file_from_blob,

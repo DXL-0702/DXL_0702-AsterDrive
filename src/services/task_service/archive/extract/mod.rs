@@ -322,15 +322,12 @@ async fn resolve_archive_extract_policy_resolver(
             team_id,
             actor_user_id,
         } => {
-            let team =
-                workspace_storage_service::require_team_access(state, team_id, actor_user_id)
-                    .await?;
-            let policy_group_id = team.policy_group_id.ok_or_else(|| {
-                AsterError::storage_policy_not_found(format!(
-                    "no storage policy group assigned to team #{}",
-                    team.id
-                ))
-            })?;
+            let policy_group_id = workspace_storage_service::require_team_policy_group_id(
+                state,
+                team_id,
+                actor_user_id,
+            )
+            .await?;
             Ok(ArchiveExtractPolicyResolver::Team { policy_group_id })
         }
     }

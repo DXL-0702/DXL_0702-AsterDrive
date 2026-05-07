@@ -1,11 +1,15 @@
 //! WebDAV 子模块：`auth`。
 
 use base64::Engine;
+use serde::{Deserialize, Serialize};
 
+use crate::cache::CacheExt;
 use crate::db::repository::{user_repo, webdav_account_repo};
 use crate::errors::{AsterError, MapAsterErr};
 use crate::runtime::PrimaryAppState;
 use crate::utils::hash;
+
+const WEBDAV_AUTH_CACHE_TTL: u64 = 60;
 
 /// WebDAV 认证结果
 #[derive(Debug)]
@@ -13,6 +17,50 @@ pub struct WebdavAuthResult {
     pub user_id: i64,
     /// 限制访问范围：None = 全部，Some(folder_id) = 只能访问该文件夹及子目录
     pub root_folder_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedWebdavAuth {
+    user_id: i64,
+    root_folder_id: Option<i64>,
+}
+
+fn username_cache_component(username: &str) -> String {
+    hash::sha256_hex(username.as_bytes())
+}
+
+fn password_cache_component(password: &str) -> String {
+    hash::sha256_hex(password.as_bytes())
+}
+
+fn webdav_auth_cache_prefix(username: &str) -> String {
+    format!("webdav_auth:{}:", username_cache_component(username))
+}
+
+fn webdav_auth_cache_key(username: &str, password: &str) -> String {
+    format!(
+        "{}{}",
+        webdav_auth_cache_prefix(username),
+        password_cache_component(password)
+    )
+}
+
+pub(crate) async fn invalidate_webdav_auth_for_username(state: &PrimaryAppState, username: &str) {
+    state
+        .cache
+        .invalidate_prefix(&webdav_auth_cache_prefix(username))
+        .await;
+}
+
+pub(crate) async fn invalidate_webdav_auth_for_user(
+    state: &PrimaryAppState,
+    user_id: i64,
+) -> Result<(), AsterError> {
+    let accounts = webdav_account_repo::find_by_user(&state.db, user_id).await?;
+    for account in accounts {
+        invalidate_webdav_auth_for_username(state, &account.username).await;
+    }
+    Ok(())
 }
 
 /// 从 WebDAV 请求头提取并认证用户
@@ -56,6 +104,12 @@ async fn authenticate_basic(
         .split_once(':')
         .ok_or_else(|| AsterError::auth_invalid_credentials("invalid basic auth format"))?;
 
+    let cache_key = webdav_auth_cache_key(username, password);
+    if let Some(cached) = state.cache.get::<CachedWebdavAuth>(&cache_key).await {
+        tracing::debug!(username_hash = %username_cache_component(username), "webdav auth cache hit");
+        return Ok((cached.user_id, cached.root_folder_id));
+    }
+
     // 查 WebDAV 专用账号
     let account = webdav_account_repo::find_by_username(&state.db, username)
         .await?
@@ -75,6 +129,18 @@ async fn authenticate_basic(
         return Err(AsterError::auth_forbidden("user account is disabled"));
     }
 
+    state
+        .cache
+        .set(
+            &cache_key,
+            &CachedWebdavAuth {
+                user_id: account.user_id,
+                root_folder_id: account.root_folder_id,
+            },
+            Some(WEBDAV_AUTH_CACHE_TTL),
+        )
+        .await;
+    tracing::debug!(username_hash = %username_cache_component(username), "webdav auth cache miss");
     Ok((account.user_id, account.root_folder_id))
 }
 

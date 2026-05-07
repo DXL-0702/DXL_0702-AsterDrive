@@ -439,6 +439,12 @@ pub(super) async fn create_team_record(
     )
     .await?;
     crate::db::transaction::commit(txn).await?;
+    crate::services::workspace_storage_service::invalidate_team_access_cache_for_member(
+        state,
+        created_team.id,
+        initial_member_user_id,
+    )
+    .await;
 
     Ok(created_team)
 }
@@ -462,15 +468,25 @@ pub(super) async fn update_team_record(
     }
     active.updated_at = Set(Utc::now());
 
-    team_repo::update(&state.db, active).await
+    let updated = team_repo::update(&state.db, active).await?;
+    crate::services::workspace_storage_service::invalidate_team_access_cache_for_team(
+        state, updated.id,
+    )
+    .await;
+    Ok(updated)
 }
 
 pub(super) async fn archive_team_record(state: &PrimaryAppState, team: team::Model) -> Result<()> {
+    let team_id = team.id;
     let mut active = team.into_active_model();
     let now = Utc::now();
     active.archived_at = Set(Some(now));
     active.updated_at = Set(now);
     team_repo::update(&state.db, active).await?;
+    crate::services::workspace_storage_service::invalidate_team_access_cache_for_team(
+        state, team_id,
+    )
+    .await;
     Ok(())
 }
 
@@ -482,7 +498,13 @@ pub(super) async fn restore_team_record(
     let now = Utc::now();
     active.archived_at = Set(None);
     active.updated_at = Set(now);
-    team_repo::update(&state.db, active).await
+    let restored = team_repo::update(&state.db, active).await?;
+    crate::services::workspace_storage_service::invalidate_team_access_cache_for_team(
+        state,
+        restored.id,
+    )
+    .await;
+    Ok(restored)
 }
 
 pub(super) fn map_member_create_error(err: DbErr) -> AsterError {

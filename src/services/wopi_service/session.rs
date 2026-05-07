@@ -7,6 +7,7 @@ use chrono::{DateTime, Duration, Utc};
 use sea_orm::Set;
 use serde::{Deserialize, Serialize};
 
+use crate::cache::CacheExt;
 use crate::config::site_url;
 use crate::db::repository::wopi_session_repo;
 use crate::entities::{file, wopi_session};
@@ -23,6 +24,33 @@ use super::discovery::{
 };
 use super::types::{WopiLaunchSession, WopiRequestSource};
 
+const WOPI_SESSION_CACHE_TTL: u64 = 300;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CachedWopiSession {
+    id: i64,
+    actor_user_id: i64,
+    session_version: i64,
+    team_id: Option<i64>,
+    file_id: i64,
+    app_key: String,
+    expires_at: DateTime<Utc>,
+}
+
+impl From<&wopi_session::Model> for CachedWopiSession {
+    fn from(session: &wopi_session::Model) -> Self {
+        Self {
+            id: session.id,
+            actor_user_id: session.actor_user_id,
+            session_version: session.session_version,
+            team_id: session.team_id,
+            file_id: session.file_id,
+            app_key: session.app_key.clone(),
+            expires_at: session.expires_at,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct WopiAccessTokenPayload {
     pub(crate) actor_user_id: i64,
@@ -37,6 +65,65 @@ pub(crate) struct WopiAccessTokenPayload {
 pub(crate) struct ResolvedWopiAccess {
     pub(crate) file: file::Model,
     pub(crate) payload: WopiAccessTokenPayload,
+}
+
+fn wopi_session_cache_key(token_hash: &str) -> String {
+    format!("wopi_session:{token_hash}")
+}
+
+fn wopi_session_cache_ttl(session: &wopi_session::Model) -> Option<u64> {
+    let ttl = (session.expires_at - Utc::now()).num_seconds();
+    if ttl <= 0 {
+        None
+    } else {
+        let ttl = u64::try_from(ttl).ok()?;
+        Some(std::cmp::min(ttl, WOPI_SESSION_CACHE_TTL))
+    }
+}
+
+async fn cache_wopi_session(state: &PrimaryAppState, session: &wopi_session::Model) {
+    let Some(ttl) = wopi_session_cache_ttl(session) else {
+        return;
+    };
+    state
+        .cache
+        .set(
+            &wopi_session_cache_key(&session.token_hash),
+            &CachedWopiSession::from(session),
+            Some(ttl),
+        )
+        .await;
+}
+
+async fn load_wopi_session_by_hash(
+    state: &PrimaryAppState,
+    token_hash: &str,
+) -> Result<Option<CachedWopiSession>> {
+    let cache_key = wopi_session_cache_key(token_hash);
+    if let Some(cached) = state.cache.get::<CachedWopiSession>(&cache_key).await {
+        tracing::debug!(token_hash = %token_hash, "wopi session cache hit");
+        return Ok(Some(cached));
+    }
+
+    let session = wopi_session_repo::find_by_token_hash(&state.db, token_hash).await?;
+    if let Some(session) = &session {
+        cache_wopi_session(state, session).await;
+    }
+    tracing::debug!(token_hash = %token_hash, "wopi session cache miss");
+    Ok(session.as_ref().map(CachedWopiSession::from))
+}
+
+async fn delete_wopi_session(
+    state: &PrimaryAppState,
+    token_hash: &str,
+    session_id: i64,
+) -> Result<()> {
+    wopi_session_repo::delete_by_id(&state.db, session_id).await?;
+    state
+        .cache
+        .delete(&wopi_session_cache_key(token_hash))
+        .await;
+    Ok(())
 }
 
 pub(crate) async fn create_launch_session_in_scope(
@@ -167,13 +254,13 @@ pub(crate) async fn resolve_access_token(
     request_source: WopiRequestSource<'_>,
 ) -> Result<ResolvedWopiAccess> {
     let token_hash = access_token_hash(access_token);
-    let session = wopi_session_repo::find_by_token_hash(&state.db, &token_hash)
+    let session = load_wopi_session_by_hash(state, &token_hash)
         .await?
         .ok_or_else(|| AsterError::auth_token_invalid("WOPI access token not found or expired"))?;
     let payload = payload_from_session(&session)?;
     let expires_at = session.expires_at;
     if expires_at < Utc::now() {
-        wopi_session_repo::delete_by_id(&state.db, session.id).await?;
+        delete_wopi_session(state, &token_hash, session.id).await?;
         return Err(AsterError::auth_token_expired("WOPI access token expired"));
     }
     if payload.file_id != file_id {
@@ -185,11 +272,11 @@ pub(crate) async fn resolve_access_token(
     // 用户登出、改密或被强制刷新会话后，旧的 WOPI token 会一起失效。
     let auth_snapshot = auth_service::get_auth_snapshot(state, payload.actor_user_id).await?;
     if !auth_snapshot.status.is_active() {
-        wopi_session_repo::delete_by_id(&state.db, session.id).await?;
+        delete_wopi_session(state, &token_hash, session.id).await?;
         return Err(AsterError::auth_forbidden("account is disabled"));
     }
     if auth_snapshot.session_version != payload.session_version {
-        wopi_session_repo::delete_by_id(&state.db, session.id).await?;
+        delete_wopi_session(state, &token_hash, session.id).await?;
         return Err(AsterError::auth_token_invalid("WOPI session revoked"));
     }
     let Some(app) = preview_app_service::get_public_preview_apps(state)
@@ -197,19 +284,19 @@ pub(crate) async fn resolve_access_token(
         .into_iter()
         .find(|candidate| candidate.key == payload.app_key)
     else {
-        wopi_session_repo::delete_by_id(&state.db, session.id).await?;
+        delete_wopi_session(state, &token_hash, session.id).await?;
         return Err(AsterError::auth_forbidden(
             "WOPI app is no longer available",
         ));
     };
     if !app.enabled {
-        wopi_session_repo::delete_by_id(&state.db, session.id).await?;
+        delete_wopi_session(state, &token_hash, session.id).await?;
         return Err(AsterError::auth_forbidden("WOPI app is disabled"));
     }
     let app_config = match parse_wopi_app_config(&app) {
         Ok(config) => config,
         Err(error) => {
-            wopi_session_repo::delete_by_id(&state.db, session.id).await?;
+            delete_wopi_session(state, &token_hash, session.id).await?;
             return Err(error);
         }
     };
@@ -217,7 +304,7 @@ pub(crate) async fn resolve_access_token(
     if let Err(error) =
         ensure_request_proof_valid(state, &app_config, access_token, &request_source).await
     {
-        wopi_session_repo::delete_by_id(&state.db, session.id).await?;
+        delete_wopi_session(state, &token_hash, session.id).await?;
         return Err(error);
     }
 
@@ -250,7 +337,7 @@ async fn create_access_token_session(
     let expires_at = DateTime::from_timestamp(payload.exp, 0)
         .ok_or_else(|| AsterError::internal_error("invalid WOPI access token expiry"))?;
     let now = Utc::now();
-    wopi_session_repo::create(
+    let session = wopi_session_repo::create(
         &state.db,
         wopi_session::ActiveModel {
             token_hash: Set(token_hash),
@@ -265,6 +352,7 @@ async fn create_access_token_session(
         },
     )
     .await?;
+    cache_wopi_session(state, &session).await;
     Ok(token)
 }
 
@@ -272,7 +360,7 @@ pub(crate) fn access_token_hash(token: &str) -> String {
     crate::utils::hash::sha256_hex(token.as_bytes())
 }
 
-fn payload_from_session(session: &wopi_session::Model) -> Result<WopiAccessTokenPayload> {
+fn payload_from_session(session: &CachedWopiSession) -> Result<WopiAccessTokenPayload> {
     Ok(WopiAccessTokenPayload {
         actor_user_id: session.actor_user_id,
         session_version: session.session_version,

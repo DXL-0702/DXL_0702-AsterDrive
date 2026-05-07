@@ -112,7 +112,7 @@ pub async fn create(
         let folder = folder_repo::find_by_id(&state.db, fid).await?;
         crate::services::folder_service::ensure_personal_folder_scope(&folder)?;
         crate::utils::verify_owner(folder.user_id, user_id, "folder")?;
-        crate::services::folder_service::build_folder_paths(&state.db, &[fid])
+        crate::services::folder_service::build_folder_paths_cached(state, &[fid])
             .await?
             .remove(&fid)
     } else {
@@ -134,6 +134,7 @@ pub async fn create(
         .insert(&state.db)
         .await
         .map_err(map_webdav_account_create_db_err)?;
+    crate::webdav::auth::invalidate_webdav_auth_for_username(state, &created.username).await;
 
     Ok(WebdavAccountCreated {
         id: created.id,
@@ -146,7 +147,7 @@ pub async fn create(
 /// 列出用户的所有 WebDAV 账号（带文件夹路径）
 pub async fn list(state: &PrimaryAppState, user_id: i64) -> Result<Vec<WebdavAccountInfo>> {
     let accounts = webdav_account_repo::find_by_user(&state.db, user_id).await?;
-    build_account_infos(&state.db, accounts).await
+    build_account_infos(state, accounts).await
 }
 
 pub async fn list_paginated(
@@ -158,21 +159,22 @@ pub async fn list_paginated(
     load_offset_page(limit, offset, 100, |limit, offset| async move {
         let (items, total) =
             webdav_account_repo::find_by_user_paginated(&state.db, user_id, limit, offset).await?;
-        let items = build_account_infos(&state.db, items).await?;
+        let items = build_account_infos(state, items).await?;
         Ok((items, total))
     })
     .await
 }
 
 async fn build_account_infos(
-    db: &sea_orm::DatabaseConnection,
+    state: &PrimaryAppState,
     accounts: Vec<webdav_account::Model>,
 ) -> Result<Vec<WebdavAccountInfo>> {
     let folder_ids: Vec<i64> = accounts
         .iter()
         .filter_map(|acc| acc.root_folder_id)
         .collect();
-    let paths = crate::services::folder_service::build_folder_paths(db, &folder_ids).await?;
+    let paths =
+        crate::services::folder_service::build_folder_paths_cached(state, &folder_ids).await?;
 
     let mut result = Vec::with_capacity(accounts.len());
     for acc in accounts {
@@ -195,7 +197,9 @@ async fn build_account_infos(
 pub async fn delete(state: &PrimaryAppState, id: i64, user_id: i64) -> Result<()> {
     let account = webdav_account_repo::find_by_id(&state.db, id).await?;
     crate::utils::verify_owner(account.user_id, user_id, "account")?;
-    webdav_account_repo::delete(&state.db, id).await
+    webdav_account_repo::delete(&state.db, id).await?;
+    crate::webdav::auth::invalidate_webdav_auth_for_username(state, &account.username).await;
+    Ok(())
 }
 
 /// 切换启用/禁用
@@ -207,12 +211,15 @@ pub async fn toggle_active(
     let account = webdav_account_repo::find_by_id(&state.db, id).await?;
     crate::utils::verify_owner(account.user_id, user_id, "account")?;
     let new_is_active = !account.is_active;
+    let username = account.username.clone();
     let mut active: webdav_account::ActiveModel = account.into();
     active.is_active = Set(new_is_active);
     active.updated_at = Set(Utc::now());
-    webdav_account_repo::update(&state.db, active)
+    let updated = webdav_account_repo::update(&state.db, active)
         .await
-        .map(Into::into)
+        .map(Into::into)?;
+    crate::webdav::auth::invalidate_webdav_auth_for_username(state, &username).await;
+    Ok(updated)
 }
 
 /// 测试 WebDAV 凭据是否正确

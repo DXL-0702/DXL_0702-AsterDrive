@@ -8,7 +8,7 @@ use crate::db::repository::search_query::{
 };
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, EntityTrait, ExprTrait,
-    PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
+    FromQueryResult, PaginatorTrait, QueryFilter, QueryOrder, QuerySelect,
     sea_query::{Expr, Order, extension::postgres::PgExpr},
 };
 
@@ -22,6 +22,13 @@ use crate::types::{TeamMemberRole, UserStatus};
 use crate::utils::numbers::i64_to_u64;
 
 const SQLITE_USERS_FTS_TABLE: &str = "users_search_fts";
+
+#[derive(Debug, Clone, PartialEq, Eq, FromQueryResult)]
+pub struct ActiveTeamAccessSnapshot {
+    pub team_id: i64,
+    pub policy_group_id: Option<i64>,
+    pub role: TeamMemberRole,
+}
 
 fn team_member_keyword_like_condition(keyword: &str) -> Condition {
     let mut condition = Condition::any()
@@ -138,6 +145,32 @@ pub async fn find_by_team_and_user<C: ConnectionTrait>(
     TeamMember::find()
         .filter(team_member::Column::TeamId.eq(team_id))
         .filter(team_member::Column::UserId.eq(user_id))
+        .one(db)
+        .await
+        .map_err(AsterError::from)
+}
+
+pub async fn find_active_team_access<C: ConnectionTrait>(
+    db: &C,
+    team_id: i64,
+    user_id: i64,
+) -> Result<Option<ActiveTeamAccessSnapshot>> {
+    TeamMember::find()
+        .select_only()
+        .column_as(Expr::col((team::Entity, team::Column::Id)), "team_id")
+        .column_as(
+            Expr::col((team::Entity, team::Column::PolicyGroupId)),
+            "policy_group_id",
+        )
+        .column_as(
+            Expr::col((team_member::Entity, team_member::Column::Role)),
+            "role",
+        )
+        .inner_join(team::Entity)
+        .filter(team_member::Column::TeamId.eq(team_id))
+        .filter(team_member::Column::UserId.eq(user_id))
+        .filter(team::Column::ArchivedAt.is_null())
+        .into_model::<ActiveTeamAccessSnapshot>()
         .one(db)
         .await
         .map_err(AsterError::from)

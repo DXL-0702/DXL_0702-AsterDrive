@@ -14,6 +14,9 @@ use std::sync::{
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_util::sync::CancellationToken;
 
+use super::cache::{
+    invalidate_active_share_target_cache_for_share, invalidate_share_token_record_cache_for_share,
+};
 use super::shared::{
     load_share_file_resource, load_shared_folder_file_target, load_shared_subfolder_target,
     load_valid_folder_share_root, load_valid_share,
@@ -447,7 +450,14 @@ async fn download_share_resource_with_disposition(
     }
 
     match share_repo::increment_download_count(&state.db, share.id).await {
-        Ok(true) => {}
+        Ok(true) => {
+            invalidate_share_token_record_cache_for_share(state, share).await;
+            if share.max_downloads > 0
+                && share.download_count.saturating_add(1) >= share.max_downloads
+            {
+                invalidate_active_share_target_cache_for_share(state, share).await;
+            }
+        }
         Ok(false) => {
             return Err(AsterError::share_download_limit("download limit reached"));
         }

@@ -1,10 +1,14 @@
 //! 服务模块：`storage_change_service`。
 
-use std::collections::{BTreeSet, HashSet};
+use std::{
+    collections::{BTreeSet, HashSet},
+    sync::Arc,
+};
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
+use crate::cache::CacheBackend;
 use crate::runtime::PrimaryRuntimeState;
 use crate::services::workspace_storage_service::WorkspaceStorageScope;
 
@@ -115,8 +119,50 @@ impl StorageChangeEvent {
 }
 
 pub fn publish<S: PrimaryRuntimeState>(state: &S, event: StorageChangeEvent) {
+    invalidate_storage_change_caches(state.cache().clone(), event.kind);
     if let Err(e) = state.storage_change_tx().send(event) {
         tracing::debug!("skip storage change broadcast without listeners: {e}");
+    }
+}
+
+fn invalidate_storage_change_caches(cache: Arc<dyn CacheBackend>, kind: StorageChangeKind) {
+    match kind {
+        StorageChangeKind::FileCreated
+        | StorageChangeKind::FileUpdated
+        | StorageChangeKind::FileDeleted
+        | StorageChangeKind::FileRestored
+        | StorageChangeKind::FolderCreated
+        | StorageChangeKind::FolderUpdated
+        | StorageChangeKind::FolderDeleted
+        | StorageChangeKind::FolderRestored
+        | StorageChangeKind::SyncRequired => {
+            let Ok(handle) = tokio::runtime::Handle::try_current() else {
+                tracing::debug!("skip async cache invalidation without tokio runtime");
+                return;
+            };
+            drop(handle.spawn(async move {
+                cache
+                    .invalidate_prefix(crate::webdav::path_resolver::WEBDAV_PATH_CACHE_PREFIX)
+                    .await;
+                cache
+                    .invalidate_prefix(crate::webdav::path_resolver::WEBDAV_PARENT_CACHE_PREFIX)
+                    .await;
+                if matches!(
+                    kind,
+                    StorageChangeKind::FolderCreated
+                        | StorageChangeKind::FolderUpdated
+                        | StorageChangeKind::FolderDeleted
+                        | StorageChangeKind::FolderRestored
+                        | StorageChangeKind::SyncRequired
+                ) {
+                    cache
+                        .invalidate_prefix(
+                            crate::services::folder_service::FOLDER_PATH_CACHE_PREFIX,
+                        )
+                        .await;
+                }
+            }));
+        }
     }
 }
 

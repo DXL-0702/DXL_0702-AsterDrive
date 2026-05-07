@@ -321,6 +321,7 @@ pub(crate) async fn copy_folder_in_scope(
                         vec![copied.parent_id],
                     ),
                 );
+                super::invalidate_folder_path_cache(state).await;
                 tracing::debug!(
                     scope = ?scope,
                     src_folder_id = src_id,

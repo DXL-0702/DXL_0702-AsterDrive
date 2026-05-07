@@ -7,6 +7,7 @@ use std::collections::HashMap;
 #[cfg(all(debug_assertions, feature = "openapi"))]
 use utoipa::{IntoParams, ToSchema};
 
+use crate::cache::CacheExt;
 use crate::db::repository::{
     audit_log_repo, background_task_repo, file_repo, share_repo, user_repo,
 };
@@ -24,6 +25,7 @@ const MAX_DAYS: u32 = 90;
 const DEFAULT_EVENT_LIMIT: u64 = 8;
 const MAX_EVENT_LIMIT: u64 = 50;
 const DEFAULT_TIMEZONE: &str = "UTC";
+const ADMIN_OVERVIEW_CACHE_TTL: u64 = 15;
 
 #[derive(Clone, Debug, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(IntoParams))]
@@ -54,7 +56,7 @@ impl AdminOverviewQuery {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AdminOverviewStats {
     pub total_users: u64,
@@ -71,7 +73,7 @@ pub struct AdminOverviewStats {
     pub shares_today: u64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AdminOverviewDailyReport {
     pub date: String,
@@ -83,7 +85,7 @@ pub struct AdminOverviewDailyReport {
     pub total_events: u64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AdminBackgroundTaskEvent {
     pub id: i64,
@@ -105,7 +107,7 @@ pub struct AdminBackgroundTaskEvent {
     pub duration_ms: Option<i64>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum AdminSystemHealthStatus {
@@ -115,7 +117,7 @@ pub enum AdminSystemHealthStatus {
     Unhealthy,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AdminSystemHealthComponent {
     pub name: String,
@@ -123,7 +125,7 @@ pub struct AdminSystemHealthComponent {
     pub message: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AdminSystemHealthSummary {
     pub status: AdminSystemHealthStatus,
@@ -135,7 +137,7 @@ pub struct AdminSystemHealthSummary {
     pub task_id: Option<i64>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(all(debug_assertions, feature = "openapi"), derive(ToSchema))]
 pub struct AdminOverview {
     #[cfg_attr(all(debug_assertions, feature = "openapi"), schema(value_type = String))]
@@ -149,6 +151,39 @@ pub struct AdminOverview {
     pub recent_background_tasks: Vec<AdminBackgroundTaskEvent>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct CachedAdminOverviewCore {
+    generated_at: DateTimeUtc,
+    timezone: String,
+    days: u32,
+    stats: AdminOverviewStats,
+    system_health: AdminSystemHealthSummary,
+    daily_reports: Vec<AdminOverviewDailyReport>,
+}
+
+impl CachedAdminOverviewCore {
+    fn into_overview(
+        self,
+        recent_events: Vec<audit_service::AuditLogEntry>,
+        recent_background_tasks: Vec<AdminBackgroundTaskEvent>,
+    ) -> AdminOverview {
+        AdminOverview {
+            generated_at: self.generated_at,
+            timezone: self.timezone,
+            days: self.days,
+            stats: self.stats,
+            system_health: self.system_health,
+            daily_reports: self.daily_reports,
+            recent_events,
+            recent_background_tasks,
+        }
+    }
+}
+
+fn admin_overview_cache_key(days: u32, timezone_name: &str) -> String {
+    format!("admin_overview_core:{days}:{timezone_name}")
+}
+
 pub async fn get_overview(
     state: &PrimaryAppState,
     days: u32,
@@ -157,6 +192,19 @@ pub async fn get_overview(
 ) -> Result<AdminOverview> {
     let generated_at = Utc::now();
     let timezone = parse_timezone(timezone_name)?;
+    let cache_key = admin_overview_cache_key(days, timezone.name());
+    let (recent_events, recent_background_tasks) =
+        load_recent_overview_events(state, event_limit).await?;
+    if let Some(core) = state.cache.get::<CachedAdminOverviewCore>(&cache_key).await {
+        tracing::debug!(
+            days,
+            timezone = timezone.name(),
+            event_limit,
+            "admin overview cache hit"
+        );
+        return Ok(core.into_overview(recent_events, recent_background_tasks));
+    }
+
     let today = generated_at.with_timezone(&timezone).date_naive();
 
     let (
@@ -169,8 +217,6 @@ pub async fn get_overview(
         total_blob_bytes,
         total_shares,
         daily_reports,
-        recent_events,
-        recent_background_tasks,
         latest_health_task,
     ) = tokio::try_join!(
         user_repo::count_all(&state.db),
@@ -182,20 +228,6 @@ pub async fn get_overview(
         file_repo::sum_blob_bytes(&state.db),
         share_repo::count_all(&state.db),
         build_daily_reports(state, today, days, timezone),
-        audit_service::query(
-            state,
-            audit_service::AuditLogFilters {
-                user_id: None,
-                action: None,
-                entity_type: None,
-                entity_id: None,
-                after: None,
-                before: None,
-            },
-            event_limit,
-            0,
-        ),
-        background_task_repo::list_recent(&state.db, event_limit),
         background_task_repo::find_latest_system_runtime_by_task_name(
             &state.db,
             SYSTEM_HEALTH_TASK_NAME
@@ -213,14 +245,9 @@ pub async fn get_overview(
             deletions: 0,
             total_events: 0,
         });
-    let recent_events = recent_events.items;
-    let recent_background_tasks = recent_background_tasks
-        .into_iter()
-        .map(build_background_task_event)
-        .collect();
     let system_health = build_system_health_summary(latest_health_task);
 
-    Ok(AdminOverview {
+    let core = CachedAdminOverviewCore {
         generated_at,
         timezone: timezone.name().to_string(),
         days,
@@ -240,9 +267,50 @@ pub async fn get_overview(
         },
         system_health,
         daily_reports,
-        recent_events,
-        recent_background_tasks,
-    })
+    };
+    state
+        .cache
+        .set(&cache_key, &core, Some(ADMIN_OVERVIEW_CACHE_TTL))
+        .await;
+    tracing::debug!(
+        days,
+        timezone = timezone.name(),
+        event_limit,
+        "admin overview cache miss"
+    );
+    Ok(core.into_overview(recent_events, recent_background_tasks))
+}
+
+async fn load_recent_overview_events(
+    state: &PrimaryAppState,
+    event_limit: u64,
+) -> Result<(
+    Vec<audit_service::AuditLogEntry>,
+    Vec<AdminBackgroundTaskEvent>,
+)> {
+    let (recent_events, recent_background_tasks) = tokio::try_join!(
+        audit_service::query(
+            state,
+            audit_service::AuditLogFilters {
+                user_id: None,
+                action: None,
+                entity_type: None,
+                entity_id: None,
+                after: None,
+                before: None,
+            },
+            event_limit,
+            0,
+        ),
+        background_task_repo::list_recent(&state.db, event_limit),
+    )?;
+    Ok((
+        recent_events.items,
+        recent_background_tasks
+            .into_iter()
+            .map(build_background_task_event)
+            .collect(),
+    ))
 }
 
 fn build_background_task_event(
